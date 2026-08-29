@@ -150,7 +150,6 @@ function aufbauen(ziel, strecke, opt, karten, druckKnopf) {
   const [bmm, hmm] = seitenmasse(opt);
   const sw = opt.farbe === 'sw';
   const k = kennzahlen(strecke);
-  const blaetter = opt.punkttabelle || opt.unterschrift ? 2 : 1;
 
   ziel.style.setProperty('--seite-b', bmm + 'mm');
   ziel.style.setProperty('--seite-h', hmm + 'mm');
@@ -163,7 +162,7 @@ function aufbauen(ziel, strecke, opt, karten, druckKnopf) {
   // ---- Blatt 1: Karte
   const b1 = blatt(ziel, opt);
   b1.innerHTML =
-    kopfHTML(p, strecke, 1, blaetter) +
+    kopfHTML(p, strecke) +
     stammHTML(p, strecke, k) +
     `<div class="kartenfeld">
        <div class="karten-rahmen">
@@ -177,17 +176,9 @@ function aufbauen(ziel, strecke, opt, karten, druckKnopf) {
      ${kennzahlenHTML(k, strecke)}` +
     fussHTML(p, opt);
 
-  // ---- Blatt 2: Daten
-  if (blaetter === 2) {
-    const b2 = blatt(ziel, opt);
-    b2.innerHTML =
-      kopfHTML(p, strecke, 2, blaetter) +
-      (opt.punkttabelle ? punkttabelleHTML(strecke) : '') +
-      materialHTML(strecke, k) +
-      bemerkungHTML(p, strecke) +
-      (opt.unterschrift ? unterschriftHTML() : '') +
-      fussHTML(p, opt);
-  }
+  // ---- Datenblätter: so viele, wie der Inhalt braucht
+  if (opt.punkttabelle || opt.unterschrift) datenblaetter(ziel, p, strecke, k, opt);
+  blattzahlSchreiben(ziel);
 
   // ---- Karten scharf rendern
   requestAnimationFrame(() => {
@@ -289,9 +280,76 @@ function baueUebersichtskarte(buehne, strecke, opt, sw, karten) {
   return karte;
 }
 
+// ---------------------------------------------------------------- Seitenumbruch
+
+/* Ein Blatt hat feste Höhe, der Inhalt wird also nicht von selbst umbrochen.
+   Die Datenblätter werden deshalb gefüllt, bis kein Platz mehr ist, danach
+   beginnt ein neues Blatt – im Querformat passt rund ein Drittel weniger
+   darauf als im Hochformat, dort werden es entsprechend mehr Blätter. */
+function datenblaetter(ziel, p, strecke, k, opt) {
+  let inhalt = null;
+
+  const neuesBlatt = () => {
+    const el = blatt(ziel, opt);
+    el.innerHTML = kopfHTML(p, strecke) + '<div class="bl-inhalt"></div>' + fussHTML(p, opt);
+    inhalt = el.querySelector('.bl-inhalt');
+  };
+  // scrollHeight meldet nie weniger als clientHeight – die Prüfung ist damit
+  // genau dann wahr, wenn nichts über das Blatt hinausragt.
+  const passt = () => inhalt.scrollHeight <= inhalt.clientHeight;
+  const setze = el => {
+    inhalt.appendChild(el);
+    if (!passt() && inhalt.children.length > 1) {
+      el.remove();
+      neuesBlatt();
+      inhalt.appendChild(el);
+    }
+    return el;
+  };
+
+  neuesBlatt();
+
+  if (opt.punkttabelle) {
+    const zeilen = [...elementAus(`<table><tbody>${punktzeilenHTML(strecke)}</tbody></table>`)
+      .querySelectorAll('tr')];
+    let abschnitt = setze(elementAus(punkttabelleRahmenHTML(false)));
+    let koerper = abschnitt.querySelector('tbody');
+    zeilen.forEach(zeile => {
+      koerper.appendChild(zeile);
+      if (passt() || koerper.children.length === 1) return;
+      zeile.remove();
+      const fussnote = abschnitt.querySelector('.tab-fussnote');
+      if (fussnote) fussnote.remove();          // Fußnote nur unter dem letzten Teil
+      neuesBlatt();
+      abschnitt = elementAus(punkttabelleRahmenHTML(true));
+      inhalt.appendChild(abschnitt);
+      koerper = abschnitt.querySelector('tbody');
+      koerper.appendChild(zeile);
+    });
+  }
+
+  setze(elementAus(materialHTML(strecke, k)));
+  setze(elementAus(bemerkungHTML(p, strecke)));
+  if (opt.unterschrift) setze(elementAus(unterschriftHTML()));
+}
+
+function blattzahlSchreiben(ziel) {
+  const blaetter = [...ziel.querySelectorAll('.blatt')];
+  blaetter.forEach((el, i) => {
+    const feld = el.querySelector('.bl-blattnr');
+    if (feld) feld.textContent = `${i + 1} von ${blaetter.length}`;
+  });
+}
+
+function elementAus(html) {
+  const vorlage = document.createElement('template');
+  vorlage.innerHTML = html.trim();
+  return vorlage.content.firstElementChild;
+}
+
 // ---------------------------------------------------------------- Bausteine
 
-function kopfHTML(p, s, blattNr, blattAnz) {
+function kopfHTML(p, s) {
   const k = p.kopf;
   return `<header class="bl-kopf">
     <div class="bl-marke">
@@ -303,7 +361,7 @@ function kopfHTML(p, s, blattNr, blattAnz) {
     <table class="bl-kennung">
       <tr><th>Auftrag-Nr.</th><td>${escapeHtml(k.auftragNr || '–')}</td></tr>
       <tr><th>Datum</th><td>${datumDE(k.datum)}</td></tr>
-      <tr><th>Blatt</th><td>${blattNr} von ${blattAnz}</td></tr>
+      <tr><th>Blatt</th><td class="bl-blattnr">–</td></tr>
     </table>
   </header>`;
 }
@@ -351,7 +409,22 @@ function legendeHTML(s, sw, opt) {
     <span class="lg-eintrag lg-hinweis">Zahlen an der Trasse = Teilstrecken in Metern</span></div>`;
 }
 
-function punkttabelleHTML(s) {
+function punkttabelleRahmenHTML(fortsetzung) {
+  return `<section class="bl-abschnitt">
+    <h2>Trassenpunkte${fortsetzung ? ' (Fortsetzung)' : ''}</h2>
+    <table class="tab-punkte">
+      <thead><tr>
+        <th>Nr.</th><th>Art</th><th>Bezeichnung</th><th>MGRS</th>
+        <th>GPS (Grad / Dez.-Min.)</th><th>Teilstrecke</th><th>ab Anfang</th><th>Richtung</th><th>Bemerkung</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="tab-fussnote">Längen sind geodätische Direktstrecken zwischen den Trassenpunkten
+      (Luftlinie). Geländeverlauf, Umgehungen und Reserven deckt der Bauzuschlag ab.</p>
+  </section>`;
+}
+
+function punktzeilenHTML(s) {
   const seg = segmentLaengen(s);
   const kum = kumuliert(s.punkte);
   const zeilen = s.punkte.map((p, i) => {
@@ -371,18 +444,7 @@ function punkttabelleHTML(s) {
       <td>${escapeHtml(p.bemerkung || '')}</td>
     </tr>`;
   }).join('');
-  return `<section class="bl-abschnitt">
-    <h2>Trassenpunkte</h2>
-    <table class="tab-punkte">
-      <thead><tr>
-        <th>Nr.</th><th>Art</th><th>Bezeichnung</th><th>MGRS</th>
-        <th>GPS (Grad / Dez.-Min.)</th><th>Teilstrecke</th><th>ab Anfang</th><th>Richtung</th><th>Bemerkung</th>
-      </tr></thead>
-      <tbody>${zeilen}</tbody>
-    </table>
-    <p class="tab-fussnote">Längen sind geodätische Direktstrecken zwischen den Trassenpunkten
-      (Luftlinie). Geländeverlauf, Umgehungen und Reserven deckt der Bauzuschlag ab.</p>
-  </section>`;
+  return zeilen;
 }
 
 function materialHTML(s, k) {

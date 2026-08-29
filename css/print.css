@@ -59,6 +59,10 @@ body.druckansicht { overflow: hidden; }
 }
 .blatt table { border-collapse: collapse; width: 100%; }
 
+/* Inhaltsbereich der Datenblätter: nimmt den Platz zwischen Kopf und Fuß ein.
+   Der Umbruch in bauauftrag.js misst daran, ob noch etwas auf das Blatt passt. */
+.bl-inhalt { flex: 1 1 auto; min-height: 0; overflow: hidden; margin-bottom: 2mm; }
+
 /* -- Kopf */
 
 .bl-kopf {
