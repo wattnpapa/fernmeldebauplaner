@@ -528,5 +528,4 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   .werkzeuge .wz span:not(.wz-icon) { display: none; }
   .werkzeuge { flex-direction: row; }
   .sl-dez, .sl-hinweis { display: none; }
-  .marke-text span { display: none; }
 }

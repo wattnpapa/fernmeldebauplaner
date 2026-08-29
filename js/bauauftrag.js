@@ -439,7 +439,8 @@ function fussHTML(p, opt) {
   const bk = basiskarteById(p.ansicht.basemap);
   const quelle = opt.farbe === 'sw' ? basiskarteById(grauVariante(p.ansicht.basemap)) : bk;
   return `<footer class="bl-fuss">
-    <span>${escapeHtml(p.name)} · erstellt ${new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</span>
+    <span>${escapeHtml(p.name)} · erstellt ${new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
+      mit FMBauplaner (fmbauplaner.app)</span>
     <span class="bf-quelle">Kartengrundlage: ${quelle.attribution.replace(/<[^>]+>/g, '')}</span>
   </footer>`;
 }

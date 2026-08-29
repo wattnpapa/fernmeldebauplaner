@@ -1,4 +1,6 @@
-# Fernmeldebauplaner
+# FMBauplaner
+
+**[fmbauplaner.app](https://fmbauplaner.app)**
 
 GIS-Planungswerkzeug für den **Fernmeldebau**, ausgelegt auf die Arbeitsweise des THW.
 Strecken werden auf der Karte geplant, die Längen stehen direkt an der Trasse, und
@@ -101,6 +103,14 @@ Danach im Repository unter **Settings → Pages** als Quelle **GitHub Actions** 
 Der mitgelieferte Workflow `.github/workflows/pages.yml` veröffentlicht bei jedem Push
 auf `main`.
 
+### Eigene Domain
+
+Die Datei `CNAME` im Wurzelverzeichnis hält die Domain `fmbauplaner.app`. Dazu gehören
+im DNS des Domainanbieters vier A- und vier AAAA-Einträge auf die GitHub-Pages-Adressen
+(siehe `DNS.md`). Weil `.app` eine HSTS-Preload-Domain ist, funktioniert die Seite
+ausschließlich über HTTPS – GitHub stellt das Zertifikat automatisch aus, sobald die
+DNS-Einträge aufgelöst werden.
+
 Alternativ ohne Actions: unter **Settings → Pages** die Quelle **Deploy from a branch**
 mit Branch `main` und Ordner `/ (root)` wählen. Die Datei `.nojekyll` sorgt dafür,
 dass GitHub die Dateien unverändert ausliefert.
@@ -121,6 +131,7 @@ Dann `http://localhost:8899` öffnen.
 ## Aufbau
 
 ```
+CNAME                 Domain für GitHub Pages
 index.html            Grundgerüst der Oberfläche
 css/app.css           Oberfläche
 css/print.css         Bauauftrag: Vorschau und Ausdruck
