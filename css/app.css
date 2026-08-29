@@ -110,6 +110,13 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 .marke-zeichen { width: 28px; height: 28px; border-radius: 5px; }
 .marke-text { font-weight: 700; letter-spacing: .1px; font-size: 15px; }
 .marke-text span { font-weight: 400; opacity: .85; }
+/* Zurückgenommen: die Nummer soll ablesbar sein, wenn man sie sucht, und den
+   Namen der Planung nicht um Aufmerksamkeit bringen. Ziffernbreite fest, damit
+   sie beim Versionswechsel nicht in der Breite springt. */
+.marke-version {
+  font-size: 11px; font-weight: 500; opacity: .62;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 
 .kopf-projekt { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .projektname {
@@ -703,6 +710,9 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
      er ist die Antwort auf „woran arbeite ich hier“. Rückgängig und Wiederholen
      bleiben: auf dem Telefon gibt es kein Strg+Z. */
   .kopf { gap: 4px 10px; padding: 5px 8px; }
+  /* Der Name der Planung geht vor: hier steht die Nummer im Reiter „Planung"
+     unter „Über FMBauplaner" und im Blattfuß jedes Bauauftrags. */
+  .marke-version { display: none; }
   .kopf-tasten { gap: 4px; }
   .kopf-tasten .knopf { padding: 7px 9px; }
   .projektname { min-width: 120px; }

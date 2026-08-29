@@ -110,9 +110,11 @@ auf `main`.
 Jede Veröffentlichung bekommt eine Nummer im Format **`YYYY.MMDD.HHMM`** in UTC – etwa
 `2026.829.1119` für den 29. August 2026 um 11:19 Uhr. Sie ist minutengenau, steigt über
 Tages- und Jahresgrenzen hinweg monoton und ist zugleich gültiges SemVer. Dieselbe Nummer
-trägt der Git-Tag und das GitHub-Release; sie steht im Blattfuß jedes gedruckten
-Bauauftrags und unter **Planung → Über FMBauplaner**. Eine Rückfrage zu einem Ausdruck
-lässt sich damit einem Stand zuordnen.
+trägt der Git-Tag und das GitHub-Release; sie steht neben der Wortmarke in der Kopfzeile,
+im Blattfuß jedes gedruckten Bauauftrags und unter **Planung → Über FMBauplaner**. Eine
+Rückfrage zu einem Ausdruck lässt sich damit einem Stand zuordnen. Auf schmalen Geräten
+weicht die Nummer aus der Kopfzeile – dort geht der Name der Planung vor –, die beiden
+anderen Stellen bleiben.
 
 Erzeugt wird die Nummer im Workflow. `js/version.js` trägt im Repository bewusst
 `Entwicklungsstand`; erst beim Veröffentlichen wird die Zeile ersetzt – zurückgeschrieben

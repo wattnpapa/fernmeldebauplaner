@@ -14,6 +14,7 @@ import {
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis
 } from './ui.js';
 import { bauauftragOffen, schliesseBauauftrag, entferneSeitenformat } from './bauauftrag.js';
+import { VERSION } from './version.js';
 
 const $ = s => document.querySelector(s);
 
@@ -34,6 +35,11 @@ const zl = new ZeichenLayer(karte, {
 });
 
 initUI({ karte, sl, zl, weiterzeichnen, zurKarte, aufAenderung: () => {} });
+
+// Der Stand steht dauerhaft im Kopf: Wer zu einem gedruckten Bauauftrag
+// zurückfragt, hat dieselbe Nummer vor Augen, die im Blattfuß steht – ohne
+// erst einen Reiter aufzuschlagen.
+$('#marke-version').textContent = VERSION;
 
 // ---------------------------------------------------------------- Zeichnen
 
