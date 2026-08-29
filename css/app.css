@@ -16,10 +16,25 @@
   --gut: #1b7a3d;
   --radius: 8px;
   --radius-klein: 5px;
-  --schatten: 0 1px 2px rgba(16,32,56,.08), 0 4px 14px rgba(16,32,56,.10);
-  --schatten-stark: 0 8px 34px rgba(16,32,56,.22);
+  /* Erhebung in einer Sprache: ein knapper Kontaktschatten, darüber ein
+     gerichteter Abwurf von etwa doppelter Weichzeichnung. Kein breiter Hof –
+     das gedruckte Erzeugnis dieses Programms hat harte Kanten, die Oberfläche
+     verwischt sie nicht. --schatten-oben ist dieselbe Erhebung, gespiegelt:
+     für Leisten, die an der Unterkante hängen. */
+  --schatten: 0 1px 2px rgba(16,32,56,.08), 0 4px 9px rgba(16,32,56,.12);
+  --schatten-stark: 0 2px 4px rgba(16,32,56,.12), 0 8px 14px rgba(16,32,56,.22);
+  --schatten-oben: 0 -1px 2px rgba(16,32,56,.08), 0 -4px 9px rgba(16,32,56,.12);
   --kopf-hoehe: 52px;
   --seite-breite: 372px;
+  /* Höhe der Statusleiste – wird zur Laufzeit gemessen, weil die Leiste umbricht */
+  --sl-hoehe: 26px;
+  /* Höhe des Umschalters Liste/Karte – nur in der Schmalansicht > 0 */
+  --wechsel-hoehe: 0px;
+  /* Höhe von Maßstab und Quellenangabe unten rechts – ebenfalls gemessen */
+  --karten-fuss: 36px;
+  /* Höhe der Leaflet-Bedienelemente oben rechts (Zoom) – gemessen, damit die
+     Kartenoptionen darunter passen, auch wenn dort ein Element dazukommt */
+  --karten-kopf: 74px;
   --schrift: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -44,7 +59,13 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .klein { font-size: 12.5px; color: var(--text-schwach); margin: .4em 0; }
 .fehlertext { color: var(--gefahr); }
 
-#app { display: grid; grid-template-rows: var(--kopf-hoehe) 1fr; height: 100%; }
+/* Eine Spalte, die nicht breiter werden darf als das Fenster: ohne
+   minmax(0,1fr) zieht die Mindestbreite der Kopfzeile das ganze Raster auf.
+   Kopfzeile als auto-Zeile: bricht sie um, schiebt sie – sie schneidet nicht ab. */
+#app {
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr; height: 100%;
+}
 
 /* ---------------------------------------------------------------- Knöpfe */
 
@@ -60,6 +81,8 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .knopf:disabled { opacity: .42; cursor: default; }
 .knopf:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
 button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; }
+/* Auf der blauen Kopfleiste wäre derselbe Ring nicht zu sehen – dort in Weiß. */
+.kopf :is(button, input):focus-visible { outline-color: #fff; }
 .knopf.primaer { background: var(--thw); border-color: var(--thw); color: #fff; }
 .knopf.primaer:hover:not(:disabled) { background: var(--thw-hell); border-color: var(--thw-hell); }
 .knopf.gefahr { color: var(--gefahr); border-color: #e6c2c2; }
@@ -67,7 +90,6 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 .knopf.breit { width: 100%; }
 .knopf.klein { padding: 4px 9px; font-size: 12px; }
 .knopf.aus { opacity: .5; pointer-events: none; }
-.knopf.sekundaer { background: transparent; border-color: transparent; }
 
 .mini-knopf {
   border: 1px solid var(--linie); background: var(--flaeche); border-radius: 4px;
@@ -80,10 +102,11 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 /* ---------------------------------------------------------------- Kopfleiste */
 
 .kopf {
-  display: flex; align-items: center; gap: 14px; padding: 0 12px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 5px 14px;
+  padding: 5px 12px; min-height: var(--kopf-hoehe);
   background: var(--thw); color: #fff; box-shadow: var(--schatten); z-index: 900;
 }
-.marke { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.marke { display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0; }
 .marke-zeichen { width: 28px; height: 28px; border-radius: 5px; }
 .marke-text { font-weight: 700; letter-spacing: .1px; font-size: 15px; }
 .marke-text span { font-weight: 400; opacity: .85; }
@@ -96,9 +119,35 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 }
 .projektname::placeholder { color: rgba(255,255,255,.6); }
 .projektname:focus { background: rgba(255,255,255,.2); outline-color: #fff; }
-.speicherstatus { font-size: 11.5px; opacity: .78; white-space: nowrap; }
+.speicherstatus {
+  font-size: 12px; opacity: .78; white-space: nowrap;
+  background: none; border: 1px solid transparent; border-radius: var(--radius-klein);
+  color: inherit; padding: 3px 7px; cursor: pointer; font-weight: 550;
+}
+.speicherstatus:hover { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.28); opacity: 1; }
 .speicherstatus.offen { opacity: 1; }
+/* Nie als Datei gesichert, obwohl schon ernsthaft geplant wurde */
+.speicherstatus.mahnung {
+  opacity: 1; color: #ffe08a; border-color: rgba(255,224,138,.45); background: rgba(255,224,138,.12);
+}
+.speicherstatus.mahnung:hover { background: rgba(255,224,138,.24); border-color: rgba(255,224,138,.7); }
 .speicherstatus.fehler { color: #ffd0d0; font-weight: 700; opacity: 1; }
+
+/* ---------------------------------------------------------------- Speicherband */
+
+.speicherband {
+  display: flex; align-items: center; gap: 12px; margin: 0;
+  padding: 5px 12px; min-width: 0;
+  background: var(--thw-blass); border-bottom: 1px solid var(--linie);
+  font-size: 12.5px; color: var(--text-schwach);
+}
+.speicherband .sb-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* margin explizit: .klein bringt für Fließtext eine Außenkante mit */
+.speicherband .knopf { margin: 0 0 0 auto; flex-shrink: 0; }
+/* Trägt in der Schmalansicht den Sicherungsstand, den die Kopfzeile dort nicht
+   mehr in Worten unterbringt. Breit bleibt der Kopfzeilen-Status zuständig –
+   deshalb bekommt das Band den Mahnton auch nur schmal, nicht doppelt. */
+.sb-stand { display: none; }
 
 .kopf-tasten { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .kopf-tasten .knopf {
@@ -106,7 +155,6 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 }
 .kopf-tasten .knopf:hover:not(:disabled) { background: rgba(255,255,255,.24); border-color: rgba(255,255,255,.4); }
 .kopf-tasten .knopf:disabled { opacity: .35; }
-.kopf-tasten .knopf.sekundaer { display: none; }
 
 .menu-halter { position: relative; }
 .menu {
@@ -125,14 +173,26 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 
 /* ---------------------------------------------------------------- Layout */
 
-.hauptbereich { display: grid; grid-template-columns: var(--seite-breite) 1fr; min-height: 0; }
+.hauptbereich { position: relative; display: grid; grid-template-columns: var(--seite-breite) 1fr; min-height: 0; }
 body.seite-zu .hauptbereich { grid-template-columns: 0 1fr; }
 body.seite-zu .seite { display: none; }
 
 .seite {
-  display: flex; flex-direction: column; min-height: 0;
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
   background: var(--flaeche); border-right: 1px solid var(--linie);
 }
+
+/* Umschalter Liste ↔ Karte – nur in der Schmalansicht, dort aber immer da.
+   Er liegt im Hauptbereich, nicht im Kartenbereich: der wird ausgeblendet,
+   solange die Liste davorliegt, und darf den Rückweg nicht mitnehmen. */
+.ansicht-wechsel { display: none; }
+.ansicht-wechsel .aw {
+  border: 0; background: var(--flaeche); color: var(--text-schwach);
+  font-size: 13.5px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  border-top: 3px solid transparent;
+}
+.ansicht-wechsel .aw.aktiv { color: var(--thw); border-top-color: var(--thw); background: var(--thw-blass); }
 
 .reiter { display: flex; border-bottom: 1px solid var(--linie); background: var(--flaeche-2); }
 .reiter button {
@@ -145,12 +205,20 @@ body.seite-zu .seite { display: none; }
 
 .reiter-inhalt { display: none; flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
 .reiter-inhalt.aktiv { display: block; }
+/* Im Streckenreiter trägt die Liste die Polsterung am Fuß, nicht der
+   Scrollbereich: sonst bliebe unter der angehefteten Ausgabezeile ein Spalt
+   von 12 px stehen, durch den der Karteninhalt durchscrollt. */
+.reiter-inhalt[data-inhalt="strecken"] { padding-bottom: 0; }
+#strecken-liste { padding-bottom: 12px; }
 .seite-kopf { margin-bottom: 10px; }
 
 .summe {
   display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 10px; margin-bottom: 10px;
   background: var(--thw-blass); border-radius: var(--radius); font-size: 12.5px; color: #24344f;
 }
+/* Ohne Strecken steht in der Summenzeile nichts – dann ist auch kein blaues
+   Band zu zeigen, das über der leeren Liste nichts zusammenfasst. */
+.summe:empty { display: none; }
 .summe b { color: var(--thw); }
 
 .leer {
@@ -165,9 +233,12 @@ body.seite-zu .seite { display: none; }
 
 .liste { display: flex; flex-direction: column; gap: 8px; }
 
+/* Kein overflow:hidden: es macht aus jeder Karte einen eigenen Scrollcontainer
+   und nimmt der Ausgabezeile darin die Wirkung von position:sticky. Die runden
+   Ecken tragen deshalb Kopfzeile und Ausgabezeile selbst. */
 .eintrag {
   border: 1px solid var(--linie); border-radius: var(--radius); background: var(--flaeche);
-  overflow: hidden; transition: border-color .12s, box-shadow .12s;
+  transition: border-color .12s, box-shadow .12s;
 }
 .eintrag:hover { border-color: var(--linie-stark); }
 .eintrag.offen { border-color: var(--thw); box-shadow: 0 0 0 1px var(--thw); }
@@ -175,6 +246,7 @@ body.seite-zu .seite { display: none; }
 .eintrag-kopf {
   display: flex; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer;
   background: var(--flaeche);
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
 }
 .eintrag.offen .eintrag-kopf { background: var(--thw-blass); }
 .farbpunkt {
@@ -183,10 +255,29 @@ body.seite-zu .seite { display: none; }
 }
 .mini-symbol { display: flex; align-items: center; flex-shrink: 0; width: 28px; }
 .mini-symbol svg { display: block; max-width: 28px; height: auto; }
-.eintrag-name { flex: 1; font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Der Name ist ein Knopf, damit die Zeile auch mit der Tabulatortaste zu öffnen
+   ist. Anklickbar ist die ganze Kopfzeile – der Handler sitzt auf ihr. */
+.eintrag-name {
+  flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: left;
+  color: inherit; font: inherit; font-weight: 600; font-size: 13.5px; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .eintrag-wert { font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--text-schwach); }
-.augen { border: 0; background: none; cursor: pointer; color: var(--text-schwach); font-size: 13px; padding: 2px 4px; }
+.augen {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  border: 0; background: none; cursor: pointer; color: var(--text-schwach); padding: 3px 4px;
+}
+.augen svg { display: block; }
 .augen:hover { color: var(--thw); }
+
+/* Ausgeblendet heißt: auf der Karte nicht vorhanden. Das steht nicht nur im
+   Symbol des Schalters, sondern an der Zeile selbst – Farbe und Name treten
+   zurück, wie das Element auf der Karte. */
+.eintrag.verborgen .eintrag-name,
+.eintrag.verborgen .eintrag-wert { color: var(--text-schwach); }
+.eintrag.verborgen .farbpunkt,
+.eintrag.verborgen .mini-symbol { opacity: .4; }
+.eintrag.verborgen .augen { color: var(--warnung); }
 
 .eintrag-zeile {
   display: flex; gap: 12px; padding: 0 10px 9px 32px; font-size: 12px; color: var(--text-schwach);
@@ -198,8 +289,8 @@ body.seite-zu .seite { display: none; }
   background: var(--flaeche-2); border: 1px solid var(--linie); border-radius: var(--radius-klein);
   padding: 6px 4px; text-align: center;
 }
-.kennzahlen .kz span { display: block; font-size: 10.5px; color: var(--text-schwach); text-transform: uppercase; letter-spacing: .3px; }
-.kennzahlen .kz b { display: block; font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 1px; }
+.kennzahlen .kz span { display: block; font-size: 11px; color: var(--text-schwach); text-transform: uppercase; letter-spacing: .3px; }
+.kennzahlen .kz b { display: block; font-size: 13.5px; font-variant-numeric: tabular-nums; margin-top: 1px; }
 
 /* ---------------------------------------------------------------- Felder */
 
@@ -225,6 +316,30 @@ body.seite-zu .seite { display: none; }
 }
 .feld-paar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .feld-dreier { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+/* Bricht eine Beschriftung um, dürfen die Eingaben nicht gegeneinander verrutschen */
+.feld-paar, .feld-dreier { align-items: end; }
+.feld.gesperrt { opacity: .5; }
+.feld.gesperrt input { background: var(--flaeche-2); cursor: not-allowed; }
+
+/* -- Ergebnis der Querschnittsrechnung: ein Wert trägt die Aussage,
+   die Randbedingungen stehen kleiner darunter. */
+.strom-ergebnis {
+  border: 1px solid var(--linie); border-left: 3px solid var(--thw);
+  border-radius: var(--radius-klein); background: var(--flaeche-2); padding: 8px 10px;
+}
+.se-kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.se-titel { font-size: 11.5px; font-weight: 600; color: var(--text-schwach); }
+.se-wert { font-size: 20px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--thw); }
+.se-zeilen {
+  display: grid; grid-template-columns: 1fr; gap: 2px 10px;
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--linie);
+}
+.se-zeilen span { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; }
+.se-zeilen i { font-style: normal; font-size: 11.5px; color: var(--text-schwach); }
+.se-zeilen b { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.se-fuss { margin: 6px 0 0; font-size: 11px; line-height: 1.35; color: var(--text-schwach); }
+.se-leer { margin: 0; font-size: 12.5px; color: var(--text-schwach); }
+.se-leer.warnung { color: var(--warnung); font-weight: 600; }
 
 .farbreihe { display: flex; flex-wrap: wrap; gap: 5px; }
 .farbe {
@@ -245,7 +360,41 @@ body.seite-zu .seite { display: none; }
 .koord-hinweis { line-height: 1.5; }
 
 .tastenreihe { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.tastenreihe.ausgabe { padding-top: 10px; border-top: 1px solid var(--linie); }
+
+/* Der Bauauftrag ist das Ergebnis der ganzen Eingabe darüber – er bleibt am
+   unteren Rand der geöffneten Streckenkarte stehen, statt hinter Kennzahlen,
+   Stammdaten und Punktliste wegzuscrollen. Deckende Fläche und Oberkante:
+   darunter darf kein Text durchscheinen. Die negativen Seitenränder heben die
+   Polsterung des Kartenkörpers auf, damit die Trennlinie von Kante zu Kante
+   läuft; der negative Fußrand setzt die Zeile bündig auf die Kartenunterkante.
+   Schmal endet die Seitenleiste über dem Umschalter Liste/Karte – die Zeile
+   stößt an dessen Oberkante, sie liegt nicht darauf. */
+.tastenreihe.ausgabe {
+  position: sticky; bottom: 0; z-index: 5;
+  margin: 14px -10px -12px; padding: 10px;
+  background: var(--flaeche); border-top: 1px solid var(--linie);
+  border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px);
+  /* dieselbe gespiegelte Erhebung wie am Umschalter, im Kartenkörper aber
+     zurückgenommen: sie soll den Durchlauf zeigen, nicht die Zeile abheben */
+  box-shadow: 0 -2px 7px -4px rgba(16,32,56,.30);
+}
+/* Ohne zwei Punkte gibt es keinen Bauauftrag – der Grund steht neben dem
+   gesperrten Knopf, nicht in einem Tooltip, den ein Touchgerät nie zeigt. */
+.ausgabe-grund { flex: 1 1 100%; margin: 0; font-size: 12px; color: var(--text-schwach); }
+
+/* Rohdaten für andere Programme sind ein Nebenweg: kleine Knöpfe unter einem
+   Titel, der sagt, wofür sie gut sind. */
+.rohdaten { margin-top: 14px; }
+.rohdaten .tastenreihe { margin-top: 0; }
+
+/* Löschen ist die seltenste und einzige unumkehrbare Aktion der Karte:
+   zurückhaltend und abgesetzt, nicht in voller Breite neben dem Bauauftrag. */
+.streckenfuss { display: flex; justify-content: flex-end; margin-top: 14px; }
+
+/* Beim Weiterspringen mit der Tabulatortaste soll nichts hinter der
+   angehefteten Ausgabezeile landen – der Browser scrollt dann weit genug. */
+.eintrag-koerper :is(input, select, textarea, button),
+.eintrag-koerper .punktzeile { scroll-margin-bottom: 80px; }
 .mini-select {
   padding: 3px 4px; border: 1px solid var(--linie); border-radius: 4px;
   background: var(--flaeche); font-size: 11.5px; max-width: 100%;
@@ -275,17 +424,20 @@ body.seite-zu .seite { display: none; }
 .pz-art { flex: 1; min-width: 0; }
 .pz-name { width: 100%; }
 
-.pz-fuss { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.pz-fuss { display: flex; align-items: center; gap: 6px; }
+/* Löschknopf am rechten Rand, deutlich abgesetzt vom Zeigen-Knopf darüber */
+.pz-weg { flex-shrink: 0; margin-left: 6px; width: 26px; height: 26px; color: #a35252; border-color: #e6c2c2; }
 .pz-mass {
-  font-size: 11px; color: var(--text-schwach); font-variant-numeric: tabular-nums;
+  font-size: 11.5px; color: var(--text-schwach); font-variant-numeric: tabular-nums;
   white-space: nowrap; flex-shrink: 0;
 }
 .pz-summe { color: var(--text); font-weight: 600; }
 .pz-start { font-style: italic; }
 
 .koord-knopf {
+  flex: 1 1 auto;
   border: 1px solid transparent; background: none; padding: 2px 4px; cursor: pointer;
-  border-radius: 3px; font-family: var(--mono); font-size: 10.5px; color: var(--text);
+  border-radius: 3px; font-family: var(--mono); font-size: 12px; color: var(--text);
   text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
 }
 .koord-knopf:hover { background: var(--flaeche); border-color: var(--thw-hell); color: var(--thw); }
@@ -315,20 +467,32 @@ body.seite-zu .seite { display: none; }
   font-size: 15px; line-height: 1;
 }
 
+/* Die Modusleiste sitzt an der unteren Kante, über Statusleiste und Maßstab:
+   oben teilt sie sich die Kante mit Werkzeugen und Kartenoptionen und stößt
+   je nach Fensterbreite mit ihnen zusammen, unten ist die Kante frei. Sie
+   steht dort neben der Koordinatenanzeige und – schmal – im Daumenbereich.
+   Beide Seitenkanten sind gesetzt: mit left:50% allein bliebe der Leiste nur
+   die halbe Breite als Spielraum, schmal wurde daraus eine hohe Säule. */
 .zeichen-hinweis {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 720;
+  position: absolute; z-index: 720;
+  left: 12px; right: 12px; margin: 0 auto;
+  bottom: calc(var(--sl-hoehe) + var(--wechsel-hoehe) + var(--karten-fuss) + 12px);
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
   background: var(--flaeche); border: 1px solid var(--thw); border-radius: var(--radius);
-  padding: 8px 12px; box-shadow: var(--schatten-stark); font-size: 12.5px; max-width: min(94%, 620px);
+  padding: 8px 12px; box-shadow: var(--schatten-stark); font-size: 12.5px;
+  max-width: min(620px, calc(100% - 24px));
 }
 .zeichen-hinweis .zh-text { color: var(--text); }
 .zeichen-hinweis[hidden] { display: none; }
 
+/* Der Abstand nach oben ist die gemessene Höhe der Leaflet-Zoomsteuerung plus
+   derselbe Rand von 12 px, den alle Kartenaufsätze zur Kante halten. Vorher
+   stand hier ein auf die Zoomsteuerung eingepasster Festwert – er wäre bei der
+   ersten Änderung an ihr falsch geworden. */
 .kartenoptionen {
-  position: absolute; top: 12px; right: 12px; z-index: 700; width: 214px;
+  position: absolute; top: calc(var(--karten-kopf) + 12px); right: 12px; z-index: 700; width: 214px;
   background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
   padding: 8px 10px; box-shadow: var(--schatten); display: flex; flex-direction: column; gap: 6px;
-  margin-top: 66px;
 }
 .ko-zeile { display: flex; align-items: center; gap: 7px; font-size: 12px; }
 .ko-zeile > span:first-child { color: var(--text-schwach); white-space: nowrap; }
@@ -338,21 +502,39 @@ body.seite-zu .seite { display: none; }
 .ko-haken input { accent-color: var(--thw); }
 
 .statusleiste {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 700;
-  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  position: absolute; left: 0; right: 0; bottom: var(--wechsel-hoehe); z-index: 700;
+  display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap;
   background: rgba(255,255,255,.94); backdrop-filter: blur(6px);
-  border-top: 1px solid var(--linie); padding: 5px 12px 5px; font-size: 12px;
+  border-top: 1px solid var(--linie); padding: 3px 10px; font-size: 12px;
 }
 .sl-koord { display: flex; align-items: baseline; gap: 6px; }
-.sl-titel { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-schwach); font-weight: 650; }
-.sl-wert { font-variant-numeric: tabular-nums; }
-.sl-hinweis { margin-left: auto; color: var(--text-schwach); font-size: 11.5px; }
+/* Die Leiste steht bei Tageslicht auf einem kleinen Schirm. Keine ihrer
+   Schriftgrößen fällt deshalb unter 11 px – auch die Rubrik nicht, die sagt,
+   welches Format man da gerade abliest. */
+.sl-titel { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-schwach); font-weight: 650; }
+/* Die Zahl, die über Funk durchgegeben wird – sie trägt die größte Schrift der Leiste */
+.sl-wert { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 550; }
+.sl-quelle { margin-left: auto; color: var(--text-schwach); font-size: 12px; }
+
+/* MGRS und GPS sind antippbar: ein Tipp legt die Angabe in die Zwischenablage */
+.sl-kopie {
+  position: relative; border: 1px solid transparent; border-radius: var(--radius-klein);
+  background: none; padding: 3px 7px; cursor: pointer; text-align: left;
+}
+.sl-kopie:hover { background: var(--flaeche); border-color: var(--thw-hell); }
+.sl-kopie:hover .sl-wert { color: var(--thw); }
 
 /* ---------------------------------------------------------------- Leaflet-Anpassungen */
 
 .leaflet-container { font-family: var(--schrift); }
 .leaflet-control-attribution { font-size: 10px; background: rgba(255,255,255,.82) !important; }
-.leaflet-bottom.leaflet-right { margin-bottom: 26px; }
+/* --sl-hoehe wird gemessen: die Statusleiste bricht schmal zweizeilig um und
+   verdeckte mit dem früheren Festwert die Maßstabsleiste. */
+.leaflet-bottom.leaflet-right { margin-bottom: calc(var(--sl-hoehe) + var(--wechsel-hoehe)); }
+.leaflet-bottom.leaflet-left { margin-bottom: var(--wechsel-hoehe); }
+/* Das Koordinaten-Popup lag mit den Kartenoptionen auf derselben Ebene und
+   verschwand dahinter – ausgerechnet beim Antippen einer Koordinate. */
+.leaflet-popup-pane { z-index: 800; }
 .leaflet-control-zoom a { color: var(--text) !important; }
 
 .fbp-label { background: none; border: 0; }
@@ -361,7 +543,7 @@ body.seite-zu .seite { display: none; }
 .seg-mass {
   background: rgba(255,255,255,.94); color: #101820; border: 1px solid var(--farbe, #555);
   border-left-width: 3px; border-radius: 3px; padding: 1px 5px;
-  font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums;
+  font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums;
   box-shadow: 0 1px 3px rgba(0,0,0,.22);
 }
 .seg-mass.vorschau { border-style: dashed; opacity: .95; }
@@ -374,7 +556,7 @@ body.seite-zu .seite { display: none; }
 }
 .strecken-mass b { font-size: 12px; color: #101820; }
 .strecken-mass .wert { font-size: 12.5px; font-weight: 700; color: var(--farbe); font-variant-numeric: tabular-nums; }
-.strecken-mass .zus { font-size: 10.5px; color: #59636f; font-variant-numeric: tabular-nums; }
+.strecken-mass .zus { font-size: 11px; color: #59636f; font-variant-numeric: tabular-nums; }
 .strecken-mass.aktiv { box-shadow: 0 0 0 2px rgba(0,51,153,.3), 0 2px 8px rgba(0,0,0,.22); }
 
 .fbp-punkt-icon { background: none; border: 0; }
@@ -407,7 +589,7 @@ body.seite-zu .seite { display: none; }
 .tz-wrap svg { display: block; }
 .tz-label {
   margin-top: 1px; background: rgba(255,255,255,.94); border-radius: 3px; padding: 0 4px;
-  font-size: 10.5px; font-weight: 650; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  font-size: 11px; font-weight: 650; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.25);
 }
 
 .fbp-tooltip {
@@ -512,22 +694,135 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 /* ---------------------------------------------------------------- Schmale Fenster */
 
 @media (max-width: 900px) {
-  :root { --seite-breite: 100%; }
+  :root {
+    --seite-breite: 100%;
+    --wechsel-hoehe: calc(52px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Die Kopfzeile gibt Platz frei, bis der Name der Planung lesbar bleibt –
+     er ist die Antwort auf „woran arbeite ich hier“. Rückgängig und Wiederholen
+     bleiben: auf dem Telefon gibt es kein Strg+Z. */
+  .kopf { gap: 4px 10px; padding: 5px 8px; }
+  .kopf-tasten { gap: 4px; }
+  .kopf-tasten .knopf { padding: 7px 9px; }
+  .projektname { min-width: 120px; }
+  /* Der Sicherungsstand steht schmal im Band darunter – dort in ganzen Worten
+     statt als Punkt, den niemand deuten kann. */
+  .speicherstatus { display: none; }
+  .sb-stand { display: inline; flex-shrink: 0; }
+  .speicherband.mahnung { background: #fdf3e0; border-bottom-color: #e6c893; color: #7a4b00; }
+  .speicherband.mahnung .sb-stand { font-weight: 650; }
+  .speicherband.mahnung .knopf { border-color: #c99a3d; color: #7a4b00; }
+
   /* Seitenleiste und Karte teilen sich den Platz nicht, sie lösen einander ab.
      Ohne .seite-zu liegt die Seitenleiste über der Karte, mit .seite-zu die Karte frei. */
   .hauptbereich, body.seite-zu .hauptbereich { grid-template-columns: 1fr; grid-template-rows: 1fr; }
   .seite {
-    position: absolute; inset: var(--kopf-hoehe) 0 0 0;
+    /* füllt den Hauptbereich über dem Umschalter – Kopfzeile und Band bleiben sichtbar */
+    position: absolute; inset: 0 0 var(--wechsel-hoehe) 0;
     z-index: 1100;   /* über den Leaflet-Bedienelementen (die liegen auf 1000) */
     border-right: 0; border-top: 1px solid var(--linie);
   }
   body.seite-zu .seite { display: none; }
-  /* Karte samt Bedienelementen ruhigstellen, solange die Seitenleiste davor liegt */
+  /* Karte samt Bedienelementen ruhigstellen, solange die Seitenleiste davor liegt.
+     Der Rückweg liegt bewusst außerhalb – siehe .ansicht-wechsel. */
   body:not(.seite-zu) .kartenbereich { visibility: hidden; }
   body.seite-zu .kartenbereich { visibility: visible; }
-  .kopf-tasten .knopf.sekundaer { display: inline-flex; }
-  .kartenoptionen { width: 176px; margin-top: 60px; font-size: 11px; }
-  .werkzeuge .wz span:not(.wz-icon) { display: none; }
-  .werkzeuge { flex-direction: row; }
-  .sl-dez, .sl-hinweis { display: none; }
+
+  .ansicht-wechsel {
+    display: grid; grid-template-columns: 1fr 1fr;
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 1300;
+    height: var(--wechsel-hoehe); padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--flaeche); border-top: 1px solid var(--linie);
+    box-shadow: var(--schatten-oben);
+  }
+
+  .kartenoptionen { width: 176px; font-size: 11px; }
+
+  /* Werkzeuge in den Daumenbereich, mit Beschriftung: vier Glyphen allein sind
+     nicht auseinanderzuhalten, und title-Tooltips zeigt kein Touchgerät an. */
+  .werkzeuge {
+    top: auto; bottom: calc(var(--sl-hoehe) + var(--wechsel-hoehe) + var(--karten-fuss) + 12px);
+    left: 12px; right: auto; width: min(calc(100% - 24px), 340px);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  }
+  /* Im Zeichen- oder Setzmodus zählt nur die Modusleiste; die Werkzeugleiste
+     würde denselben Platz beanspruchen. */
+  body.modus-aktiv .werkzeuge { display: none; }
+
+  .sl-dez { display: none; }
+}
+
+/* Unterhalb dieser Breite geht der Wortmarke der Platz aus, den der Name der
+   Planung braucht: 28er Marke + Namensfeld ab 200 px + Tasten passen bis hier. */
+@media (max-width: 520px) {
+  .marke-text { display: none; }
+}
+
+@media (max-width: 600px) {
+  /* Der Hinweis darf umbrechen statt abgeschnitten zu werden – auf kleinen
+     Geräten ist die Aussage wichtiger als die eine Zeile. */
+  .speicherband { flex-wrap: wrap; gap: 4px 10px; }
+  .speicherband .sb-text { white-space: normal; flex: 1 1 100%; }
+  /* Stand und Sicherungsknopf teilen sich die zweite Zeile */
+  .sb-stand { flex: 1 1 auto; min-width: 0; }
+  .speicherband .knopf { margin: 0 0 0 auto; }
+  /* Nur MGRS in die Leiste: die GPS-Angabe passt daneben nicht mehr in eine
+     Zeile und steht beim Antippen ohnehin im Popup und in der Punktliste. */
+  #sl-gps-kopie { display: none; }
+  /* Gitterangabe und Herkunftszeile sollen in eine Zeile passen */
+  .statusleiste { padding: 3px 8px; gap: 4px 10px; }
+  /* Vier Kennzahlen nebeneinander lassen „309,67 km“ umbrechen – zu zweit
+     stehen die Zahlen, auf die es ankommt, ungebrochen und größer da. */
+  .kennzahlen { grid-template-columns: 1fr 1fr; }
+}
+
+/* ------------------------------------------------- Bedienung ohne Maus
+   Nur für grobe Zeiger (Finger, Handschuh, Stift). Die Maus-Ansicht behält
+   ihre Dichte; hier wachsen die Trefferflächen auf ~44 px. */
+
+@media (pointer: coarse) {
+  /* Sichtbar bleiben die Knöpfe kompakt, die Trefferzone reicht auf 44 px –
+     bis an die Lücke zum Nachbarn heran, nie darüber hinaus. */
+  .mini-knopf { position: relative; width: 36px; height: 36px; }
+  .mini-knopf::after { content: ''; position: absolute; inset: -4px; }
+  .pz-weg { width: 38px; height: 38px; }
+  .pz-weg::after { inset: -3px; }
+  .farbe { position: relative; }
+  .farbe::after { content: ''; position: absolute; inset: -4px; }
+  .augen { position: relative; padding: 8px 10px; font-size: 15px; }
+  .augen::after { content: ''; position: absolute; inset: -5px; }
+  .farbe { width: 36px; height: 36px; }
+  .farbreihe { gap: 8px; }
+  .knopf { padding: 10px 14px; min-height: 44px; }
+  /* Nur senkrecht aufziehen: waagerecht stünden die Zonen benachbarter Knöpfe
+     ineinander, und „Fertig“ und „Abbrechen“ dürfen sich nicht überlappen. */
+  .knopf.klein { position: relative; padding: 8px 12px; min-height: 40px; font-size: 12.5px; }
+  .knopf.klein::after { content: ''; position: absolute; inset: -2px 0; }
+  .tastenreihe { gap: 8px; }
+  .zeichen-hinweis { gap: 12px; }
+  .reiter button { padding: 13px 6px; font-size: 13px; }
+  .wz { padding: 12px 10px; }
+  /* Breite Felder: nur die Höhe fehlt zur Trefferfläche */
+  .mini-select { padding: 10px 6px; font-size: 12.5px; }
+  .mini-input { padding: 10px 8px; font-size: 12.5px; }
+  .koord-knopf { padding: 10px 6px; }
+  .sl-kopie::after { content: ''; position: absolute; inset: -9px -4px; }
+  .menu button { padding: 11px 12px; }
+  .palette-knopf { min-height: 108px; }
+}
+
+/* ------------------------------------------------- Bewegung zurücknehmen
+   Wer Bewegung abgestellt hat, bekommt sie auch von den Übergängen der
+   Oberfläche und von der Zoomanimation der Karte nicht. Die Zustände bleiben,
+   nur der Weg dorthin entfällt. */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .knopf:active:not(:disabled) { transform: none; }
 }

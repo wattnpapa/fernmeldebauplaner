@@ -26,6 +26,8 @@ und keinen Datenabfluss: alle Planungen liegen im lokalen Speicher des Browsers.
 - Trassenlänge als geodätische Direktstrecke (Vincenty auf WGS84) zwischen den Punkten
 - Kabelbedarf = Trassenlänge + Bauzuschlag
 - Anzahl benötigter Trommeln, Muffen, Querungen und ein Richtwert für die Bauzeit
+- Bei Stromleitungen: Leiterquerschnitt aus angeschlossener Last (kW oder A), Netzform
+  (230 V 1~, 400 V 3~, 24 V, 12 V), Leistungsfaktor und zulässigem Spannungsfall
 
 **Taktische Zeichen**
 - 41 Symbole, angelehnt an DV 102 / BBK, in fünf Kategorien: Fernmeldetechnik,
@@ -138,6 +140,7 @@ css/print.css         Bauauftrag: Vorschau und Ausdruck
 js/app.js             Zusammenbau, Bedienung, Tastatur
 js/state.js           Datenmodell, Projektverwaltung, LocalStorage, Undo
 js/geo.js             Entfernungen (Vincenty), MGRS/UTM/GPS, Eingabe-Parser
+js/strom.js           Querschnitt von Stromleitungen aus Last und Länge
 js/map.js             Leaflet-Karte und Basiskarten
 js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
 js/symbols.js         Taktische Zeichen (SVG)
@@ -161,6 +164,13 @@ nicht die tatsächliche Kabellänge im Gelände. Geländeverlauf, Umgehungen, Re
 Muffen und Endverzweigern deckt der **Bauzuschlag** ab (Vorgabe 15 %, bei LWL 20 %).
 Wer genauer plant, setzt mehr Trassenpunkte. Der Richtwert für die Bauzeit ist eine
 grobe Planungsgröße aus Bedarfslänge geteilt durch die eingestellte Verlegeleistung.
+
+Der **Leiterquerschnitt** von Stromleitungen ist ein Planungsrichtwert: gerechnet für
+Kupfer über die Leitungslänge einschließlich Bauzuschlag, maßgebend ist der zulässige
+Spannungsfall oder die Strombelastbarkeit – je nachdem, was den größeren Querschnitt
+verlangt. Die Belastbarkeit gilt für drei belastete Adern frei in Luft bei 30 °C;
+aufgerollte Leitungsroller tragen deutlich weniger. Die verbindliche Auslegung und die
+Prüfung der Anlage obliegen einer Elektrofachkraft.
 
 Die taktischen Zeichen sind an DV 102 und die BBK-Zeichenvorschrift angelehnt und für
 die Planung gedacht. Für förmliche Lagedarstellungen ist die jeweils gültige

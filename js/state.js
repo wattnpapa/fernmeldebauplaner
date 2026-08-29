@@ -1,8 +1,14 @@
 // state.js – Datenmodell, Projektverwaltung, LocalStorage, Undo
 
+import { neueStromangabe } from './strom.js';
+
 export const SCHEMA = 1;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
+const KEY_DATEI    = 'fbp.dateisicherung.v1';
+
+/** Grobes Kontingent, das Browser je Website für den localStorage bereitstellen */
+export const SPEICHER_KONTINGENT = 5 * 1024 * 1024;
 
 export const KABELTYPEN = [
   { id: 'fk2',    name: 'Feldkabel 2-adrig (FK 1×2)', kurz: 'FK 1×2',  trommel: 500,  zuschlag: 15, leistung: 900 },
@@ -82,6 +88,7 @@ export function neueStrecke(projekt) {
     zuschlag: k.zuschlag,
     trommellaenge: k.trommel,
     verlegeleistung: k.leistung,
+    strom: neueStromangabe(),
     trupp: '',
     bemerkung: '',
     sichtbar: true,
@@ -228,6 +235,10 @@ class Store {
   }
 
   starten() {
+    /* Der Erststart-Schalter des früheren Begrüßungsdialogs. Der Dialog ist
+       fort; in Browsern, die ihn einmal gesehen haben, liegt der Schlüssel
+       noch. Er wird beim nächsten Start still weggeräumt. */
+    try { localStorage.removeItem('fbp.begruessung'); } catch (e) { /* ohne Belang */ }
     const alle = ladeAlle();
     const aktiv = localStorage.getItem(KEY_AKTIV);
     if (aktiv && alle[aktiv]) this.projekt = migrieren(alle[aktiv]);
@@ -264,6 +275,39 @@ export function speicherBelegung() {
   try { return (localStorage.getItem(KEY_PROJEKTE) || '').length * 2; } catch (e) { return 0; }
 }
 
+// ---------------------------------------------------------------- Dateisicherung
+
+/* Wann eine Planung zuletzt als Datei gesichert wurde. Bewusst außerhalb des
+   Projekts abgelegt: der Zeitpunkt darf nicht mit Rückgängig verschwinden und
+   gehört nicht in die exportierte Datei. Fehlt der Eintrag – bei allen
+   Bestandsplanungen –, gilt „noch nie gesichert“. */
+
+function ladeDateisicherungen() {
+  try { return JSON.parse(localStorage.getItem(KEY_DATEI) || '{}') || {}; } catch (e) { return {}; }
+}
+
+/** ISO-Zeitpunkt der letzten Dateisicherung oder null */
+export function dateisicherung(pid) {
+  return ladeDateisicherungen()[pid] || null;
+}
+
+/** Dateisicherung vermerken (wird beim Export der Planungsdatei aufgerufen) */
+export function dateisicherungVermerken(pid) {
+  try {
+    const alle = ladeDateisicherungen();
+    alle[pid] = new Date().toISOString();
+    localStorage.setItem(KEY_DATEI, JSON.stringify(alle));
+  } catch (e) { /* ohne Vermerk gilt weiter „nie gesichert“ – die sichere Seite */ }
+}
+
+/** Enthält die Planung genug Arbeit, dass ein Verlust weh täte?
+ *  Maßstab sind fertig gezeichnete Strecken; eine Strecke mit einem einzelnen
+ *  Punkt ist ein Versehen, kein Planungsstand. */
+export function istGehaltvoll(p) {
+  if (!p) return false;
+  return p.strecken.filter(s => (s.punkte || []).length >= 2).length >= 2;
+}
+
 /** Ältere/fremde Projektdateien auf das aktuelle Schema heben */
 export function migrieren(p) {
   const v = neuesProjekt(p.name || 'Import');
@@ -273,11 +317,15 @@ export function migrieren(p) {
     kopf: { ...v.kopf, ...(p.kopf || {}) },
     ansicht: { ...v.ansicht, ...(p.ansicht || {}) },
     optionen: { ...v.optionen, ...(p.optionen || {}) },
-    strecken: (p.strecken || []).map(s => ({
-      ...neueStrecke({ strecken: [] }), ...s,
-      id: s.id || id(),
-      punkte: (s.punkte || []).map(pt => ({ ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id() }))
-    })),
+    strecken: (p.strecken || []).map(s => {
+      const v = neueStrecke({ strecken: [] });
+      return {
+        ...v, ...s,
+        id: s.id || id(),
+        strom: { ...v.strom, ...(s.strom || {}) },
+        punkte: (s.punkte || []).map(pt => ({ ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id() }))
+      };
+    }),
     zeichen: (p.zeichen || []).map(z => ({ ...neuesZeichen(z.lat, z.lng), ...z, id: z.id || id() }))
   };
   out.id = p.id || id();

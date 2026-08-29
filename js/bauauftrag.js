@@ -5,6 +5,8 @@ import { StreckenLayer, kennzahlen, segmentLaengen, kumuliert, escapeHtml } from
 import { ZeichenLayer } from './zeichen.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
+import { querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText } from './strom.js';
+import { hinweis } from './ui.js';
 
 const FORMATE = { a4: [210, 297], a3: [297, 420] };
 const KEY = 'fbp.druck.v1';
@@ -29,12 +31,19 @@ let aktiv = null;   // {wurzel, karten:[], opt, sid}
 
 export function bauauftragOffen() { return !!aktiv; }
 
+/** Das für den Bauauftrag gesetzte @page-Format wieder aufheben.
+ *  Ohne das bliebe z. B. A3 quer für jeden weiteren Druck im selben Tab stehen. */
+export function entferneSeitenformat() {
+  document.getElementById('druck-seitenformat')?.remove();
+}
+
 export function schliesseBauauftrag() {
   if (!aktiv) return;
   aktiv.karten.forEach(k => { try { k.remove(); } catch (e) {} });
   aktiv.wurzel.remove();
   document.body.classList.remove('druckansicht');
   window.removeEventListener('resize', aktiv.anpassen);
+  entferneSeitenformat();
   aktiv = null;
 }
 
@@ -43,7 +52,7 @@ export function oeffneBauauftrag(sid) {
   const strecke = store.strecke(sid);
   if (!strecke) return;
   if (strecke.punkte.length < 2) {
-    alert('Für einen Bauauftrag braucht die Strecke mindestens zwei Punkte.');
+    hinweis('Für den Bauauftrag werden mindestens zwei Trassenpunkte gebraucht.', 'warnung');
     return;
   }
 
@@ -51,33 +60,47 @@ export function oeffneBauauftrag(sid) {
   const wurzel = document.createElement('div');
   wurzel.id = 'druck';
   wurzel.innerHTML = `
-    <div class="druck-steuerung" role="toolbar" aria-label="Druckeinstellungen">
+    <div class="druck-steuerung" role="group" aria-label="Druckeinstellungen">
       <div class="ds-titel">Bauauftrag · <b>${escapeHtml(strecke.name)}</b></div>
       <div class="ds-felder"></div>
       <div class="ds-tasten">
         <button class="knopf" data-akt="schliessen">Schließen</button>
-        <button class="knopf primaer" data-akt="drucken">Drucken / Als PDF speichern</button>
+        <div class="ds-drucken">
+          <button class="knopf primaer" data-akt="drucken" aria-describedby="ds-format">Drucken / Als PDF speichern</button>
+          <p class="ds-format" id="ds-format"></p>
+        </div>
       </div>
     </div>
     <div class="druck-buehne"><div class="druck-doku"></div></div>`;
   document.body.appendChild(wurzel);
   document.body.classList.add('druckansicht');
 
+  /* Neun gleichrangige Bedienelemente in einer Reihe waren nicht zu überblicken.
+     Sie stehen jetzt in drei benannten Gruppen, die sich am Ergebnis orientieren:
+     das Papier, was auf dem Kartenblatt liegt, und was das Datenblatt füllt –
+     Punkttabelle und Unterschriften sind es auch, die das zweite Blatt erzeugen. */
   const felder = wurzel.querySelector('.ds-felder');
   felder.append(
-    auswahl('Format', 'format', [['a4', 'A4'], ['a3', 'A3']], opt, neuAufbau),
-    auswahl('Ausrichtung', 'ausrichtung', [['quer', 'Quer'], ['hoch', 'Hoch']], opt, neuAufbau),
-    auswahl('Farbe', 'farbe', [['farbe', 'Farbe'], ['sw', 'Schwarz-Weiß']], opt, neuAufbau),
-    haken('Punkttabelle', 'punkttabelle', opt, neuAufbau),
-    haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
-    haken('Andere Strecken', 'andereStrecken', opt, neuAufbau),
-    haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
-    haken('Unterschriften', 'unterschrift', opt, neuAufbau),
-    zoomFeld(opt, neuAufbau)
+    gruppe('Papier', [
+      auswahl('Format', 'format', [['a4', 'A4'], ['a3', 'A3']], opt, neuAufbau),
+      auswahl('Ausrichtung', 'ausrichtung', [['quer', 'Quer'], ['hoch', 'Hoch']], opt, neuAufbau),
+      auswahl('Farbe', 'farbe', [['farbe', 'Farbe'], ['sw', 'Schwarz-Weiß']], opt, neuAufbau)
+    ]),
+    gruppe('Kartenblatt', [
+      haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
+      haken('Andere Strecken', 'andereStrecken', opt, neuAufbau),
+      haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
+      zoomFeld(opt, neuAufbau)
+    ]),
+    gruppe('Datenblatt', [
+      haken('Punkttabelle', 'punkttabelle', opt, neuAufbau),
+      haken('Unterschriften', 'unterschrift', opt, neuAufbau)
+    ])
   );
 
   wurzel.querySelector('[data-akt="schliessen"]').onclick = schliesseBauauftrag;
   const druckKnopf = wurzel.querySelector('[data-akt="drucken"]');
+  const formatHinweis = wurzel.querySelector('#ds-format');
   druckKnopf.onclick = () => drucken(strecke, opt);
 
   aktiv = { wurzel, karten: [], opt, sid, anpassen: () => passeVorschauAn(wurzel, opt) };
@@ -85,6 +108,7 @@ export function oeffneBauauftrag(sid) {
 
   function neuAufbau() {
     speicherOptionen(opt);
+    formatHinweis.textContent = druckHinweisText(opt);
     aktiv.karten.forEach(k => { try { k.remove(); } catch (e) {} });
     aktiv.karten = [];
     aufbauen(wurzel.querySelector('.druck-doku'), strecke, opt, aktiv.karten, druckKnopf);
@@ -94,6 +118,28 @@ export function oeffneBauauftrag(sid) {
 }
 
 // ---------------------------------------------------------------- Bedienelemente
+
+/** Beschriftete Gruppe von Bedienelementen in der Steuerleiste.
+ *  Bewusst kein fieldset/legend: die Legende lässt sich in einem Flex-Kasten
+ *  nicht zuverlässig neben die Bedienelemente setzen. */
+let gruppenZaehler = 0;
+function gruppe(titel, teile) {
+  const el = document.createElement('div');
+  el.className = 'ds-gruppe';
+  el.setAttribute('role', 'group');
+  const tid = 'ds-gruppe-' + (++gruppenZaehler);
+  el.setAttribute('aria-labelledby', tid);
+  const t = document.createElement('span');
+  t.className = 'ds-gruppen-titel';
+  t.id = tid;
+  t.textContent = titel;
+  el.appendChild(t);
+  const box = document.createElement('div');
+  box.className = 'ds-gruppen-felder';
+  teile.forEach(x => box.appendChild(x));
+  el.appendChild(box);
+  return el;
+}
 
 function auswahl(titel, schluessel, werte, opt, aendern) {
   const el = document.createElement('label');
@@ -123,7 +169,7 @@ function haken(titel, schluessel, opt, aendern) {
 function zoomFeld(opt, aendern) {
   const el = document.createElement('div');
   el.className = 'ds-feld ds-zoom';
-  el.innerHTML = `<span>Kartenausschnitt</span>`;
+  el.innerHTML = `<span>Ausschnitt</span>`;
   const box = document.createElement('div');
   box.className = 'ds-zoomtasten';
   const minus = Object.assign(document.createElement('button'), { className: 'knopf klein', textContent: '−', title: 'Ausschnitt vergrößern' });
@@ -391,7 +437,12 @@ function kennzahlenHTML(k, s) {
     ['Querungen', String(k.querungen), 'zu sichern'],
     ['Richtwert Bauzeit', stundenText(k.bauzeitStunden), `bei ${s.verlegeleistung} m/h`]
   ];
-  return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>
+  // Bei Stromleitungen ist der Querschnitt die Zahl, die der Trupp mitnehmen muss
+  if (k.strom && k.strom.querschnitt) {
+    kacheln.push(['Querschnitt', querschnittText(k.strom.querschnitt),
+      `${stromText(k.strom.strom)} · ${k.strom.netz.kurz}`]);
+  }
+  return `<div class="bl-kennzahlen${kacheln.length > 7 ? ' mit-strom' : ''}">${kacheln.map(([t, w, u]) =>
     `<div class="kz"><span class="kz-titel">${t}</span><span class="kz-wert">${escapeHtml(w)}</span><span class="kz-unter">${escapeHtml(u)}</span></div>`
   ).join('')}</div>`;
 }
@@ -463,6 +514,20 @@ function materialHTML(s, k) {
     ['Masten / Hochführungen', String(s.punkte.filter(p => p.art === 'mast').length)],
     ['Richtwert Bauzeit', `${stundenText(k.bauzeitStunden)} bei ${s.verlegeleistung} m/h`]
   ];
+  const a = k.strom;
+  if (a) {
+    zeilen.push(
+      ['Netzform', a.netz.name],
+      ['Angeschlossene Last', `${leistungText(a.leistung)} · ${stromText(a.strom)}` +
+        (a.netz.gleich ? '' : ` (cos φ ${String(a.cosphi).replace('.', ',')})`)],
+      a.querschnitt
+        ? ['<b>Empfohlener Leiterquerschnitt</b>', `<b>${querschnittText(a.querschnitt)}</b>`]
+        : ['<b>Leiterquerschnitt</b>', '<b>Last zu groß – aufteilen</b>'],
+      ['Spannungsfall über die Leitung',
+        `${a.querschnitt ? prozentText(a.spannungsfallProzent) : '–'} (zulässig ${grenzText(a.grenze)})`],
+      ['Maßgebend für den Querschnitt', massgebendText(a)]
+    );
+  }
   return `<section class="bl-abschnitt bl-material">
     <h2>Materialbedarf und Ansatz</h2>
     <table class="tab-material"><tbody>${zeilen.map(([t, w]) =>
@@ -471,6 +536,10 @@ function materialHTML(s, k) {
       <span class="mf-titel">Zusätzliches Material / Werkzeug</span>
       <div class="mf-linien">${'<span></span>'.repeat(6)}</div>
     </div>
+    ${a ? `<p class="tab-fussnote mat-fussnote">Querschnitt als Planungsrichtwert für Kupferleitung
+      (drei belastete Adern, frei in Luft) über die Leitungslänge einschließlich Bauzuschlag.
+      Aufgerollte Leitungsroller tragen deutlich weniger Strom. Die verbindliche Auslegung
+      und die Prüfung der Anlage obliegen einer Elektrofachkraft.</p>` : ''}
   </section>`;
 }
 
@@ -558,6 +627,15 @@ function passeVorschauAn(wurzel, opt) {
   const platz = buehne.clientWidth - 48;
   const skala = Math.min(1, platz / breitePx);
   doku.style.setProperty('--vorschau-skala', skala.toFixed(4));
+}
+
+/* Der Druckdialog des Betriebssystems kennt die hier gewählten Einstellungen
+   nicht – er muss sie noch einmal gesagt bekommen. Der Satz dafür steht neben
+   dem Druckknopf und nicht in der Kurzanleitung, und er ändert sich mit. */
+function druckHinweisText(opt) {
+  const format = opt.format === 'a3' ? 'A3' : 'A4';
+  const lage = opt.ausrichtung === 'hoch' ? 'Hoch' : 'Quer';
+  return `Im Druckdialog: ${format} · ${lage} · Ränder „Keine“`;
 }
 
 function drucken(strecke, opt) {

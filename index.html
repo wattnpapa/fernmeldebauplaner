@@ -28,7 +28,12 @@
 
     <div class="kopf-projekt">
       <input id="projektname" class="projektname" type="text" aria-label="Name der Planung" placeholder="Name der Planung">
-      <span id="speicherstatus" class="speicherstatus" role="status">gespeichert</span>
+      <!-- Kein aria-live: die Beschriftung wechselt bei jedem Tastendruck zwischen
+           „wird gespeichert …“ und dem Sicherungsstand. Vorlesen ließe das zu einem
+           Dauerton werden; Meldungen, die wirklich zählen, laufen über die
+           Hinweisbox, die schon eine Live-Region ist. -->
+      <button type="button" id="speicherstatus" class="speicherstatus"
+              title="Planung als Datei sichern (.json)">gespeichert</button>
     </div>
 
     <div class="kopf-tasten">
@@ -49,17 +54,22 @@
           <button data-akt="hilfe">Kurzanleitung</button>
         </div>
       </div>
-      <button class="knopf sekundaer" id="btn-seite" title="Seitenleiste ein-/ausblenden" aria-label="Seitenleiste">☰</button>
     </div>
   </header>
+
+  <p class="speicherband" id="speicherband">
+    <span class="sb-text">Diese Planung liegt nur in diesem Browser.</span>
+    <span class="sb-stand" id="sb-stand"></span>
+    <button type="button" class="knopf klein" id="sb-sichern">Als Datei sichern</button>
+  </p>
 
   <div class="hauptbereich">
 
     <aside class="seite" id="seite">
       <nav class="reiter" role="tablist">
-        <button role="tab" class="aktiv" data-reiter="strecken">Strecken</button>
-        <button role="tab" data-reiter="zeichen">Taktische Zeichen</button>
-        <button role="tab" data-reiter="projekt">Projekt</button>
+        <button role="tab" class="aktiv" aria-selected="true" data-reiter="strecken">Strecken</button>
+        <button role="tab" aria-selected="false" data-reiter="zeichen">Taktische Zeichen</button>
+        <button role="tab" aria-selected="false" data-reiter="projekt">Planung</button>
       </nav>
 
       <section class="reiter-inhalt aktiv" data-inhalt="strecken">
@@ -113,18 +123,23 @@
       </div>
 
       <div class="statusleiste">
-        <div class="sl-koord">
+        <button type="button" class="sl-koord sl-kopie" id="sl-mgrs-kopie" title="MGRS-Gitterangabe kopieren">
           <span class="sl-titel">MGRS</span><span class="sl-wert mono" id="sl-mgrs">–</span>
-        </div>
-        <div class="sl-koord">
+        </button>
+        <button type="button" class="sl-koord sl-kopie" id="sl-gps-kopie" title="GPS-Koordinate kopieren">
           <span class="sl-titel">GPS</span><span class="sl-wert mono" id="sl-gps">–</span>
-        </div>
+        </button>
         <div class="sl-koord sl-dez">
           <span class="sl-titel">Dezimal</span><span class="sl-wert mono" id="sl-dez">–</span>
         </div>
-        <div class="sl-hinweis" id="sl-hinweis">Klick auf die Karte: Koordinate übernehmen</div>
+        <div class="sl-quelle" id="sl-quelle">Karte antippen für die Koordinate</div>
       </div>
     </main>
+
+    <nav class="ansicht-wechsel" id="ansicht-wechsel" aria-label="Ansicht wechseln">
+      <button type="button" class="aw aktiv" id="aw-liste" aria-pressed="true">Liste</button>
+      <button type="button" class="aw" id="aw-karte" aria-pressed="false">Karte</button>
+    </nav>
 
   </div>
 </div>

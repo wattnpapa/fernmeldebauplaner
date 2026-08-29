@@ -3,10 +3,14 @@
 import {
   store, KABELTYPEN, VERLEGEARTEN, PUNKTARTEN, FARBEN,
   neuesZeichen, punktartById, kabelById,
-  projektListe, speicherBelegung, id
+  projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
 import { formatLaenge, meter, toMGRS, toDDM, alleFormate, parseKoordinate } from './geo.js';
+import {
+  NETZFORMEN, LASTEINHEITEN, netzById,
+  querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText
+} from './strom.js';
 import { SYMBOLE, KATEGORIEN, ORGANISATIONEN, STAERKEN, symbolSVG, symbolById } from './symbols.js';
 import * as io from './io.js';
 import { oeffneBauauftrag } from './bauauftrag.js';
@@ -101,6 +105,28 @@ function schreib(fn) {
   store.aendern(fn, 'formular');
 }
 
+/* Sichtbar oder nicht ist ein Zustand, den man auf einen Blick erkennen muss,
+   ohne beide nebeneinander zu halten: dasselbe Auge, ausgeblendet
+   durchgestrichen – und dazu der zurückgenommene Zeilenton (.verborgen). */
+const AUGE_OFFEN =
+  `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+     <path d="M1.6 8S4 4.2 8 4.2 14.4 8 14.4 8 12 11.8 8 11.8 1.6 8 1.6 8Z"/>
+     <circle cx="8" cy="8" r="1.8"/></svg>`;
+const AUGE_ZU =
+  `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+     <path d="M1.6 8S4 4.2 8 4.2 14.4 8 14.4 8 12 11.8 8 11.8 1.6 8 1.6 8Z"/>
+     <circle cx="8" cy="8" r="1.8"/>
+     <path d="M2.7 13.3 13.3 2.7"/></svg>`;
+
+/** Schalter „auf der Karte zeigen“ – die Beschriftung nennt die Handlung */
+function augenKnopf(sichtbar) {
+  const was = sichtbar ? 'Auf der Karte ausblenden' : 'Auf der Karte einblenden';
+  return `<button type="button" class="augen" data-akt="sichtbar" title="${was}" aria-label="${was}"
+          >${sichtbar ? AUGE_OFFEN : AUGE_ZU}</button>`;
+}
+
 // ---------------------------------------------------------------- Strecken
 
 export function zeichneStreckenListe() {
@@ -116,10 +142,10 @@ export function zeichneStreckenListe() {
   }, { trasse: 0, bedarf: 0, trommeln: 0 });
 
   summe.innerHTML = p.strecken.length
-    ? `<span><b>${p.strecken.length}</b> Strecken</span>
+    ? `<span><b>${p.strecken.length}</b> ${p.strecken.length === 1 ? 'Strecke' : 'Strecken'}</span>
        <span>Trasse <b>${formatLaenge(ges.trasse)}</b></span>
        <span>Bedarf <b>${formatLaenge(ges.bedarf)}</b></span>
-       <span><b>${ges.trommeln}</b> Trommeln</span>`
+       <span><b>${ges.trommeln}</b> ${ges.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>`
     : '';
 
   if (!p.strecken.length) {
@@ -136,18 +162,21 @@ export function zeichneStreckenListe() {
 function streckenKarte(s) {
   const gewaehlt = ctx.sl.auswahl === s.id;
   const k = kennzahlen(s);
-  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : ''));
+  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') +
+    (s.sichtbar === false ? ' verborgen' : ''));
   karte.dataset.sid = s.id;
 
+  /* Der Handler sitzt auf der Kopfzeile, nicht auf einzelnen Feldern darin:
+     sonst tut ein Klick auf die Polsterung nichts, obwohl die ganze Zeile
+     anklickbar aussieht. Der Name ist zusätzlich ein Knopf – damit führt auch
+     die Tabulatortaste in die Strecke hinein. */
   const kopf = el('header', 'eintrag-kopf');
   kopf.innerHTML =
     `<span class="farbpunkt" style="--farbe:${s.farbe}"></span>
-     <span class="eintrag-name">${escapeHtml(s.name)}</span>
+     <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(s.name)}</button>
      <span class="eintrag-wert">${formatLaenge(k.trasse)}</span>
-     <button class="augen" title="Ein-/ausblenden" data-akt="sichtbar">${s.sichtbar === false ? '◌' : '◉'}</button>`;
-  kopf.querySelector('.eintrag-name').onclick = () => ctx.sl.waehle(gewaehlt ? null : s.id);
-  kopf.querySelector('.farbpunkt').onclick = () => ctx.sl.waehle(gewaehlt ? null : s.id);
-  kopf.querySelector('.eintrag-wert').onclick = () => ctx.sl.waehle(gewaehlt ? null : s.id);
+     ${augenKnopf(s.sichtbar !== false)}`;
+  kopf.onclick = () => ctx.sl.waehle(gewaehlt ? null : s.id);
   kopf.querySelector('[data-akt="sichtbar"]').onclick = e => {
     e.stopPropagation();
     store.aendern(() => { s.sichtbar = s.sichtbar === false; }, 'strecke');
@@ -156,7 +185,9 @@ function streckenKarte(s) {
 
   if (!gewaehlt) {
     karte.appendChild(el('div', 'eintrag-zeile',
-      `<span>${escapeHtml(k.kabel.kurz)}</span><span>${k.punkte} Punkte</span>
+      `<span>${escapeHtml(k.kabel.kurz)}${k.strom && k.strom.querschnitt
+          ? ' ' + escapeHtml(querschnittText(k.strom.querschnitt)) : ''}</span>
+       <span>${k.punkte} ${k.punkte === 1 ? 'Punkt' : 'Punkte'}</span>
        <span>Bedarf ${formatLaenge(k.bedarf)}</span>`));
     return karte;
   }
@@ -169,11 +200,15 @@ function streckenKarte(s) {
   kz.innerHTML = kennzahlenHTML(k);
   koerper.appendChild(kz);
 
+  /* Der Bauzuschlag verlängert die Leitung und damit den Spannungsfall –
+     die Querschnittsanzeige hängt an denselben Feldern und wird mit erneuert. */
+  let stromFrisch = () => {};
   const frisch = () => {
     const neu = kennzahlen(s);
     kz.innerHTML = kennzahlenHTML(neu);
     const kopfWert = karte.querySelector('.eintrag-wert');
     if (kopfWert) kopfWert.textContent = formatLaenge(neu.trasse);
+    stromFrisch();
   };
 
   // -- Stammdaten
@@ -226,13 +261,23 @@ function streckenKarte(s) {
     { typ: 'textarea', zeilen: 2 }));
   koerper.appendChild(g2);
 
+  // -- Stromversorgung (nur bei Stromleitungen)
+  if (s.kabeltyp === 'strom') {
+    const g3 = stromGruppe(s);
+    stromFrisch = g3.aktualisieren;
+    koerper.appendChild(g3.gruppe);
+  }
+
   // -- Punkte
   koerper.appendChild(punktTabelle(s, frisch));
 
-  // -- Aktionen
+  /* -- Aktionen, gestaffelt statt gleich laut:
+     bearbeiten (gleichrangig) · Rohdaten (leise) · Löschen (leise, selten)
+     und zuunterst die Ausgabezeile mit dem Bauauftrag – dem Ergebnis der
+     ganzen Eingabe darüber. Sie hängt am unteren Rand der Karte fest. */
   const tasten = el('div', 'tastenreihe');
   tasten.append(
-    knopf('Weiterzeichnen', () => ctx.weiterzeichnen(s.id), 'primaer'),
+    knopf('Weiterzeichnen', () => ctx.weiterzeichnen(s.id)),
     knopf('Auf Karte zeigen', () => { ctx.sl.zeigeStrecke(s.id); ctx.zurKarte?.(); }),
     knopf('Richtung umkehren', () => {
       store.aendern(() => {
@@ -258,16 +303,21 @@ function streckenKarte(s) {
   );
   koerper.appendChild(tasten);
 
-  const ausgabe = el('div', 'tastenreihe ausgabe');
-  ausgabe.append(
-    knopf('▤ Bauauftrag (PDF)', () => oeffneBauauftrag(s.id), 'primaer breit'),
-    knopf('CSV', () => io.csvExportieren(s.id)),
-    knopf('GPX', () => io.gpxExportieren(s.id)),
-    knopf('GeoJSON', () => io.geoJSONExportieren(s.id))
+  const daten = el('div', 'feldgruppe rohdaten');
+  daten.appendChild(el('h3', 'gruppen-titel', 'Daten für andere Programme'));
+  const datenTasten = el('div', 'tastenreihe');
+  datenTasten.append(
+    knopf('CSV', () => io.csvExportieren(s.id), 'klein'),
+    knopf('GPX', () => io.gpxExportieren(s.id), 'klein'),
+    knopf('GeoJSON', () => io.geoJSONExportieren(s.id), 'klein')
   );
-  koerper.appendChild(ausgabe);
+  daten.appendChild(datenTasten);
+  koerper.appendChild(daten);
 
-  const loeschen = knopf('Strecke löschen', () => {
+  /* Löschen ist selten und endgültig. Es bekommt die leiseste Stufe und
+     Abstand nach oben – nicht die volle Breite neben dem Bauauftrag. */
+  const entfernen = el('div', 'streckenfuss');
+  entfernen.appendChild(knopf('Strecke löschen', () => {
     dialog({
       titel: 'Strecke löschen',
       inhalt: `<p>Soll <b>${escapeHtml(s.name)}</b> mit ${s.punkte.length} Punkten wirklich gelöscht werden?</p>
@@ -281,8 +331,18 @@ function streckenKarte(s) {
           } }
       ]
     });
-  }, 'gefahr breit');
-  koerper.appendChild(loeschen);
+  }, 'gefahr klein'));
+  koerper.appendChild(entfernen);
+
+  const ausgabe = el('div', 'tastenreihe ausgabe');
+  const bauKnopf = knopf('▤ Bauauftrag (PDF)', () => oeffneBauauftrag(s.id), 'primaer breit');
+  ausgabe.appendChild(bauKnopf);
+  if (s.punkte.length < 2) {
+    bauKnopf.disabled = true;
+    ausgabe.appendChild(el('p', 'ausgabe-grund',
+      'Für den Bauauftrag werden mindestens zwei Trassenpunkte gebraucht.'));
+  }
+  koerper.appendChild(ausgabe);
 
   karte.appendChild(koerper);
   return karte;
@@ -300,6 +360,87 @@ function kennzahlenHTML(k) {
 function stundenKurz(h) {
   if (!isFinite(h) || h <= 0) return '–';
   return h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1).replace('.', ',')} h`;
+}
+
+/* Stromleitungen tragen eine Last. Aus ihr, der Leitungslänge und dem
+   zulässigen Spannungsfall folgt der Querschnitt – die Rechnung, die sonst
+   auf dem Zettel neben der Planung landet. Die Felder erscheinen nur bei der
+   Leitungsart „Stromleitung“; für LWL und Fernmeldekabel sind sie ohne Sinn. */
+function stromGruppe(s) {
+  const gruppe = el('div', 'feldgruppe');
+  gruppe.appendChild(el('h3', 'gruppen-titel', 'Stromversorgung und Querschnitt'));
+
+  const ergebnis = el('div', 'strom-ergebnis');
+  const aktualisieren = () => { ergebnis.innerHTML = stromErgebnisHTML(kennzahlen(s).strom); };
+
+  /* Bei Gleichstrom gibt es keinen Leistungsfaktor. Das Feld bleibt stehen und
+     wird gesperrt – so springt die Gruppe beim Umschalten nicht in der Höhe. */
+  const cosFeld = feld('Leistungsfaktor cos φ', s.strom.cosphi,
+    v => { schreib(() => { s.strom.cosphi = v; }); aktualisieren(); },
+    { typ: 'number', min: 0.3, max: 1, step: 0.05 });
+  const cosEingabe = cosFeld.querySelector('input');
+  const cosPflegen = () => {
+    const gleich = !!netzById(s.strom.netz).gleich;
+    cosEingabe.disabled = gleich;
+    cosFeld.classList.toggle('gesperrt', gleich);
+    cosFeld.title = gleich ? 'Bei Gleichstrom ohne Bedeutung' : '';
+  };
+  cosPflegen();
+
+  const oben = el('div', 'feld-paar');
+  oben.append(
+    feld('Netzform', s.strom.netz, v => {
+      schreib(() => { s.strom.netz = v; });
+      cosPflegen();
+      aktualisieren();
+    }, { typ: 'select', werte: NETZFORMEN.map(n => [n.id, n.name]) }),
+    cosFeld
+  );
+  gruppe.appendChild(oben);
+
+  const unten = el('div', 'feld-dreier');
+  unten.append(
+    feld('Last', s.strom.last, v => { schreib(() => { s.strom.last = v; }); aktualisieren(); },
+      { typ: 'number', min: 0, step: 0.5, platzhalter: 'z. B. 3,5' }),
+    feld('Einheit', s.strom.einheit, v => { schreib(() => { s.strom.einheit = v; }); aktualisieren(); },
+      { typ: 'select', werte: LASTEINHEITEN }),
+    feld('Zul. Spannungsfall', s.strom.spannungsfall,
+      v => { schreib(() => { s.strom.spannungsfall = v; }); aktualisieren(); },
+      { typ: 'number', min: 0.5, max: 20, step: 0.5, einheit: '%' })
+  );
+  gruppe.appendChild(unten);
+
+  aktualisieren();
+  gruppe.appendChild(ergebnis);
+  return { gruppe, aktualisieren };
+}
+
+function stromErgebnisHTML(a) {
+  if (!a) {
+    return `<p class="se-leer">Last eintragen – daraus ergibt sich der nötige
+            Leiterquerschnitt für diese Leitung.</p>`;
+  }
+  if (a.ueberLast) {
+    return `<p class="se-leer warnung">${escapeHtml(stromText(a.strom))} übersteigt den größten
+            Querschnitt der Tabelle. Last aufteilen oder höhere Spannung wählen.</p>`;
+  }
+  const zeilen = [
+    ['Betriebsstrom', stromText(a.strom)],
+    ['Leistung', leistungText(a.leistung)],
+    ['Spannungsfall', `${prozentText(a.spannungsfallProzent)} von ${grenzText(a.grenze)}`],
+    ['Maßgebend', massgebendText(a)]
+  ];
+  return `<div class="se-kopf">
+      <span class="se-titel">Empfohlener Querschnitt</span>
+      <b class="se-wert">${escapeHtml(querschnittText(a.querschnitt))}</b>
+    </div>
+    <div class="se-zeilen">${zeilen.map(([t, w]) =>
+      `<span><i>${t}</i><b>${escapeHtml(w)}</b></span>`).join('')}</div>
+    ${a.laenge > 0 ? '' : `<p class="se-fuss">Noch keine Trasse gezeichnet – gerechnet ist
+       allein die Belastbarkeit, ohne Spannungsfall über die Länge.</p>`}
+    <p class="se-fuss">Richtwert für Kupferleitung, drei belastete Adern, frei in Luft.
+       Aufgerollte Leitungsroller tragen deutlich weniger. Die verbindliche Auslegung
+       trifft eine Elektrofachkraft.</p>`;
 }
 
 function farbwahl(s, karte) {
@@ -368,19 +509,7 @@ function punktTabelle(s, frisch) {
       ctx.sl.waehle(s.id, pt.id);
       ctx.zurKarte?.();
     };
-    const weg = el('button', 'mini-knopf gefahr', '✕');
-    weg.title = 'Punkt löschen';
-    weg.onclick = () => {
-      store.aendern(() => {
-        s.punkte = s.punkte.filter(x => x.id !== pt.id);
-        s.punkte.forEach((q, j) => {
-          if (q._manuell) return;
-          if (j === 0) q.art = 'start';
-          else if (j === s.punkte.length - 1) q.art = 'ziel';
-        });
-      }, 'strecke');
-    };
-    kopf.append(zeigen, weg);
+    kopf.appendChild(zeigen);
     zeile.appendChild(kopf);
 
     const name = document.createElement('input');
@@ -397,6 +526,24 @@ function punktTabelle(s, frisch) {
     fuss.appendChild(el('span', 'pz-mass',
       (i === 0 ? '<span class="pz-start">Anfang</span>' : meter(seg[i - 1])) +
       ` <span class="pz-summe">Σ ${meter(kum[i])}</span>`));
+
+    /* Löschen sitzt am rechten Rand hinter der Koordinatenzeile, nicht neben
+       „auf Karte zeigen“ – mit Handschuhen waren die beiden nicht zu trennen. */
+    const weg = el('button', 'mini-knopf gefahr pz-weg', '✕');
+    weg.title = `Punkt ${i + 1} löschen`;
+    weg.setAttribute('aria-label', `Punkt ${i + 1} löschen`);
+    weg.onclick = () => {
+      store.aendern(() => {
+        s.punkte = s.punkte.filter(x => x.id !== pt.id);
+        s.punkte.forEach((q, j) => {
+          if (q._manuell) return;
+          if (j === 0) q.art = 'start';
+          else if (j === s.punkte.length - 1) q.art = 'ziel';
+        });
+      }, 'strecke');
+      hinweis(`Punkt ${i + 1} gelöscht – Strg+Z macht es rückgängig`);
+    };
+    fuss.appendChild(weg);
     zeile.appendChild(fuss);
 
     liste.appendChild(zeile);
@@ -478,15 +625,15 @@ export function zeichneZeichenListe() {
   for (const z of p.zeichen) {
     const gewaehlt = ctx.zl.auswahl === z.id;
     const basis = symbolById(z.symbol);
-    const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : ''));
+    const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') +
+      (z.sichtbar === false ? ' verborgen' : ''));
 
     const kopf = el('header', 'eintrag-kopf');
     kopf.innerHTML =
       `<span class="mini-symbol">${symbolSVG({ symbol: z.symbol, org: z.org, staerke: z.staerke, breite: 26 })}</span>
-       <span class="eintrag-name">${escapeHtml(z.label || basis.name)}</span>
-       <button class="augen" data-akt="sichtbar" title="Ein-/ausblenden">${z.sichtbar === false ? '◌' : '◉'}</button>`;
-    kopf.querySelector('.eintrag-name').onclick = () => ctx.zl.waehle(gewaehlt ? null : z.id);
-    kopf.querySelector('.mini-symbol').onclick = () => ctx.zl.waehle(gewaehlt ? null : z.id);
+       <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(z.label || basis.name)}</button>
+       ${augenKnopf(z.sichtbar !== false)}`;
+    kopf.onclick = () => ctx.zl.waehle(gewaehlt ? null : z.id);
     kopf.querySelector('[data-akt="sichtbar"]').onclick = e => {
       e.stopPropagation();
       store.aendern(() => { z.sichtbar = z.sichtbar === false; }, 'zeichen');
@@ -631,16 +778,30 @@ export function zeichneProjektReiter() {
   const sp = document.getElementById('projekt-speicher');
   sp.innerHTML = '';
   sp.appendChild(el('h3', 'gruppen-titel', 'Speicher'));
-  const kb = Math.round(speicherBelegung() / 1024);
+
+  const belegt = speicherBelegung();
+  const anteil = belegt / SPEICHER_KONTINGENT * 100;
+  const anteilText = anteil < 1 ? 'unter 1 %' : `rund ${Math.round(anteil)} %`;
   sp.appendChild(el('p', 'klein',
     `Alle Planungen liegen im <b>Speicher dieses Browsers</b> (localStorage) und werden
-     automatisch gesichert. Aktuell belegt: <b>${kb} kB</b>.
-     Für Weitergabe und Sicherung „Planung als Datei sichern“ verwenden.`));
+     automatisch gespeichert. Belegt sind <b>${Math.round(belegt / 1024)} kB</b> von den
+     rund <b>5 MB</b>, die ein Browser je Website bereitstellt – ${anteilText}.`));
+
+  const gesichert = dateisicherung(store.projekt.id);
+  sp.appendChild(el('p', 'klein',
+    gesichert
+      ? `Zuletzt als Datei gesichert: <b>${new Date(gesichert).toLocaleString('de-DE',
+          { dateStyle: 'short', timeStyle: 'short' })}</b>.`
+      : `Diese Planung wurde <b>noch nie als Datei gesichert</b>. Wird der Browserspeicher
+         geleert – beim Beenden, im privaten Fenster oder auf einem geteilten Rechner –,
+         ist sie verloren.`));
 
   const tasten = el('div', 'tastenreihe');
   tasten.append(
-    knopf('Jetzt sichern', () => { store.speichern(); hinweis('Planung gespeichert'); }, 'primaer'),
-    knopf('Als Datei sichern', () => io.projektExportieren()),
+    knopf('Als Datei sichern', () => {
+      if (io.projektExportieren()) hinweis('Planung als Datei gesichert');
+    }, 'primaer'),
+    knopf('Jetzt im Browser speichern', () => { store.speichern(); hinweis('Planung gespeichert'); }),
     knopf('Gespeicherte Planungen', () => projektDialog())
   );
   sp.appendChild(tasten);
@@ -662,13 +823,7 @@ export function projektDialog() {
       knopf('Öffnen', () => {
         if (store.laden(pr.id)) { schliesseDialog(); hinweis(`„${pr.name}“ geöffnet`); }
       }, pr.id === store.projekt.id ? 'aus' : 'primaer'),
-      knopf('Löschen', () => {
-        if (!confirm(`„${pr.name}“ endgültig aus dem Browserspeicher löschen?`)) return;
-        store.loeschen(pr.id);
-        schliesseDialog();
-        projektDialog();
-        hinweis('Planung gelöscht');
-      }, 'gefahr')
+      knopf('Löschen', () => loeschDialog(pr), 'gefahr')
     );
     zeile.appendChild(t);
     box.appendChild(zeile);
@@ -681,6 +836,52 @@ export function projektDialog() {
       { text: 'Schließen', primaer: true }
     ]
   });
+}
+
+/* Eine gespeicherte Planung zu löschen ist die einzige Handlung im Programm,
+   die sich nicht rückgängig machen lässt – der Undo-Stapel wird dabei geleert.
+   Deshalb der Name zur Bestätigung und die Dateisicherung als Ausweg. */
+function loeschDialog(pr) {
+  const zielwort = (pr.name || '').trim() || 'löschen';   // notfalls ein Ersatzwort
+  const box = el('div');
+  box.innerHTML =
+    `<p>Die Planung <b>${escapeHtml(pr.name || '(ohne Namen)')}</b> mit ${pr.strecken}
+        ${pr.strecken === 1 ? 'Strecke' : 'Strecken'} und ${pr.zeichen}
+        taktischen Zeichen
+        wird endgültig aus dem Browserspeicher entfernt.</p>
+     <p class="klein"><b>Rückgängig machen ist danach nicht mehr möglich</b> –
+        auch nicht mit <kbd>Strg</kbd>+<kbd>Z</kbd>. Liegt keine Datei vor,
+        ist die Planung weg.</p>
+     <label class="feld"><span class="feld-titel">Zur Bestätigung
+         <b>${escapeHtml(zielwort)}</b> eingeben</span>
+       <input type="text" id="ld-name" autocomplete="off" spellcheck="false"
+              placeholder="${escapeHtml(zielwort)}"></label>`;
+
+  dialog({
+    titel: 'Planung endgültig löschen',
+    inhalt: box,
+    fuss: [
+      { text: 'Vorher als Datei sichern', tun: () => {
+          if (io.projektExportieren(pr.id)) hinweis('Planung als Datei gesichert');
+          return false;                       // Dialog bleibt offen
+        } },
+      { text: 'Abbrechen', tun: () => { projektDialog(); return false; } },
+      { text: 'Endgültig löschen', gefahr: true, tun: () => {
+          store.loeschen(pr.id);
+          hinweis(`„${pr.name}“ gelöscht`);
+          projektDialog();                    // zurück in die Liste
+          return false;
+        } }
+    ]
+  });
+
+  // Der Löschknopf bleibt gesperrt, bis der Name genau dasteht
+  const loeschKnopf = document.querySelector('#dialog-fuss .knopf.gefahr');
+  const eingabe = box.querySelector('#ld-name');
+  const pruefen = () =>
+    loeschKnopf.disabled = eingabe.value.trim().toLowerCase() !== zielwort.toLowerCase();
+  eingabe.addEventListener('input', pruefen);
+  pruefen();
 }
 
 // ---------------------------------------------------------------- Koordinatensuche
@@ -737,25 +938,35 @@ export function hilfeDialog() {
         <p>Teillängen stehen an jedem Abschnitt, Name und Summe an der Strecke. Gerechnet wird
            die geodätische Direktstrecke zwischen den Punkten; der <b>Bauzuschlag</b> deckt
            Geländeverlauf und Reserve ab und ergibt den Kabelbedarf.</p>
+        <h3>Stromleitungen</h3>
+        <p>Bei der Leitungsart <b>Stromleitung</b> erscheint die Gruppe
+           <b>Stromversorgung</b>. Aus Last, Netzform, zulässigem Spannungsfall und der
+           Leitungslänge einschließlich Bauzuschlag ergibt sich der nötige
+           Leiterquerschnitt; er steht auch auf dem Bauauftrag. Der Wert ist ein
+           Planungsrichtwert für Kupferleitung – die verbindliche Auslegung trifft eine
+           Elektrofachkraft.</p>
         <h3>Bauauftrag</h3>
         <p>In der geöffneten Strecke <b>Bauauftrag (PDF)</b> wählen. Dort A4/A3, Hoch/Quer und
            Farbe/Schwarz-Weiß einstellen und über den Druckdialog des Browsers
            <b>„Als PDF speichern“</b> wählen.</p>
         <p>Im Druckdialog dasselbe Papierformat einstellen, das oben gewählt wurde, und
-           die Ränder auf „Standard“ oder „Keine“ lassen – das Blatt bringt seine Ränder
-           selbst mit. Der vorgeschlagene Dateiname enthält Auftragsnummer, Strecke und Datum.</p>
+           die Ränder auf „Keine“ stellen – das Blatt bringt seine Ränder selbst mit.
+           Der Hinweis am Druckknopf nennt die drei Angaben. Der vorgeschlagene Dateiname
+           enthält Auftragsnummer, Strecke und Datum.</p>
         <h3>Koordinaten</h3>
-        <p>Unten links stehen MGRS und GPS-Koordinaten des Mauszeigers. In der Punkttabelle
-           öffnet ein Klick auf die Koordinate alle Formate zum Kopieren und erlaubt die
-           Eingabe einer neuen Position.</p>
+        <p>Unten steht die Koordinate der Stelle, über der die Maus steht oder die zuletzt
+           angetippt wurde – in MGRS und als GPS-Angabe. Ein Klick auf die Angabe legt sie in
+           die Zwischenablage. In der Punkttabelle öffnet ein Klick auf die Koordinate alle
+           Formate zum Kopieren und erlaubt die Eingabe einer neuen Position.</p>
         <h3>Speichern</h3>
-        <p>Alles wird laufend im Browserspeicher gesichert. Für Sicherung und Weitergabe
+        <p>Alles wird laufend im Browserspeicher gespeichert. Für Sicherung und Weitergabe
            <b>Datei → Planung als Datei sichern</b> verwenden.</p>
         <h3>Tastatur</h3>
         <ul class="tasten-liste">
           <li><kbd>S</kbd> neue Strecke · <kbd>T</kbd> taktisches Zeichen · <kbd>K</kbd> Koordinate</li>
           <li><kbd>Strg</kbd>+<kbd>Z</kbd> rückgängig · <kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>Z</kbd> wiederholen</li>
           <li><kbd>Enter</kbd> Zeichnen beenden · <kbd>Esc</kbd> abbrechen</li>
+          <li><kbd>Strg</kbd>+<kbd>P</kbd> Bauauftrag der gewählten Strecke öffnen</li>
         </ul>
       </div>`,
     fuss: [{ text: 'Schließen', primaer: true }]

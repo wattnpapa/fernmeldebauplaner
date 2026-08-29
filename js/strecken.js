@@ -2,6 +2,7 @@
 
 import { distanz, streckenlaenge, kumuliert, formatLaenge, meter } from './geo.js';
 import { store, neuerPunkt, punktartById, kabelById } from './state.js';
+import { auslegung, querschnittText } from './strom.js';
 
 /** Kennzahlen einer Strecke – überall gleich gerechnet */
 export function kennzahlen(strecke) {
@@ -22,7 +23,10 @@ export function kennzahlen(strecke) {
     bauzeitStunden: bedarf / leistung,
     muffen: p.filter(x => x.art === 'muffe').length,
     querungen: p.filter(x => x.art === 'querung').length,
-    kabel: kabelById(strecke.kabeltyp)
+    kabel: kabelById(strecke.kabeltyp),
+    /* Der Querschnitt wird über die tatsächlich liegende Leitung gerechnet,
+       also über den Bedarf einschließlich Bauzuschlag – nicht über die Trasse. */
+    strom: strecke.kabeltyp === 'strom' ? auslegung(strecke.strom, bedarf) : null
   };
 }
 
@@ -351,7 +355,8 @@ export class StreckenLayer {
   _tooltipText(s) {
     const k = kennzahlen(s);
     return `<b>${escapeHtml(s.name)}</b><br>${k.kabel.kurz} · ${formatLaenge(k.trasse)} Trasse` +
-           `<br>Bedarf inkl. ${k.zuschlag}%: ${formatLaenge(k.bedarf)}`;
+           `<br>Bedarf inkl. ${k.zuschlag}%: ${formatLaenge(k.bedarf)}` +
+           (k.strom && k.strom.querschnitt ? `<br>Querschnitt: ${querschnittText(k.strom.querschnitt)}` : '');
   }
 
   /** Auf eine Strecke zoomen */

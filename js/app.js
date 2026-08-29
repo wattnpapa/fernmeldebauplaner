@@ -1,6 +1,9 @@
 // app.js – Zusammenbau: Karte, Layer, Bedienung, Tastatur
 
-import { store, neueStrecke, neuerPunkt, neuesZeichen } from './state.js';
+import {
+  store, neueStrecke, neuerPunkt, neuesZeichen,
+  dateisicherung, istGehaltvoll
+} from './state.js';
 import { erstelleKarte, setzeBasiskarte, BASISKARTEN } from './map.js';
 import { StreckenLayer, escapeHtml } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
@@ -10,7 +13,7 @@ import {
   initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter,
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis
 } from './ui.js';
-import { bauauftragOffen, schliesseBauauftrag } from './bauauftrag.js';
+import { bauauftragOffen, schliesseBauauftrag, entferneSeitenformat } from './bauauftrag.js';
 
 const $ = s => document.querySelector(s);
 
@@ -56,7 +59,7 @@ function zeichnenBeenden(abbrechen = false) {
   if (abbrechen && s && s.punkte.length === 0) {
     store.aendern(p => { p.strecken = p.strecken.filter(x => x.id !== sid); }, 'strecke');
   } else if (s && s.punkte.length === 1) {
-    hinweis('Eine Strecke braucht mindestens zwei Punkte.', 'warnung');
+    hinweis('Eine Strecke braucht mindestens zwei Trassenpunkte.', 'warnung');
   }
   modusAnzeigen();
   zeichneSeite();
@@ -77,6 +80,8 @@ function modusAnzeigen() {
   const setzt = !!zl.setzModus;
   $('#wz-strecke').classList.toggle('aktiv', zeichnet);
   $('#wz-zeichen').classList.toggle('aktiv', setzt);
+  // schmal weicht die Werkzeugleiste der Modusleiste – beide sitzen unten
+  document.body.classList.toggle('modus-aktiv', zeichnet || setzt);
 
   const box = $('#zeichen-hinweis');
   box.hidden = !zeichnet;
@@ -159,13 +164,65 @@ function koordinatenPopup(ll) {
 
 // ---------------------------------------------------------------- Statusleiste
 
-const slMgrs = $('#sl-mgrs'), slGps = $('#sl-gps'), slDez = $('#sl-dez');
-karte.on('mousemove', e => {
-  slMgrs.textContent = toMGRS(e.latlng.lat, e.latlng.lng, 5);
-  slGps.textContent = toDDM(e.latlng.lat, e.latlng.lng);
-  slDez.textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+const slMgrs = $('#sl-mgrs'), slGps = $('#sl-gps'), slDez = $('#sl-dez'), slQuelle = $('#sl-quelle');
+const OHNE_KOORD = 'Karte antippen für die Koordinate';
+
+/* Auf einem Touchgerät gibt es kein mousemove – die Leiste blieb dort dauerhaft
+   auf „–“. Sie zeigt deshalb die zuletzt angetippte Position und sagt dazu,
+   dass es die angetippte und nicht die überfahrene ist. */
+let angetippt = null;
+
+function koordZeigen(ll, quelle) {
+  slMgrs.textContent = toMGRS(ll.lat, ll.lng, 5);
+  slGps.textContent = toDDM(ll.lat, ll.lng);
+  slDez.textContent = `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
+  slQuelle.textContent = quelle;
+}
+
+function koordLeeren() {
+  if (angetippt) return koordZeigen(angetippt, 'zuletzt angetippte Position');
+  slMgrs.textContent = slGps.textContent = slDez.textContent = '–';
+  slQuelle.textContent = OHNE_KOORD;
+}
+
+karte.on('mousemove', e => koordZeigen(e.latlng, 'Position des Mauszeigers'));
+karte.on('mouseout', koordLeeren);
+// feuert auch beim Antippen – und in jedem Modus, also auch beim Zeichnen
+karte.on('click', e => {
+  angetippt = e.latlng;
+  koordZeigen(e.latlng, 'zuletzt angetippte Position');
 });
-karte.on('mouseout', () => { slMgrs.textContent = slGps.textContent = slDez.textContent = '–'; });
+
+/** Die Zahl, die über Funk durchgegeben wird – ein Tipp legt sie in die Zwischenablage */
+function koordKopieren(wert, was) {
+  if (!wert || wert === '–') return hinweis('Noch keine Koordinate – zuerst die Karte antippen.');
+  const lauf = navigator.clipboard?.writeText(wert);
+  if (!lauf) return hinweis('Kopieren nicht möglich', 'fehler');
+  lauf.then(() => hinweis(`${was} kopiert: ${wert}`)).catch(() => hinweis('Kopieren nicht möglich', 'fehler'));
+}
+$('#sl-mgrs-kopie').onclick = () => koordKopieren(slMgrs.textContent, 'MGRS');
+$('#sl-gps-kopie').onclick = () => koordKopieren(slGps.textContent, 'GPS-Koordinate');
+
+/* Die Kanten der Karte sind belegt: unten Statusleiste, darüber Maßstab und
+   Quellenangabe, schmal darüber die Werkzeuge; oben rechts die Zoomsteuerung,
+   unter der die Kartenoptionen sitzen. Alle diese Höhen ändern sich – die
+   Statusleiste bricht um, an den Leaflet-Bedienelementen kann eines dazu-
+   kommen –, deshalb werden sie gemessen statt geschätzt. Festwerte hatten
+   erst den Maßstab verdeckt und dann die Kartenoptionen falsch eingehängt. */
+const statusLeiste = document.querySelector('.statusleiste');
+const kartenFuss = document.querySelector('.leaflet-bottom.leaflet-right');
+const kartenKopf = document.querySelector('.leaflet-top.leaflet-right');
+function kartenKantenMessen() {
+  const st = document.documentElement.style;
+  st.setProperty('--sl-hoehe', statusLeiste.offsetHeight + 'px');
+  if (kartenFuss) st.setProperty('--karten-fuss', kartenFuss.offsetHeight + 'px');
+  if (kartenKopf) st.setProperty('--karten-kopf', kartenKopf.offsetHeight + 'px');
+}
+const kantenWaechter = new ResizeObserver(kartenKantenMessen);
+kantenWaechter.observe(statusLeiste);
+if (kartenFuss) kantenWaechter.observe(kartenFuss);
+if (kartenKopf) kantenWaechter.observe(kartenKopf);
+kartenKantenMessen();
 
 karte.on('moveend zoomend', () => {
   store.still(p => {
@@ -237,9 +294,29 @@ const nameFeld = $('#projektname');
 nameFeld.value = store.projekt.name;
 nameFeld.oninput = () => store.aendern(p => { p.name = nameFeld.value; }, 'formular');
 
+/** Planung als Datei sichern – der einzige Weg, sie aus diesem Browser herauszubekommen */
+function planungSichern(pid) {
+  if (io.projektExportieren(pid)) hinweis('Planung als Datei gesichert');
+}
+$('#sb-sichern').onclick = () => planungSichern();
+$('#speicherstatus').onclick = () => planungSichern();
+
 $('#btn-undo').onclick = () => { if (!store.undo()) hinweis('Nichts zum Rückgängigmachen.'); };
 $('#btn-redo').onclick = () => { if (!store.redo()) hinweis('Nichts zum Wiederholen.'); };
-$('#btn-seite').onclick = () => document.body.classList.toggle('seite-zu');
+/* Liste und Karte lösen einander schmal ab. Der Umschalter unten ist der einzige
+   Rückweg, der immer sichtbar ist – der Kartenbereich ist ausgeblendet, solange
+   die Liste davorliegt, ein Knopf darin käme nie zum Vorschein. */
+const awListe = $('#aw-liste'), awKarte = $('#aw-karte');
+function ansichtSetzen(karteVorn) {
+  document.body.classList.toggle('seite-zu', karteVorn);
+  awListe.classList.toggle('aktiv', !karteVorn);
+  awKarte.classList.toggle('aktiv', karteVorn);
+  awListe.setAttribute('aria-pressed', String(!karteVorn));
+  awKarte.setAttribute('aria-pressed', String(karteVorn));
+  if (karteVorn) setTimeout(() => karte.invalidateSize(), 0);
+}
+awListe.onclick = () => ansichtSetzen(false);
+awKarte.onclick = () => ansichtSetzen(true);
 
 const dateiKnopf = $('#btn-datei'), dateiMenu = $('#menu-datei');
 dateiKnopf.onclick = e => {
@@ -258,7 +335,7 @@ dateiMenu.addEventListener('click', e => {
   ({
     neu: neuesProjektDialog,
     oeffnen: projektDialog,
-    'export-json': io.projektExportieren,
+    'export-json': () => planungSichern(),
     'import-json': () => $('#datei-import').click(),
     'export-geojson': () => io.geoJSONExportieren(),
     'export-gpx': () => io.gpxExportieren(),
@@ -297,17 +374,18 @@ document.querySelectorAll('.reiter button').forEach(b => {
 });
 /** Auf schmalen Geräten die Karte in den Vordergrund holen */
 function zurKarte() {
-  if (window.matchMedia('(max-width: 900px)').matches) {
-    document.body.classList.add('seite-zu');
-  }
+  if (window.matchMedia('(max-width: 900px)').matches) ansichtSetzen(true);
 }
 
 function reiterWechseln(name) {
-  document.querySelectorAll('.reiter button').forEach(b =>
-    b.classList.toggle('aktiv', b.dataset.reiter === name));
+  document.querySelectorAll('.reiter button').forEach(b => {
+    const an = b.dataset.reiter === name;
+    b.classList.toggle('aktiv', an);
+    b.setAttribute('aria-selected', String(an));
+  });
   document.querySelectorAll('.reiter-inhalt').forEach(s =>
     s.classList.toggle('aktiv', s.dataset.inhalt === name));
-  document.body.classList.remove('seite-zu');
+  ansichtSetzen(false);
 }
 
 // ---------------------------------------------------------------- Dialog schließen
@@ -338,8 +416,9 @@ document.addEventListener('keydown', e => {
     e.preventDefault(); store.speichern(); hinweis('Planung gespeichert'); return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p' && !bauauftragOffen()) {
-    if (sl.auswahl) { e.preventDefault(); import('./bauauftrag.js').then(m => m.oeffneBauauftrag(sl.auswahl)); }
-    return;
+    const s = gemeinteStrecke();
+    if (s) { e.preventDefault(); import('./bauauftrag.js').then(m => m.oeffneBauauftrag(s.id)); }
+    return;   // sonst druckt der Browser – und bekommt das Hinweisblatt vorgelegt
   }
 
   if (imFeld || !$('#dialog').hidden || bauauftragOffen()) return;
@@ -354,6 +433,79 @@ document.addEventListener('keydown', e => {
 });
 
 karte.on('dblclick', () => { if (sl.zeichenModus) zeichnenBeenden(false); });
+
+// ---------------------------------------------------------------- Drucken
+
+/** Die Strecke, die bei einem Druckbefehl gemeint sein kann: die gewählte,
+ *  sonst – wenn es nur eine druckbare gibt – eben diese. Bei mehreren wird
+ *  nicht geraten. */
+function gemeinteStrecke() {
+  if (sl.auswahl) {
+    const s = store.strecke(sl.auswahl);
+    return s && s.punkte.length >= 2 ? s : null;
+  }
+  const fertig = store.projekt.strecken.filter(s => s.punkte.length >= 2);
+  return fertig.length === 1 ? fertig[0] : null;
+}
+
+/* Gedruckt wird im FMBauplaner der Bauauftrag, nicht die Bildschirmansicht.
+   Kommt der Druckbefehl trotzdem an der Bauauftragsansicht vorbei – über das
+   Browsermenü oder Strg+P ohne eindeutige Strecke –, wird statt eines leeren
+   Blattes ein Blatt gedruckt, das den Weg dorthin beschreibt. */
+function hinweisblattEntfernen() {
+  document.getElementById('druckhinweis')?.remove();
+  document.body.classList.remove('druckhinweis');
+}
+
+function hinweisblattAufbauen() {
+  hinweisblattEntfernen();
+  entferneSeitenformat();   // ein liegengebliebenes A3-Format wäre hier falsch
+
+  const p = store.projekt;
+  const fertig = p.strecken.filter(s => s.punkte.length >= 2);
+  const gewaehlt = gemeinteStrecke();
+
+  let lage;
+  if (gewaehlt) {
+    lage = `Gewählt ist zurzeit die Strecke <b>${escapeHtml(gewaehlt.name)}</b> mit
+            ${gewaehlt.punkte.length} Punkten. Mit <b>Strg+P</b> öffnet sich ihr
+            Bauauftrag unmittelbar.`;
+  } else if (fertig.length > 1) {
+    lage = `Druckbereit sind in dieser Planung:
+            ${fertig.map(s => escapeHtml(s.name)).join(', ')}.`;
+  } else if (p.strecken.length) {
+    lage = `Keine der ${p.strecken.length} Strecken dieser Planung hat bislang zwei
+            Trassenpunkte. Für den Bauauftrag werden mindestens zwei gebraucht.`;
+  } else {
+    lage = 'In dieser Planung ist noch keine Strecke geplant.';
+  }
+
+  const blatt = document.createElement('div');
+  blatt.id = 'druckhinweis';
+  blatt.innerHTML = `
+    <h1>Kein Bauauftrag geöffnet</h1>
+    <p class="dh-planung">Planung: <b>${escapeHtml(p.name)}</b></p>
+    <p>Der FMBauplaner druckt den Bauauftrag einer Strecke, nicht die
+       Bildschirmansicht. Deshalb liegt hier kein Bauauftrag vor.</p>
+    <p>So entsteht er:</p>
+    <ol>
+      <li>Im Reiter „Strecken“ die gewünschte Strecke anklicken.</li>
+      <li>In der geöffneten Strecke <b>Bauauftrag (PDF)</b> wählen.</li>
+      <li>Dort Format, Ausrichtung und Farbe einstellen und
+          <b>Drucken / Als PDF speichern</b> wählen.</li>
+    </ol>
+    <p>${lage}</p>
+    <p class="dh-fuss">FMBauplaner · fmbauplaner.app · gedruckt am
+       ${new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</p>`;
+  document.body.appendChild(blatt);
+  document.body.classList.add('druckhinweis');
+}
+
+window.addEventListener('beforeprint', () => {
+  if (bauauftragOffen()) return;
+  hinweisblattAufbauen();
+});
+window.addEventListener('afterprint', hinweisblattEntfernen);
 
 // ---------------------------------------------------------------- Rendern
 
@@ -371,25 +523,55 @@ function zeichneSeite() {
 
 function aktualisiereKennzahlen() { /* Kennzahlen aktualisiert die Seitenleiste selbst */ }
 
-let speicherTimer = null;
-store.on((p, grund) => {
-  if (grund === 'gespeichert') {
-    const st = $('#speicherstatus');
-    st.textContent = 'gespeichert';
-    st.classList.remove('offen');
+/* Der Browserspeicher schreibt von selbst; was der Nutzer selbst tun muss, ist
+   die Dateisicherung. Deshalb trägt der Kopfzeilen-Status diesen Zeitpunkt und
+   meldet den laufenden Schreibvorgang nur, solange er läuft. */
+function speicherstatusZeigen(zustand = 'ruhe') {
+  const st = $('#speicherstatus');
+  const band = $('#speicherband'), stand = $('#sb-stand');
+  st.classList.remove('offen', 'fehler', 'mahnung');
+  if (zustand === 'laeuft') {
+    st.textContent = 'wird gespeichert …';
+    st.classList.add('offen');
     return;
   }
-  if (grund === 'speicherfehler') {
-    const st = $('#speicherstatus');
-    st.textContent = 'nicht gespeichert!';
+  if (zustand === 'fehler') {
+    st.textContent = 'nicht gespeichert';
     st.classList.add('fehler');
-    hinweis('Speichern im Browser fehlgeschlagen – Planung als Datei sichern!', 'fehler');
+    stand.textContent = 'Browserspeicher meldet einen Fehler.';
+    band.classList.add('mahnung');
+    return;
+  }
+  const zeit = dateisicherung(store.projekt.id);
+  st.textContent = 'zuletzt als Datei gesichert: ' + (zeit ? zeitpunktKurz(zeit) : '—');
+  /* Schmal trägt das Band den Stand: dort ist die Kopfzeile zu eng für Worte,
+     und ein Punkt allein wäre kein Hinweis, sondern ein Rätsel. */
+  const mahnen = !zeit && istGehaltvoll(store.projekt);
+  st.classList.toggle('mahnung', mahnen);
+  band.classList.toggle('mahnung', mahnen);
+  stand.textContent = zeit ? 'Als Datei gesichert: ' + zeitpunktKurz(zeit)
+    : (istGehaltvoll(store.projekt) ? 'Noch nie als Datei gesichert.' : '');
+}
+
+function zeitpunktKurz(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  const heuteGleich = d.toDateString() === new Date().toDateString();
+  return d.toLocaleString('de-DE', heuteGleich
+    ? { hour: '2-digit', minute: '2-digit' }
+    : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+store.on((p, grund) => {
+  if (grund === 'gespeichert') { speicherstatusZeigen('ruhe'); return; }
+  if (grund === 'dateisicherung') { speicherstatusZeigen('ruhe'); zeichneProjektReiter(); return; }
+  if (grund === 'speicherfehler') {
+    speicherstatusZeigen('fehler');
+    hinweis('Speichern im Browser fehlgeschlagen – Planung als Datei sichern.', 'fehler');
     return;
   }
 
-  const st = $('#speicherstatus');
-  st.textContent = 'wird gesichert …';
-  st.classList.add('offen');
+  speicherstatusZeigen('laeuft');
 
   sl.zeichne();
   zl.zeichne();
@@ -416,19 +598,27 @@ store.on((p, grund) => {
   zeichneSeite();
 });
 
-window.addEventListener('beforeunload', () => store.speichern());
+window.addEventListener('beforeunload', e => {
+  store.speichern();
+  // Nachfragen nur, wenn eine nie gesicherte Planung mit echtem Arbeitsstand
+  // im Spiel ist – bei geteilten Rechnern und beim Beenden mit Löschen des
+  // Browserspeichers ist das die letzte Gelegenheit.
+  if (!dateisicherung(store.projekt.id) && istGehaltvoll(store.projekt)) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 // Zugriff aus der Browser-Konsole (Fehlersuche, eigene Auswertungen)
 window.fbp = { store, karte, sl, zl };
 
 zeichneAlles();
 modusAnzeigen();
+speicherstatusZeigen('ruhe');
 $('#btn-undo').disabled = true;
 $('#btn-redo').disabled = true;
 
-// Beim allerersten Start eine kurze Orientierung anbieten
-if (!store.projekt.strecken.length && !store.projekt.zeichen.length &&
-    !localStorage.getItem('fbp.begruessung')) {
-  localStorage.setItem('fbp.begruessung', '1');
-  setTimeout(hilfeDialog, 400);
-}
+/* Kein Begrüßungsdialog beim ersten Start: Über eine leere Karte gelegt
+   beschreibt die Kurzanleitung nichts, was der Nutzer schon gesehen hat.
+   Der Hinweis auf die Dateisicherung steht dauerhaft unter der Kopfzeile,
+   die Kurzanleitung liegt unter Datei → Kurzanleitung. */

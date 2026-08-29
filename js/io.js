@@ -1,6 +1,6 @@
 // io.js – Sichern, Laden und Austauschformate
 
-import { store, migrieren, neueStrecke, neuerPunkt, id } from './state.js';
+import { store, migrieren, neueStrecke, neuerPunkt, id, ladeAlle, dateisicherungVermerken } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
 import { symbolById } from './symbols.js';
@@ -25,10 +25,16 @@ function herunterladen(inhalt, name, typ = 'application/json') {
 
 // ---------------------------------------------------------------- Projektdatei
 
-export function projektExportieren() {
-  const p = store.projekt;
+/** Planung als .json sichern. Ohne Angabe die geöffnete, sonst eine beliebige
+ *  aus dem Browserspeicher (z. B. vor dem Löschen aus der Planungsliste). */
+export function projektExportieren(pid) {
+  const p = (!pid || pid === store.projekt.id) ? store.projekt : ladeAlle()[pid];
+  if (!p) return false;
   herunterladen(JSON.stringify(p, null, 2),
-    dateiname(['Fernmeldebauplanung', p.name, p.kopf.datum], 'json'));
+    dateiname(['Fernmeldebauplanung', p.name, p.kopf?.datum], 'json'));
+  dateisicherungVermerken(p.id);
+  store.melden('dateisicherung');
+  return true;
 }
 
 export function projektImportieren(datei) {
@@ -92,6 +98,11 @@ export function geoJSON(nurStrecke = null) {
         kabeltyp: k.kabel.name, verlegeart: s.verlegeart,
         trassenlaenge_m: Math.round(k.trasse), zuschlag_prozent: k.zuschlag,
         kabelbedarf_m: Math.round(k.bedarf), trommeln: k.trommeln,
+        ...(k.strom ? {
+          netzform: k.strom.netz.name,
+          betriebsstrom_a: Math.round(k.strom.strom * 10) / 10,
+          querschnitt_mm2: k.strom.querschnitt
+        } : {}),
         stroke: s.farbe, 'stroke-width': 4
       }
     });

@@ -8,23 +8,70 @@ body.druckansicht { overflow: hidden; }
 
 /* ---------------------------------------------------------------- Steuerleiste */
 
+/* Zwei Spalten: links steht, was gedruckt wird und wie – rechts, dass gedruckt
+   wird. Als Reihe nebeneinander brachen die Gruppen sonst unter die Überschrift
+   und ließen Titel und Tasten frei im Raum stehen. */
 .druck-steuerung {
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 9px 14px; background: #fff; border-bottom: 1px solid #cfd6e0;
-  box-shadow: 0 2px 10px rgba(0,0,0,.25); z-index: 2;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "titel tasten" "felder tasten";
+  gap: 8px 16px; align-items: end;
+  padding: 8px 14px; background: var(--flaeche); border-bottom: 1px solid var(--linie);
+  box-shadow: var(--schatten); z-index: 2;
 }
-.ds-titel { font-size: 14px; font-weight: 600; margin-right: 4px; }
-.ds-felder { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; flex: 1; }
-.ds-feld { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4a5566; }
+.ds-titel {
+  grid-area: titel; align-self: center; font-size: 14px; font-weight: 600;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ds-felder {
+  grid-area: felder; display: flex; align-items: center; gap: 10px 22px;
+  flex-wrap: wrap; min-width: 0;
+}
+
+/* Drei benannte Gruppen statt neun Bedienelementen in einer Reihe. Getrennt
+   werden sie durch Abstand und ihre Überschrift, nicht durch eine Linie: die
+   Gruppen brechen je nach Fensterbreite um, und eine Trennlinie stünde dann
+   am Zeilenanfang statt zwischen zwei Gruppen. */
+.ds-gruppe { display: flex; align-items: center; gap: 9px; min-width: 0; }
+/* Gruppentitel wie in der Seitenleiste (.gruppen-titel) – dasselbe Programm,
+   dieselbe Überschrift. */
+.ds-gruppen-titel {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--text-schwach); white-space: nowrap;
+}
+.ds-gruppen-felder { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; }
+
+.ds-feld { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-schwach); }
 .ds-feld select {
-  padding: 4px 6px; border: 1px solid #b6c1d1; border-radius: 5px;
-  background: #fff; font-size: 12px; color: #16202e;
+  padding: 4px 6px; border: 1px solid var(--linie-stark); border-radius: var(--radius-klein);
+  background: var(--flaeche); font-size: 12px; color: var(--text);
 }
 .ds-haken { cursor: pointer; }
-.ds-haken input { accent-color: #003399; }
+.ds-haken input { accent-color: var(--thw); }
 .ds-zoomtasten { display: flex; align-items: center; gap: 4px; }
 .ds-zoomwert { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
-.ds-tasten { display: flex; gap: 8px; }
+.ds-tasten { grid-area: tasten; display: flex; align-items: flex-end; gap: 8px; }
+
+/* Der Formathinweis steht am Druckknopf, nicht in der Kurzanleitung: der
+   Druckdialog des Browsers kennt die oben gewählten Einstellungen nicht. */
+.ds-drucken { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+.ds-format {
+  margin: 0; padding: 3px 8px; border-radius: var(--radius-klein);
+  background: var(--flaeche-2); border: 1px solid var(--linie);
+  font-size: 11.5px; line-height: 1.35; color: var(--text-schwach); text-align: center;
+}
+
+/* Schmales Fenster: Titel, Einstellungen und Tasten untereinander, und jede
+   Gruppe unter ihrer eigenen Überschrift statt daneben. */
+@media (max-width: 780px) {
+  .druck-steuerung {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "titel" "felder" "tasten";
+  }
+  .ds-felder { flex-direction: column; align-items: stretch; gap: 14px; }
+  .ds-gruppe { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .ds-tasten { align-items: stretch; }
+  .ds-drucken { flex: 1; }
+}
 
 .druck-buehne {
   flex: 1; overflow: auto; padding: 24px; display: flex; justify-content: center;
@@ -169,6 +216,8 @@ body.druckansicht { overflow: hidden; }
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 1.4mm;
   margin-top: 1.6mm;
 }
+/* Stromleitungen bringen den Querschnitt als achte Kachel mit */
+.bl-kennzahlen.mit-strom { grid-template-columns: repeat(8, 1fr); }
 .bl-kennzahlen .kz {
   border: .5pt solid #999; border-top: 1.6pt solid #003399; border-radius: .8mm;
   padding: 1.2mm 1.6mm; display: flex; flex-direction: column; min-width: 0;
@@ -203,6 +252,7 @@ body.druckansicht { overflow: hidden; }
 
 .bl-material { display: grid; grid-template-columns: 1.35fr 1fr; gap: 4mm; align-items: start; }
 .bl-material h2 { grid-column: 1 / -1; }
+.mat-fussnote { grid-column: 1 / -1; }
 .tab-material { font-size: .9em; }
 .tab-material th {
   text-align: left; font-weight: 500; padding: .9mm 1.2mm; border-bottom: .4pt solid #ccc; width: 62%;
@@ -249,7 +299,11 @@ body.druckansicht { overflow: hidden; }
 
 @media print {
   html, body { height: auto; background: #fff; overflow: visible; }
-  #app, .hinweisbox, .dialog-huelle, .druck-steuerung { display: none !important; }
+  .hinweisbox, .dialog-huelle, .druck-steuerung { display: none !important; }
+  /* Die Bedienoberfläche nur wegblenden, wenn tatsächlich ein Blatt vorliegt.
+     Ohne diese Einschränkung druckte Strg+P außerhalb des Bauauftrags eine
+     leere Seite. */
+  body.druckansicht #app, body.druckhinweis #app { display: none !important; }
 
   #druck { position: static; display: block; background: #fff; }
   .druck-buehne { display: block; overflow: visible; padding: 0; background: #fff; }
@@ -267,4 +321,38 @@ body.druckansicht { overflow: hidden; }
   .bl-abschnitt { break-inside: avoid; page-break-inside: avoid; }
 
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
+
+/* ---------------------------------------------------------------- Hinweisblatt
+
+   Wird nur erzeugt, wenn gedruckt wird, ohne dass ein Bauauftrag offen ist –
+   etwa über Strg+P oder das Browsermenü. Statt einer leeren Seite kommt dann
+   ein lesbares Blatt aus dem Drucker, das den Weg zum Bauauftrag beschreibt. */
+
+#druckhinweis { display: none; }
+
+@media print {
+  body.druckhinweis #druckhinweis {
+    display: block;
+    padding: 16mm 14mm;
+    background: #fff; color: #111;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 11pt; line-height: 1.5;
+  }
+  #druckhinweis h1 {
+    font-size: 15pt; margin: 0 0 1mm; letter-spacing: .2pt;
+  }
+  #druckhinweis .dh-planung {
+    margin: 0 0 8mm; padding-bottom: 2.5mm;
+    border-bottom: .8pt solid #111;
+    font-size: 10pt; color: #333;
+  }
+  #druckhinweis p { margin: 0 0 4mm; }
+  #druckhinweis ol { margin: 0 0 6mm; padding-left: 6mm; }
+  #druckhinweis li { margin-bottom: 1.5mm; }
+  #druckhinweis .dh-fuss {
+    margin-top: 10mm; padding-top: 2.5mm;
+    border-top: .5pt solid #999;
+    font-size: 9pt; color: #555;
+  }
 }
