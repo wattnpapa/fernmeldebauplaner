@@ -8,7 +8,7 @@ import {
 import { kennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
 import { formatLaenge, meter, toMGRS, toDDM, alleFormate, parseKoordinate } from './geo.js';
 import {
-  NETZFORMEN, LASTEINHEITEN, netzById,
+  NETZFORMEN, LASTEINHEITEN, netzById, MAX_QUERSCHNITT,
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText
 } from './strom.js';
 import { SYMBOLE, KATEGORIEN, ORGANISATIONEN, STAERKEN, symbolSVG, symbolById } from './symbols.js';
@@ -421,8 +421,13 @@ function stromErgebnisHTML(a) {
             Leiterquerschnitt für diese Leitung.</p>`;
   }
   if (a.ueberLast) {
-    return `<p class="se-leer warnung">${escapeHtml(stromText(a.strom))} übersteigt den größten
-            Querschnitt der Tabelle. Last aufteilen oder höhere Spannung wählen.</p>`;
+    const grenze = querschnittText(MAX_QUERSCHNITT);
+    return `<p class="se-leer warnung">${a.ueberStrom
+      ? `Betriebsstrom ${escapeHtml(stromText(a.strom))} – mehr, als ${escapeHtml(grenze)} tragen.
+         Last aufteilen oder höhere Spannung wählen.`
+      : `Auf ${escapeHtml(formatLaenge(a.laenge))} hält selbst ${escapeHtml(grenze)} den
+         Spannungsfall von ${escapeHtml(grenzText(a.grenze))} nicht. Höhere Spannung wählen,
+         Last verringern oder unterwegs einspeisen.`}</p>`;
   }
   const zeilen = [
     ['Betriebsstrom', stromText(a.strom)],

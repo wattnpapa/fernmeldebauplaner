@@ -5,7 +5,9 @@ import { StreckenLayer, kennzahlen, segmentLaengen, kumuliert, escapeHtml } from
 import { ZeichenLayer } from './zeichen.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
-import { querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText } from './strom.js';
+import {
+  querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText, MAX_QUERSCHNITT
+} from './strom.js';
 import { hinweis } from './ui.js';
 
 const FORMATE = { a4: [210, 297], a3: [297, 420] };
@@ -522,7 +524,9 @@ function materialHTML(s, k) {
         (a.netz.gleich ? '' : ` (cos φ ${String(a.cosphi).replace('.', ',')})`)],
       a.querschnitt
         ? ['<b>Empfohlener Leiterquerschnitt</b>', `<b>${querschnittText(a.querschnitt)}</b>`]
-        : ['<b>Leiterquerschnitt</b>', '<b>Last zu groß – aufteilen</b>'],
+        : ['<b>Leiterquerschnitt</b>', a.ueberStrom
+            ? '<b>Last zu groß – aufteilen</b>'
+            : `<b>über ${querschnittText(MAX_QUERSCHNITT)} – Leitung zu lang</b>`],
       ['Spannungsfall über die Leitung',
         `${a.querschnitt ? prozentText(a.spannungsfallProzent) : '–'} (zulässig ${grenzText(a.grenze)})`],
       ['Maßgebend für den Querschnitt', massgebendText(a)]

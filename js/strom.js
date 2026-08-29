@@ -32,6 +32,9 @@ export const QUERSCHNITTE = [
 
 export const LASTEINHEITEN = [['kw', 'kW'], ['a', 'A']];
 
+/** Größter Querschnitt der Tabelle – Grenze beider Prüfungen */
+export const MAX_QUERSCHNITT = QUERSCHNITTE[QUERSCHNITTE.length - 1].mm2;
+
 /** Vorgabewerte einer neuen Stromstrecke */
 export function neueStromangabe() {
   return { last: '', einheit: 'kw', netz: 'ac230', spannungsfall: 3, cosphi: 0.8 };
@@ -87,7 +90,11 @@ export function auslegung(v, laenge) {
     spannungsfallProzent: netz.spannung ? istVolt / netz.spannung * 100 : 0,
     massgebend: !gewaehlt ? null
       : (qFall.mm2 > qStrom.mm2 ? 'fall' : (qStrom.mm2 > qFall.mm2 ? 'strom' : 'beide')),
-    ueberLast: !gewaehlt
+    /* Reicht die Tabelle nicht, muss die Anzeige den wahren Grund nennen:
+       ein zu großer Strom ist etwas anderes als eine zu lange Leitung. */
+    ueberLast: !gewaehlt,
+    ueberStrom: !qStrom,
+    ueberFall: !qFall
   };
 }
 
