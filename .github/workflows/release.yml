@@ -1,0 +1,106 @@
+# Veröffentlichung auf GitHub Pages, dazu Datums-Version, Git-Tag und Release.
+# Vorbild: erfassungsbogen (release.yml) — beide Projekte tragen dasselbe
+# Versionsschema, damit eine genannte Nummer überall gleich zu lesen ist.
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Ein Commit wird genau einmal veröffentlicht. Kam derselbe Push doppelt an,
+# liefen sonst zwei vollständige Läufe — und beide wollten dieselbe SHA nach
+# Pages deployen. GitHub Pages führt ein Deployment je Commit: das zweite risse
+# dem ersten den Platz weg („Deployment cancelled"), die Seite bliebe auf dem
+# alten Stand stehen. Der Schlüssel ist bewusst die SHA und nicht der Branch:
+# so räumt ein Doppel-Lauf sich selbst weg, während zwei echte Pushes hinter-
+# einander unangetastet durchlaufen.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      build_version: ${{ steps.version.outputs.build_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build-Version erzeugen
+        id: version
+        run: |
+          # Einheitliches Format YYYY.MMDD.HHMM (z. B. 2026.712.1035): zugleich
+          # gültiges SemVer, minutengenau und über Tages-/Jahresgrenzen monoton
+          # steigend. UTC, damit die Sommerzeitumstellung die Reihenfolge nicht
+          # eine Stunde lang rückwärts laufen lässt.
+          Y=$(date -u +%Y)
+          MMDD=$(( 10#$(date -u +%m) * 100 + 10#$(date -u +%d) ))
+          HHMM=$(( 10#$(date -u +%H) * 100 + 10#$(date -u +%M) ))
+          echo "build_version=$Y.$MMDD.$HHMM" >> "$GITHUB_OUTPUT"
+
+      - name: Git-Tag anlegen
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$BUILD_VERSION" "$GITHUB_SHA"
+          git push origin "$BUILD_VERSION"
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: prepare
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version in die Anwendung schreiben
+        env:
+          BUILD_VERSION: ${{ needs.prepare.outputs.build_version }}
+        run: |
+          # Nur im Arbeitsverzeichnis des Laufs, nichts wird zurückgeschrieben:
+          # im Repository bleibt „Entwicklungsstand" stehen, ausgeliefert wird
+          # die Nummer. Der grep bricht ab, falls die Zeile einmal umbenannt
+          # wird — sonst liefe die Ersetzung stillschweigend ins Leere und die
+          # veröffentlichte Seite behauptete auf jedem Bauauftrag, sie sei ein
+          # Entwicklungsstand.
+          grep -q "^export const VERSION = " js/version.js
+          sed -i "s|^export const VERSION = .*|export const VERSION = '$BUILD_VERSION';|" js/version.js
+          grep "^export const VERSION = " js/version.js
+
+      - uses: actions/configure-pages@v5
+      - name: Seite hochladen (statisch, kein Build nötig)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    # Erst nach dem Deployment: ein Release soll nur für einen Stand entstehen,
+    # der auch wirklich online steht.
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy]
+    steps:
+      - name: GitHub Release erstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.build_version }}
+          name: ${{ needs.prepare.outputs.build_version }}
+          # Ohne Anhänge: die Anwendung ist eine statische Seite, es gibt keine
+          # Installationspakete. Das Release ist der Nachweis, welcher Stand
+          # wann unter fmbauplaner.app lag.
+          generate_release_notes: true

@@ -14,6 +14,7 @@ import {
 import { SYMBOLE, KATEGORIEN, ORGANISATIONEN, STAERKEN, symbolSVG, symbolById } from './symbols.js';
 import * as io from './io.js';
 import { oeffneBauauftrag } from './bauauftrag.js';
+import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
 
@@ -810,6 +811,18 @@ export function zeichneProjektReiter() {
     knopf('Gespeicherte Planungen', () => projektDialog())
   );
   sp.appendChild(tasten);
+
+  // Version im Blick behalten: Auf dem gedruckten Bauauftrag steht sie ohnehin
+  // im Blattfuß – wer eine Rückfrage stellt oder einen Fehler meldet, soll sie
+  // auch in der Oberfläche finden, ohne ein Blatt drucken zu müssen.
+  const ueber = document.getElementById('projekt-ueber');
+  ueber.innerHTML = '';
+  ueber.appendChild(el('h3', 'gruppen-titel', 'Über FMBauplaner'));
+  ueber.appendChild(el('p', 'klein',
+    `Version <b>${escapeHtml(VERSION)}</b>. Der Quelltext steht unter der
+     <b>EUPL-1.2</b> auf
+     <a href="https://github.com/wattnpapa/fernmeldebauplaner" target="_blank"
+        rel="noopener noreferrer">GitHub</a>.`));
 }
 
 export function projektDialog() {

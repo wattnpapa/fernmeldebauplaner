@@ -1,4 +1,9 @@
-# Verwendete Fremdbibliotheken
+# Lizenzen
+
+FMBauplaner selbst steht unter der **EUPL-1.2**, siehe `LICENSE`. Diese Datei führt
+auf, was zusätzlich mitgeliefert oder zur Laufzeit abgerufen wird.
+
+## Verwendete Fremdbibliotheken
 
 Beide Bibliotheken liegen unverändert unter `vendor/` im Repository, damit die
 Anwendung ohne Netzwerkzugriff auf fremde CDNs auskommt.

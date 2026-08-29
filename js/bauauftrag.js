@@ -9,6 +9,7 @@ import {
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText, MAX_QUERSCHNITT
 } from './strom.js';
 import { hinweis } from './ui.js';
+import { VERSION } from './version.js';
 
 const FORMATE = { a4: [210, 297], a3: [297, 420] };
 const KEY = 'fbp.druck.v1';
@@ -575,7 +576,7 @@ function fussHTML(p, opt) {
   const quelle = opt.farbe === 'sw' ? basiskarteById(grauVariante(p.ansicht.basemap)) : bk;
   return `<footer class="bl-fuss">
     <span>${escapeHtml(p.name)} · erstellt ${new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
-      mit FMBauplaner (fmbauplaner.app)</span>
+      mit FMBauplaner ${VERSION} (fmbauplaner.app)</span>
     <span class="bf-quelle">Kartengrundlage: ${quelle.attribution.replace(/<[^>]+>/g, '')}</span>
   </footer>`;
 }

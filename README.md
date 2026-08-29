@@ -102,8 +102,22 @@ git push -u origin main
 ```
 
 Danach im Repository unter **Settings → Pages** als Quelle **GitHub Actions** wählen.
-Der mitgelieferte Workflow `.github/workflows/pages.yml` veröffentlicht bei jedem Push
+Der mitgelieferte Workflow `.github/workflows/release.yml` veröffentlicht bei jedem Push
 auf `main`.
+
+### Versionen
+
+Jede Veröffentlichung bekommt eine Nummer im Format **`YYYY.MMDD.HHMM`** in UTC – etwa
+`2026.829.1119` für den 29. August 2026 um 11:19 Uhr. Sie ist minutengenau, steigt über
+Tages- und Jahresgrenzen hinweg monoton und ist zugleich gültiges SemVer. Dieselbe Nummer
+trägt der Git-Tag und das GitHub-Release; sie steht im Blattfuß jedes gedruckten
+Bauauftrags und unter **Planung → Über FMBauplaner**. Eine Rückfrage zu einem Ausdruck
+lässt sich damit einem Stand zuordnen.
+
+Erzeugt wird die Nummer im Workflow. `js/version.js` trägt im Repository bewusst
+`Entwicklungsstand`; erst beim Veröffentlichen wird die Zeile ersetzt – zurückgeschrieben
+wird nichts. Wer den Quelltext auscheckt und lokal ausliefert, sieht deshalb
+`Entwicklungsstand` statt einer erfundenen Nummer.
 
 ### Eigene Domain
 
@@ -115,7 +129,9 @@ DNS-Einträge aufgelöst werden.
 
 Alternativ ohne Actions: unter **Settings → Pages** die Quelle **Deploy from a branch**
 mit Branch `main` und Ordner `/ (root)` wählen. Die Datei `.nojekyll` sorgt dafür,
-dass GitHub die Dateien unverändert ausliefert.
+dass GitHub die Dateien unverändert ausliefert. Auf diesem Weg entstehen allerdings
+weder Version noch Tag noch Release – die Seite weist sich dann als
+`Entwicklungsstand` aus.
 
 ### Lokal ausprobieren
 
@@ -148,7 +164,9 @@ js/zeichen.js         Taktische Zeichen auf der Karte
 js/bauauftrag.js      Druckdokument
 js/ui.js              Seitenleiste, Formulare, Dialoge
 js/io.js              JSON, GeoJSON, GPX, CSV
+js/version.js         Stand der Anwendung (beim Veröffentlichen gesetzt)
 vendor/               Leaflet 1.9.4, mgrs 2.1.0 (siehe LIZENZEN.md)
+LICENSE               EUPL-1.2
 ```
 
 Der Datenbestand liegt unter dem LocalStorage-Schlüssel `fbp.projekte.v1`, das zuletzt
@@ -175,3 +193,22 @@ Prüfung der Anlage obliegen einer Elektrofachkraft.
 Die taktischen Zeichen sind an DV 102 und die BBK-Zeichenvorschrift angelehnt und für
 die Planung gedacht. Für förmliche Lagedarstellungen ist die jeweils gültige
 Dienstvorschrift maßgeblich.
+
+---
+
+## Lizenz
+
+```
+Copyright © 2026 Johannes Rudolph
+Licensed under the EUPL
+```
+
+FMBauplaner steht unter der **[European Union Public Licence v. 1.2](LICENSE)**
+(EUPL-1.2) – der Lizenz, die die EU-Kommission für Software der öffentlichen Verwaltung
+vorsieht und die in allen Amtssprachen gleichermaßen verbindlich ist. Sie erlaubt
+Nutzung, Weitergabe und Veränderung und verlangt, dass abgeleitete Werke bei Weitergabe
+wieder unter der EUPL (oder einer der in ihrem Anhang genannten verträglichen Lizenzen)
+stehen.
+
+Die mitgelieferten Fremdbibliotheken behalten ihre eigenen Lizenzen – siehe
+[LIZENZEN.md](LIZENZEN.md). Für die Kartendienste gelten deren Nutzungsbedingungen.
