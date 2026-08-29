@@ -35,10 +35,12 @@ export const BASISKARTEN = [
 
 export const basiskarteById = id => BASISKARTEN.find(b => b.id === id) || BASISKARTEN[0];
 
-/** Graustufen-Pendant zu einer Basiskarte (für den S/W-Druck) */
+/** Graustufen-Pendant zu einer Basiskarte (für den S/W-Druck).
+ *  Bewusst über die Kachelquelle und nicht über einen CSS-Filter: Firefox gibt
+ *  gefilterte Seitenbereiche beim Drucken nicht aus, die Karte fehlt dann im PDF.
+ *  Für das Luftbild gibt es keine graue Quelle – es bleibt, wie es ist. */
 export function grauVariante(id) {
-  if (id === 'topplus' || id === 'topplus_light' || id === 'topo') return 'topplus_grau';
-  return id;
+  return id === 'luftbild' ? id : 'topplus_grau';
 }
 
 export function erstelleKarte(el, ansicht = {}) {

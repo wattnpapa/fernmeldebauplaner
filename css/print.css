@@ -100,7 +100,13 @@ body.druckansicht { overflow: hidden; }
 }
 .karten-buehne { position: absolute; inset: 0; overflow: hidden; }
 .karten-inner { transform-origin: top left; }
-.karten-inner .leaflet-container { background: #e9edf2; width: 100%; height: 100%; }
+.karten-inner.leaflet-container { background: #e9edf2; }
+
+/* Leaflet legt auf die Kacheln mix-blend-mode: plus-lighter (Notbehelf gegen
+   Kachelfugen in Chromium). Firefox kann diesen Modus beim Drucken nicht
+   ausgeben und lässt dann die komplette Kartenebene weg – im Bauauftrag wird
+   nichts ein- oder ausgeblendet, deshalb genügt hier der Normalmodus. */
+#druck img.leaflet-tile { mix-blend-mode: normal; }
 
 .karten-nord {
   position: absolute; top: 2mm; right: 2mm; z-index: 900;
@@ -219,13 +225,16 @@ body.druckansicht { overflow: hidden; }
 
 /* ---------------------------------------------------------------- Schwarz-Weiß */
 
-.druck-doku.sw .karten-inner .leaflet-tile-pane { filter: grayscale(1) contrast(1.06) brightness(1.04); }
+/* Kein CSS-Filter auf der Karte: Firefox gibt gefilterte Bereiche beim Drucken
+   nicht aus. Die Graustufen kommen deshalb aus der Kachelquelle (grauVariante). */
 .druck-doku.sw .seg-mass { border-color: #000 !important; color: #000; }
 .druck-doku.sw .strecken-mass { border-color: #000 !important; }
 .druck-doku.sw .fbp-punkt { border-color: #000 !important; color: #000; }
 .druck-doku.sw .fbp-punkt.art-start,
 .druck-doku.sw .fbp-punkt.art-ziel { background: #000 !important; color: #fff; }
-.druck-doku.sw .tz-wrap { filter: none; }
+/* Schlagschatten der taktischen Zeichen im Bauauftrag abschalten – auch das ist
+   ein CSS-Filter und würde die Zeichen aus dem Firefox-PDF verschwinden lassen. */
+#druck .tz-wrap { filter: none; }
 
 /* Beschriftungen auf der Druckkarte kleiner halten (Karte wird 2× gerendert) */
 .karten-inner .seg-mass { font-size: 17px; padding: 2px 8px; border-width: 2px; border-left-width: 5px; }
