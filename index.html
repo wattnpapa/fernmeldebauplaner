@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fernmeldebauplaner – THW</title>
+<meta name="description" content="GIS-Planungswerkzeug für den Fernmeldebau: Strecken planen, Längen ermitteln, Bauaufträge als PDF ausgeben.">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/print.css" media="all">
+</head>
+<body>
+
+<div id="app">
+
+  <header class="kopf">
+    <div class="marke">
+      <svg class="marke-zeichen" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="37" height="37" rx="4" fill="#003399"/>
+        <path d="M8 27 h4 q2.5 0 2.5 -3.5 Q14.5 18 20 18 q5.5 0 5.5 5.5 Q25.5 27 28 27 h4"
+              fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="12" cy="13" r="2.4" fill="#fff"/><circle cx="28" cy="13" r="2.4" fill="#fff"/>
+      </svg>
+      <span class="marke-text">Fernmeldebau<span>planer</span></span>
+    </div>
+
+    <div class="kopf-projekt">
+      <input id="projektname" class="projektname" type="text" aria-label="Name der Planung" placeholder="Name der Planung">
+      <span id="speicherstatus" class="speicherstatus" role="status">gespeichert</span>
+    </div>
+
+    <div class="kopf-tasten">
+      <button class="knopf" id="btn-undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">↶</button>
+      <button class="knopf" id="btn-redo" title="Wiederholen (Strg+Umschalt+Z)" aria-label="Wiederholen">↷</button>
+      <div class="menu-halter">
+        <button class="knopf" id="btn-datei" aria-haspopup="true" aria-expanded="false">Datei ▾</button>
+        <div class="menu" id="menu-datei" hidden>
+          <button data-akt="neu">Neue Planung …</button>
+          <button data-akt="oeffnen">Gespeicherte Planungen …</button>
+          <hr>
+          <button data-akt="export-json">Planung als Datei sichern (.json)</button>
+          <button data-akt="import-json">Planung aus Datei laden …</button>
+          <hr>
+          <button data-akt="export-geojson">Alles als GeoJSON</button>
+          <button data-akt="export-gpx">Alles als GPX (Hand-GPS)</button>
+          <hr>
+          <button data-akt="hilfe">Kurzanleitung</button>
+        </div>
+      </div>
+      <button class="knopf sekundaer" id="btn-seite" title="Seitenleiste ein-/ausblenden" aria-label="Seitenleiste">☰</button>
+    </div>
+  </header>
+
+  <div class="hauptbereich">
+
+    <aside class="seite" id="seite">
+      <nav class="reiter" role="tablist">
+        <button role="tab" class="aktiv" data-reiter="strecken">Strecken</button>
+        <button role="tab" data-reiter="zeichen">Taktische Zeichen</button>
+        <button role="tab" data-reiter="projekt">Projekt</button>
+      </nav>
+
+      <section class="reiter-inhalt aktiv" data-inhalt="strecken">
+        <div class="seite-kopf">
+          <button class="knopf primaer breit" id="btn-neue-strecke">+ Neue Strecke zeichnen</button>
+        </div>
+        <div class="summe" id="strecken-summe"></div>
+        <div class="liste" id="strecken-liste"></div>
+      </section>
+
+      <section class="reiter-inhalt" data-inhalt="zeichen">
+        <div class="seite-kopf">
+          <button class="knopf primaer breit" id="btn-neues-zeichen">+ Taktisches Zeichen setzen</button>
+        </div>
+        <div class="liste" id="zeichen-liste"></div>
+      </section>
+
+      <section class="reiter-inhalt" data-inhalt="projekt">
+        <div class="feldgruppe" id="projekt-kopf"></div>
+        <div class="feldgruppe" id="projekt-speicher"></div>
+      </section>
+    </aside>
+
+    <main class="kartenbereich">
+      <div id="karte" role="application" aria-label="Planungskarte"></div>
+
+      <div class="werkzeuge" role="toolbar" aria-label="Werkzeuge">
+        <button class="wz" id="wz-strecke" title="Strecke zeichnen (S)"><span class="wz-icon">╱</span><span>Strecke</span></button>
+        <button class="wz" id="wz-zeichen" title="Taktisches Zeichen setzen (T)"><span class="wz-icon">◈</span><span>Zeichen</span></button>
+        <button class="wz" id="wz-suche" title="Koordinate anspringen (K)"><span class="wz-icon">⌖</span><span>Koordinate</span></button>
+        <button class="wz" id="wz-standort" title="Eigenen Standort anzeigen"><span class="wz-icon">◎</span><span>Standort</span></button>
+      </div>
+
+      <div class="zeichen-hinweis" id="zeichen-hinweis" hidden>
+        <span class="zh-text"></span>
+        <button class="knopf klein" data-akt="zurueck">Letzten Punkt zurück</button>
+        <button class="knopf klein primaer" data-akt="fertig">Fertig (Enter)</button>
+        <button class="knopf klein" data-akt="abbruch">Abbrechen (Esc)</button>
+      </div>
+
+      <div class="kartenoptionen">
+        <label class="ko-zeile"><span>Karte</span>
+          <select id="basiskarte"></select>
+        </label>
+        <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-teillaengen"><span>Teillängen</span></label>
+        <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-gesamtlaenge"><span>Streckenname &amp; Summe</span></label>
+        <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-punktnummern"><span>Punktnummern</span></label>
+        <label class="ko-zeile"><span>Zeichengröße</span>
+          <input type="range" id="opt-symbolgroesse" min="0.6" max="1.8" step="0.1">
+        </label>
+      </div>
+
+      <div class="statusleiste">
+        <div class="sl-koord">
+          <span class="sl-titel">MGRS</span><span class="sl-wert mono" id="sl-mgrs">–</span>
+        </div>
+        <div class="sl-koord">
+          <span class="sl-titel">GPS</span><span class="sl-wert mono" id="sl-gps">–</span>
+        </div>
+        <div class="sl-koord sl-dez">
+          <span class="sl-titel">Dezimal</span><span class="sl-wert mono" id="sl-dez">–</span>
+        </div>
+        <div class="sl-hinweis" id="sl-hinweis">Klick auf die Karte: Koordinate übernehmen</div>
+      </div>
+    </main>
+
+  </div>
+</div>
+
+<input type="file" id="datei-import" accept=".json,.geojson,application/json" hidden>
+
+<div class="dialog-huelle" id="dialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-titel">
+    <header class="dialog-kopf">
+      <h2 id="dialog-titel"></h2>
+      <button class="knopf klein" data-akt="dialog-zu" aria-label="Schließen">✕</button>
+    </header>
+    <div class="dialog-inhalt" id="dialog-inhalt"></div>
+    <footer class="dialog-fuss" id="dialog-fuss"></footer>
+  </div>
+</div>
+
+<div class="hinweisbox" id="hinweisbox" role="status" aria-live="polite" hidden></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+<noscript><p style="padding:2rem;font:16px system-ui">Für den Fernmeldebauplaner wird JavaScript benötigt.</p></noscript>
+</body>
+</html>

@@ -1,0 +1,257 @@
+/* print.css – Bauauftrag: Bildschirmvorschau und Ausdruck (A4/A3, Farbe/SW) */
+
+#druck {
+  position: fixed; inset: 0; z-index: 3000; background: #55606e;
+  display: flex; flex-direction: column;
+}
+body.druckansicht { overflow: hidden; }
+
+/* ---------------------------------------------------------------- Steuerleiste */
+
+.druck-steuerung {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 9px 14px; background: #fff; border-bottom: 1px solid #cfd6e0;
+  box-shadow: 0 2px 10px rgba(0,0,0,.25); z-index: 2;
+}
+.ds-titel { font-size: 14px; font-weight: 600; margin-right: 4px; }
+.ds-felder { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; flex: 1; }
+.ds-feld { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4a5566; }
+.ds-feld select {
+  padding: 4px 6px; border: 1px solid #b6c1d1; border-radius: 5px;
+  background: #fff; font-size: 12px; color: #16202e;
+}
+.ds-haken { cursor: pointer; }
+.ds-haken input { accent-color: #003399; }
+.ds-zoomtasten { display: flex; align-items: center; gap: 4px; }
+.ds-zoomwert { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+.ds-tasten { display: flex; gap: 8px; }
+
+.druck-buehne {
+  flex: 1; overflow: auto; padding: 24px; display: flex; justify-content: center;
+  align-items: flex-start;
+}
+.druck-doku {
+  --vorschau-skala: 1;
+  --seite-b: 297mm; --seite-h: 210mm;
+  transform: scale(var(--vorschau-skala));
+  transform-origin: top center;
+  display: flex; flex-direction: column; gap: 22px;
+}
+
+/* ---------------------------------------------------------------- Blatt */
+
+.blatt {
+  width: var(--seite-b); height: var(--seite-h);
+  padding: 11mm 12mm 9mm;
+  background: #fff; color: #111;
+  box-shadow: 0 6px 28px rgba(0,0,0,.4);
+  display: flex; flex-direction: column;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 8.6pt; line-height: 1.32;
+  overflow: hidden;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.druck-doku.a3 .blatt { font-size: 10pt; }
+
+.blatt h2 {
+  font-size: 1.06em; margin: 3.4mm 0 1.4mm; padding-bottom: .8mm;
+  border-bottom: .5pt solid #111; text-transform: uppercase; letter-spacing: .4pt;
+}
+.blatt table { border-collapse: collapse; width: 100%; }
+
+/* -- Kopf */
+
+.bl-kopf {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: end; gap: 6mm;
+  padding-bottom: 2mm; border-bottom: 1.6pt solid #003399;
+}
+.druck-doku.sw .bl-kopf { border-bottom-color: #000; }
+.bl-marke { display: flex; flex-direction: column; }
+.bl-org { font-size: .92em; font-weight: 700; letter-spacing: .3pt; }
+.bl-doktyp {
+  font-size: .78em; text-transform: uppercase; letter-spacing: 1.1pt;
+  color: #003399; font-weight: 700;
+}
+.druck-doku.sw .bl-doktyp { color: #000; }
+.bl-titel { font-size: 1.62em; font-weight: 700; line-height: 1.12; }
+.bl-titel small { display: block; font-size: .5em; font-weight: 500; color: #444; margin-top: .6mm; }
+.bl-kennung { width: auto; font-size: .86em; }
+.bl-kennung th {
+  text-align: right; font-weight: 500; color: #555; padding: 0 2mm 0 0; white-space: nowrap;
+}
+.bl-kennung td { font-weight: 700; white-space: nowrap; }
+
+/* -- Stammdaten */
+
+.bl-stamm {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1mm 4mm;
+  margin: 2.4mm 0; padding: 2mm 0; border-bottom: .5pt solid #999;
+}
+.druck-doku.a3 .bl-stamm { grid-template-columns: repeat(6, 1fr); }
+.st-feld { display: flex; flex-direction: column; min-width: 0; }
+.st-titel { font-size: .72em; text-transform: uppercase; letter-spacing: .4pt; color: #666; }
+.st-wert { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* -- Karte */
+
+.kartenfeld { flex: 1; min-height: 0; display: flex; margin: 1.5mm 0; }
+.karten-rahmen {
+  position: relative; flex: 1; border: .8pt solid #111; overflow: hidden; background: #e9edf2;
+}
+.karten-buehne { position: absolute; inset: 0; overflow: hidden; }
+.karten-inner { transform-origin: top left; }
+.karten-inner .leaflet-container { background: #e9edf2; width: 100%; height: 100%; }
+
+.karten-nord {
+  position: absolute; top: 2mm; right: 2mm; z-index: 900;
+  background: rgba(255,255,255,.9); border: .5pt solid #111; border-radius: 1mm;
+  padding: 1mm 1.6mm; line-height: 0;
+}
+.karten-massstab {
+  position: absolute; left: 2mm; bottom: 2mm; z-index: 900;
+  background: rgba(255,255,255,.92); border: .5pt solid #111; border-radius: 1mm;
+  padding: 1mm 2mm; display: flex; align-items: center; gap: 2mm;
+}
+.ms-balken { display: block; }
+.ms-balken i {
+  display: block; height: 1.6mm; width: 40mm;
+  background: repeating-linear-gradient(to right, #111 0, #111 5mm, #fff 5mm, #fff 10mm);
+  border: .5pt solid #111;
+}
+.ms-text { display: flex; flex-direction: column; line-height: 1.2; }
+.ms-text b { font-size: .84em; }
+.ms-text span { font-size: .72em; color: #444; }
+
+.karten-uebersicht {
+  position: absolute; right: 2mm; bottom: 2mm; z-index: 900;
+  width: 38mm; height: 30mm; border: .8pt solid #111; background: #fff; overflow: hidden;
+}
+.druck-doku.a3 .karten-uebersicht { width: 52mm; height: 40mm; }
+.uk-buehne { position: absolute; inset: 0; overflow: hidden; }
+.uk-titel {
+  position: absolute; top: 0; left: 0; z-index: 5; background: rgba(255,255,255,.9);
+  font-size: .68em; padding: .3mm 1mm; border-right: .4pt solid #111; border-bottom: .4pt solid #111;
+}
+
+/* -- Legende */
+
+.bl-legende {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 1mm 4mm;
+  padding: 1.4mm 0; border-top: .5pt solid #bbb; font-size: .8em;
+}
+.lg-titel { font-weight: 700; text-transform: uppercase; letter-spacing: .4pt; font-size: .92em; }
+.lg-eintrag { display: inline-flex; align-items: center; gap: 1.4mm; }
+.lg-hinweis { color: #555; font-style: italic; margin-left: auto; }
+.lg-punkt {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 4mm; height: 4mm; border-radius: 50%; border: .7pt solid var(--farbe, #111);
+  background: #fff; font-size: .62em; font-weight: 700; font-style: normal;
+}
+.lg-punkt.art-start, .lg-punkt.art-ziel { background: var(--farbe, #111); color: #fff; }
+.lg-punkt.art-muffe, .lg-punkt.art-verteiler { border-radius: .6mm; }
+.lg-punkt.art-querung { border-radius: .6mm; transform: rotate(45deg); font-size: 0; }
+.lg-linie { display: inline-block; width: 9mm; height: 0; border-top: 1.2pt solid var(--farbe, #111); }
+.lg-linie.ander { border-top: 1pt dashed #8a8a8a; }
+
+/* -- Kennzahlen */
+
+.bl-kennzahlen {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 1.4mm;
+  margin-top: 1.6mm;
+}
+.bl-kennzahlen .kz {
+  border: .5pt solid #999; border-top: 1.6pt solid #003399; border-radius: .8mm;
+  padding: 1.2mm 1.6mm; display: flex; flex-direction: column; min-width: 0;
+}
+.druck-doku.sw .bl-kennzahlen .kz { border-top-color: #000; }
+.kz-titel { font-size: .7em; text-transform: uppercase; letter-spacing: .3pt; color: #555; }
+.kz-wert { font-size: 1.22em; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.kz-unter { font-size: .68em; color: #666; }
+
+/* -- Fuß */
+
+.bl-fuss {
+  display: flex; justify-content: space-between; gap: 4mm; margin-top: auto;
+  padding-top: 1.4mm; border-top: .5pt solid #bbb; font-size: .7em; color: #555;
+}
+.bf-quelle { text-align: right; }
+
+/* -- Datenblatt */
+
+.bl-abschnitt { margin-bottom: 2mm; }
+.tab-punkte { font-size: .86em; }
+.tab-punkte th {
+  text-align: left; font-size: .8em; text-transform: uppercase; letter-spacing: .3pt;
+  border-bottom: .8pt solid #111; padding: .8mm 1.2mm; white-space: nowrap; color: #333;
+}
+.tab-punkte td { padding: .9mm 1.2mm; border-bottom: .4pt solid #ccc; vertical-align: top; }
+.tab-punkte tbody tr:nth-child(even) { background: #f4f6f9; }
+.tab-punkte .nr { font-weight: 700; text-align: center; }
+.tab-punkte .zahl { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tab-punkte .mono { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: .92em; white-space: nowrap; }
+.tab-fussnote { font-size: .76em; color: #555; margin: 1.2mm 0 0; font-style: italic; }
+
+.bl-material { display: grid; grid-template-columns: 1.35fr 1fr; gap: 4mm; align-items: start; }
+.bl-material h2 { grid-column: 1 / -1; }
+.tab-material { font-size: .9em; }
+.tab-material th {
+  text-align: left; font-weight: 500; padding: .9mm 1.2mm; border-bottom: .4pt solid #ccc; width: 62%;
+}
+.tab-material td {
+  text-align: right; padding: .9mm 1.2mm; border-bottom: .4pt solid #ccc;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.mat-frei { border: .5pt solid #999; border-radius: .8mm; padding: 1.6mm 2mm; }
+.mf-titel { font-size: .76em; text-transform: uppercase; letter-spacing: .3pt; color: #555; }
+.mf-linien { display: flex; flex-direction: column; gap: 3.6mm; margin-top: 3mm; }
+.mf-linien span { display: block; border-bottom: .4pt solid #aaa; }
+
+.bl-freitext {
+  border: .5pt solid #999; border-radius: .8mm; padding: 2mm; min-height: 16mm;
+  background: repeating-linear-gradient(to bottom, transparent 0, transparent 5.4mm, #e3e3e3 5.4mm, #e3e3e3 5.6mm);
+}
+
+.us-gitter { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.4mm; }
+.us-feld { border: .5pt solid #999; border-radius: .8mm; padding: 1.6mm 2mm 2.4mm; }
+.us-titel { display: block; font-size: .76em; font-weight: 700; margin-bottom: 4mm; }
+.us-zeile { border-top: .4pt solid #666; margin-top: 6mm; padding-top: .5mm; }
+.us-zeile span { font-size: .66em; color: #666; }
+
+/* ---------------------------------------------------------------- Schwarz-Weiß */
+
+.druck-doku.sw .karten-inner .leaflet-tile-pane { filter: grayscale(1) contrast(1.06) brightness(1.04); }
+.druck-doku.sw .seg-mass { border-color: #000 !important; color: #000; }
+.druck-doku.sw .strecken-mass { border-color: #000 !important; }
+.druck-doku.sw .fbp-punkt { border-color: #000 !important; color: #000; }
+.druck-doku.sw .fbp-punkt.art-start,
+.druck-doku.sw .fbp-punkt.art-ziel { background: #000 !important; color: #fff; }
+.druck-doku.sw .tz-wrap { filter: none; }
+
+/* Beschriftungen auf der Druckkarte kleiner halten (Karte wird 2× gerendert) */
+.karten-inner .seg-mass { font-size: 17px; padding: 2px 8px; border-width: 2px; border-left-width: 5px; }
+.karten-inner .fbp-punkt { width: 34px; height: 34px; font-size: 15px; border-width: 4px; }
+.karten-inner .tz-label { font-size: 17px; padding: 0 6px; }
+
+/* ---------------------------------------------------------------- Ausdruck */
+
+@media print {
+  html, body { height: auto; background: #fff; overflow: visible; }
+  #app, .hinweisbox, .dialog-huelle, .druck-steuerung { display: none !important; }
+
+  #druck { position: static; display: block; background: #fff; }
+  .druck-buehne { display: block; overflow: visible; padding: 0; background: #fff; }
+  .druck-doku { transform: none !important; display: block; gap: 0; }
+
+  .blatt {
+    box-shadow: none; margin: 0; border: 0;
+    break-after: page; page-break-after: always;
+    break-inside: avoid;
+  }
+  .blatt:last-child { break-after: auto; page-break-after: auto; }
+
+  .tab-punkte thead { display: table-header-group; }
+  .tab-punkte tr { break-inside: avoid; page-break-inside: avoid; }
+  .bl-abschnitt { break-inside: avoid; page-break-inside: avoid; }
+
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
