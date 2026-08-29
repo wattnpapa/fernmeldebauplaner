@@ -113,10 +113,12 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 1000;
   background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
   box-shadow: var(--schatten-stark); padding: 5px; min-width: 262px;
+  color: var(--text);
 }
 .menu button {
   display: block; width: 100%; text-align: left; padding: 7px 10px; border: 0;
   background: none; border-radius: var(--radius-klein); cursor: pointer; font-size: 13px;
+  color: var(--text);
 }
 .menu button:hover { background: var(--thw-blass); color: var(--thw); }
 .menu hr { border: 0; border-top: 1px solid var(--linie); margin: 5px 2px; }
