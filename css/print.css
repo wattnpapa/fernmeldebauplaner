@@ -356,3 +356,14 @@ body.druckansicht { overflow: hidden; }
     font-size: 9pt; color: #555;
   }
 }
+
+/* Die Zeichenschrift gilt auch im Druck — print.css wird für das Druckfenster
+   eigenständig geladen, app.css ist dort nicht zwingend dabei. */
+@font-face {
+  font-family: 'Roboto Slab';
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+  src: local('Roboto Slab Bold'), local('RobotoSlab-Bold'),
+       url('../fonts/roboto-slab-bold.woff') format('woff');
+}

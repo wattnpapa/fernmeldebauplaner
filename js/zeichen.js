@@ -1,7 +1,7 @@
 // zeichen.js – taktische Zeichen als Kartenmarker
 
 import { store, neuesZeichen } from './state.js';
-import { symbolSVG, symbolMasse, symbolById } from './symbols.js';
+import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
 
 export class ZeichenLayer {
@@ -41,7 +41,6 @@ export class ZeichenLayer {
     let neu;
     store.aendern(p => {
       neu = neuesZeichen(e.latlng.lat, e.latlng.lng, sym);
-      neu.org = p.optionen.letzteOrg || 'thw';
       p.zeichen.push(neu);
     }, 'zeichen');
     this.beendeSetzen();
@@ -66,9 +65,8 @@ export class ZeichenLayer {
     for (const z of p.zeichen) {
       if (z.sichtbar === false) continue;
       const basis = symbolById(z.symbol);
-      const grund = (basis.form === 'einheit' || basis.form === 'fuehrungsstelle') ? 52 : 40;
-      const breite = Math.round(grund * skala * (z.groesse || 1));
-      const opt = { symbol: z.symbol, org: z.org, staerke: z.staerke, drehung: z.drehung, breite, sw: this.sw };
+      const breite = Math.round(GRUNDBREITE * skala * (z.groesse || 1));
+      const opt = { symbol: z.symbol, drehung: z.drehung, breite, sw: this.sw };
       const svg = symbolSVG(opt);
       const masse = symbolMasse(opt);
       const gewaehlt = z.id === this.auswahl;

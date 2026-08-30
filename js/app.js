@@ -145,7 +145,6 @@ function koordinatenPopup(ll) {
         symbolPalette(sym => {
           store.aendern(p => {
             const z = neuesZeichen(ll.lat, ll.lng, sym);
-            z.org = p.optionen.letzteOrg || 'thw';
             p.zeichen.push(z);
             zl.auswahl = z.id;
           }, 'zeichen');

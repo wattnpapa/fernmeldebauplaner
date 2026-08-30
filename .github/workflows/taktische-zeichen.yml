@@ -1,0 +1,116 @@
+# Holt wöchentlich die taktischen Zeichen von jonas-koeritz/Taktische-Zeichen.
+# Gibt es dort ein neueres Release, wird die generierte Zeichendatei neu
+# erzeugt, die festgeschriebene Version im Skript mitgezogen und — nur wenn
+# die Prüfung grün ist — nach main committet.
+#
+# Vorbild: erfassungsbogen (taktische-zeichen.yml). Dort erledigen npm-Skripte
+# das Holen und Tests die Absicherung. Diese Anwendung ist eine statische Seite
+# ohne Paketverwaltung, deshalb übernimmt scripts/taktische-zeichen-holen.py
+# beides: es bricht von sich aus ab, wenn das Archiv anders aufgebaut ist als
+# erwartet (kein svg/-Verzeichnis, keine eingebettete Schrift, doppelte
+# Kennungen). Danach prüft ein Node-Lauf, dass die erzeugte Datei sich laden
+# lässt und nicht plötzlich weniger Zeichen enthält.
+#
+# Warum das Release am Ende von Hand angestoßen wird: Ein Push mit dem
+# GITHUB_TOKEN löst absichtlich keine `on: push`-Workflows aus (GitHub
+# verhindert so Endlosschleifen). `workflow_dispatch` per API ist die
+# dokumentierte Ausnahme und erzeugt sehr wohl einen Lauf — deshalb der
+# abschließende `gh workflow run`. Ein Personal Access Token braucht es dafür
+# nicht.
+name: Taktische Zeichen aktualisieren
+
+on:
+  schedule:
+    # Montags 04:00 UTC — weit weg von den üblichen Arbeitszeiten, damit ein
+    # dadurch ausgelöstes Release niemandem in einen laufenden Push fällt.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  aktualisieren:
+    # Nicht in Forks laufen lassen — dort gibt es weder Release noch Rechte.
+    if: github.repository == 'wattnpapa/fernmeldebauplaner'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Neueste Sammlungs-Version ermitteln
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NEU=$(gh release view --repo jonas-koeritz/Taktische-Zeichen --json tagName -q .tagName)
+          # Die festgeschriebene Version steht als einzige Stelle im Holskript.
+          ALT=$(grep -oE 'sys\.argv\[1\] if len\(sys\.argv\) > 1 else "[^"]+"' scripts/taktische-zeichen-holen.py | grep -oE '"[^"]+"' | tr -d '"')
+          echo "Sammlung: $NEU · eingebaut: $ALT"
+          echo "neu=$NEU" >> "$GITHUB_OUTPUT"
+          echo "alt=$ALT" >> "$GITHUB_OUTPUT"
+          if [ "$NEU" = "$ALT" ]; then
+            echo "aenderung=nein" >> "$GITHUB_OUTPUT"
+            echo "Nichts zu tun." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "aenderung=ja" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.aenderung == 'ja'
+        with:
+          node-version: 24
+
+      - name: Zeichen neu holen
+        if: steps.version.outputs.aenderung == 'ja'
+        id: holen
+        env:
+          NEU: ${{ steps.version.outputs.neu }}
+        run: |
+          set -euo pipefail
+          # Kennungsliste vorher merken, um hinterher sagen zu können, welche
+          # Zeichen dazugekommen bzw. weggefallen sind.
+          grep -oE '^  "[^"]+":' js/zeichen-daten.js | sort -u > /tmp/zeichen-alt.txt
+          python3 scripts/taktische-zeichen-holen.py "$NEU"
+          # Festgeschriebene Version mitziehen, sonst holt ein lokaler Lauf
+          # ohne Argument wieder die alte Fassung.
+          sed -i -E "s|(sys\.argv\[1\] if len\(sys\.argv\) > 1 else \")[^\"]+(\")|\1$NEU\2|" scripts/taktische-zeichen-holen.py
+          grep -oE '^  "[^"]+":' js/zeichen-daten.js | sort -u > /tmp/zeichen-neu.txt
+          if git diff --quiet; then
+            echo "Release $NEU enthält dieselben Zeichen — nur die Versionsangabe wäre neu."
+            echo "diff=nein" >> "$GITHUB_OUTPUT"
+          else
+            echo "diff=ja" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "## Taktische Zeichen $NEU"
+            echo "### Neu"
+            comm -13 /tmp/zeichen-alt.txt /tmp/zeichen-neu.txt | sed 's/^/- /' | head -100
+            echo "### Weggefallen"
+            comm -23 /tmp/zeichen-alt.txt /tmp/zeichen-neu.txt | sed 's/^/- /' | head -100
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Der eigentliche Wächter: scripts/zeichen-pruefen.mjs lädt die erzeugte
+      # Datei, rendert jedes Zeichen einmal und schlägt an, wenn der Bestand
+      # schrumpft, eine Kategorie leer ist oder das Standardzeichen fehlt.
+      # Ohne diesen Schritt ginge eine stille Verschlechterung direkt ins Release.
+      - name: Erzeugte Zeichendatei prüfen
+        if: steps.holen.outputs.diff == 'ja'
+        run: node scripts/zeichen-pruefen.mjs
+
+      - name: Committen und Release anstoßen
+        if: steps.holen.outputs.diff == 'ja'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEU: ${{ steps.version.outputs.neu }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add scripts/taktische-zeichen-holen.py js/zeichen-daten.js fonts/roboto-slab-bold.woff
+          git commit -m "Die taktischen Zeichen kommen jetzt aus Sammlung $NEU"
+          git push
+          # Push per GITHUB_TOKEN löst release.yml nicht aus (s. Kopf) —
+          # deshalb hier ausdrücklich anstoßen.
+          gh workflow run release.yml --ref main

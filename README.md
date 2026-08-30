@@ -30,11 +30,13 @@ und keinen Datenabfluss: alle Planungen liegen im lokalen Speicher des Browsers.
   (230 V 1~, 400 V 3~, 24 V, 12 V), Leistungsfaktor und zulässigem Spannungsfall
 
 **Taktische Zeichen**
-- 41 Symbole, angelehnt an DV 102 / BBK, in fünf Kategorien: Fernmeldetechnik,
-  Kabelbau & Trasse, Führung & Einheiten, Einrichtungen, Gefahren
-- Organisation (THW, Feuerwehr, Rettungsdienst, Polizei, Führung, Bundeswehr, neutral),
-  Stärkeangabe (Trupp bis Bereitschaft), Drehung, Größe, freie Beschriftung
-- Als SVG erzeugt: bleiben in jeder Zoomstufe und im Ausdruck scharf, auch in Schwarz-Weiß
+- 894 Zeichen aus der Sammlung [jonas-koeritz/Taktische-Zeichen](https://github.com/jonas-koeritz/Taktische-Zeichen)
+  in 36 Kategorien — darunter 108 allein für das Fernmeldewesen: Feldkabel, Kabelbau,
+  Richtfunk, Fernsprechvermittlungen, die FuG-Reihe, Netztechnik
+- Auswahl nach Kategorie oder über die Suche im gesamten Bestand
+- Drehung, Größe und freie Beschriftung je Zeichen
+- SVG: scharf in jeder Zoomstufe; für den Schwarz-Weiß-Druck bringt die Sammlung
+  eine eigene Druckfassung mit
 
 **Koordinaten in MGRS und GPS**
 - Laufende Anzeige von MGRS und GPS unter der Karte
@@ -161,12 +163,15 @@ js/geo.js             Entfernungen (Vincenty), MGRS/UTM/GPS, Eingabe-Parser
 js/strom.js           Querschnitt von Stromleitungen aus Last und Länge
 js/map.js             Leaflet-Karte und Basiskarten
 js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
-js/symbols.js         Taktische Zeichen (SVG)
+js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
+js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
 js/bauauftrag.js      Druckdokument
 js/ui.js              Seitenleiste, Formulare, Dialoge
 js/io.js              JSON, GeoJSON, GPX, CSV
 js/version.js         Stand der Anwendung (beim Veröffentlichen gesetzt)
+fonts/                Roboto Slab Bold, die Beschriftungsschrift der Zeichen
+scripts/              Zeichen holen und prüfen (siehe unten)
 vendor/               Leaflet 1.9.4, mgrs 2.1.0 (siehe LIZENZEN.md)
 LICENSE               EUPL-1.2
 ```
@@ -174,6 +179,26 @@ LICENSE               EUPL-1.2
 Der Datenbestand liegt unter dem LocalStorage-Schlüssel `fbp.projekte.v1`, das zuletzt
 geöffnete Projekt unter `fbp.aktiv.v1`. `js/state.js` hebt ältere Dateien beim Laden
 über `migrieren()` auf das aktuelle Schema.
+
+### Taktische Zeichen auffrischen
+
+`js/zeichen-daten.js` und `fonts/roboto-slab-bold.woff` werden nicht von Hand
+gepflegt, sondern aus dem Release-Archiv der Sammlung erzeugt:
+
+```bash
+python3 scripts/taktische-zeichen-holen.py
+```
+
+Ohne Argument wird die im Skript festgeschriebene Version geholt, mit Argument
+eine bestimmte (`python3 scripts/taktische-zeichen-holen.py v2.1.0`). Danach
+prüfen, ob der Bestand vollständig ist und sich jedes Zeichen rendern lässt:
+
+```bash
+node scripts/zeichen-pruefen.mjs
+```
+
+`.github/workflows/taktische-zeichen.yml` erledigt beides montags von selbst,
+committet nur bei grüner Prüfung und stößt anschließend ein Release an.
 
 ---
 
@@ -192,9 +217,9 @@ verlangt. Die Belastbarkeit gilt für drei belastete Adern frei in Luft bei 30 �
 aufgerollte Leitungsroller tragen deutlich weniger. Die verbindliche Auslegung und die
 Prüfung der Anlage obliegen einer Elektrofachkraft.
 
-Die taktischen Zeichen sind an DV 102 und die BBK-Zeichenvorschrift angelehnt und für
-die Planung gedacht. Für förmliche Lagedarstellungen ist die jeweils gültige
-Dienstvorschrift maßgeblich.
+Die taktischen Zeichen stammen aus der Sammlung jonas-koeritz/Taktische-Zeichen
+(Release-Exporte unter CC0-1.0). Für förmliche Lagedarstellungen ist die jeweils
+gültige Dienstvorschrift maßgeblich.
 
 ---
 

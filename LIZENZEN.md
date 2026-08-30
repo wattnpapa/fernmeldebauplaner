@@ -16,6 +16,28 @@ Anwendung ohne Netzwerkzugriff auf fremde CDNs auskommt.
 Der vollständige Lizenztext von `mgrs` liegt in `vendor/mgrs.LICENSE.md`,
 der von Leaflet im Kopf von `vendor/leaflet/leaflet.js`.
 
+## Taktische Zeichen
+
+Die taktischen Zeichen stammen aus der Sammlung
+[jonas-koeritz/Taktische-Zeichen](https://github.com/jonas-koeritz/Taktische-Zeichen),
+Release `v2.0.0`. Die fertigen Exporte aus dem Release-Archiv stehen unter
+**CC0-1.0** (Gemeinfreiheit), der Quelltext der Sammlung unter **CC BY 4.0**.
+
+Mitgeliefert werden:
+
+| Datei | Inhalt | Lizenz |
+|---|---|---|
+| `js/zeichen-daten.js` | 894 Zeichen als SVG-Rumpf, erzeugt aus dem Release-Archiv | CC0-1.0 |
+| `fonts/roboto-slab-bold.woff` | Roboto Slab Bold, die Beschriftungsschrift der Zeichen | Apache-2.0 |
+
+`scripts/taktische-zeichen-holen.py` erzeugt beide Dateien neu;
+`.github/workflows/taktische-zeichen.yml` prüft wöchentlich auf ein neueres
+Release der Sammlung.
+
+Die Schrift Roboto Slab ist Teil der Sammlung und dort in jedes einzelne Zeichen
+eingebettet; hier liegt sie einmal separat. Roboto Slab steht unter der
+Apache License 2.0 (https://github.com/googlefonts/robotoslab).
+
 ## Kartendienste
 
 Die Kacheldienste werden zur Laufzeit aus dem Browser des Anwenders abgerufen.

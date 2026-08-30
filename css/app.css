@@ -659,10 +659,14 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .pl-tasten { display: flex; gap: 6px; flex-shrink: 0; }
 
 .palette { display: flex; flex-direction: column; gap: 10px; }
-.palette-suche {
-  width: 100%; padding: 8px 11px; border: 1px solid var(--linie-stark);
-  border-radius: var(--radius-klein); font-size: 13px;
+.palette-kopf { display: flex; gap: 8px; flex-wrap: wrap; }
+.palette-suche, .palette-kat-wahl {
+  padding: 8px 11px; border: 1px solid var(--linie-stark);
+  border-radius: var(--radius-klein); font-size: 13px; background: var(--flaeche);
 }
+.palette-suche { flex: 2 1 220px; }
+.palette-kat-wahl { flex: 1 1 180px; }
+.palette-kat-wahl:disabled { opacity: .5; }
 .palette-gitter { display: flex; flex-direction: column; gap: 6px; max-height: 58vh; overflow-y: auto; }
 .palette-kat {
   font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-schwach);
@@ -835,4 +839,18 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
     scroll-behavior: auto !important;
   }
   .knopf:active:not(:disabled) { transform: none; }
+}
+
+/* ---------------------------------------------------------------- Zeichenschrift
+   Die taktischen Zeichen beschriften sich selbst (Kürzel wie „OB 30", „AZ").
+   Die Sammlung setzt dafür Roboto Slab Bold voraus — ohne diese Regel fiele der
+   Browser auf eine beliebige Serifenschrift zurück und die Kürzel säßen neben
+   ihren Kästchen. Die Datei stammt aus dem Release der Sammlung. */
+@font-face {
+  font-family: 'Roboto Slab';
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+  src: local('Roboto Slab Bold'), local('RobotoSlab-Bold'),
+       url('../fonts/roboto-slab-bold.woff') format('woff');
 }

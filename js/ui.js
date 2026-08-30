@@ -11,7 +11,7 @@ import {
   NETZFORMEN, LASTEINHEITEN, netzById, MAX_QUERSCHNITT,
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText
 } from './strom.js';
-import { SYMBOLE, KATEGORIEN, ORGANISATIONEN, STAERKEN, symbolSVG, symbolById } from './symbols.js';
+import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
 import * as io from './io.js';
 import { oeffneBauauftrag } from './bauauftrag.js';
 import { VERSION } from './version.js';
@@ -636,7 +636,7 @@ export function zeichneZeichenListe() {
 
     const kopf = el('header', 'eintrag-kopf');
     kopf.innerHTML =
-      `<span class="mini-symbol">${symbolSVG({ symbol: z.symbol, org: z.org, staerke: z.staerke, breite: 26 })}</span>
+      `<span class="mini-symbol">${symbolSVG({ symbol: z.symbol, breite: 26 })}</span>
        <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(z.label || basis.name)}</button>
        ${augenKnopf(z.sichtbar !== false)}`;
     kopf.onclick = () => ctx.zl.waehle(gewaehlt ? null : z.id);
@@ -657,7 +657,7 @@ function zeichenFormular(z, basis) {
   const symZeile = el('div', 'feld');
   symZeile.appendChild(el('span', 'feld-titel', 'Symbol'));
   const symKnopf = el('button', 'symbol-waehler');
-  symKnopf.innerHTML = `${symbolSVG({ symbol: z.symbol, org: z.org, staerke: z.staerke, breite: 34 })}
+  symKnopf.innerHTML = `${symbolSVG({ symbol: z.symbol, breite: 34 })}
     <span>${escapeHtml(basis.name)}</span><span class="pfeil">▾</span>`;
   symKnopf.onclick = () => symbolPalette(sym => {
     store.aendern(() => { z.symbol = sym; }, 'zeichen');
@@ -670,17 +670,6 @@ function zeichenFormular(z, basis) {
     schreib(() => { z.label = v; });
     ctx.zl.zeichne();
   }, { platzhalter: basis.name }));
-
-  const paar = el('div', 'feld-paar');
-  paar.append(
-    feld('Organisation', z.org, v => {
-      store.aendern(p => { z.org = v; p.optionen.letzteOrg = v; }, 'zeichen');
-    }, { typ: 'select', werte: ORGANISATIONEN.map(o => [o.id, o.name]) }),
-    feld('Stärke', z.staerke ?? '', v => {
-      store.aendern(() => { z.staerke = v; }, 'zeichen');
-    }, { typ: 'select', werte: STAERKEN.map(s => [s.id, s.name]) })
-  );
-  g.appendChild(paar);
 
   const paar2 = el('div', 'feld-paar');
   paar2.append(
@@ -723,36 +712,71 @@ function zeichenFormular(z, basis) {
   return koerper;
 }
 
-/** Symbolauswahl mit Suche und Kategorien */
+/**
+ * Symbolauswahl mit Suche und Kategorien.
+ *
+ * Die Sammlung bringt rund 900 Zeichen mit. Alle gleichzeitig als SVG in den
+ * Dialog zu hängen macht das Öffnen spürbar zäh, deshalb zeigt die Auswahl
+ * immer nur eine Kategorie — und schaltet erst bei einer Suche über den
+ * gesamten Bestand.
+ */
 export function symbolPalette(beiWahl) {
   const box = el('div', 'palette');
-  box.innerHTML = `<input type="search" class="palette-suche" placeholder="Symbol suchen …" aria-label="Symbol suchen">
+  box.innerHTML = `<div class="palette-kopf">
+      <input type="search" class="palette-suche" placeholder="Alle Zeichen durchsuchen …" aria-label="Zeichen suchen">
+      <select class="palette-kat-wahl" aria-label="Kategorie"></select>
+    </div>
     <div class="palette-gitter"></div>`;
   const gitter = box.querySelector('.palette-gitter');
   const suche = box.querySelector('.palette-suche');
-  const org = store.projekt.optionen.letzteOrg || 'thw';
+  const katWahl = box.querySelector('.palette-kat-wahl');
 
-  const bauen = (filter = '') => {
+  for (const kat of KATEGORIEN) {
+    const opt = document.createElement('option');
+    opt.value = kat.id;
+    opt.textContent = kat.name;
+    katWahl.appendChild(opt);
+  }
+  const start = KATEGORIEN.find(k => k.id === 'fernmeldewesen') || KATEGORIEN[0];
+  katWahl.value = start.id;
+
+  const abschnitt = (titel, treffer) => {
+    gitter.appendChild(el('h4', 'palette-kat', escapeHtml(titel)));
+    const reihe = el('div', 'palette-reihe');
+    for (const s of treffer) {
+      const b = el('button', 'palette-knopf');
+      b.innerHTML = `${symbolSVG({ symbol: s.id, breite: 40 })}<span>${escapeHtml(s.name)}</span>`;
+      b.title = s.name;
+      b.onclick = () => { beiWahl(s.id); schliesseDialog(); };
+      reihe.appendChild(b);
+    }
+    gitter.appendChild(reihe);
+  };
+
+  const bauen = () => {
     gitter.innerHTML = '';
-    const f = filter.trim().toLowerCase();
+    const f = suche.value.trim().toLowerCase();
+    katWahl.disabled = !!f;
+
+    if (!f) {
+      const kat = KATEGORIEN.find(k => k.id === katWahl.value) || KATEGORIEN[0];
+      abschnitt(kat.name, SYMBOLE.filter(s => s.kat === kat.id));
+      return;
+    }
+
+    let gefunden = 0;
     for (const kat of KATEGORIEN) {
       const treffer = SYMBOLE.filter(s => s.kat === kat.id &&
-        (!f || s.name.toLowerCase().includes(f) || s.id.includes(f)));
+        (s.name.toLowerCase().includes(f) || s.id.includes(f)));
       if (!treffer.length) continue;
-      gitter.appendChild(el('h4', 'palette-kat', escapeHtml(kat.name)));
-      const reihe = el('div', 'palette-reihe');
-      for (const s of treffer) {
-        const b = el('button', 'palette-knopf');
-        b.innerHTML = `${symbolSVG({ symbol: s.id, org, breite: s.form === 'einheit' || s.form === 'fuehrungsstelle' ? 46 : 36 })}
-          <span>${escapeHtml(s.name)}</span>`;
-        b.onclick = () => { beiWahl(s.id); schliesseDialog(); };
-        reihe.appendChild(b);
-      }
-      gitter.appendChild(reihe);
+      abschnitt(kat.name, treffer);
+      gefunden += treffer.length;
     }
-    if (!gitter.children.length) gitter.appendChild(el('p', 'klein', 'Kein Symbol gefunden.'));
+    if (!gefunden) gitter.appendChild(el('p', 'klein', 'Kein Zeichen gefunden.'));
   };
-  suche.oninput = () => bauen(suche.value);
+
+  suche.oninput = bauen;
+  katWahl.onchange = bauen;
   bauen();
 
   dialog({ titel: 'Taktisches Zeichen wählen', inhalt: box, breit: true, fuss: [{ text: 'Abbrechen' }] });

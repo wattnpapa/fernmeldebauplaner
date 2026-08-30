@@ -1,6 +1,7 @@
 // state.js – Datenmodell, Projektverwaltung, LocalStorage, Undo
 
 import { neueStromangabe } from './strom.js';
+import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 
 export const SCHEMA = 1;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
@@ -100,9 +101,9 @@ export function neuerPunkt(lat, lng, art = 'punkt') {
   return { id: id(), lat, lng, art, name: '', bemerkung: '' };
 }
 
-export function neuesZeichen(lat, lng, symbol = 'fm-funk') {
+export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
   return {
-    id: id(), lat, lng, symbol, org: 'thw', staerke: undefined,
+    id: id(), lat, lng, symbol,
     drehung: 0, groesse: 1, label: '', bemerkung: '', sichtbar: true
   };
 }
@@ -326,7 +327,16 @@ export function migrieren(p) {
         punkte: (s.punkte || []).map(pt => ({ ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id() }))
       };
     }),
-    zeichen: (p.zeichen || []).map(z => ({ ...neuesZeichen(z.lat, z.lng), ...z, id: z.id || id() }))
+    // Die Zeichen kamen früher aus einem selbst gezeichneten Satz mit eigenen
+    // Kennungen. Wer so einen Plan lädt, bekommt statt eines leeren Markers das
+    // Standardzeichen — Ort, Beschriftung und Bemerkung bleiben erhalten.
+    zeichen: (p.zeichen || []).map(z => {
+      const { org, staerke, ...rest } = z;
+      return {
+        ...neuesZeichen(z.lat, z.lng), ...rest, id: z.id || id(),
+        symbol: symbolBekannt(z.symbol) ? z.symbol : STANDARD_SYMBOL
+      };
+    })
   };
   out.id = p.id || id();
   return out;

@@ -3,7 +3,7 @@
 import { store, migrieren, neueStrecke, neuerPunkt, id, ladeAlle, dateisicherungVermerken } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
-import { symbolById } from './symbols.js';
+import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
 
 function dateiname(teile, endung) {
   return teile.filter(Boolean).join('_')
@@ -72,8 +72,8 @@ function geoJSONUebernehmen(fc, name) {
       } else if (g.type === 'Point') {
         p.zeichen.push({
           id: id(), lat: g.coordinates[1], lng: g.coordinates[0],
-          symbol: symbolById(eig.symbol) ? (eig.symbol || 'fm-funk') : 'fm-funk',
-          org: eig.org || 'thw', drehung: 0, groesse: 1,
+          symbol: symbolBekannt(eig.symbol) ? eig.symbol : STANDARD_SYMBOL,
+          drehung: 0, groesse: 1,
           label: eig.name || eig.label || '', bemerkung: eig.bemerkung || '', sichtbar: true
         });
       }
@@ -120,7 +120,7 @@ export function geoJSON(nurStrecke = null) {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [z.lng, z.lat] },
       properties: {
-        name: z.label || symbolById(z.symbol).name, symbol: z.symbol, org: z.org,
+        name: z.label || symbolById(z.symbol).name, symbol: z.symbol,
         bemerkung: z.bemerkung, mgrs: toMGRS(z.lat, z.lng, 5)
       }
     });
