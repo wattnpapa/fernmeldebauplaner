@@ -52,6 +52,8 @@ export function projektExportieren(pid) {
  *
  *  Mit gehen die Zeichen dieses Abschnitts und dazu die nicht zugeteilten:
  *  die sind das gemeinsame Lagebild und würden dem Empfänger sonst fehlen.
+ *  Ohne Abschnitt bleiben genau die nicht zugeteilten übrig – Zeichen fremder
+ *  Abschnitte gehören nicht in einen Ausschnitt, der weitergegeben wird.
  *  Der Vermerk über die letzte Dateisicherung bleibt unberührt – ein Ausschnitt
  *  sichert nicht die Planung. */
 export function abschnittExportieren(aid) {
@@ -70,7 +72,7 @@ export function abschnittExportieren(aid) {
     geaendert: jetzt,
     einsatzabschnitte: ea ? [ea] : [],
     strecken,
-    zeichen: zeichenFuer(p, aid),
+    zeichen: aid ? zeichenFuer(p, aid) : zeichenIm(p, aid),
     herkunft: {
       projekt: p.name,
       projektId: p.id,

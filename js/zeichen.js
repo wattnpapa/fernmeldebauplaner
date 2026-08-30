@@ -19,7 +19,8 @@ export class ZeichenLayer {
        fehlen sonst auf jedem Ausschnitt. `undefined` heißt: alle. */
     this.nurAbschnitt = opt.nurAbschnitt;
     /* Im Druck entscheidet die Auswahl, nicht der Augenschalter des Abschnitts
-       auf der Arbeitskarte. */
+       auf der Arbeitskarte – aber nur für den gedruckten Abschnitt selbst,
+       genau wie bei den Strecken. */
     this.abschnittSchaltet = opt.abschnittSchaltet !== false;
     this.setzAbschnitt = null;
     if (this.interaktiv) {
@@ -77,7 +78,9 @@ export class ZeichenLayer {
 
     for (const z of p.zeichen) {
       if (z.sichtbar === false) continue;
-      if (this.abschnittSchaltet && !zeichenSichtbar(p, z)) continue;
+      const angefordert = !this.abschnittSchaltet && !!this.nurAbschnitt &&
+        z.abschnitt === this.nurAbschnitt;
+      if (!angefordert && !zeichenSichtbar(p, z)) continue;
       if (this.nurAbschnitt && z.abschnitt && z.abschnitt !== this.nurAbschnitt) continue;
       const basis = symbolById(z.symbol);
       const breite = Math.round(GRUNDBREITE * skala * (z.groesse || 1));

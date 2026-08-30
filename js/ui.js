@@ -845,10 +845,12 @@ export function einsatzabschnittDialog(aid) {
     const g = el('div', 'feldgruppe');
     g.appendChild(feld('Bezeichnung', ea.name, v => {
       schreib(() => { ea.name = v; });
-      /* Nur die Zeile nachziehen: die Liste bei jedem Tastendruck neu zu bauen
-         verlöre Bildlauf und Tastenfokus in den offenen Strecken darunter. */
-      const zeile = document.querySelector(`.ea-gruppe[data-aid="${ea.id}"] .ea-name`);
-      if (zeile) zeile.lastChild.textContent = v;
+      /* Nur die Zeilen nachziehen: die Liste bei jedem Tastendruck neu zu bauen
+         verlöre Bildlauf und Tastenfokus in den offenen Strecken darunter.
+         Der Abschnitt steht in beiden Listen – Strecken und Zeichen –, beide
+         stehen gleichzeitig im DOM. */
+      document.querySelectorAll(`.ea-gruppe[data-aid="${ea.id}"] .ea-name`)
+        .forEach(zeile => { zeile.lastChild.textContent = v; });
       document.getElementById('dialog-titel').textContent = v || 'Einsatzabschnitt';
     }, { platzhalter: 'z. B. Einsatzabschnitt Nord' }));
     g.appendChild(feld('Leitung / Verantwortlich', ea.leiter, v => schreib(() => { ea.leiter = v; }),
@@ -1000,8 +1002,9 @@ function abschnittFarbwahl(ea) {
       schreib(() => { ea.farbe = f; });
       reihe.querySelectorAll('.farbe').forEach(x => x.classList.remove('aktiv'));
       b.classList.add('aktiv');
-      const punkt = document.querySelector(`.ea-gruppe[data-aid="${ea.id}"] .farbpunkt`);
-      if (punkt) punkt.style.setProperty('--farbe', f);
+      // Ebenso in beiden Listen; der Punkt im Gruppenkopf, nicht die der Einträge.
+      document.querySelectorAll(`.ea-gruppe[data-aid="${ea.id}"] .ea-kopf .farbpunkt`)
+        .forEach(punkt => { punkt.style.setProperty('--farbe', f); });
     };
     reihe.appendChild(b);
   });
@@ -1013,13 +1016,18 @@ function abschnittFarbwahl(ea) {
    Abschnitt mehr zugeteilt. Deshalb reicht eine Rückfrage ohne Namenseingabe –
    rückgängig machen lässt es sich ohnehin. */
 function abschnittAufloesen(ea) {
-  const anzahl = streckenIm(store.projekt, ea.id).length + zeichenIm(store.projekt, ea.id).length;
+  const strecken = streckenIm(store.projekt, ea.id).length;
+  const zeichen = zeichenIm(store.projekt, ea.id).length;
+  const anzahl = strecken + zeichen;
+  const teile = [];
+  if (strecken) teile.push(`${strecken} ${strecken === 1 ? 'Strecke' : 'Strecken'}`);
+  if (zeichen) teile.push(`${zeichen} Zeichen`);
   dialog({
     titel: 'Einsatzabschnitt auflösen',
     inhalt: `<p>Soll <b>${escapeHtml(ea.name)}</b> aufgelöst werden?</p>
       <p class="klein">${anzahl
-        ? `Die ${anzahl} zugeteilten Strecken und Zeichen bleiben erhalten und gelten
-           danach als nicht zugeteilt.`
+        ? `${teile.join(' und ')} ${anzahl === 1 ? 'bleibt' : 'bleiben'} erhalten und
+           ${anzahl === 1 ? 'gilt' : 'gelten'} danach als nicht zugeteilt.`
         : 'Diesem Abschnitt ist nichts zugeteilt.'}
         Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
     fuss: [
