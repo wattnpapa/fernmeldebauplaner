@@ -679,7 +679,7 @@ body.modus-aktiv .kartenoptionen { display: none; }
 /* ---------------------------------------------------------------- Leaflet-Anpassungen */
 
 .leaflet-container { font-family: var(--schrift); }
-.leaflet-control-attribution { font-size: 10px; background: rgba(255,255,255,.82) !important; }
+.leaflet-control-attribution { font-size: 11px; background: rgba(255,255,255,.82) !important; }
 /* --sl-hoehe wird gemessen: die Statusleiste bricht schmal zweizeilig um und
    verdeckte mit dem früheren Festwert die Maßstabsleiste. */
 .leaflet-bottom.leaflet-right { margin-bottom: calc(var(--sl-hoehe) + var(--wechsel-hoehe)); }
@@ -752,7 +752,7 @@ body.modus-aktiv .kartenoptionen { display: none; }
 
 .fbp-popup .leaflet-popup-content { margin: 10px 12px; }
 .koord-popup .kp-zeile { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; }
-.koord-popup .kp-zeile span { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-schwach); width: 50px; flex-shrink: 0; }
+.koord-popup .kp-zeile span { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-schwach); width: 50px; flex-shrink: 0; }
 .koord-popup code { font-size: 11.5px; }
 .koord-popup .kp-tasten { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .koord-popup .kp-tasten button {
@@ -825,7 +825,7 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 }
 .palette-knopf:hover { border-color: var(--thw); background: var(--thw-blass); }
 .palette-knopf svg { flex-shrink: 0; }
-.palette-knopf span { font-size: 10.5px; line-height: 1.25; text-align: center; color: var(--text-schwach); }
+.palette-knopf span { font-size: 11px; line-height: 1.25; text-align: center; color: var(--text-schwach); }
 
 .hilfe h3 { font-size: 13.5px; margin: 14px 0 5px; color: var(--thw); }
 .hilfe h3:first-child { margin-top: 0; }
