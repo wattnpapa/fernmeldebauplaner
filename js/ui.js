@@ -730,7 +730,6 @@ function punktTabelle(s, frisch) {
 /* Am Bauort wird nach dem Maß gefragt, nicht nach dem Namen der Querungsart:
    die Auflage steht deshalb ungefragt unter der Auswahl. Der volle Wortlaut der
    Vorschrift hängt am title – eine Zeile trägt ihn nicht. */
-const VERBOTSTEXT = 'Überbauen verboten – nur an Über- oder Unterführung';
 const AUFLAGE_ZEICHEN = 110;
 
 /** Regeltext auf Zeilenlänge, gekürzt am Satzende statt mitten im Wort */
@@ -745,9 +744,11 @@ function kurzRegel(text) {
 
 function auflagenZeile(art) {
   /* Wo die Vorschrift das Überbauen verbietet, ist das Mindestmaß
-     gegenstandslos – dann steht dort das Verbot und sonst nichts. */
+     gegenstandslos – dann steht dort das Verbot der Art und sonst nichts. */
   const mass = massText(art);
-  const kern = art.verbot ? VERBOTSTEXT : (mass !== '–' ? mass : kurzRegel(art.regel));
+  const kern = art.verbot && art.verbotstext
+    ? art.verbotstext
+    : (mass !== '–' ? mass : kurzRegel(art.regel));
 
   const stuecke = [`<b>${escapeHtml(kern)}</b>`,
     `<span class="pz-fundstelle">KatS-Dv 861, ${escapeHtml(art.fundstelle)}</span>`];

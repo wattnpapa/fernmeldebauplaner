@@ -387,9 +387,13 @@ body.druckansicht { overflow: hidden; }
    Rasterzellen nicht verlässlich zu sehen. */
 .rg-liste li::before { content: '– '; }
 /* Am Bauort wird nach der Gliederungsnummer gesucht; die Vorschrift selbst
-   steht in der Überschrift des Abschnitts. */
-.rg-fundstelle { color: #555; white-space: nowrap; }
-.rg-fundstelle::before { content: '·'; padding: 0 .6mm 0 1mm; }
+   steht in der Überschrift des Abschnitts. Das „Nr.“ weist die Zahl als
+   Fundstelle aus – ohne es steht sie unvermittelt am Satzende und liest sich
+   wie ein Maß. Der Abstand sitzt an der Fundstelle selbst und nicht an einem
+   vorangestellten Trennzeichen: er bleibt auch dann stehen, wenn nur der Text
+   ohne die Marke übernommen wird. */
+.rg-fundstelle { margin-left: 1.6mm; color: #555; white-space: nowrap; }
+.rg-fundstelle::before { content: 'Nr. '; }
 
 .bl-freitext {
   border: .5pt solid #999; border-radius: .8mm; padding: 2mm; min-height: 16mm;

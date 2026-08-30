@@ -28,6 +28,7 @@ export function kennzahlen(strecke) {
   const kabel = kabelById(strecke.kabeltyp);
   const trommeln = bedarf > 0 ? Math.ceil(bedarf / tl) : 0;
   const querungsliste = querungen(p, kum);
+  let lv = null;
   return {
     trasse,
     zuschlag,
@@ -47,7 +48,13 @@ export function kennzahlen(strecke) {
     /* Genehmigungspflichtig ist auch, was die Vorschrift nur an Bauwerken
        zulässt – der Trupp braucht dafür ebenso eine Freigabe. */
     querungenGenehmigung: querungsliste.filter(q => q.art.genehmigung || q.art.verbot).length,
-    laengenverbindungen: laengenverbindungen(p, kum, bedarf, tl, zuschlag),
+    /* Jeder Trommelstoß kostet eine Suche über die ganze Trasse, gebraucht
+       werden die Stellen aber nur im Bauauftrag – deshalb erst beim Zugriff
+       rechnen und dann merken. */
+    get laengenverbindungen() {
+      if (!lv) lv = laengenverbindungen(p, kum, bedarf, tl, zuschlag);
+      return lv;
+    },
     abbinden: abbindeBedarf(bedarf),
     /* Maßgebend ist die tatsächlich liegende Kabellänge, also der Bedarf
        einschließlich Bauzuschlag – so wie es beim Spannungsfall der

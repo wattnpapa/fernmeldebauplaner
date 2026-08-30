@@ -6,7 +6,11 @@
 // mit in die Ausgabe – am Bauort wird nach der Nummer gesucht, nicht nach dem Satz.
 
 /* Querungen nach KatS-Dv 861, Abschnitt 8. „verbot“ meint das Bauverbot der
-   Vorschrift (Überbauen bzw. freies Kreuzen), nicht das Kreuzen an Bauwerken. */
+   Vorschrift (Überbauen bzw. freies Kreuzen), nicht das Kreuzen an Bauwerken.
+   Was stattdessen zulässig bleibt, ist je Art verschieden und steht deshalb
+   als „verbotstext“ daneben – ein gemeinsamer Satz verböte bei Starkstrom das
+   von 8.3 vorgesehene Unterqueren im Tiefbau. Der Kurztext wird der „regel“
+   vorangestellt; die „regel“ trägt deshalb nur, was er nicht schon sagt. */
 export const QUERUNGSARTEN = [
   {
     id: 'strasse',
@@ -36,9 +40,10 @@ export const QUERUNGSARTEN = [
     kurz: 'BAB',
     mindestmass: null,
     massBezug: null,
-    regel: 'Autobahnen dürfen nur an Über- oder Unterführungen gekreuzt werden.',
+    regel: 'Das Verbot gilt für jede Bauweise: auch im Tiefbau darf die Autobahn nicht gekreuzt werden.',
     genehmigung: null,
     verbot: true,
+    verbotstext: 'Überbauen verboten – nur an Über- oder Unterführung',
     fundstelle: '8.1'
   },
   {
@@ -68,7 +73,7 @@ export const QUERUNGSARTEN = [
     name: 'Starkstrom-Freileitung bis 1000 V',
     kurz: '≤1 kV',
     mindestmass: 1.5,
-    massBezug: 'erweiterter Schutzabstand zu allen Teilen der Anlage',
+    massBezug: 'zu allen Teilen der Anlage',
     regel: 'Im Hochbau darf Feldkabel darunter hindurchgeführt werden; zu allen Teilen der Anlage 1,50 m einhalten. Erkennungsmerkmal Ortsnetz: 4 Leitungen (3 Leiter, 1 Nulleiter) auf Holz- oder Stahlbetonmasten oder Dachständern.',
     genehmigung: null,
     verbot: false,
@@ -79,10 +84,11 @@ export const QUERUNGSARTEN = [
     name: 'Starkstrom-Freileitung über 1 kV',
     kurz: '>1 kV',
     mindestmass: null,
-    massBezug: 'Schutzabstand nach Nennspannung, siehe SCHUTZABSTAENDE',
-    regel: 'Überbauen ist verboten. Möglichst an Straßenüber- oder -unterführungen sowie Durchlässen kreuzen, sonst im Tiefbau im rechten Winkel unterqueren. Im erweiterten Schutzabstand vor und hinter der Leitung ist das Feldkabel einzugraben und mit Ringübertragern abzuschließen.',
+    massBezug: 'Schutzabstand nach Nennspannung, siehe Fußnote',
+    regel: 'Möglichst an Straßenüber- oder -unterführungen sowie Durchlässen kreuzen, sonst unterqueren. Im erweiterten Schutzabstand vor und hinter der Leitung ist das Feldkabel einzugraben und mit Ringübertragern abzuschließen.',
     genehmigung: null,
     verbot: true,
+    verbotstext: 'Überbauen verboten – nur Tiefbau im rechten Winkel oder Über-/Unterführung',
     fundstelle: '8.3'
   },
   {
@@ -113,9 +119,10 @@ export const QUERUNGSARTEN = [
     kurz: 'Bahn OL',
     mindestmass: null,
     massBezug: null,
-    regel: 'Überbau und Unterqueren nur an Brücken und Unterführungen zulässig. Bei tiefliegender Stromführung (Stromschiene) Mindesthöhe 6 m über Schienenoberkante.',
+    regel: 'Auch das Unterqueren ist nur an Brücken und Unterführungen zulässig.',
     genehmigung: 'zuständige Bahndienststelle',
     verbot: true,
+    verbotstext: 'Überbauen verboten – nur an Brücke oder Unterführung',
     fundstelle: '8.5'
   },
   {
@@ -224,9 +231,7 @@ export const BAUREGELN = [
   { text: 'An Anfangs- und Endstellen 20 bis 30 m Kabelreserve belassen; Kabel auf der Trommel gilt als Reserve und wird nicht abgeschnitten.', fundstelle: '6.5.1' },
   { text: 'Baumeldung nach jeder Länge, spätestens alle 30 Minuten; dabei das Kabel überprüfen.', fundstelle: '7.1' },
   { text: 'Warnposten mindestens 30 bis 50 m vor dem Überweg in beiden Fahrtrichtungen aufstellen.', fundstelle: '8.1' },
-  { text: 'Bei Gewitter Bau unterbrechen, Feldkabeltrommel ablegen und mindestens 30 m Abstand halten.', fundstelle: '13.2.2' },
-  { text: 'Bei Starkstrombeeinflussung Bau einstellen, Trommel ablegen und die Stelle im Umkreis von 30 m absperren.', fundstelle: '13.2.2' },
-  { text: 'Für eine Länge Feldkabel ist bei guten Verhältnissen mit mindestens 20 Minuten Bauzeit zu rechnen.', fundstelle: '3.1' }
+  { text: 'Bei Gewitter Bau unterbrechen, Feldkabeltrommel ablegen und mindestens 30 m Abstand halten.', fundstelle: '13.2.2' }
 ];
 
 /** Auflagen und Abbunde einer Strecke (KatS-Dv 861, 7.3) */

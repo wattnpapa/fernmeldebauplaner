@@ -952,8 +952,8 @@ function querungszeilenHTML(k) {
       <td>${escapeHtml(massText(a))}</td>
       <td class="mono">${escapeHtml(toMGRS(q.lat, q.lng, 5))}</td>
       <td class="zahl">${meter(q.abAnfang)}</td>
-      <td class="q-auflage">${a.verbot
-        ? '<b class="q-verbot">Überbauen/Kreuzen nur an Über- oder Unterführung.</b> ' : ''
+      <td class="q-auflage">${a.verbot && a.verbotstext
+        ? `<b class="q-verbot">${escapeHtml(a.verbotstext)}.</b> ` : ''
         }${escapeHtml(a.regel)}${a.genehmigung
         ? ` <b class="q-genehmigung">Genehmigung: ${escapeHtml(a.genehmigung)}</b>` : ''
         }<span class="q-fundstelle">KatS-Dv 861, ${escapeHtml(a.fundstelle)}</span></td>
@@ -1008,15 +1008,15 @@ function materialHTML(s, k) {
       : []),
     ['Muffen / Verbindungsstellen', String(k.muffen)],
     ['Verteiler / Endverzweiger', String(s.punkte.filter(p => p.art === 'verteiler').length)],
-    ['Querungen (Straße/Bahn/Gewässer)', String(k.querungen)],
+    ['Querungen (alle Arten)', String(k.querungen)],
     ...(k.querungenGenehmigung
-      ? [['davon genehmigungspflichtig', String(k.querungenGenehmigung)]]
+      ? [['davon nur mit Freigabe (Genehmigung oder Bauwerk)', String(k.querungenGenehmigung)]]
       : []),
     ['Längenverbindungen (geplant / rechnerisch)',
       `${k.laengenverbindungen.filter(v => v.quelle === 'geplant').length} / ` +
       `${k.laengenverbindungen.filter(v => v.quelle === 'rechnerisch').length}`],
     ['Auflagen mindestens', `${k.abbinden.auflagen} Stück`],
-    ['Abbunde längstens', `${k.abbinden.abbunde} Stück`],
+    ['Abbunde mindestens', `${k.abbinden.abbunde} Stück`],
     ['Kabelreserve Anfangs-/Endstelle', 'je 20 bis 30 m (6.5.1)'],
     ...(k.reichweite ? [reichweiteZeile(k.reichweite)] : []),
     ['Masten / Hochführungen', String(s.punkte.filter(p => p.art === 'mast').length)],
