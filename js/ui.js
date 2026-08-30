@@ -438,7 +438,8 @@ function streckenKarte(s) {
   datenTasten.append(
     knopf('CSV', () => io.csvExportieren(s.id), 'klein'),
     knopf('GPX', () => io.gpxExportieren(s.id), 'klein'),
-    knopf('GeoJSON', () => io.geoJSONExportieren(s.id), 'klein')
+    knopf('GeoJSON', () => io.geoJSONExportieren(s.id), 'klein'),
+    knopf('KML', () => io.kmlExportieren(s.id), 'klein')
   );
   daten.appendChild(datenTasten);
   koerper.appendChild(daten);
@@ -1498,11 +1499,16 @@ export function hilfeDialog() {
            angetippt wurde – in MGRS und als GPS-Angabe. Ein Klick auf die Angabe legt sie in
            die Zwischenablage. In der Punkttabelle öffnet ein Klick auf die Koordinate alle
            Formate zum Kopieren und erlaubt die Eingabe einer neuen Position.</p>
-        <h3>Aus Google Earth übernehmen</h3>
-        <p>Die Vorplanung dort als <b>.kml</b> oder <b>.kmz</b> sichern und über
+        <h3>Google Earth</h3>
+        <p><b>Herein:</b> Die Vorplanung dort als <b>.kml</b> oder <b>.kmz</b> sichern und über
            <b>Datei → Planung oder KML laden</b> öffnen. Pfade werden zu Strecken,
            Ortsmarken zu taktischen Zeichen; beides tritt zur geöffneten Planung hinzu und
            lässt sich mit <kbd>Strg</kbd>+<kbd>Z</kbd> wieder zurücknehmen.</p>
+        <p><b>Hinaus:</b> <b>Datei → Alles als KML</b>, für eine einzelne Trasse der Knopf
+           <b>KML</b> in der geöffneten Strecke. Jede Strecke wird ein Pfad in ihrer Farbe,
+           dazu Ortsmarken für Anfang, Ende und jede bauliche Besonderheit; die
+           Einsatzabschnitte werden Ordner. Kabelart, Trassenlänge und Bedarf stehen in der
+           Sprechblase des Pfades.</p>
         <h3>Speichern</h3>
         <p>Alles wird laufend im Browserspeicher gespeichert. Für Sicherung und Weitergabe
            <b>Datei → Planung als Datei sichern</b> verwenden.</p>

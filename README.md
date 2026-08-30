@@ -77,6 +77,8 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 **Austausch mit anderen Werkzeugen**
 - Planung als `.json` sichern und laden
 - KML und KMZ aus Google Earth laden: Pfade werden Strecken, Ortsmarken taktische Zeichen
+- Zurück nach Google Earth als KML (ganze Planung oder eine Strecke), gegliedert
+  nach Einsatzabschnitten
 - GeoJSON (auch je Strecke), GPX für Hand-GPS-Geräte, CSV-Punktliste für Excel
 
 **Kartengrundlagen**
@@ -117,6 +119,15 @@ eine Strecke mit Anfangs- und Endpunkt, jede Ortsmarke ein taktisches Zeichen (�
 in der Zeichenliste austauschbar). Name, Beschreibung und die Linienfarbe kommen mit;
 Höhen, Zeitstempel und Bildüberlagerungen bleiben außen vor. Das Geladene tritt zur
 geöffneten Planung hinzu, `Strg`+`Z` nimmt es wieder zurück.
+
+**Nach Google Earth zurückgeben:** **Datei → Alles als KML (Google Earth)**, für eine
+einzelne Trasse der Knopf „KML“ in der geöffneten Strecke unter „Daten für andere
+Programme“. Jede Strecke wird ein Pfad in ihrer Farbe, dazu Ortsmarken für Anfang, Ende
+und jede bauliche Besonderheit – reine Stützpunkte der Linie bleiben weg, sonst stünde
+ein Nadelwald über der Trasse. Kabelart, Trassenlänge, Bedarf und Trommeln stehen in der
+Sprechblase des Pfades. Die Einsatzabschnitte werden Ordner, ein ausgeblendeter Abschnitt
+kommt ausgeschaltet an. Taktische Zeichen werden Ortsmarken mit ihrem Namen; ihr Bild
+bleibt im Planer, Google Earth kennt die THW-Zeichen nicht.
 
 **Bauauftrag drucken:** Strecke in der Seitenleiste öffnen → „Bauauftrag (PDF)“.
 Format und Farbe einstellen, dann „Drucken / Als PDF speichern“. Im Druckdialog des
@@ -214,8 +225,8 @@ js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
 js/bauauftrag.js      Druckdokument
 js/ui.js              Seitenleiste, Formulare, Dialoge
-js/io.js              Sichern und Laden, GeoJSON, GPX, CSV
-js/kml.js             KML und KMZ aus Google Earth lesen
+js/io.js              Sichern und Laden, GeoJSON, GPX, CSV, KML
+js/kml.js             KML und KMZ mit Google Earth austauschen
 js/version.js         Stand der Anwendung (beim Veröffentlichen gesetzt)
 bilder/               Bilder der statischen Seiten
 fonts/                Roboto Slab Bold, die Beschriftungsschrift der Zeichen

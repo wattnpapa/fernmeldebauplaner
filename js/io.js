@@ -2,13 +2,13 @@
 
 import {
   store, migrieren, neueStrecke, neuerPunkt, neuesZeichen, id, ladeAlle, dateisicherungVermerken,
-  abschnittById, streckenIm, zeichenIm, zeichenFuer
+  abschnittById, streckenIm, zeichenIm, zeichenFuer, punktartById, VERLEGEARTEN
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
 import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
 import { querungsartById } from './vorschrift.js';
-import { kmlLesen, kmlAusKMZ, istKMZ, alsText } from './kml.js';
+import { kmlLesen, kmlSchreiben, kmlAusKMZ, istKMZ, alsText } from './kml.js';
 
 /* Klartext der Querungsart. An allen anderen Punktarten bleibt die Angabe leer –
    der mitgeführte Wert gehört dort nicht in die Ausgabe. */
@@ -247,6 +247,133 @@ export function geoJSONExportieren(nurStrecke = null) {
   const s = nurStrecke ? store.strecke(nurStrecke) : null;
   herunterladen(JSON.stringify(geoJSON(nurStrecke), null, 2),
     dateiname(['Fernmeldebau', p.name, s && s.name], 'geojson'));
+}
+
+// ---------------------------------------------------------------- KML (Google Earth)
+
+/* Was eine Strecke ausmacht, steht in Google Earth in der Sprechblase des Pfades –
+   dieselben Angaben, die im Bauauftrag über der Punktliste stehen. */
+function streckenAngaben(s) {
+  const k = kennzahlen(s);
+  const ea = abschnittById(store.projekt, s.abschnitt);
+  return [
+    s.von && s.nach ? `${s.von} → ${s.nach}` : (s.von || s.nach),
+    `${k.kabel.name} · ${(VERLEGEARTEN.find(v => v.id === s.verlegeart) || {}).name || ''}`,
+    `Trasse ${Math.round(k.trasse)} m · Bedarf ${Math.round(k.bedarf)} m (${k.zuschlag} % Zuschlag)`,
+    `${k.trommeln} ${k.trommeln === 1 ? 'Trommel' : 'Trommeln'} à ${k.trommellaenge} m`,
+    k.strom && `${k.strom.netz.name} · ${Math.round(k.strom.strom * 10) / 10} A · ${k.strom.querschnitt} mm²`,
+    ea && `Einsatzabschnitt: ${ea.name}`,
+    s.trupp && `Trupp: ${s.trupp}`,
+    s.bemerkung
+  ];
+}
+
+/* Jeder Stützpunkt der Linie als eigene Ortsmarke wäre ein Nadelwald über der
+   Trasse. Mit kommen die Punkte, die etwas zu sagen haben: Anfang und Ende, jede
+   bauliche Besonderheit und jeder Punkt, den der Planer benannt oder mit einer
+   Bemerkung versehen hat. */
+const punktZeigen = (pt, i, anzahl) =>
+  i === 0 || i === anzahl - 1 || pt.art !== 'punkt' || pt.name || pt.bemerkung;
+
+function punktEintraege(s) {
+  const kum = kumuliert(s.punkte);
+  return s.punkte
+    .map((pt, i) => ({ pt, i }))
+    .filter(({ pt, i }) => punktZeigen(pt, i, s.punkte.length))
+    .map(({ pt, i }) => ({
+      art: 'punkt',
+      name: `${i + 1} ${pt.name || punktartById(pt.art).name}`,
+      farbe: s.farbe,
+      lat: pt.lat, lng: pt.lng,
+      beschreibung: [
+        `${punktartById(pt.art).name}${querungsartText(pt) ? ` · ${querungsartText(pt)}` : ''}`,
+        `MGRS ${toMGRS(pt.lat, pt.lng, 5)}`,
+        toDDM(pt.lat, pt.lng),
+        i === 0 ? null : `${Math.round(kum[i])} m ab Anfang der Strecke`,
+        pt.bemerkung
+      ]
+    }));
+}
+
+/* Ein Ordner je Strecke: in Google Earth lässt sich damit eine einzelne Trasse
+   samt ihren Punkten ein- und ausblenden. */
+const streckenOrdner = s => ({
+  name: s.name,
+  sichtbar: s.sichtbar,
+  /* Die Angaben stehen am Pfad selbst – dort öffnet der Klick in Google Earth
+     die Sprechblase. Am Ordner wären sie ein zweites Mal dasselbe. */
+  eintraege: [
+    {
+      art: 'linie', name: s.name, farbe: s.farbe, sichtbar: s.sichtbar,
+      beschreibung: streckenAngaben(s),
+      koordinaten: s.punkte.map(pt => [pt.lat, pt.lng])
+    },
+    ...punktEintraege(s)
+  ]
+});
+
+const zeichenOrdner = (zeichen, farbe) => ({
+  name: 'Taktische Zeichen',
+  offen: false,
+  eintraege: zeichen.map(z => ({
+    art: 'punkt',
+    name: z.label || symbolById(z.symbol).name,
+    farbe: farbe || '#455a64',
+    sichtbar: z.sichtbar,
+    lat: z.lat, lng: z.lng,
+    beschreibung: [symbolById(z.symbol).name, `MGRS ${toMGRS(z.lat, z.lng, 5)}`, z.bemerkung]
+  }))
+});
+
+/* Kopf der Planung als Beschreibung des Dokuments – wer die Datei weitergibt,
+   soll in Google Earth sehen, zu welchem Einsatz und welchem Stand sie gehört. */
+function planungsAngaben(p) {
+  const k = p.kopf || {};
+  return [
+    k.einsatz && `Einsatz: ${k.einsatz}`,
+    k.ort && `Ort: ${k.ort}`,
+    k.einheit && `Einheit: ${k.einheit}`,
+    k.auftragNr && `Auftrag Nr. ${k.auftragNr}`,
+    k.datum && `Datum: ${k.datum}`,
+    k.stand && `Stand: ${k.stand}`,
+    k.ersteller && `Erstellt von: ${k.ersteller}`,
+    k.vsgrad && `Einstufung: ${k.vsgrad}`,
+    'Erzeugt mit dem Fernmeldebauplaner'
+  ];
+}
+
+/** Ordnerbaum der ganzen Planung – mit Einsatzabschnitten als oberste Ebene. */
+function planungsOrdner(p) {
+  const abschnitte = p.einsatzabschnitte || [];
+  if (!abschnitte.length)
+    return [...p.strecken.map(streckenOrdner), zeichenOrdner(p.zeichen)];
+
+  const ordner = abschnitte.map(ea => ({
+    name: ea.name,
+    sichtbar: ea.sichtbar,
+    beschreibung: [ea.leiter && `Abschnittsleiter: ${ea.leiter}`, ea.bemerkung],
+    ordner: [...streckenIm(p, ea.id).map(streckenOrdner), zeichenOrdner(zeichenIm(p, ea.id), ea.farbe)]
+  }));
+  /* Was keinem Abschnitt zugeteilt ist, gehört allen – und darf deshalb nicht
+     unter den Tisch fallen, wenn die Planung gegliedert ist. */
+  ordner.push({
+    name: 'Ohne Einsatzabschnitt',
+    ordner: [...streckenIm(p, null).map(streckenOrdner), zeichenOrdner(zeichenIm(p, null))]
+  });
+  return ordner;
+}
+
+/** Ganze Planung oder eine einzelne Strecke als KML für Google Earth. */
+export function kmlExportieren(sid = null) {
+  const p = store.projekt;
+  const s = sid ? store.strecke(sid) : null;
+  const kml = kmlSchreiben({
+    name: s ? `${p.name} – ${s.name}` : p.name,
+    beschreibung: planungsAngaben(p),
+    ordner: s ? [streckenOrdner(s)] : planungsOrdner(p)
+  });
+  herunterladen(kml, dateiname(['Fernmeldebau', p.name, s && s.name], 'kml'),
+    'application/vnd.google-earth.kml+xml');
 }
 
 // ---------------------------------------------------------------- GPX (Hand-GPS)

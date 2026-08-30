@@ -1,10 +1,14 @@
-// kml.js – KML und KMZ aus Google Earth lesen
+// kml.js – KML und KMZ mit Google Earth austauschen
 //
 // Wer eine Trasse in Google Earth vorplant, hat sie dort als Pfad vorliegen und
 // die Standorte als Ortsmarken. Genau das wird übernommen: Pfade werden zu
 // Strecken, Ortsmarken zu taktischen Zeichen. Höhenangaben, Zeitstempel,
 // Bildüberlagerungen und Netzverweise haben in einem Bauauftrag keine
 // Entsprechung und bleiben deshalb außen vor.
+//
+// Der Rückweg schreibt dieselben beiden Dinge zurück, damit die fertige Planung
+// in der Lagebesprechung im Geländemodell und im Luftbild liegt: Strecken werden
+// Pfade, taktische Zeichen Ortsmarken.
 
 // ---------------------------------------------------------------- XML-Zugriff
 
@@ -237,4 +241,144 @@ async function auspacken(puffer, sicht, eintrag) {
 
   const strom = new Blob([roh]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
   return new Response(strom).arrayBuffer();
+}
+
+// ---------------------------------------------------------------- KML schreiben
+
+/**
+ * Der Rückweg: eine Planung als KML, die Google Earth öffnen kann. Gebaut wird
+ * aus einer schlichten Beschreibung des Baums – welche Angaben in einen Ordner
+ * gehören und was eine Strecke auszeichnet, entscheidet `io.js`, hier steht nur,
+ * wie daraus KML wird.
+ *
+ * Ordner: {name, beschreibung, sichtbar, ordner, eintraege}
+ * Eintrag: {art: 'linie', name, beschreibung, farbe, sichtbar, koordinaten}
+ *          {art: 'punkt', name, beschreibung, farbe, sichtbar, lat, lng}
+ */
+
+const esc = t => String(t ?? '').replace(/[&<>"']/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
+
+/** KML verlangt `aabbggrr` – Deckkraft zuerst, Blau vor Rot. */
+function alsKMLFarbe(farbe) {
+  const h = String(farbe || '').trim().replace(/^#/, '');
+  const v = h.length === 3 ? [...h].map(c => c + c).join('') : h;
+  if (!/^[0-9a-f]{6}$/i.test(v)) return null;
+  return ('ff' + v.slice(4, 6) + v.slice(2, 4) + v.slice(0, 2)).toLowerCase();
+}
+
+/**
+ * Google Earth zeigt die Beschreibung als HTML: ein Zeilenumbruch im Text geht
+ * dort verloren, die Zeilen werden deshalb mit <br> verbunden. Der Nutzertext
+ * wird vorher maskiert – eine Bemerkung mit spitzer Klammer soll in der
+ * Sprechblase stehen und nicht als Markup ausgelegt werden.
+ */
+function beschreibungsFeld(zeilen, einzug) {
+  // Nur die drei Zeichen, die im Fließtext einer HTML-Seite etwas bedeuten:
+  // maskierte Anführungszeichen wären hier nur Ballast in der Datei.
+  const alsText = t => String(t).replace(/[&<>]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const inhalt = (Array.isArray(zeilen) ? zeilen : [zeilen])
+    .filter(Boolean).map(alsText).join('<br>');
+  // Der einzige Weg, ein CDATA zu beenden, ist „]]>“ – steht das im Text, wird
+  // der Block an dieser Stelle geschlossen und sofort wieder geöffnet.
+  return inhalt
+    ? [`${einzug}<description><![CDATA[${inhalt.replace(/]]>/g, ']]]]><![CDATA[>')}]]></description>`]
+    : [];
+}
+
+/** `<visibility>0</visibility>` bildet den Augenschalter der Planung ab. */
+const sichtFeld = (x, einzug) => x.sichtbar === false ? [`${einzug}<visibility>0</visibility>`] : [];
+
+/**
+ * Stile stehen einmal im Dokumentkopf und werden über `styleUrl` benutzt. Bei
+ * einer Planung mit vielen Punkten je Strecke macht das den Unterschied
+ * zwischen ein paar Zeilen und einem Stilblock an jeder Ortsmarke.
+ */
+function stilKennung(stile, art, farbe) {
+  const f = alsKMLFarbe(farbe) || 'ffd32f2f';
+  // Kennung in der gewohnten Reihenfolge Rot-Grün-Blau: wer die Datei im
+  // Texteditor öffnet, erkennt die Farbe der Planung wieder.
+  const kennung = `${art}-${f.slice(6, 8)}${f.slice(4, 6)}${f.slice(2, 4)}`;
+  if (!stile.has(kennung)) stile.set(kennung, art === 'linie'
+    ? `  <Style id="${kennung}">
+    <LineStyle><color>${f}</color><width>4</width></LineStyle>
+  </Style>`
+    // Ohne <Icon> bleibt es beim Standardsymbol von Google Earth, nur eingefärbt.
+    // Ein Verweis auf ein Bild wäre eine Fremdadresse in der Datei des Nutzers.
+    : `  <Style id="${kennung}">
+    <IconStyle><color>${f}</color><scale>0.9</scale></IconStyle>
+    <LabelStyle><color>${f}</color><scale>0.8</scale></LabelStyle>
+  </Style>`);
+  return `  <styleUrl>#${kennung}</styleUrl>`;
+}
+
+function eintragMarkup(e, stile, tiefe) {
+  const ein = '  '.repeat(tiefe);
+  const kopf = [
+    `${ein}<Placemark>`,
+    ...(e.name ? [`${ein}  <name>${esc(e.name)}</name>`] : []),
+    ...sichtFeld(e, ein + '  '),
+    ...beschreibungsFeld(e.beschreibung, ein + '  '),
+    ein + stilKennung(stile, e.art === 'linie' ? 'linie' : 'punkt', e.farbe)
+  ];
+
+  if (e.art === 'linie') kopf.push(
+    `${ein}  <LineString>`,
+    // Ohne tessellate zieht Google Earth die Sehne zwischen zwei Punkten und
+    // lässt sie über Kuppen im Boden verschwinden; geklammert folgt sie dem Gelände.
+    `${ein}    <tessellate>1</tessellate>`,
+    `${ein}    <altitudeMode>clampToGround</altitudeMode>`,
+    `${ein}    <coordinates>${e.koordinaten.map(([lat, lng]) =>
+      `${lng.toFixed(7)},${lat.toFixed(7)},0`).join(' ')}</coordinates>`,
+    `${ein}  </LineString>`);
+  else kopf.push(
+    `${ein}  <Point>`,
+    `${ein}    <coordinates>${e.lng.toFixed(7)},${e.lat.toFixed(7)},0</coordinates>`,
+    `${ein}  </Point>`);
+
+  kopf.push(`${ein}</Placemark>`);
+  return kopf;
+}
+
+function ordnerMarkup(o, stile, tiefe) {
+  const ein = '  '.repeat(tiefe);
+  const inhalt = [
+    ...(o.ordner || []).flatMap(u => ordnerMarkup(u, stile, tiefe + 1)),
+    ...(o.eintraege || []).flatMap(e => eintragMarkup(e, stile, tiefe + 1))
+  ];
+  if (!inhalt.length) return [];        // leere Ordner sagen in Google Earth nichts
+  return [
+    `${ein}<Folder>`,
+    // Die Reihenfolge ist im KML-Schema festgelegt: Name, Sichtbarkeit,
+    // aufgeklappt, dann erst die Beschreibung.
+    `${ein}  <name>${esc(o.name)}</name>`,
+    ...sichtFeld(o, ein + '  '),
+    ...(o.offen === false ? [`${ein}  <open>0</open>`] : []),
+    ...beschreibungsFeld(o.beschreibung, ein + '  '),
+    ...inhalt,
+    `${ein}</Folder>`
+  ];
+}
+
+/**
+ * Baut das fertige Dokument.
+ * @param {{name: string, beschreibung?: string[], ordner: object[]}} dok
+ * @returns {string} KML
+ */
+export function kmlSchreiben(dok) {
+  const stile = new Map();
+  // Erst der Rumpf: dabei sammeln sich die Stile, die davor im Kopf stehen müssen.
+  const rumpf = (dok.ordner || []).flatMap(o => ordnerMarkup(o, stile, 1));
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>${esc(dok.name)}</name>
+${beschreibungsFeld(dok.beschreibung, '  ').join('\n')}
+${[...stile.values()].join('\n')}
+${rumpf.join('\n')}
+</Document>
+</kml>
+`.replace(/\n{2,}/g, '\n');
 }

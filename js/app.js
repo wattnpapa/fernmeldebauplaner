@@ -355,6 +355,7 @@ dateiMenu.addEventListener('click', e => {
     'sammel-pdf': () => oeffneSammeldruck(),
     'export-geojson': () => io.geoJSONExportieren(),
     'export-gpx': () => io.gpxExportieren(),
+    'export-kml': () => io.kmlExportieren(),
     hilfe: hilfeDialog
   })[akt]?.();
 });
