@@ -68,17 +68,53 @@ body.druckansicht { overflow: hidden; }
 }
 
 /* Schmales Fenster: Titel, Einstellungen und Tasten untereinander, und jede
-   Gruppe unter ihrer eigenen Überschrift statt daneben. */
+   Gruppe unter ihrer eigenen Überschrift statt daneben.
+
+   Alle Einstellungen bleiben sichtbar – am Bauort soll niemand erst eine Klappe
+   suchen. Damit sie trotzdem nicht die halbe Bildfläche einnehmen, stehen die
+   Gruppen nebeneinander in einem Raster statt untereinander, und die Tasten
+   teilen sich eine Zeile. Was hier an Höhe gespart wird, bekommt das Blatt. */
 @media (max-width: 780px) {
   .druck-steuerung {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "titel" "felder" "tasten";
+    gap: 6px 12px; padding: 6px 10px;
   }
-  .ds-felder { flex-direction: column; align-items: stretch; gap: 14px; }
-  .ds-gruppe { flex-direction: column; align-items: flex-start; gap: 4px; }
-  .ds-tasten { align-items: stretch; }
-  .ds-drucken { flex: 1; }
+  .ds-felder {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    align-items: start; gap: 8px 14px;
+  }
+  .ds-gruppe { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .ds-gruppen-felder { gap: 2px 12px; }
+  /* „Schließen“ neben dem Druckknopf, der Formathinweis darunter über die
+     ganze Breite: nebeneinander umbrach er und kostete mehr Höhe, als die
+     Zeile einspart. */
+  .ds-tasten {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    align-items: center; gap: 4px 8px;
+  }
+  .ds-drucken { display: contents; }
+  .ds-drucken .knopf { white-space: nowrap; }
+  .ds-format { grid-column: 1 / -1; text-align: center; padding: 2px 8px; }
+  /* Der Rand um das Blatt ist Platz, den die Vorschau besser gebrauchen kann. */
+  .druck-buehne { padding: 10px 8px; }
 }
+
+/* Zwei Ansichten desselben Blattes: eingepasst zeigt es die Aufteilung,
+   in Originalgröße die Schrift. Wer im Fahrzeug einen Auftrag freigibt, muss
+   lesen können, was er unterschreibt – dafür reicht kein Blatt bei 29 %. */
+.druck-doku { cursor: zoom-in; }
+.druck-doku.gross { cursor: zoom-out; transform-origin: top left; }
+.druck-buehne.gross { justify-content: flex-start; }
+/* Der Hinweis gehört zum Fenster, nicht zum Blatt: in der scrollenden Bühne
+   wanderte er in Originalgröße mit dem Papier aus dem Bild. */
+.druck-lupe {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 3;
+  margin: 0; padding: 4px 11px; border-radius: 999px;
+  background: rgba(20,28,40,.9); color: #fff; font-size: 11px;
+  white-space: nowrap; pointer-events: none;
+}
+.druck-lupe[hidden] { display: none; }
 
 .druck-buehne {
   flex: 1; overflow: auto; padding: 24px; display: flex; justify-content: center;
@@ -440,7 +476,7 @@ body.druckansicht { overflow: hidden; }
 
 @media print {
   html, body { height: auto; background: #fff; overflow: visible; }
-  .hinweisbox, .dialog-huelle, .druck-steuerung { display: none !important; }
+  .hinweisbox, .dialog-huelle, .druck-steuerung, .druck-lupe { display: none !important; }
   /* Die Bedienoberfläche nur wegblenden, wenn tatsächlich ein Blatt vorliegt.
      Ohne diese Einschränkung druckte Strg+P außerhalb des Bauauftrags eine
      leere Seite. */

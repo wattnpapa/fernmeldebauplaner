@@ -146,7 +146,8 @@ function oeffneDruckansicht(auftrag) {
         </div>
       </div>
     </div>
-    <div class="druck-buehne"><div class="druck-doku"></div></div>`;
+    <div class="druck-buehne"><div class="druck-doku"></div></div>
+    <p class="druck-lupe" hidden></p>`;
   document.body.appendChild(wurzel);
   document.body.classList.add('druckansicht');
 
@@ -190,6 +191,18 @@ function oeffneDruckansicht(auftrag) {
 
   aktiv = { wurzel, karten: [], opt, auftrag, anpassen: () => passeVorschauAn(wurzel, opt) };
   window.addEventListener('resize', aktiv.anpassen);
+
+  /* Ein Tipp auf das Blatt schaltet zwischen eingepasst und Originalgröße um.
+     Kein eigenes Bedienelement: die Geste liegt auf dem Ding, um das es geht. */
+  wurzel.querySelector('.druck-buehne').addEventListener('click', e => {
+    const doku = wurzel.querySelector('.druck-doku');
+    if (!doku || !doku.contains(e.target)) return;
+    const gross = doku.classList.toggle('gross');
+    /* Ein zentrierter Flex-Kasten schneidet überbreiten Inhalt links ab –
+       in Originalgröße rückt das Blatt deshalb an den Anfang. */
+    e.currentTarget.classList.toggle('gross', gross);
+    passeVorschauAn(wurzel, opt);
+  });
 
   if (sammel && auftrag.strecken.length > 8) {
     hinweis(`${streckenzahl(auftrag.strecken.length)} – der Aufbau der Kartenblätter dauert einen Augenblick.`);
@@ -1180,9 +1193,18 @@ function passeVorschauAn(wurzel, opt) {
   if (!buehne || !doku) return;
   const [bmm] = seitenmasse(opt);
   const breitePx = bmm * MM_PX;
-  const platz = buehne.clientWidth - 48;
-  const skala = Math.min(1, platz / breitePx);
+  const rand = buehne.clientWidth < 600 ? 16 : 48;
+  const passend = Math.min(1, (buehne.clientWidth - rand) / breitePx);
+  /* In Originalgröße bleibt das Blatt bei 1 und die Bühne scrollt – nur so ist
+     die Schrift auf einem kleinen Schirm zu lesen. */
+  const skala = doku.classList.contains('gross') ? 1 : passend;
   doku.style.setProperty('--vorschau-skala', skala.toFixed(4));
+  const lupe = wurzel.querySelector('.druck-lupe');
+  if (lupe) {
+    lupe.hidden = passend >= 0.62;
+    lupe.textContent = doku.classList.contains('gross')
+      ? 'Tippen: ganzes Blatt' : 'Tippen: Originalgröße';
+  }
 }
 
 /* Der Druckdialog des Betriebssystems kennt die hier gewählten Einstellungen
