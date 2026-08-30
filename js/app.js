@@ -65,7 +65,10 @@ function zeichnenBeenden(abbrechen = false) {
   const sid = sl.zeichenModus;
   const s = store.strecke(sid);
   sl.beendeZeichnen();
-  if (abbrechen && s && s.punkte.length === 0) {
+  /* Eine Strecke ohne einen einzigen Punkt hat niemand gewollt – gleich, ob
+     „Abbrechen“ oder der große „Fertig“-Knopf sie beendet. Sie stumm in der
+     Liste stehen zu lassen, verfälscht auch die Zählung im Sammeldruck. */
+  if (s && s.punkte.length === 0) {
     store.aendern(p => { p.strecken = p.strecken.filter(x => x.id !== sid); }, 'strecke');
   } else if (s && s.punkte.length === 1) {
     hinweis('Eine Strecke braucht mindestens zwei Trassenpunkte.', 'warnung');
@@ -105,6 +108,11 @@ function modusAnzeigen() {
     box.querySelector('.zh-text').innerHTML =
       `<b>${escapeHtml(s ? s.name : '')}</b> – ${n} ${n === 1 ? 'Punkt' : 'Punkte'} gesetzt.
        Trasse auf der Karte anklicken.`;
+    /* Solange kein Punkt steht, gibt es nichts fertigzustellen und nichts
+       zurückzunehmen; gesperrt statt wirkungslos, damit der Fehlgriff auf den
+       großen Knopf im Daumenbereich gar nicht erst passiert. */
+    box.querySelector('[data-akt="fertig"]').disabled = n === 0;
+    box.querySelector('[data-akt="zurueck"]').disabled = n === 0;
   }
 }
 
