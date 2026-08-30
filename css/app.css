@@ -636,6 +636,12 @@ body.seite-zu .seite { display: none; }
 .ko-haken { cursor: pointer; }
 .ko-haken input { accent-color: var(--thw); }
 
+/* Im Zeichen- oder Setzmodus zählt die Trasse, nicht die Kartenoptionen: die
+   Tafel deckt sonst genau den Streifen ab, in dem die Streckenbeschriftung
+   steht. Sie weicht deshalb wie die Werkzeugleiste – nur ausgeblendet, nicht
+   entfernt, damit ihr Zustand beim Verlassen des Modus derselbe ist. */
+body.modus-aktiv .kartenoptionen { display: none; }
+
 .statusleiste {
   position: absolute; left: 0; right: 0; bottom: var(--wechsel-hoehe); z-index: 700;
   display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap;
