@@ -1,13 +1,14 @@
 // io.js – Sichern, Laden und Austauschformate
 
 import {
-  store, migrieren, neueStrecke, neuerPunkt, id, ladeAlle, dateisicherungVermerken,
+  store, migrieren, neueStrecke, neuerPunkt, neuesZeichen, id, ladeAlle, dateisicherungVermerken,
   abschnittById, streckenIm
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
 import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
 import { querungsartById } from './vorschrift.js';
+import { kmlLesen, kmlAusKMZ, istKMZ, alsText } from './kml.js';
 
 /* Klartext der Querungsart. An allen anderen Punktarten bleibt die Angabe leer –
    der mitgeführte Wert gehört dort nicht in die Ausgabe. */
@@ -47,7 +48,7 @@ export function projektExportieren(pid) {
 
 /** Einen Einsatzabschnitt als eigenständige Planungsdatei sichern – `null`
  *  nimmt die nicht zugeteilten Strecken. Der Empfänger lädt sie über
- *  „Planung aus Datei laden“ und arbeitet nur an seinem Ausschnitt weiter.
+ *  „Planung oder KML laden“ und arbeitet nur an seinem Ausschnitt weiter.
  *
  *  Die taktischen Zeichen gehen vollständig mit: sie sind das gemeinsame
  *  Lagebild und nicht einem Abschnitt zugeteilt. Der Vermerk über die letzte
@@ -80,29 +81,54 @@ export function abschnittExportieren(aid) {
   return true;
 }
 
-export function projektImportieren(datei) {
-  return new Promise((erfolg, fehler) => {
-    const leser = new FileReader();
-    leser.onload = () => {
-      try {
-        const roh = JSON.parse(leser.result);
-        if (roh.type === 'FeatureCollection') return erfolg(geoJSONUebernehmen(roh, datei.name));
-        if (!roh.strecken && !roh.zeichen) throw new Error('Keine Planungsdaten in der Datei gefunden.');
-        const p = migrieren(roh);
-        p.id = id();                     // als eigene Kopie ablegen
-        p.name = roh.name || datei.name.replace(/\.json$/i, '');
-        store.uebernehmen(p);
-        erfolg(p);
-      } catch (e) { fehler(e); }
-    };
-    leser.onerror = () => fehler(new Error('Datei konnte nicht gelesen werden.'));
-    leser.readAsText(datei);
-  });
+/**
+ * Nimmt eine Datei entgegen und erkennt am Inhalt, was darin steht: eine eigene
+ * Planung, GeoJSON, KML oder ein gepacktes KMZ. Die Endung entscheidet bewusst
+ * nicht mit – Dateien aus fremden Werkzeugen tragen oft eine andere.
+ * @returns {Promise<{projekt: object, meldung: string}>}
+ */
+export async function projektImportieren(datei) {
+  let puffer;
+  try { puffer = await datei.arrayBuffer(); }
+  catch { throw new Error('Datei konnte nicht gelesen werden.'); }
+
+  if (istKMZ(puffer)) return kmlUebernehmen(await kmlAusKMZ(puffer), datei.name);
+
+  const inhalt = alsText(puffer);
+  if (/^\s*[[{]/.test(inhalt)) return jsonUebernehmen(inhalt, datei.name);
+  if (/<kml[\s>]/i.test(inhalt)) return kmlUebernehmen(inhalt, datei.name);
+  throw new Error('Unbekanntes Format – erwartet werden .json, .geojson, .kml oder .kmz.');
 }
 
-function geoJSONUebernehmen(fc, name) {
+function jsonUebernehmen(inhalt, dateiname) {
+  const roh = JSON.parse(inhalt);
+  if (roh.type === 'FeatureCollection') return geoJSONUebernehmen(roh);
+  if (!roh.strecken && !roh.zeichen) throw new Error('Keine Planungsdaten in der Datei gefunden.');
+  const p = migrieren(roh);
+  p.id = id();                       // als eigene Kopie ablegen
+  p.name = roh.name || dateiname.replace(/\.json$/i, '');
+  store.uebernehmen(p);
+  return { projekt: p, meldung: `„${p.name}“ geladen` };
+}
+
+/** „2 Strecken und 5 Zeichen“ – die Rückmeldung nach einem Import. */
+function bericht(strecken, zeichen) {
+  return [
+    strecken && (strecken === 1 ? '1 Strecke' : `${strecken} Strecken`),
+    zeichen && (zeichen === 1 ? '1 Zeichen' : `${zeichen} Zeichen`)
+  ].filter(Boolean).join(' und ');
+}
+
+function geoJSONUebernehmen(fc) {
+  const brauchbar = (fc.features || []).filter(f => {
+    const g = f.geometry || {};
+    return g.type === 'Point' || (g.type === 'LineString' && g.coordinates?.length >= 2);
+  });
+  if (!brauchbar.length) throw new Error('Keine Linien und keine Punkte in der Datei gefunden.');
+
+  let strecken = 0, zeichen = 0;
   store.aendern(p => {
-    for (const f of fc.features || []) {
+    for (const f of brauchbar) {
       const g = f.geometry || {};
       const eig = f.properties || {};
       if (g.type === 'LineString' && g.coordinates.length >= 2) {
@@ -112,6 +138,7 @@ function geoJSONUebernehmen(fc, name) {
         s.punkte = g.coordinates.map(([lng, lat]) => neuerPunkt(lat, lng));
         if (s.punkte.length) { s.punkte[0].art = 'start'; s.punkte[s.punkte.length - 1].art = 'ziel'; }
         p.strecken.push(s);
+        strecken++;
       } else if (g.type === 'Point') {
         p.zeichen.push({
           id: id(), lat: g.coordinates[1], lng: g.coordinates[0],
@@ -119,10 +146,52 @@ function geoJSONUebernehmen(fc, name) {
           drehung: 0, groesse: 1,
           label: eig.name || eig.label || '', bemerkung: eig.bemerkung || '', sichtbar: true
         });
+        zeichen++;
       }
     }
   }, 'import');
-  return store.projekt;
+  return { projekt: store.projekt, meldung: `${bericht(strecken, zeichen)} übernommen` };
+}
+
+// ---------------------------------------------------------------- KML / KMZ
+
+/**
+ * Eine Ortsmarke aus Google Earth sagt nichts über ihren Zweck. „Stelle“ ist
+ * das Zeichen, das am wenigsten behauptet; im Reiter „Zeichen“ ist es mit zwei
+ * Griffen gegen das richtige getauscht.
+ */
+const KML_ZEICHEN = symbolBekannt('einrichtungen/stelle') ? 'einrichtungen/stelle' : STANDARD_SYMBOL;
+
+/** Pfade werden Strecken, Ortsmarken Zeichen – beides kommt zur offenen Planung hinzu. */
+function kmlUebernehmen(inhalt, dateiname) {
+  const kml = kmlLesen(inhalt);
+  if (!kml.linien.length && !kml.punkte.length) throw new Error(kml.netzverweise
+    ? 'Diese KML verweist nur auf andere Dateien (NetworkLink) und enthält selbst nichts.'
+    : 'Keine Pfade und keine Ortsmarken in der Datei gefunden.');
+
+  store.aendern(p => {
+    for (const linie of kml.linien) {
+      const s = neueStrecke(p);
+      if (linie.name) s.name = linie.name;
+      if (linie.farbe) s.farbe = linie.farbe;
+      s.bemerkung = linie.beschreibung;
+      s.punkte = linie.koordinaten.map(([lat, lng]) => neuerPunkt(lat, lng));
+      s.punkte[0].art = 'start';
+      s.punkte[s.punkte.length - 1].art = 'ziel';
+      p.strecken.push(s);
+    }
+    for (const pt of kml.punkte) {
+      const z = neuesZeichen(pt.lat, pt.lng, KML_ZEICHEN);
+      z.label = pt.name;
+      z.bemerkung = pt.beschreibung;
+      p.zeichen.push(z);
+    }
+  }, 'import');
+
+  return {
+    projekt: store.projekt,
+    meldung: `${bericht(kml.linien.length, kml.punkte.length)} aus „${dateiname}“ übernommen`
+  };
 }
 
 // ---------------------------------------------------------------- GeoJSON

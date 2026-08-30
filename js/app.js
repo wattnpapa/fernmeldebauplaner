@@ -346,7 +346,7 @@ dateiMenu.addEventListener('click', e => {
     neu: neuesProjektDialog,
     oeffnen: projektDialog,
     'export-json': () => planungSichern(),
-    'import-json': () => $('#datei-import').click(),
+    import: () => $('#datei-import').click(),
     'sammel-pdf': () => oeffneSammeldruck(),
     'export-geojson': () => io.geoJSONExportieren(),
     'export-gpx': () => io.gpxExportieren(),
@@ -373,7 +373,7 @@ $('#datei-import').onchange = e => {
   const datei = e.target.files[0];
   if (!datei) return;
   io.projektImportieren(datei)
-    .then(p => { schliesseDialog(); hinweis(`„${p.name}“ geladen`); })
+    .then(({ meldung }) => { schliesseDialog(); hinweis(meldung); })
     .catch(err => hinweis('Import fehlgeschlagen: ' + err.message, 'fehler'));
   e.target.value = '';
 };

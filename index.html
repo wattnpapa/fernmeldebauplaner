@@ -47,7 +47,8 @@
           <button data-akt="oeffnen">Gespeicherte Planungen …</button>
           <hr>
           <button data-akt="export-json">Planung als Datei sichern (.json)</button>
-          <button data-akt="import-json">Planung aus Datei laden …</button>
+          <button data-akt="import"
+                  title="Eigene Planung (.json), GeoJSON sowie KML und KMZ aus Google Earth">Planung oder KML laden …</button>
           <hr>
           <button data-akt="sammel-pdf">Sammel-Bauauftrag aller Strecken (PDF) …</button>
           <hr>
@@ -159,7 +160,8 @@
   </div>
 </div>
 
-<input type="file" id="datei-import" accept=".json,.geojson,application/json" hidden>
+<input type="file" id="datei-import" hidden
+       accept=".json,.geojson,.kml,.kmz,application/json,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz">
 
 <div class="dialog-huelle" id="dialog" hidden>
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-titel">
