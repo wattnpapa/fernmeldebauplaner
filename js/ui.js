@@ -1250,7 +1250,7 @@ export function zeichneProjektReiter() {
   // Wegnavigieren nicht verloren, aber ein halb gezeichneter Streckenzug schon.
   ueber.appendChild(el('p', 'klein',
     `Wer dahintersteht und woher die Bauregeln stammen:
-     <a href="autor.html" target="_blank" rel="noopener">Über den Autor</a>.`));
+     <a href="autor/" target="_blank" rel="noopener">Über den Autor</a>.`));
 }
 
 export function projektDialog() {

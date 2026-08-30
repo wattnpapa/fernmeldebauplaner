@@ -180,7 +180,7 @@ Dann `http://localhost:8899` öffnen.
 ```
 CNAME                 Domain für GitHub Pages
 index.html            Grundgerüst der Oberfläche
-autor.html            Über den Autor (statische Seite)
+autor/index.html      Über den Autor (statische Seite)
 css/app.css           Oberfläche
 css/print.css         Bauauftrag: Vorschau und Ausdruck
 css/seite.css         Statische Seiten außerhalb der Anwendung
@@ -197,6 +197,7 @@ js/bauauftrag.js      Druckdokument
 js/ui.js              Seitenleiste, Formulare, Dialoge
 js/io.js              JSON, GeoJSON, GPX, CSV
 js/version.js         Stand der Anwendung (beim Veröffentlichen gesetzt)
+bilder/               Bilder der statischen Seiten
 fonts/                Roboto Slab Bold, die Beschriftungsschrift der Zeichen
 scripts/              Zeichen holen und prüfen (siehe unten)
 vendor/               Leaflet 1.9.4, mgrs 2.1.0 (siehe LIZENZEN.md)
