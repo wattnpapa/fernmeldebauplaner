@@ -876,7 +876,7 @@ export function einsatzabschnittDialog(aid) {
     `Der Sammelauftrag fasst alle Strecken dieses Abschnitts in einem Dokument
      zusammen – Deckblatt mit Übersichtskarte, Streckenverzeichnis und je Strecke
      das gewohnte Kartenblatt. Die Datei enthält nur diesen Ausschnitt und lässt
-     sich beim Empfänger über <b>Datei → Planung aus Datei laden</b> öffnen.`));
+     sich beim Empfänger über <b>Datei → Planung oder KML laden</b> öffnen.`));
   box.appendChild(aus);
 
   const fuss = [];
@@ -1250,7 +1250,7 @@ export function zeichneProjektReiter() {
   // Wegnavigieren nicht verloren, aber ein halb gezeichneter Streckenzug schon.
   ueber.appendChild(el('p', 'klein',
     `Wer dahintersteht und woher die Bauregeln stammen:
-     <a href="autor.html" target="_blank" rel="noopener">Über den Autor</a>.`));
+     <a href="autor/" target="_blank" rel="noopener">Über den Autor</a>.`));
 }
 
 export function projektDialog() {
@@ -1400,7 +1400,7 @@ export function hilfeDialog() {
           <li>Das <b>Auge</b> an der Abschnittszeile blendet alle seine Strecken zusammen
               aus der Karte aus – der eigene Schalter jeder Strecke bleibt dabei erhalten.</li>
           <li><b>Als Datei sichern (.json)</b> gibt nur diesen Abschnitt heraus. Wer sie
-              erhält, lädt sie über <b>Datei → Planung aus Datei laden</b> und arbeitet an
+              erhält, lädt sie über <b>Datei → Planung oder KML laden</b> und arbeitet an
               seinem Ausschnitt weiter, ohne die übrige Planung zu sehen.</li>
           <li><b>Abschnitt auflösen</b> entfernt nur die Gliederung; die Strecken bleiben
               und gelten danach als nicht zugeteilt.</li>
@@ -1425,6 +1425,11 @@ export function hilfeDialog() {
            angetippt wurde – in MGRS und als GPS-Angabe. Ein Klick auf die Angabe legt sie in
            die Zwischenablage. In der Punkttabelle öffnet ein Klick auf die Koordinate alle
            Formate zum Kopieren und erlaubt die Eingabe einer neuen Position.</p>
+        <h3>Aus Google Earth übernehmen</h3>
+        <p>Die Vorplanung dort als <b>.kml</b> oder <b>.kmz</b> sichern und über
+           <b>Datei → Planung oder KML laden</b> öffnen. Pfade werden zu Strecken,
+           Ortsmarken zu taktischen Zeichen; beides tritt zur geöffneten Planung hinzu und
+           lässt sich mit <kbd>Strg</kbd>+<kbd>Z</kbd> wieder zurücknehmen.</p>
         <h3>Speichern</h3>
         <p>Alles wird laufend im Browserspeicher gespeichert. Für Sicherung und Weitergabe
            <b>Datei → Planung als Datei sichern</b> verwenden.</p>

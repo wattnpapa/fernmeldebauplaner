@@ -70,8 +70,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Einsatzabschnitten gegliedert samt Teilsummen; dazu der Materialbedarf nach Leitungsarten
 - Danach je Strecke die gewohnten Blätter; welche Blattarten entstehen, ist wählbar
 
-**Weitere Ausgaben**
+**Austausch mit anderen Werkzeugen**
 - Planung als `.json` sichern und laden
+- KML und KMZ aus Google Earth laden: Pfade werden Strecken, Ortsmarken taktische Zeichen
 - GeoJSON (auch je Strecke), GPX für Hand-GPS-Geräte, CSV-Punktliste für Excel
 
 **Kartengrundlagen**
@@ -103,6 +104,14 @@ Zwischenpunkt ein.
 Die Zuteilung steht in jeder geöffneten Strecke und gesammelt im Abschnitt selbst
 (Knopf `⋯` an der Abschnittszeile); dort liegen auch Sammel-Bauauftrag und Teilexport.
 Das Auge an der Abschnittszeile blendet alle seine Strecken zusammen aus.
+
+**Aus Google Earth übernehmen:** Dort die Vorplanung als Datei sichern – in Google Earth
+Pro über „Ort speichern unter …“ am Ordner oder Pfad, in Google Earth im Browser über
+„Als KML-Datei exportieren“ –, hier **Datei → Planung oder KML laden**. Jeder Pfad wird
+eine Strecke mit Anfangs- und Endpunkt, jede Ortsmarke ein taktisches Zeichen („Stelle“,
+in der Zeichenliste austauschbar). Name, Beschreibung und die Linienfarbe kommen mit;
+Höhen, Zeitstempel und Bildüberlagerungen bleiben außen vor. Das Geladene tritt zur
+geöffneten Planung hinzu, `Strg`+`Z` nimmt es wieder zurück.
 
 **Bauauftrag drucken:** Strecke in der Seitenleiste öffnen → „Bauauftrag (PDF)“.
 Format und Farbe einstellen, dann „Drucken / Als PDF speichern“. Im Druckdialog des
@@ -183,7 +192,7 @@ CNAME                 Domain für GitHub Pages
 robots.txt            Freigabe für Suchmaschinen, Verweis auf die Sitemap
 sitemap.xml           Die vier Adressen der Seite (lastmod setzt der Workflow)
 index.html            Grundgerüst der Oberfläche
-autor.html            Über den Autor (statische Seite)
+autor/index.html      Über den Autor (statische Seite)
 impressum.html        Anbieterkennzeichnung nach § 5 DDG
 datenschutz.html      Datenschutzerklärung
 css/app.css           Oberfläche
@@ -200,8 +209,10 @@ js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
 js/bauauftrag.js      Druckdokument
 js/ui.js              Seitenleiste, Formulare, Dialoge
-js/io.js              JSON, GeoJSON, GPX, CSV
+js/io.js              Sichern und Laden, GeoJSON, GPX, CSV
+js/kml.js             KML und KMZ aus Google Earth lesen
 js/version.js         Stand der Anwendung (beim Veröffentlichen gesetzt)
+bilder/               Bilder der statischen Seiten
 fonts/                Roboto Slab Bold, die Beschriftungsschrift der Zeichen
 scripts/              Zeichen holen und prüfen (siehe unten)
 vendor/               Leaflet 1.9.4, mgrs 2.1.0 (siehe LIZENZEN.md)
