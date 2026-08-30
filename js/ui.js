@@ -2,7 +2,8 @@
 
 import {
   store, KABELTYPEN, VERLEGEARTEN, PUNKTARTEN, FARBEN,
-  neuesZeichen, punktartById, kabelById, neueStrecke, neuerEinsatzabschnitt, abschnittById, streckenIm,
+  neuesZeichen, punktartById, kabelById, neueStrecke, neuerEinsatzabschnitt, abschnittById,
+  streckenIm, zeichenIm,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
@@ -173,22 +174,27 @@ export function zeichneStreckenListe() {
     return;
   }
 
-  for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea));
-  if (streckenIm(p, null).length) liste.appendChild(abschnittGruppe(null));
+  for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea, 'strecken'));
+  if (streckenIm(p, null).length) liste.appendChild(abschnittGruppe(null, 'strecken'));
 }
 
 /* Zugeklappte Abschnitte sind Ansichtssache und keine Planungsdaten: sie
    stehen deshalb hier und nicht im Projekt – sonst reisten sie in jeder
    exportierten Datei mit. */
 const zugeklappt = new Set();
-const klappSchluessel = aid => aid || '\u0000ohne';
+const klappSchluessel = (aid, art) => art + ':' + (aid || '\u0000ohne');
 
-function abschnittGruppe(ea) {
+/**
+ * Ein Einsatzabschnitt als Klammer über seine Einträge – dieselbe Zeile über
+ * den Strecken wie über den taktischen Zeichen. `art` bestimmt, was darin
+ * steht und was der Kopf zählt.
+ */
+function abschnittGruppe(ea, art) {
   const p = store.projekt;
+  const zeichenliste = art === 'zeichen';
   const aid = ea ? ea.id : null;
-  const strecken = streckenIm(p, aid);
-  const zu = zugeklappt.has(klappSchluessel(aid));
-  const ges = gesamtKennzahlen(strecken);
+  const eintraege = zeichenliste ? zeichenIm(p, aid) : streckenIm(p, aid);
+  const zu = zugeklappt.has(klappSchluessel(aid, art));
 
   const box = el('section', 'ea-gruppe' + (zu ? ' zu' : '') + (ea ? '' : ' ea-ohne') +
     (ea && ea.sichtbar === false ? ' verborgen' : ''));
@@ -200,15 +206,18 @@ function abschnittGruppe(ea) {
      <button type="button" class="ea-name" aria-expanded="${!zu}">
        <span class="ea-pfeil" aria-hidden="true">▾</span>${escapeHtml(ea ? ea.name : 'Ohne Einsatzabschnitt')}
      </button>
-     <span class="ea-wert">${strecken.length} · ${formatLaenge(ges.trasse)}</span>
+     <span class="ea-wert">${zeichenliste
+       ? `${eintraege.length} Zeichen`
+       : `${eintraege.length} · ${formatLaenge(gesamtKennzahlen(eintraege).trasse)}`}</span>
      ${ea ? augenKnopf(ea.sichtbar !== false) : ''}
      <button type="button" class="ea-mehr" data-akt="mehr"
              title="Einsatzabschnitt öffnen" aria-label="Einsatzabschnitt öffnen">⋯</button>`;
 
+  const neuZeichnen = () => zeichenliste ? zeichneZeichenListe() : zeichneStreckenListe();
   kopf.querySelector('.ea-name').onclick = () => {
-    const s = klappSchluessel(aid);
+    const s = klappSchluessel(aid, art);
     zugeklappt.has(s) ? zugeklappt.delete(s) : zugeklappt.add(s);
-    zeichneStreckenListe();
+    neuZeichnen();
   };
   kopf.querySelector('[data-akt="mehr"]').onclick = () => einsatzabschnittDialog(aid);
   if (ea) {
@@ -220,28 +229,36 @@ function abschnittGruppe(ea) {
 
   if (!zu) {
     const inhalt = el('div', 'ea-strecken');
-    if (!strecken.length) {
-      inhalt.appendChild(el('p', 'klein ea-leer',
-        'Keine Strecke zugeteilt. Die Zuteilung steht in der geöffneten Strecke oder unter „⋯“.'));
+    if (!eintraege.length) {
+      inhalt.appendChild(el('p', 'klein ea-leer', zeichenliste
+        ? 'Kein Zeichen zugeteilt. Nicht zugeteilte Zeichen gehören ohnehin zu jedem Abschnitt.'
+        : 'Keine Strecke zugeteilt. Die Zuteilung steht in der geöffneten Strecke oder unter „⋯“.'));
     }
-    for (const s of strecken) inhalt.appendChild(streckenKarte(s));
-    /* Zeichnen und Zuteilen in einem Griff: sonst müsste jede neue Strecke
-       erst gezeichnet, dann gesucht und dann von Hand zugeteilt werden. */
-    if (ea) {
-      inhalt.appendChild(knopf('+ Strecke in diesem Abschnitt', () => {
-        let sid;
-        store.aendern(p => {
-          const s = neueStrecke(p);
-          s.abschnitt = ea.id;
-          sid = s.id;
-          p.strecken.push(s);
-        }, 'strecke');
-        ctx.weiterzeichnen(sid);
-      }, 'klein ea-neu'));
-    }
+    for (const x of eintraege) inhalt.appendChild(zeichenliste ? zeichenKarte(x) : streckenKarte(x));
+    /* Anlegen und Zuteilen in einem Griff: sonst müsste jeder neue Eintrag
+       erst gesetzt, dann gesucht und dann von Hand zugeteilt werden. */
+    if (ea) inhalt.appendChild(neuKnopf(ea, art));
     box.appendChild(inhalt);
   }
   return box;
+}
+
+function neuKnopf(ea, art) {
+  if (art === 'zeichen') {
+    return knopf('+ Zeichen in diesem Abschnitt', () => {
+      symbolPalette(sym => ctx.zeichenSetzen(sym, ea.id));
+    }, 'klein ea-neu');
+  }
+  return knopf('+ Strecke in diesem Abschnitt', () => {
+    let sid;
+    store.aendern(p => {
+      const s = neueStrecke(p);
+      s.abschnitt = ea.id;
+      sid = s.id;
+      p.strecken.push(s);
+    }, 'strecke');
+    ctx.weiterzeichnen(sid);
+  }, 'klein ea-neu');
 }
 
 function streckenKarte(s) {
@@ -840,8 +857,8 @@ export function einsatzabschnittDialog(aid) {
     box.appendChild(g);
   } else {
     box.appendChild(el('p', 'klein',
-      `Diese Strecken gehören zu keinem Einsatzabschnitt. Sie bleiben auf der Karte
-       sichtbar und lassen sich ebenso gemeinsam ausgeben.`));
+      `Diese Strecken und Zeichen gehören zu keinem Einsatzabschnitt. Sie bleiben auf
+       der Karte sichtbar; nicht zugeteilte Zeichen erscheinen zudem in jedem Abschnitt.`));
   }
 
   const pdf = knopf('▤ Sammel-Bauauftrag (PDF)', () => {
@@ -854,17 +871,28 @@ export function einsatzabschnittDialog(aid) {
   /* Ausgeben lässt sich nur, was da ist – die Knöpfe folgen der Zuteilung,
      die im selben Dialog gerade geändert wird. */
   const ausgabeAuffrischen = () => {
-    const eigen = streckenIm(store.projekt, aid);
-    pdf.disabled = !eigen.filter(s => s.punkte.length >= 2).length;
-    datei.disabled = !eigen.length;
+    const strecken = streckenIm(store.projekt, aid);
+    pdf.disabled = !strecken.filter(s => s.punkte.length >= 2).length;
+    // Ein Abschnitt darf auch aus Zeichen allein bestehen – etwa als Lagebild
+    // eines Abschnitts, dessen Strecken erst noch geplant werden.
+    datei.disabled = !strecken.length && !zeichenIm(store.projekt, aid).length;
   };
 
   const zut = el('div', 'feldgruppe');
   zut.appendChild(el('h3', 'gruppen-titel', 'Strecken zuteilen'));
   const stand = el('p', 'klein ea-stand');
-  zut.appendChild(zuteilungsliste(aid, stand, ausgabeAuffrischen));
+  zut.appendChild(zuteilungsliste('strecken', aid, stand, ausgabeAuffrischen));
   zut.appendChild(stand);
   box.appendChild(zut);
+
+  if (p.zeichen.length) {
+    const zz = el('div', 'feldgruppe');
+    zz.appendChild(el('h3', 'gruppen-titel', 'Taktische Zeichen zuteilen'));
+    const zstand = el('p', 'klein ea-stand');
+    zz.appendChild(zuteilungsliste('zeichen', aid, zstand, ausgabeAuffrischen));
+    zz.appendChild(zstand);
+    box.appendChild(zz);
+  }
 
   const aus = el('div', 'feldgruppe');
   aus.appendChild(el('h3', 'gruppen-titel', 'Ausgabe'));
@@ -876,7 +904,9 @@ export function einsatzabschnittDialog(aid) {
     `Der Sammelauftrag fasst alle Strecken dieses Abschnitts in einem Dokument
      zusammen – Deckblatt mit Übersichtskarte, Streckenverzeichnis und je Strecke
      das gewohnte Kartenblatt. Die Datei enthält nur diesen Ausschnitt und lässt
-     sich beim Empfänger über <b>Datei → Planung oder KML laden</b> öffnen.`));
+     sich beim Empfänger über <b>Datei → Planung oder KML laden</b> öffnen.
+     Beides führt die Zeichen dieses Abschnitts mit und dazu die nicht
+     zugeteilten – die gehören zum gemeinsamen Lagebild.`));
   box.appendChild(aus);
 
   const fuss = [];
@@ -890,14 +920,23 @@ export function einsatzabschnittDialog(aid) {
   });
 }
 
-/** Liste aller Strecken mit ihrer Zuteilung – von hier aus wandern sie
- *  zwischen den Abschnitten, ohne dass jede einzeln geöffnet werden muss. */
-function zuteilungsliste(aid, stand, ausgabeAuffrischen) {
+/** Liste aller Strecken bzw. Zeichen mit ihrer Zuteilung – von hier aus wandern
+ *  sie zwischen den Abschnitten, ohne dass jedes einzeln geöffnet werden muss. */
+function zuteilungsliste(art, aid, stand, ausgabeAuffrischen) {
   const p = store.projekt;
+  const zeichenliste = art === 'zeichen';
+  const alle = zeichenliste ? p.zeichen : p.strecken;
   const box = el('div', 'ea-zuteilung');
 
   const standSchreiben = () => {
-    const eigen = streckenIm(store.projekt, aid);
+    const eigen = zeichenliste ? zeichenIm(store.projekt, aid) : streckenIm(store.projekt, aid);
+    if (zeichenliste) {
+      stand.innerHTML = eigen.length
+        ? `<b>${eigen.length}</b> zugeteilt. Nicht zugeteilte Zeichen erscheinen ohnehin
+           in jedem Abschnitt.`
+        : 'Kein Zeichen zugeteilt – die nicht zugeteilten gelten für jeden Abschnitt.';
+      return;
+    }
     const ges = gesamtKennzahlen(eigen);
     stand.innerHTML = eigen.length
       ? `<b>${eigen.length}</b> ${eigen.length === 1 ? 'Strecke' : 'Strecken'} ·
@@ -906,33 +945,39 @@ function zuteilungsliste(aid, stand, ausgabeAuffrischen) {
       : 'Noch keine Strecke zugeteilt.';
   };
 
-  if (!p.strecken.length) {
-    box.appendChild(el('p', 'klein', 'Diese Planung enthält noch keine Strecke.'));
+  if (!alle.length) {
+    box.appendChild(el('p', 'klein',
+      zeichenliste ? 'Diese Planung enthält noch kein taktisches Zeichen.'
+                   : 'Diese Planung enthält noch keine Strecke.'));
     standSchreiben();
     return box;
   }
 
-  for (const s of p.strecken) {
+  for (const x of alle) {
+    const bezeichnung = zeichenliste ? (x.label || symbolById(x.symbol).name) : x.name;
     const zeile = el('div', 'ez-zeile');
-    zeile.innerHTML =
-      `<span class="farbpunkt" style="--farbe:${s.farbe}"></span>
-       <span class="ez-name">${escapeHtml(s.name)}</span>
-       <span class="ez-wert">${formatLaenge(kennzahlen(s).trasse)}</span>`;
+    zeile.innerHTML = zeichenliste
+      ? `<span class="mini-symbol">${symbolSVG({ symbol: x.symbol, breite: 24 })}</span>
+         <span class="ez-name">${escapeHtml(bezeichnung)}</span>`
+      : `<span class="farbpunkt" style="--farbe:${x.farbe}"></span>
+         <span class="ez-name">${escapeHtml(bezeichnung)}</span>
+         <span class="ez-wert">${formatLaenge(kennzahlen(x).trasse)}</span>`;
+
     const wahl = document.createElement('select');
     wahl.className = 'mini-select';
-    wahl.setAttribute('aria-label', `Einsatzabschnitt für ${s.name}`);
+    wahl.setAttribute('aria-label', `Einsatzabschnitt für ${bezeichnung}`);
     for (const [wert, text] of [['', '— ohne —'], ...p.einsatzabschnitte.map(a => [a.id, a.name])]) {
       const o = document.createElement('option');
-      o.value = wert; o.textContent = text; o.selected = (s.abschnitt || '') === wert;
+      o.value = wert; o.textContent = text; o.selected = (x.abschnitt || '') === wert;
       wahl.appendChild(o);
     }
     wahl.onchange = () => {
-      store.aendern(() => { s.abschnitt = wahl.value || null; }, 'strecke');
-      zeile.classList.toggle('eigen', (s.abschnitt || null) === (aid || null));
+      store.aendern(() => { x.abschnitt = wahl.value || null; }, zeichenliste ? 'zeichen' : 'strecke');
+      zeile.classList.toggle('eigen', (x.abschnitt || null) === (aid || null));
       standSchreiben();
       ausgabeAuffrischen();
     };
-    zeile.classList.toggle('eigen', (s.abschnitt || null) === (aid || null));
+    zeile.classList.toggle('eigen', (x.abschnitt || null) === (aid || null));
     zeile.appendChild(wahl);
     box.appendChild(zeile);
   }
@@ -966,20 +1011,21 @@ function abschnittFarbwahl(ea) {
    Abschnitt mehr zugeteilt. Deshalb reicht eine Rückfrage ohne Namenseingabe –
    rückgängig machen lässt es sich ohnehin. */
 function abschnittAufloesen(ea) {
-  const anzahl = streckenIm(store.projekt, ea.id).length;
+  const anzahl = streckenIm(store.projekt, ea.id).length + zeichenIm(store.projekt, ea.id).length;
   dialog({
     titel: 'Einsatzabschnitt auflösen',
     inhalt: `<p>Soll <b>${escapeHtml(ea.name)}</b> aufgelöst werden?</p>
       <p class="klein">${anzahl
-        ? `Die ${anzahl} ${anzahl === 1 ? 'zugeteilte Strecke bleibt' : 'zugeteilten Strecken bleiben'}
-           erhalten und ${anzahl === 1 ? 'gilt' : 'gelten'} danach als nicht zugeteilt.`
-        : 'Diesem Abschnitt ist keine Strecke zugeteilt.'}
+        ? `Die ${anzahl} zugeteilten Strecken und Zeichen bleiben erhalten und gelten
+           danach als nicht zugeteilt.`
+        : 'Diesem Abschnitt ist nichts zugeteilt.'}
         Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
     fuss: [
       { text: 'Abbrechen', tun: () => { einsatzabschnittDialog(ea.id); return false; } },
       { text: 'Auflösen', gefahr: true, tun: () => {
           store.aendern(p => {
             p.strecken.forEach(s => { if (s.abschnitt === ea.id) s.abschnitt = null; });
+            p.zeichen.forEach(z => { if (z.abschnitt === ea.id) z.abschnitt = null; });
             p.einsatzabschnitte = p.einsatzabschnitte.filter(a => a.id !== ea.id);
           }, 'strecke');
           hinweis('Einsatzabschnitt aufgelöst');
@@ -993,6 +1039,7 @@ function abschnittAufloesen(ea) {
 export function zeichneZeichenListe() {
   const p = store.projekt;
   const liste = document.getElementById('zeichen-liste');
+  const abschnitte = p.einsatzabschnitte || [];
   liste.innerHTML = '';
 
   if (!p.zeichen.length) {
@@ -1000,30 +1047,38 @@ export function zeichneZeichenListe() {
       `<p><b>Noch keine taktischen Zeichen gesetzt.</b></p>
        <p>„Taktisches Zeichen setzen“ wählen, Symbol aus der Auswahl nehmen und
        auf der Karte platzieren.</p>`));
+    if (!abschnitte.length) return;
+  }
+
+  if (!abschnitte.length) {
+    for (const z of p.zeichen) liste.appendChild(zeichenKarte(z));
     return;
   }
 
-  for (const z of p.zeichen) {
-    const gewaehlt = ctx.zl.auswahl === z.id;
-    const basis = symbolById(z.symbol);
-    const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') +
-      (z.sichtbar === false ? ' verborgen' : ''));
+  for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea, 'zeichen'));
+  if (zeichenIm(p, null).length) liste.appendChild(abschnittGruppe(null, 'zeichen'));
+}
 
-    const kopf = el('header', 'eintrag-kopf');
-    kopf.innerHTML =
-      `<span class="mini-symbol">${symbolSVG({ symbol: z.symbol, breite: 26 })}</span>
-       <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(z.label || basis.name)}</button>
-       ${augenKnopf(z.sichtbar !== false)}`;
-    kopf.onclick = () => ctx.zl.waehle(gewaehlt ? null : z.id);
-    kopf.querySelector('[data-akt="sichtbar"]').onclick = e => {
-      e.stopPropagation();
-      store.aendern(() => { z.sichtbar = z.sichtbar === false; }, 'zeichen');
-    };
-    karte.appendChild(kopf);
+function zeichenKarte(z) {
+  const gewaehlt = ctx.zl.auswahl === z.id;
+  const basis = symbolById(z.symbol);
+  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') +
+    (z.sichtbar === false ? ' verborgen' : ''));
 
-    if (gewaehlt) karte.appendChild(zeichenFormular(z, basis));
-    liste.appendChild(karte);
-  }
+  const kopf = el('header', 'eintrag-kopf');
+  kopf.innerHTML =
+    `<span class="mini-symbol">${symbolSVG({ symbol: z.symbol, breite: 26 })}</span>
+     <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(z.label || basis.name)}</button>
+     ${augenKnopf(z.sichtbar !== false)}`;
+  kopf.onclick = () => ctx.zl.waehle(gewaehlt ? null : z.id);
+  kopf.querySelector('[data-akt="sichtbar"]').onclick = e => {
+    e.stopPropagation();
+    store.aendern(() => { z.sichtbar = z.sichtbar === false; }, 'zeichen');
+  };
+  karte.appendChild(kopf);
+
+  if (gewaehlt) karte.appendChild(zeichenFormular(z, basis));
+  return karte;
 }
 
 function zeichenFormular(z, basis) {
@@ -1045,6 +1100,18 @@ function zeichenFormular(z, basis) {
     schreib(() => { z.label = v; });
     ctx.zl.zeichne();
   }, { platzhalter: basis.name }));
+
+  /* Wie bei den Strecken: erst wenn Abschnitte gebildet sind, gibt es hier
+     etwas zu wählen. Nicht zugeteilt heißt „gehört zu jedem Abschnitt“. */
+  if ((store.projekt.einsatzabschnitte || []).length) {
+    g.appendChild(feld('Einsatzabschnitt', z.abschnitt || '', v => {
+      store.aendern(() => { z.abschnitt = v || null; }, 'zeichen');
+    }, {
+      typ: 'select',
+      werte: [['', '— keinem zugeteilt (gilt für alle) —'],
+        ...store.projekt.einsatzabschnitte.map(a => [a.id, a.name])]
+    }));
+  }
 
   const paar2 = el('div', 'feld-paar');
   paar2.append(
@@ -1394,16 +1461,22 @@ export function hilfeDialog() {
         <h3>Einsatzabschnitte</h3>
         <p>Große Planungen lassen sich in Einsatzabschnitte gliedern – sie sind freiwillig,
            ohne sie bleibt alles wie bisher. Über <b>+ Einsatzabschnitt</b> im Reiter
-           „Strecken“ einen anlegen; die Zuteilung steht dann in jeder geöffneten Strecke
-           und gesammelt im Abschnitt selbst (Knopf <b>⋯</b> an der Abschnittszeile).</p>
+           „Strecken“ einen anlegen; die Zuteilung steht dann in jeder geöffneten Strecke,
+           in jedem geöffneten taktischen Zeichen und gesammelt im Abschnitt selbst
+           (Knopf <b>⋯</b> an der Abschnittszeile).</p>
         <ul class="tasten-liste">
-          <li>Das <b>Auge</b> an der Abschnittszeile blendet alle seine Strecken zusammen
-              aus der Karte aus – der eigene Schalter jeder Strecke bleibt dabei erhalten.</li>
+          <li><b>Nicht zugeteilte Zeichen gehören allen:</b> sie erscheinen in jedem
+              Abschnitt, auf dessen Karten und in dessen Datei. Ein zugeteiltes Zeichen
+              nur in seinem eigenen. So bleibt das gemeinsame Lagebild – Führungsstelle,
+              Bereitstellungsraum – überall stehen.</li>
+          <li>Das <b>Auge</b> an der Abschnittszeile blendet alle seine Strecken und
+              Zeichen zusammen aus der Karte aus – der eigene Schalter jedes Elements
+              bleibt dabei erhalten.</li>
           <li><b>Als Datei sichern (.json)</b> gibt nur diesen Abschnitt heraus. Wer sie
               erhält, lädt sie über <b>Datei → Planung oder KML laden</b> und arbeitet an
               seinem Ausschnitt weiter, ohne die übrige Planung zu sehen.</li>
-          <li><b>Abschnitt auflösen</b> entfernt nur die Gliederung; die Strecken bleiben
-              und gelten danach als nicht zugeteilt.</li>
+          <li><b>Abschnitt auflösen</b> entfernt nur die Gliederung; Strecken und Zeichen
+              bleiben und gelten danach als nicht zugeteilt.</li>
         </ul>
         <h3>Bauauftrag</h3>
         <p>In der geöffneten Strecke <b>Bauauftrag (PDF)</b> wählen. Dort A4/A3, Hoch/Quer und

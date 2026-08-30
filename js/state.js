@@ -108,17 +108,34 @@ export function neuerEinsatzabschnitt(projekt) {
 export const abschnittById = (p, aid) =>
   (p && aid ? (p.einsatzabschnitte || []).find(a => a.id === aid) : null) || null;
 
+const gehoertZu = (x, aid) => (x.abschnitt || null) === (aid || null);
+
 /** Alle Strecken eines Abschnitts; `null` liefert die nicht zugeteilten. */
-export function streckenIm(p, aid) {
-  return p.strecken.filter(s => (s.abschnitt || null) === (aid || null));
+export function streckenIm(p, aid) { return p.strecken.filter(s => gehoertZu(s, aid)); }
+
+/** Ebenso für die taktischen Zeichen */
+export function zeichenIm(p, aid) { return p.zeichen.filter(z => gehoertZu(z, aid)); }
+
+/** Nicht zugeteilt heißt: gehört allen. Ein Abschnitt bekommt seine eigenen
+ *  Zeichen und dazu die des gemeinsamen Lagebildes – ohne Abschnitt alle. */
+export function zeichenFuer(p, aid) {
+  return aid ? p.zeichen.filter(z => !z.abschnitt || z.abschnitt === aid) : p.zeichen;
 }
 
-/** Zeigt die Karte diese Strecke? Der Abschnitt schaltet seine Strecken
- *  gemeinsam ab, ohne ihren eigenen Schalter zu überschreiben. */
-export function streckeSichtbar(p, s) {
-  if (s.sichtbar === false) return false;
-  const ea = abschnittById(p, s.abschnitt);
+/* Der Abschnitt schaltet seine Strecken und Zeichen gemeinsam ab, ohne ihren
+   eigenen Schalter zu überschreiben – wird er wieder eingeblendet, steht jedes
+   Element so da, wie es der Nutzer verlassen hat. */
+const abschnittZeigt = (p, x) => {
+  const ea = abschnittById(p, x.abschnitt);
   return !ea || ea.sichtbar !== false;
+};
+
+export function streckeSichtbar(p, s) {
+  return s.sichtbar !== false && abschnittZeigt(p, s);
+}
+
+export function zeichenSichtbar(p, z) {
+  return z.sichtbar !== false && abschnittZeigt(p, z);
 }
 
 export function neueStrecke(projekt) {
@@ -152,7 +169,7 @@ export function neuerPunkt(lat, lng, art = 'punkt') {
 
 export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
   return {
-    id: id(), lat, lng, symbol,
+    id: id(), lat, lng, symbol, abschnitt: null,
     drehung: 0, groesse: 1, label: '', bemerkung: '', sichtbar: true
   };
 }
@@ -397,11 +414,12 @@ export function migrieren(p) {
     })
   };
   out.id = p.id || id();
-  /* Eine Teilplanung kann Strecken mitbringen, deren Abschnitt nicht in der
-     Datei steht. Ein Verweis ins Leere wäre eine unsichtbare Gruppe – die
-     Strecke gilt dann als nicht zugeteilt. */
+  /* Eine Teilplanung kann Strecken und Zeichen mitbringen, deren Abschnitt
+     nicht in der Datei steht. Ein Verweis ins Leere wäre eine unsichtbare
+     Gruppe – sie gelten dann als nicht zugeteilt. */
   const bekannt = new Set(out.einsatzabschnitte.map(a => a.id));
   out.strecken.forEach(s => { if (!bekannt.has(s.abschnitt)) s.abschnitt = null; });
+  out.zeichen.forEach(z => { if (!bekannt.has(z.abschnitt)) z.abschnitt = null; });
   return out;
 }
 

@@ -124,6 +124,24 @@ body.druckansicht { overflow: hidden; }
    Der Umbruch in bauauftrag.js misst daran, ob noch etwas auf das Blatt passt. */
 .bl-inhalt { flex: 1 1 auto; min-height: 0; overflow: hidden; margin-bottom: 2mm; }
 
+/* -- Einstufung
+
+   Steht über allem anderen auf jedem Blatt: ein eingestuftes Blatt muss auch
+   dann als solches zu erkennen sein, wenn es einzeln aus dem Stapel fällt.
+   Gesperrt und kräftig, aber einzeilig und klein – der Platz gehört dem
+   Auftrag. Schwarz statt Blau, denn die Einstufung gilt im Farb- wie im
+   Schwarz-Weiß-Druck gleichermaßen; eine Sonderregel für .sw entfällt damit. */
+.bl-einstufung {
+  flex: 0 0 auto;
+  margin: 0 0 1.6mm; padding: .5mm 2mm;
+  border: .8pt solid #111;
+  font-size: .8em; font-weight: 700; line-height: 1.25;
+  text-align: center; text-transform: uppercase;
+  /* letter-spacing setzt den Abstand auch hinter das letzte Zeichen –
+     text-indent gleicht ihn aus, sonst säße die Zeile links der Mitte. */
+  letter-spacing: 1.6pt; text-indent: 1.6pt;
+}
+
 /* -- Kopf */
 
 .bl-kopf {
@@ -264,6 +282,43 @@ body.druckansicht { overflow: hidden; }
 .tab-punkte .mono { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: .92em; white-space: nowrap; }
 .tab-fussnote { font-size: .76em; color: #555; margin: 1.2mm 0 0; font-style: italic; }
 
+/* -- Querungen
+
+   Acht Spalten, von denen eine den vollen Wortlaut der Auflage trägt. Die
+   Breiten stehen an den Kopfzellen, weil die automatische Tabellenbreite sonst
+   dem langen Auflagentext folgt und die übrigen Spalten auf ihre Wortbreite
+   zusammenzieht. Es sind Vorgaben, keine feste Aufteilung (kein
+   table-layout: fixed): MGRS und Maße behalten so ihre Mindestbreite, und die
+   Tabelle kann nicht über das Blatt hinauslaufen. */
+.tab-querungen { font-size: .82em; }
+.tab-querungen th:nth-child(3) { width: 12%; }   /* Bezeichnung */
+.tab-querungen th:nth-child(4) { width: 13%; }   /* Art der Querung */
+.tab-querungen th:nth-child(5) { width: 14%; }   /* Mindestmaß */
+.tab-querungen th:nth-child(8) { width: 32%; }   /* Auflage */
+
+/* Der Wortlaut der Vorschrift bricht um, statt die Tabelle aufzureißen.
+   Trennung nach deutschen Regeln – das Dokument trägt lang="de". */
+.q-auflage { white-space: normal; line-height: 1.28; hyphens: auto; }
+.q-fundstelle { display: block; margin-top: .4mm; color: #555; }
+
+/* Verbot und Genehmigungspflicht sind das, weswegen die Spalte überhaupt
+   gedruckt wird. Sie müssen auch aus dem Schwarz-Weiß-Drucker herausstechen:
+   Rahmen und Raster tragen die Hervorhebung, nicht eine Farbe. */
+.q-verbot { display: inline-block; padding: 0 1mm; border: .6pt solid #111; background: #e3e3e3; }
+.q-genehmigung { text-decoration: underline; text-underline-offset: .4mm; }
+
+/* Die Staffel ist eine Zahlenreihe – aufrecht statt kursiv wie die übrigen
+   Fußnoten, sonst sind „110 kV 3 m“ nicht auf einen Blick zu trennen. */
+.q-schutzabstaende { font-style: normal; font-variant-numeric: tabular-nums; }
+
+/* -- Längenverbindungen
+
+   Sechs schmale Spalten, überwiegend Zahlen. Über die ganze Blattbreite
+   gezogen stünden sie meterweit auseinander – der Deckel hält sie beisammen,
+   auf A4 hoch greift er nicht und die Tabelle füllt den Satzspiegel. */
+.tab-laengen { max-width: 165mm; }
+.tab-laengen th:nth-child(6) { width: 34%; }     /* Lage */
+
 /* -- Streckenverzeichnis des Sammelauftrags */
 
 .tab-verzeichnis .vz-name { font-weight: 600; }
@@ -299,14 +354,42 @@ body.druckansicht { overflow: hidden; }
 .tab-material th {
   text-align: left; font-weight: 500; padding: .9mm 1.2mm; border-bottom: .4pt solid #ccc; width: 62%;
 }
+/* Umbruch erlaubt: die Sprechreichweite bringt als einzige Zeile einen ganzen
+   Satz in die Wertspalte, und nowrap zöge die Tabelle dafür über ihre
+   Rasterspalte hinaus. Zahl und Einheit bleiben trotzdem ungebrochen – die
+   Spalte ist breiter als jeder von ihnen. */
 .tab-material td {
   text-align: right; padding: .9mm 1.2mm; border-bottom: .4pt solid #ccc;
-  font-variant-numeric: tabular-nums; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
+/* Kabellänge über der Reichweite: Rahmen und Raster statt einer Farbe, von der
+   im Schwarz-Weiß-Druck nichts übrig bliebe. Fett ist der Text schon im HTML. */
+.mat-warnung { display: inline-block; padding: 0 1mm; border: .6pt solid #111; background: #e3e3e3; }
 .mat-frei { border: .5pt solid #999; border-radius: .8mm; padding: 1.6mm 2mm; }
 .mf-titel { font-size: .76em; text-transform: uppercase; letter-spacing: .3pt; color: #555; }
 .mf-linien { display: flex; flex-direction: column; gap: 3.6mm; margin-top: 3mm; }
 .mf-linien span { display: block; border-bottom: .4pt solid #aaa; }
+
+/* -- Hinweise nach der Vorschrift
+
+   Sieben Merksätze. Einspaltig liefe jeder über die ganze Blattbreite und der
+   Abschnitt bräuchte fast ein eigenes Blatt; zweispaltig passt er unter den
+   Materialbedarf. Raster statt Spaltensatz: mehrspaltiger Text (columns) kommt
+   aus dem Firefox-Druck nicht zuverlässig heraus, ein Raster schon – es trägt
+   auf diesem Blatt bereits Stammdaten, Kennzahlen und Unterschriften. */
+.rg-liste {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1mm 6mm;
+  font-size: .94em;
+}
+.rg-liste li { padding-left: 3mm; text-indent: -3mm; }
+/* Der Gedankenstrich sitzt im Ausrückrand. Ein list-style-Marker wäre in
+   Rasterzellen nicht verlässlich zu sehen. */
+.rg-liste li::before { content: '– '; }
+/* Am Bauort wird nach der Gliederungsnummer gesucht; die Vorschrift selbst
+   steht in der Überschrift des Abschnitts. */
+.rg-fundstelle { color: #555; white-space: nowrap; }
+.rg-fundstelle::before { content: '·'; padding: 0 .6mm 0 1mm; }
 
 .bl-freitext {
   border: .5pt solid #999; border-radius: .8mm; padding: 2mm; min-height: 16mm;
@@ -318,6 +401,18 @@ body.druckansicht { overflow: hidden; }
 .us-titel { display: block; font-size: .76em; font-weight: 700; margin-bottom: 4mm; }
 .us-zeile { border-top: .4pt solid #666; margin-top: 6mm; padding-top: .5mm; }
 .us-zeile span { font-size: .66em; color: #666; }
+
+/* „Für die Richtigkeit“ zeichnet, wer die Ausfertigung verantwortet – ein
+   einzelnes Feld unter den Bestätigungen, rechts, wie die Unterschrift auf
+   dem Papier steht. Die Breite ist genau eine Spalte des Rasters darüber
+   (vier Spalten, 2,4 mm Abstand), damit die Kanten fluchten. */
+.us-fdr {
+  width: calc(25% - 1.8mm); min-width: 55mm; margin: 2.4mm 0 0 auto;
+  border: .5pt solid #999; border-radius: .8mm; padding: 1.6mm 2mm 2.4mm;
+}
+/* Nur eine Unterschrift statt zweier Zeilen – der Kasten braucht die
+   Vorlauflänge der Bestätigungsfelder nicht. */
+.us-fdr .us-titel { margin-bottom: 2mm; }
 
 /* ---------------------------------------------------------------- Schwarz-Weiß */
 

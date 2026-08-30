@@ -397,6 +397,16 @@ body.seite-zu .seite { display: none; }
 .feld.gesperrt { opacity: .5; }
 .feld.gesperrt input { background: var(--flaeche-2); cursor: not-allowed; }
 
+/* Die Datum-Zeit-Gruppe schreibt niemand freiwillig von Hand ab – der Knopf
+   „Jetzt“ steht deshalb in derselben Zeile wie das Feld, auf dessen Unterkante.
+   Ziffernschrift wie im Kopf des Bauauftrags, wo dieselbe Gruppe wieder steht. */
+.kopf-stand { display: flex; align-items: flex-end; gap: 6px; }
+.kopf-stand .feld { flex: 1; min-width: 0; }
+/* Der Knopf trägt „klein“ als Größenstufe – dieselbe Klasse gibt Fließtext
+   einen Außenrand von .4em und setzte ihn hier über die Unterkante des Feldes. */
+.kopf-stand .knopf { flex-shrink: 0; margin: 0; }
+.kopf-stand input { font-family: var(--mono); }
+
 /* -- Ergebnis der Querschnittsrechnung: ein Wert trägt die Aussage,
    die Randbedingungen stehen kleiner darunter. */
 .strom-ergebnis {
@@ -416,6 +426,34 @@ body.seite-zu .seite { display: none; }
 .se-fuss { margin: 6px 0 0; font-size: 11px; line-height: 1.35; color: var(--text-schwach); }
 .se-leer { margin: 0; font-size: 12.5px; color: var(--text-schwach); }
 .se-leer.warnung { color: var(--warnung); font-weight: 600; }
+
+/* -- Sprechreichweite: ein Befund, keine Bestellmenge. Die Vorschrift nennt
+   eine Erfahrungsspanne, deshalb drei Tonlagen statt einer Zahl. Aufbau wie
+   beim Querschnitt darüber – Kasten mit tragender Kante links –, nur ohne
+   große Ziffer: hier steht ein Satz, kein Wert.
+   .rw-ok bekommt keine eigene Regel; der ruhige Grundzustand ist der Kasten. */
+.reichweite {
+  border: 1px solid var(--linie); border-left: 3px solid var(--linie-stark);
+  border-radius: var(--radius-klein); background: var(--flaeche-2);
+  padding: 7px 10px; margin-bottom: 14px;
+}
+.reichweite[hidden] { display: none; }
+.rw-satz { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--text-schwach); }
+.rw-fuss { margin: 5px 0 0; font-size: 11px; line-height: 1.35; color: var(--text-schwach); }
+
+/* Im Grenzbereich ist noch nichts falsch – die Aussage zählt aber schon. */
+.reichweite.rw-grenze { border-left-color: var(--thw); }
+.rw-grenze .rw-satz { color: var(--text); font-weight: 600; }
+
+/* Darüber trägt die Leitung das Gespräch nicht mehr. Die Stufe .rw-darueber
+   bringt dafür zusätzlich .warnung mit – hier steht der Mahnton vom
+   ungesicherten Speicherstand: Farbe UND Fettung, damit die Zeile auch auf
+   einem blassen Schirm bei Tageslicht aus dem Kasten heraussticht. */
+.reichweite.warnung {
+  border-color: #e6c893; border-left-color: var(--warnung); background: #fdf3e0;
+}
+.reichweite.warnung .rw-satz { color: var(--warnung); font-weight: 600; }
+.reichweite.warnung .rw-fuss { color: #7a4b00; }
 
 .farbreihe { display: flex; flex-wrap: wrap; gap: 5px; }
 .farbe {
@@ -509,6 +547,27 @@ body.seite-zu .seite { display: none; }
 }
 .pz-summe { color: var(--text); font-weight: 600; }
 .pz-start { font-style: italic; }
+
+/* -- Querung: Art und Auflage
+
+   Die Vorschrift hängt an der Art der Querung, nicht am Punkt – deshalb steht
+   das Maß gleich unter der Auswahl und nicht in einem title, den ein
+   Touchgerät nie zeigt (den vollen Wortlaut trägt er zusätzlich). Das Feld
+   bleibt kompakt wie die übrige Punktzeile, die Zeile darunter klein und
+   ruhig: sie wird gelesen, wenn der Punkt gesetzt wird, danach nicht mehr. */
+.pz-querung { gap: 2px; }
+.pz-querung .feld-titel { font-size: 11px; }
+.pz-querung select { padding: 5px 7px; border-color: var(--linie); font-size: 12.5px; }
+
+.pz-auflage { margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--text-schwach); }
+.pz-auflage b { color: var(--text); font-weight: 600; }
+/* Eine Genehmigung ist eine Handlung vor dem Bau – sie tritt aus dem
+   nachgestellten Kleingedruckten heraus, die Fundstelle bleibt darin. */
+.pz-genehmigung { color: var(--text); }
+.pz-fundstelle { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Wo die Vorschrift das Überbauen verbietet, steht das Verbot statt des Maßes:
+   Warnfarbe und Fettung zusammen, nie die Farbe allein. */
+.pz-auflage.warnung b { color: var(--warnung); }
 
 .koord-knopf {
   flex: 1 1 auto;
@@ -888,6 +947,8 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   .wz { padding: 12px 10px; }
   /* Breite Felder: nur die Höhe fehlt zur Trefferfläche */
   .mini-select { padding: 10px 6px; font-size: 12.5px; }
+  /* Die Querungsart wird mit dem Handschuh am Bauort umgestellt */
+  .pz-querung select { padding: 9px 7px; min-height: 40px; }
   .mini-input { padding: 10px 8px; font-size: 12.5px; }
   .koord-knopf { padding: 10px 6px; }
   .sl-kopie::after { content: ''; position: absolute; inset: -9px -4px; }

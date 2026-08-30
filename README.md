@@ -26,11 +26,15 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Bauzuschlag, Trommellänge und Verlegeleistung je Strecke
 
 **Einsatzabschnitte** (freiwillig)
-- Strecken zu benannten Einsatzabschnitten mit Leitung und eigener Farbe zusammenfassen
-- Ganze Abschnitte auf der Karte ein- und ausblenden; der Schalter jeder Strecke bleibt davon unberührt
+- Strecken und taktische Zeichen zu benannten Einsatzabschnitten mit Leitung und
+  eigener Farbe zusammenfassen
+- Nicht zugeteilte Zeichen gehören allen: sie erscheinen in jedem Abschnitt, auf
+  dessen Karten und in dessen Datei – das gemeinsame Lagebild bleibt überall stehen
+- Ganze Abschnitte auf der Karte ein- und ausblenden; der Schalter jedes einzelnen
+  Elements bleibt davon unberührt
 - Einen Abschnitt als eigene Planungsdatei sichern: der Empfänger lädt nur seinen
   Ausschnitt und arbeitet darin weiter
-- Auflösen entfernt nur die Gliederung – die Strecken bleiben erhalten
+- Auflösen entfernt nur die Gliederung – Strecken und Zeichen bleiben erhalten
 
 **Rechengrößen**
 - Trassenlänge als geodätische Direktstrecke (Vincenty auf WGS84) zwischen den Punkten
@@ -101,9 +105,10 @@ verschieben; die gestrichelten Griffe zwischen zwei Punkten fügen beim Ziehen e
 Zwischenpunkt ein.
 
 **Einsatzabschnitte:** Im Reiter „Strecken“ über „+ Einsatzabschnitt“ einen anlegen.
-Die Zuteilung steht in jeder geöffneten Strecke und gesammelt im Abschnitt selbst
-(Knopf `⋯` an der Abschnittszeile); dort liegen auch Sammel-Bauauftrag und Teilexport.
-Das Auge an der Abschnittszeile blendet alle seine Strecken zusammen aus.
+Die Zuteilung steht in jeder geöffneten Strecke, in jedem geöffneten taktischen Zeichen
+und gesammelt im Abschnitt selbst (Knopf `⋯` an der Abschnittszeile); dort liegen auch
+Sammel-Bauauftrag und Teilexport. Das Auge an der Abschnittszeile blendet alle seine
+Strecken und Zeichen zusammen aus.
 
 **Aus Google Earth übernehmen:** Dort die Vorplanung als Datei sichern – in Google Earth
 Pro über „Ort speichern unter …“ am Ordner oder Pfad, in Google Earth im Browser über

@@ -447,6 +447,9 @@ function neueDruckkarte(buehne, zusatz = {}) {
   return karte;
 }
 
+/* Jede Karte zeigt die Zeichen ihres eigenen Gegenstands: das Streckenblatt
+   die des Abschnitts dieser Strecke, das Deckblatt die des gedruckten
+   Abschnitts – und dazu jeweils die nicht zugeteilten. Ohne Abschnitt alle. */
 function baueDruckkarte(buehne, strecke, opt, sw, karten, sammlung) {
   const p = store.projekt;
   const karte = neueDruckkarte(buehne, { zoomSnap: 0.25 });
@@ -461,7 +464,10 @@ function baueDruckkarte(buehne, strecke, opt, sw, karten, sammlung) {
   sl.zeichne({ ...p.optionen, teillaengen: true, gesamtlaenge: false, punktnummern: true });
 
   if (opt.zeichen) {
-    const zl = new ZeichenLayer(karte, { interaktiv: false, sw });
+    const zl = new ZeichenLayer(karte, {
+      interaktiv: false, sw, abschnittSchaltet: false,
+      nurAbschnitt: strecke.abschnitt || undefined
+    });
     zl.zeichne(p.optionen);
   }
 
@@ -490,7 +496,10 @@ function baueSammelkarte(buehne, auftrag, opt, sw, karten) {
   sl.zeichne({ teillaengen: false, gesamtlaenge: true, punktnummern: false });
 
   if (opt.zeichen) {
-    const zl = new ZeichenLayer(karte, { interaktiv: false, sw });
+    const zl = new ZeichenLayer(karte, {
+      interaktiv: false, sw, abschnittSchaltet: false,
+      nurAbschnitt: auftrag.abschnitt ? auftrag.abschnitt.id : undefined
+    });
     zl.zeichne(p.optionen);
   }
 
@@ -1103,13 +1112,23 @@ function unterschriftHTML(p) {
   </section>`;
 }
 
+// Kartenhinweis fürs Papier: Verweise sind im Ausdruck nutzlos, also fallen die
+// Marken weg. So lange ersetzen, bis nichts mehr wegfällt – ein einzelner
+// Durchlauf kann aus ineinandergeschobenen Marken eine neue entstehen lassen –
+// und das Ergebnis maskieren, damit Reste keine Marke mehr ergeben.
+function ohneMarken(html) {
+  let text = String(html ?? ''), vorher;
+  do { vorher = text; text = text.replace(/<[^>]*>/g, ''); } while (text !== vorher);
+  return escapeHtml(text);
+}
+
 function fussHTML(p, opt) {
   const bk = basiskarteById(p.ansicht.basemap);
   const quelle = opt.farbe === 'sw' ? basiskarteById(grauVariante(p.ansicht.basemap)) : bk;
   return `<footer class="bl-fuss">
     <span>${escapeHtml(p.name)} · erstellt ${new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
       mit FMBauplaner ${VERSION} (fmbauplaner.app)</span>
-    <span class="bf-quelle">Kartengrundlage: ${quelle.attribution.replace(/<[^>]+>/g, '')}</span>
+    <span class="bf-quelle">Kartengrundlage: ${ohneMarken(quelle.attribution)}</span>
   </footer>`;
 }
 

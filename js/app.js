@@ -37,7 +37,7 @@ const zl = new ZeichenLayer(karte, {
   aufAenderung: () => {}
 });
 
-initUI({ karte, sl, zl, weiterzeichnen, zurKarte, aufAenderung: () => {} });
+initUI({ karte, sl, zl, weiterzeichnen, zeichenSetzen, zurKarte, aufAenderung: () => {} });
 
 // Der Stand steht dauerhaft im Kopf: Wer zu einem gedruckten Bauauftrag
 // zurückfragt, hat dieselbe Nummer vor Augen, die im Blattfuß steht – ohne
@@ -75,13 +75,18 @@ function zeichnenBeenden(abbrechen = false) {
 }
 
 function zeichenSetzenStarten() {
-  symbolPalette(symbolId => {
-    zeichnenBeenden(true);
-    zl.starteSetzen(symbolId);
-    zurKarte();
-    modusAnzeigen();
-    hinweis('Auf die Karte klicken, um das Zeichen zu setzen.');
-  });
+  symbolPalette(symbolId => zeichenSetzen(symbolId));
+}
+
+/** Setzmodus starten – `abschnitt` teilt das Zeichen gleich beim Setzen zu.
+ *  Die Seitenleiste ruft das über den Kontext auf; die Modusanzeige gehört
+ *  hierher, weil sie an der Werkzeugleiste hängt. */
+function zeichenSetzen(symbolId, abschnitt = null) {
+  zeichnenBeenden(true);
+  zl.starteSetzen(symbolId, abschnitt);
+  zurKarte();
+  modusAnzeigen();
+  hinweis('Auf die Karte klicken, um das Zeichen zu setzen.');
 }
 
 function modusAnzeigen() {
