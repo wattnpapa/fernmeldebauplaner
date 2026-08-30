@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Verzeichnis der vier Seiten, die eine Adresse haben. Die Planungen selbst
+     stehen nicht darin und können es nicht: sie liegen im Browser des Nutzers
+     und sind von außen weder erreichbar noch auffindbar.
+
+     Anders als sonst im Projekt stehen hier vollständige Adressen – das
+     Sitemap-Protokoll lässt keine relativen zu. Die Datei gilt damit allein
+     unter fmbauplaner.app; in einer Vorschau unter <benutzer>.github.io zeigt
+     sie ins Leere, wird von dort aber auch nicht abgerufen.
+
+     changefreq und priority fehlen bewusst: Google wertet beide seit Jahren
+     nicht mehr aus. Das einzige Feld, auf das es ankommt, ist lastmod – und
+     das setzt der Release-Workflow beim Veröffentlichen je Seite aus dem Datum
+     ihrer letzten Änderung. Die hier eingetragenen Daten sind der Stand für den
+     Fall, dass die Seite einmal ohne Actions direkt aus dem Branch kommt. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+  <url>
+    <loc>https://fmbauplaner.app/</loc>
+    <lastmod>2026-08-30</lastmod>
+  </url>
+
+  <url>
+    <loc>https://fmbauplaner.app/autor.html</loc>
+    <lastmod>2026-08-30</lastmod>
+  </url>
+
+  <url>
+    <loc>https://fmbauplaner.app/impressum.html</loc>
+    <lastmod>2026-08-30</lastmod>
+  </url>
+
+  <url>
+    <loc>https://fmbauplaner.app/datenschutz.html</loc>
+    <lastmod>2026-08-30</lastmod>
+  </url>
+
+</urlset>

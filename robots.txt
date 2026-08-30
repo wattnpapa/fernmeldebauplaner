@@ -1,0 +1,9 @@
+# Es gibt nichts zu verbergen: die Anwendung ist eine einzige Seite, die
+# Planungsdaten liegen im Browser und tauchen in keiner Adresse auf. Auch
+# vendor/ und css/ bleiben offen – wer die Seite indexiert, muss sie rendern
+# können, und ein gesperrtes Leaflet ließe von der Karte nichts übrig.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://fmbauplaner.app/sitemap.xml

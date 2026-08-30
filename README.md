@@ -160,7 +160,8 @@ Alternativ ohne Actions: unter **Settings → Pages** die Quelle **Deploy from a
 mit Branch `main` und Ordner `/ (root)` wählen. Die Datei `.nojekyll` sorgt dafür,
 dass GitHub die Dateien unverändert ausliefert. Auf diesem Weg entstehen allerdings
 weder Version noch Tag noch Release – die Seite weist sich dann als
-`Entwicklungsstand` aus.
+`Entwicklungsstand` aus, und in der Sitemap gelten die im Repository
+eingetragenen Änderungsdaten statt der aus der Git-Historie ermittelten.
 
 ### Lokal ausprobieren
 
@@ -179,8 +180,12 @@ Dann `http://localhost:8899` öffnen.
 
 ```
 CNAME                 Domain für GitHub Pages
+robots.txt            Freigabe für Suchmaschinen, Verweis auf die Sitemap
+sitemap.xml           Die vier Adressen der Seite (lastmod setzt der Workflow)
 index.html            Grundgerüst der Oberfläche
 autor.html            Über den Autor (statische Seite)
+impressum.html        Anbieterkennzeichnung nach § 5 DDG
+datenschutz.html      Datenschutzerklärung
 css/app.css           Oberfläche
 css/print.css         Bauauftrag: Vorschau und Ausdruck
 css/seite.css         Statische Seiten außerhalb der Anwendung

@@ -66,6 +66,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Volle Historie: die Sitemap trägt je Seite das Datum ihrer letzten
+          # Änderung, und die kommt aus `git log` der einzelnen Datei. Ein
+          # flacher Checkout kennt nur den letzten Commit — dann behauptete
+          # jede Seite, am Tag des Deployments geändert worden zu sein, und
+          # lastmod wäre wertlos.
+          fetch-depth: 0
 
       - name: Version in die Anwendung schreiben
         env:
@@ -80,6 +87,40 @@ jobs:
           grep -q "^export const VERSION = " js/version.js
           sed -i "s|^export const VERSION = .*|export const VERSION = '$BUILD_VERSION';|" js/version.js
           grep "^export const VERSION = " js/version.js
+
+      - name: Änderungsdaten in die Sitemap schreiben
+        run: |
+          # Wie bei der Version: nur im Arbeitsverzeichnis des Laufs. Im
+          # Repository bleibt das zuletzt eingetragene Datum stehen, damit die
+          # Datei auch dann stimmt, wenn die Seite einmal ohne Actions direkt
+          # aus dem Branch ausgeliefert wird.
+          #
+          # Textersetzung statt XML-Bibliothek: die Sitemap führt einen
+          # begründenden Kommentarkopf, und jede Bibliothek, die den Baum neu
+          # schreibt, wirft ihn oder die Formatierung weg.
+          python3 - <<'PY'
+          import pathlib, re, subprocess, urllib.parse
+
+          def datum(loc):
+              pfad = urllib.parse.urlparse(loc).path.lstrip('/') or 'index.html'
+              stand = subprocess.run(['git', 'log', '-1', '--format=%cs', '--', pfad],
+                                     capture_output=True, text=True, check=True).stdout.strip()
+              # Abbruch statt stiller Ersetzung durch Leere: eine umbenannte oder
+              # gelöschte Seite soll den Lauf anhalten und nicht als Adresse ohne
+              # Änderungsdatum online gehen.
+              if not stand:
+                  raise SystemExit(f'Kein Änderungsdatum für {pfad} — Datei umbenannt oder gelöscht?')
+              print(f'{pfad}: {stand}')
+              return stand
+
+          datei = pathlib.Path('sitemap.xml')
+          muster = re.compile(r'(<loc>([^<]+)</loc>\s*<lastmod>)[^<]*(</lastmod>)')
+          text, anzahl = muster.subn(lambda t: t.group(1) + datum(t.group(2)) + t.group(3),
+                                     datei.read_text())
+          if not anzahl:
+              raise SystemExit('sitemap.xml: kein Paar aus <loc> und <lastmod> gefunden')
+          datei.write_text(text)
+          PY
 
       - uses: actions/configure-pages@v5
       - name: Seite hochladen (statisch, kein Build nötig)

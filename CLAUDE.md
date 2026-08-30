@@ -70,6 +70,7 @@ Englisch sind nur Web-APIs und die wenigen eingebürgerten Begriffe (`escapeHtml
 | `js/zeichen-daten.js` | Erzeugt. Nie von Hand ändern — `python3 scripts/taktische-zeichen-holen.py` |
 | `fonts/roboto-slab-bold.woff` | Ebenso erzeugt, kommt aus demselben Skript |
 | `js/version.js` | Im Repository steht `Entwicklungsstand`. Nie eine Nummer eintragen; die setzt der Workflow beim Veröffentlichen |
+| `sitemap.xml` | Neue Seite heißt: Adresse hier eintragen. `lastmod` nicht von Hand pflegen – das setzt der Workflow je Seite aus dem Git-Datum |
 | `CNAME`, `.nojekyll` | Gehören zu GitHub Pages, nicht anfassen |
 | `vendor/` | Fremdcode unverändert, Änderungen gehören nach oben ins Projekt |
 
