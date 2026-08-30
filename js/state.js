@@ -368,11 +368,16 @@ export function dateisicherungVermerken(pid) {
 }
 
 /** Enthält die Planung genug Arbeit, dass ein Verlust weh täte?
- *  Maßstab sind fertig gezeichnete Strecken; eine Strecke mit einem einzelnen
- *  Punkt ist ein Versehen, kein Planungsstand. */
+ *  Maßstab ist die geleistete Arbeit, nicht die Zahl der Strecken: der
+ *  häufigste Auftrag ist eine einzige lange Trasse von der Führungsstelle zum
+ *  Abschnitt – zählte man Strecken, wäre gerade sie von jeder Warnung
+ *  ausgenommen. Eine Strecke mit einem einzelnen Punkt bleibt ein Versehen
+ *  und zählt gar nicht mit. */
 export function istGehaltvoll(p) {
   if (!p) return false;
-  return p.strecken.filter(s => (s.punkte || []).length >= 2).length >= 2;
+  const punkte = p.strecken.reduce(
+    (n, s) => n + ((s.punkte || []).length >= 2 ? s.punkte.length : 0), 0);
+  return punkte >= 4 || (p.zeichen || []).length >= 3;
 }
 
 /** Ältere/fremde Projektdateien auf das aktuelle Schema heben */

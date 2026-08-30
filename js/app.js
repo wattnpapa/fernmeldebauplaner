@@ -566,8 +566,10 @@ function speicherstatusZeigen(zustand = 'ruhe') {
   const mahnen = !zeit && istGehaltvoll(store.projekt);
   st.classList.toggle('mahnung', mahnen);
   band.classList.toggle('mahnung', mahnen);
+  /* Immer ein ganzer Satz: schmal ist dieses Band die einzige Auskunft über
+     den Verbleib der Arbeit, und eine leere Stelle liest sich wie „gesichert“. */
   stand.textContent = zeit ? 'Als Datei gesichert: ' + zeitpunktKurz(zeit)
-    : (istGehaltvoll(store.projekt) ? 'Noch nie als Datei gesichert.' : '');
+    : 'Noch nie als Datei gesichert.';
 }
 
 function zeitpunktKurz(iso) {
