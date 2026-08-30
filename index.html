@@ -39,11 +39,14 @@
     </div>
 
     <div class="kopf-tasten">
+      <button class="knopf" id="btn-hilfe" title="Kurzanleitung" aria-label="Kurzanleitung">?</button>
       <button class="knopf" id="btn-undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">↶</button>
       <button class="knopf" id="btn-redo" title="Wiederholen (Strg+Umschalt+Z)" aria-label="Wiederholen">↷</button>
       <div class="menu-halter">
         <button class="knopf" id="btn-datei" aria-haspopup="true" aria-expanded="false">Datei ▾</button>
         <div class="menu" id="menu-datei" hidden>
+          <button data-akt="hilfe">Kurzanleitung</button>
+          <hr>
           <button data-akt="neu">Neue Planung …</button>
           <button data-akt="oeffnen">Gespeicherte Planungen …</button>
           <hr>
@@ -56,8 +59,6 @@
           <button data-akt="export-geojson">Alles als GeoJSON</button>
           <button data-akt="export-gpx">Alles als GPX (Hand-GPS)</button>
           <button data-akt="export-kml">Alles als KML (Google Earth)</button>
-          <hr>
-          <button data-akt="hilfe">Kurzanleitung</button>
           <hr>
           <!-- Echte Links statt Menüknöpfe: Diese Seiten müssen als Adresse
                erreichbar und von außen auffindbar sein. -->
@@ -115,9 +116,12 @@
       <div id="karte" role="application" aria-label="Planungskarte"></div>
 
       <div class="werkzeuge" role="toolbar" aria-label="Werkzeuge">
-        <button class="wz" id="wz-strecke" title="Strecke zeichnen (S)"><span class="wz-icon">╱</span><span>Strecke</span></button>
-        <button class="wz" id="wz-zeichen" title="Taktisches Zeichen setzen (T)"><span class="wz-icon">◈</span><span>Zeichen</span></button>
-        <button class="wz" id="wz-suche" title="Koordinate anspringen (K)"><span class="wz-icon">⌖</span><span>Koordinate</span></button>
+        <!-- Das Tastenkürzel steht sichtbar in der Beschriftung, nicht nur im
+             title: den zeigt kein Touchgerät, und wer am Schreibtisch plant,
+             lernt es nur, wenn es dasteht. -->
+        <button class="wz" id="wz-strecke" title="Strecke zeichnen (S)"><span class="wz-icon">╱</span><span>Strecke<i class="wz-taste">S</i></span></button>
+        <button class="wz" id="wz-zeichen" title="Taktisches Zeichen setzen (T)"><span class="wz-icon">◈</span><span>Zeichen<i class="wz-taste">T</i></span></button>
+        <button class="wz" id="wz-suche" title="Koordinate anspringen (K)"><span class="wz-icon">⌖</span><span>Koordinate<i class="wz-taste">K</i></span></button>
         <button class="wz" id="wz-standort" title="Eigenen Standort anzeigen"><span class="wz-icon">◎</span><span>Standort</span></button>
       </div>
 

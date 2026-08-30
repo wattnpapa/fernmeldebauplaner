@@ -324,6 +324,10 @@ function planungSichern(pid) {
 $('#sb-sichern').onclick = () => planungSichern();
 $('#speicherstatus').onclick = () => planungSichern();
 
+/* Die Hilfe steht in der Kopfzeile, nicht nur im Datei-Menü: der Leertext der
+   Streckenliste erklärt das Zeichnen nur, solange noch keine Strecke da ist –
+   danach braucht es einen bleibenden Weg dorthin. */
+$('#btn-hilfe').onclick = hilfeDialog;
 $('#btn-undo').onclick = () => { if (!store.undo()) hinweis('Nichts zum Rückgängigmachen.'); };
 $('#btn-redo').onclick = () => { if (!store.redo()) hinweis('Nichts zum Wiederholen.'); };
 /* Liste und Karte lösen einander schmal ab. Der Umschalter unten ist der einzige
