@@ -447,6 +447,9 @@ function neueDruckkarte(buehne, zusatz = {}) {
   return karte;
 }
 
+/* Jede Karte zeigt die Zeichen ihres eigenen Gegenstands: das Streckenblatt
+   die des Abschnitts dieser Strecke, das Deckblatt die des gedruckten
+   Abschnitts – und dazu jeweils die nicht zugeteilten. Ohne Abschnitt alle. */
 function baueDruckkarte(buehne, strecke, opt, sw, karten, sammlung) {
   const p = store.projekt;
   const karte = neueDruckkarte(buehne, { zoomSnap: 0.25 });
@@ -461,7 +464,10 @@ function baueDruckkarte(buehne, strecke, opt, sw, karten, sammlung) {
   sl.zeichne({ ...p.optionen, teillaengen: true, gesamtlaenge: false, punktnummern: true });
 
   if (opt.zeichen) {
-    const zl = new ZeichenLayer(karte, { interaktiv: false, sw });
+    const zl = new ZeichenLayer(karte, {
+      interaktiv: false, sw, abschnittSchaltet: false,
+      nurAbschnitt: strecke.abschnitt || undefined
+    });
     zl.zeichne(p.optionen);
   }
 
@@ -490,7 +496,10 @@ function baueSammelkarte(buehne, auftrag, opt, sw, karten) {
   sl.zeichne({ teillaengen: false, gesamtlaenge: true, punktnummern: false });
 
   if (opt.zeichen) {
-    const zl = new ZeichenLayer(karte, { interaktiv: false, sw });
+    const zl = new ZeichenLayer(karte, {
+      interaktiv: false, sw, abschnittSchaltet: false,
+      nurAbschnitt: auftrag.abschnitt ? auftrag.abschnitt.id : undefined
+    });
     zl.zeichne(p.optionen);
   }
 

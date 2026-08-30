@@ -1,6 +1,6 @@
 // zeichen.js – taktische Zeichen als Kartenmarker
 
-import { store, neuesZeichen } from './state.js';
+import { store, neuesZeichen, zeichenSichtbar } from './state.js';
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
 
@@ -14,6 +14,14 @@ export class ZeichenLayer {
     this.aufAuswahl = opt.aufAuswahl || (() => {});
     this.aufAenderung = opt.aufAenderung || (() => {});
     this.sw = !!opt.sw;
+    /* Auf einen Abschnitt eingeschränkt zeigt die Karte dessen eigene Zeichen
+       und die nicht zugeteilten: die gehören zum gemeinsamen Lagebild und
+       fehlen sonst auf jedem Ausschnitt. `undefined` heißt: alle. */
+    this.nurAbschnitt = opt.nurAbschnitt;
+    /* Im Druck entscheidet die Auswahl, nicht der Augenschalter des Abschnitts
+       auf der Arbeitskarte. */
+    this.abschnittSchaltet = opt.abschnittSchaltet !== false;
+    this.setzAbschnitt = null;
     if (this.interaktiv) {
       this._klick = e => this._kartenKlick(e);
       karte.on('click', this._klick);
@@ -25,22 +33,27 @@ export class ZeichenLayer {
     this.gruppe.remove();
   }
 
-  starteSetzen(symbolId) {
+  /** `abschnitt` teilt das Zeichen beim Setzen gleich einem Einsatzabschnitt zu */
+  starteSetzen(symbolId, abschnitt = null) {
     this.setzModus = symbolId;
+    this.setzAbschnitt = abschnitt;
     L.DomUtil.addClass(this.karte.getContainer(), 'modus-zeichen');
   }
 
   beendeSetzen() {
     this.setzModus = null;
+    this.setzAbschnitt = null;
     L.DomUtil.removeClass(this.karte.getContainer(), 'modus-zeichen');
   }
 
   _kartenKlick(e) {
     if (!this.setzModus) return;
     const sym = this.setzModus;
+    const aid = this.setzAbschnitt;
     let neu;
     store.aendern(p => {
       neu = neuesZeichen(e.latlng.lat, e.latlng.lng, sym);
+      neu.abschnitt = aid;
       p.zeichen.push(neu);
     }, 'zeichen');
     this.beendeSetzen();
@@ -64,6 +77,8 @@ export class ZeichenLayer {
 
     for (const z of p.zeichen) {
       if (z.sichtbar === false) continue;
+      if (this.abschnittSchaltet && !zeichenSichtbar(p, z)) continue;
+      if (this.nurAbschnitt && z.abschnitt && z.abschnitt !== this.nurAbschnitt) continue;
       const basis = symbolById(z.symbol);
       const breite = Math.round(GRUNDBREITE * skala * (z.groesse || 1));
       const opt = { symbol: z.symbol, drehung: z.drehung, breite, sw: this.sw };

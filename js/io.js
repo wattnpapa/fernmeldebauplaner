@@ -2,7 +2,7 @@
 
 import {
   store, migrieren, neueStrecke, neuerPunkt, neuesZeichen, id, ladeAlle, dateisicherungVermerken,
-  abschnittById, streckenIm
+  abschnittById, streckenIm, zeichenIm, zeichenFuer
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
@@ -50,14 +50,15 @@ export function projektExportieren(pid) {
  *  nimmt die nicht zugeteilten Strecken. Der Empfänger lädt sie über
  *  „Planung oder KML laden“ und arbeitet nur an seinem Ausschnitt weiter.
  *
- *  Die taktischen Zeichen gehen vollständig mit: sie sind das gemeinsame
- *  Lagebild und nicht einem Abschnitt zugeteilt. Der Vermerk über die letzte
- *  Dateisicherung bleibt unberührt – ein Ausschnitt sichert nicht die Planung. */
+ *  Mit gehen die Zeichen dieses Abschnitts und dazu die nicht zugeteilten:
+ *  die sind das gemeinsame Lagebild und würden dem Empfänger sonst fehlen.
+ *  Der Vermerk über die letzte Dateisicherung bleibt unberührt – ein Ausschnitt
+ *  sichert nicht die Planung. */
 export function abschnittExportieren(aid) {
   const p = store.projekt;
   const ea = abschnittById(p, aid);
   const strecken = streckenIm(p, aid);
-  if (!strecken.length) return false;
+  if (!strecken.length && !zeichenIm(p, aid).length) return false;
   const bezeichnung = ea ? ea.name : 'Ohne Einsatzabschnitt';
   const jetzt = new Date().toISOString();
 
@@ -69,6 +70,7 @@ export function abschnittExportieren(aid) {
     geaendert: jetzt,
     einsatzabschnitte: ea ? [ea] : [],
     strecken,
+    zeichen: zeichenFuer(p, aid),
     herkunft: {
       projekt: p.name,
       projektId: p.id,
