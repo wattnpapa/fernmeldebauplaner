@@ -1,33 +1,172 @@
 // strecken.js – Darstellung, Zeichnen und Bearbeiten der Bau-Strecken
 
-import { distanz, streckenlaenge, kumuliert, formatLaenge, meter } from './geo.js';
-import { store, neuerPunkt, punktartById, kabelById } from './state.js';
+import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText } from './geo.js';
+import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar } from './state.js';
 import { auslegung, querschnittText } from './strom.js';
+import { querungsartById, reichweite, abbindeBedarf } from './vorschrift.js';
+
+/* Eine rechnerische Trommelstelle so dicht an einer geplanten Muffe ist
+   dieselbe Verbindung und wird nicht zusätzlich aufgeführt. */
+const MUFFEN_NAEHE = 30;
+
+/* Obergrenze der Trommelstöße. Die Schleife endet von sich aus am Streckenende;
+   die Schranke fängt nur den Fall einer versehentlich winzigen Trommellänge ab –
+   kennzahlen() läuft in der Seitenleiste bei jedem Tastendruck. */
+const MAX_STOESSE = 500;
 
 /** Kennzahlen einer Strecke – überall gleich gerechnet */
 export function kennzahlen(strecke) {
   const p = strecke.punkte;
-  const trasse = streckenlaenge(p);
+  /* Die kumulierten Längen tragen die Trassenlänge in ihrem letzten Wert; so
+     fallen die teuren Entfernungsrechnungen nur einmal an. */
+  const kum = kumuliert(p);
+  const trasse = kum[kum.length - 1];
   const zuschlag = Math.max(0, Number(strecke.zuschlag) || 0);
   const bedarf = trasse * (1 + zuschlag / 100);
   const tl = Math.max(1, Number(strecke.trommellaenge) || 500);
   const leistung = Math.max(1, Number(strecke.verlegeleistung) || 800);
+  const kabel = kabelById(strecke.kabeltyp);
+  const trommeln = bedarf > 0 ? Math.ceil(bedarf / tl) : 0;
+  const querungsliste = querungen(p, kum);
   return {
     trasse,
     zuschlag,
     bedarf,
     trommellaenge: tl,
-    trommeln: bedarf > 0 ? Math.ceil(bedarf / tl) : 0,
+    trommeln,
+    /* Nur belegte Kabelarten tragen ein Trommelgewicht; sonst bleibt das Feld leer,
+       damit im Bauauftrag keine erfundene Traglast steht. */
+    trommelgewicht: kabel.gewicht,
+    transportgewicht: kabel.gewicht ? trommeln * kabel.gewicht : null,
     punkte: p.length,
     abschnitte: Math.max(0, p.length - 1),
     bauzeitStunden: bedarf / leistung,
     muffen: p.filter(x => x.art === 'muffe').length,
-    querungen: p.filter(x => x.art === 'querung').length,
-    kabel: kabelById(strecke.kabeltyp),
+    querungen: querungsliste.length,
+    querungsliste,
+    /* Genehmigungspflichtig ist auch, was die Vorschrift nur an Bauwerken
+       zulässt – der Trupp braucht dafür ebenso eine Freigabe. */
+    querungenGenehmigung: querungsliste.filter(q => q.art.genehmigung || q.art.verbot).length,
+    laengenverbindungen: laengenverbindungen(p, kum, bedarf, tl, zuschlag),
+    abbinden: abbindeBedarf(bedarf),
+    /* Maßgebend ist die tatsächlich liegende Kabellänge, also der Bedarf
+       einschließlich Bauzuschlag – so wie es beim Spannungsfall der
+       Stromleitung schon gehandhabt wird, nicht über die Trassenlänge. */
+    reichweite: reichweite(strecke.kabeltyp, strecke.verlegeart, bedarf),
+    kabel,
     /* Der Querschnitt wird über die tatsächlich liegende Leitung gerechnet,
        also über den Bedarf einschließlich Bauzuschlag – nicht über die Trasse. */
     strom: strecke.kabeltyp === 'strom' ? auslegung(strecke.strom, bedarf) : null
   };
+}
+
+/** Querungen in Trassenreihenfolge, Art nach KatS-Dv 861, Abschnitt 8 aufgelöst */
+function querungen(punkte, kum) {
+  const out = [];
+  punkte.forEach((pt, i) => {
+    if (pt.art !== 'querung') return;
+    out.push({
+      nr: out.length + 1,
+      punktNr: i + 1,
+      name: pt.name || '',
+      art: querungsartById(pt.querungsart),
+      lat: pt.lat,
+      lng: pt.lng,
+      abAnfang: kum[i]
+    });
+  });
+  return out;
+}
+
+/**
+ * Stellen, an denen eine Längenverbindung entsteht: geplante Muffen und die
+ * rechnerischen Trommelstöße, zusammengeführt und nach Lage durchnumeriert.
+ * @returns {object[]} leer, solange die Strecke keine zwei Punkte hat
+ */
+function laengenverbindungen(punkte, kum, bedarf, trommellaenge, zuschlag) {
+  if (punkte.length < 2 || !(bedarf > 0)) return [];
+
+  const namen = punkte.map(pt => pt.name || '');
+  const liste = [];
+
+  punkte.forEach((pt, i) => {
+    if (pt.art !== 'muffe') return;
+    liste.push({
+      nr: 0,
+      quelle: 'geplant',
+      abAnfang: kum[i],
+      lat: pt.lat,
+      lng: pt.lng,
+      punktNr: i + 1,
+      name: pt.name || '',
+      lage: standortText(punkte, kum[i], namen)
+    });
+  });
+
+  /* Die Trommellängen zählen entlang des Kabels, das wegen des Bauzuschlags
+     länger ist als die Trasse. Nur über den Zuschlag zurückgerechnet lässt sich
+     der Stoß als Trassenmeter und damit als Ort auf der Karte angeben. */
+  const streckung = 1 + zuschlag / 100;
+  const muffen = liste.map(v => v.abAnfang);
+  const stoesse = Math.min(MAX_STOESSE, Math.ceil(bedarf / trommellaenge));
+  for (let k = 1; k <= stoesse; k++) {
+    const kabelAbAnfang = k * trommellaenge;
+    if (kabelAbAnfang >= bedarf) break;
+    const abAnfang = kabelAbAnfang / streckung;
+    // Dort ist die Verbindung schon geplant, sie wird nicht doppelt gezählt.
+    if (muffen.some(m => Math.abs(m - abAnfang) < MUFFEN_NAEHE)) continue;
+    const stelle = punktBeiLaenge(punkte, abAnfang);
+    if (!stelle) continue;
+    liste.push({
+      nr: 0,
+      quelle: 'rechnerisch',
+      abAnfang,
+      kabelAbAnfang,
+      lat: stelle.lat,
+      lng: stelle.lng,
+      punktNr: stelle.index + 1,
+      name: '',
+      lage: standortText(punkte, abAnfang, namen)
+    });
+  }
+
+  liste.sort((a, b) => a.abAnfang - b.abAnfang);
+  liste.forEach((v, i) => { v.nr = i + 1; });
+  return liste;
+}
+
+/** Summen über mehrere Strecken – für die Seitenleiste und den Sammeldruck.
+ *  `nachKabel` fasst zusätzlich je Leitungsart zusammen; danach wird das
+ *  Material bestellt, nicht nach Strecken. */
+export function gesamtKennzahlen(strecken) {
+  const ges = {
+    anzahl: strecken.length, trasse: 0, bedarf: 0, trommeln: 0,
+    gewicht: 0, gewichtVollstaendig: true,
+    bauzeitStunden: 0, muffen: 0, querungen: 0, punkte: 0,
+    nachKabel: []
+  };
+  const je = new Map();
+  for (const s of strecken) {
+    const k = kennzahlen(s);
+    ges.trasse += k.trasse;
+    ges.bedarf += k.bedarf;
+    ges.trommeln += k.trommeln;
+    ges.bauzeitStunden += k.bauzeitStunden;
+    ges.muffen += k.muffen;
+    ges.querungen += k.querungen;
+    ges.punkte += k.punkte;
+    if (k.transportgewicht) ges.gewicht += k.transportgewicht;
+    else ges.gewichtVollstaendig = false;
+
+    const eintrag = je.get(k.kabel.id) || { kabel: k.kabel, strecken: 0, bedarf: 0, trommeln: 0, gewicht: 0 };
+    eintrag.strecken++;
+    eintrag.bedarf += k.bedarf;
+    eintrag.trommeln += k.trommeln;
+    eintrag.gewicht += k.transportgewicht || 0;
+    je.set(k.kabel.id, eintrag);
+  }
+  ges.nachKabel = [...je.values()].sort((a, b) => b.bedarf - a.bedarf);
+  return ges;
 }
 
 export function segmentLaengen(strecke) {
@@ -60,6 +199,9 @@ export class StreckenLayer {
     this.sw = !!opt.sw;                       // Schwarz-Weiß-Druck
     this.hervorheben = opt.hervorheben || null;  // diese Strecke betonen
     this.nurStrecke = opt.nurStrecke || null;    // nur diese zeichnen
+    // Sammeldruck: nur die Strecken der Sammlung, unabhängig davon, ob sie
+    // auf der Arbeitskarte gerade ausgeblendet sind.
+    this.nurStrecken = opt.nurStrecken ? new Set(opt.nurStrecken) : null;
     this.andereBlass = opt.andereBlass !== false;
     // Die Druckkarte wird doppelt so groß gerendert und per CSS halbiert;
     // damit die Linien im Ausdruck gleich stark wirken, werden sie mitskaliert.
@@ -178,8 +320,13 @@ export class StreckenLayer {
     this._vorschau = null; this._vorschauLabel = null;
 
     for (const s of p.strecken) {
-      if (s.sichtbar === false) continue;
       if (this.nurStrecke && s.id !== this.nurStrecke) continue;
+      if (this.nurStrecken && !this.nurStrecken.has(s.id)) continue;
+      /* Ausdrücklich angeforderte Strecken werden immer gezeichnet: im Druck
+         entscheidet die Auswahl, nicht der Augenschalter der Arbeitskarte. */
+      const angefordert = s.id === this.nurStrecke || s.id === this.hervorheben ||
+        (this.nurStrecken && this.nurStrecken.has(s.id));
+      if (!angefordert && !streckeSichtbar(p, s)) continue;
       this._zeichneStrecke(s, o);
     }
   }

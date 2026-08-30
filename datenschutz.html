@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Datenschutz – FMBauplaner</title>
+<meta name="description" content="Datenschutzerklärung für fmbauplaner.app: Planungsdaten bleiben auf dem Gerät, welche Kartendienste abgerufen werden und wie die Reichweitenmessung abgeschaltet wird.">
+<link rel="canonical" href="https://fmbauplaner.app/datenschutz.html">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/seite.css">
+</head>
+<body>
+
+<a class="sprunglink" href="#inhalt">Zum Inhalt springen</a>
+
+<header class="seitenkopf">
+  <div class="seitenkopf-inner">
+    <a href="./" class="seitenkopf-marke">
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="37" height="37" rx="4" fill="#003399"/>
+        <path d="M8 27 h4 q2.5 0 2.5 -3.5 Q14.5 18 20 18 q5.5 0 5.5 5.5 Q25.5 27 28 27 h4"
+              fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="12" cy="13" r="2.4" fill="#fff"/><circle cx="28" cy="13" r="2.4" fill="#fff"/>
+      </svg>
+      <span>FM<span>Bauplaner</span></span>
+    </a>
+    <nav class="seitenkopf-links" aria-label="Rechtliches">
+      <a href="./">Zur Anwendung</a>
+      <a href="./autor.html">Über den Autor</a>
+      <a href="./impressum.html">Impressum</a>
+      <a href="./datenschutz.html" class="aktiv">Datenschutz</a>
+    </nav>
+  </div>
+</header>
+
+<main id="inhalt">
+  <h1>Datenschutzerklärung</h1>
+  <p>
+    Diese Datenschutzerklärung gilt für die Website <a href="./">fmbauplaner.app</a> und das
+    darauf laufende Planungswerkzeug.
+  </p>
+
+  <div class="kasten">
+    <p>
+      <b>Das Wesentliche vorweg:</b> Deine Planungen verlassen dein Gerät nicht – es gibt
+      keinen Server, auf den sie hochgeladen würden. Nach außen gehen nur zwei Dinge: die
+      <b>Kartenkacheln</b>, die dein Browser bei den Kartenanbietern abruft (Abschnitt 4),
+      und ein <b>Zählimpuls</b> beim Aufruf der Anwendung (Abschnitt 6), dem du unten
+      widersprechen kannst.
+    </p>
+  </div>
+
+  <h2>1. Verantwortlicher</h2>
+  <p>
+    Johannes Rudolph<br>
+    Kniphauser Straße 16<br>
+    26419 Schortens<br>
+    Deutschland<br>
+    E-Mail: <a href="mailto:johannes.rudolph@thw-oldenburg.de">johannes.rudolph@thw-oldenburg.de</a>
+  </p>
+
+  <h2>2. Verarbeitung beim Aufruf der Website</h2>
+  <p>
+    Die Website wird über GitHub Pages (GitHub Inc.) ausgeliefert. Dabei verarbeitet GitHub
+    technisch notwendige Verbindungsdaten (z.&nbsp;B. IP-Adresse) in Server-Logs zur
+    Bereitstellung und Absicherung des Dienstes. Details:
+    <a href="https://docs.github.com/site-policy/privacy-policies/github-privacy-statement"
+       target="_blank" rel="noopener noreferrer">GitHub Privacy Statement</a>.
+  </p>
+  <p>
+    Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; das berechtigte Interesse besteht in der
+    technischen Auslieferung des Angebots.
+  </p>
+
+  <h2>3. Deine Planungsdaten</h2>
+  <p>
+    Alles, was du in den FMBauplaner eingibst – Strecken, Standorte, taktische Zeichen,
+    Bezeichnungen, Angaben für den Bauauftrag – wird ausschließlich lokal in deinem Browser
+    verarbeitet und gespeichert. Es findet <b>keine Übertragung an einen Server</b> statt;
+    es gibt kein Benutzerkonto und keine Anmeldung. Eine Weitergabe erfolgt nur, wenn du
+    selbst eine Datei erzeugst und teilst (JSON-Sicherung, GeoJSON, GPX oder ein gedrucktes
+    bzw. als PDF gesichertes Bauauftragsblatt).
+  </p>
+
+  <h2>4. Kartendienste</h2>
+  <p>
+    Die Kartenansicht besteht aus Kacheln, die dein Browser <b>unmittelbar bei den
+    Kartenanbietern</b> abruft – nicht über einen Server dieses Angebots. Dabei erfahren die
+    Anbieter deine IP-Adresse, technische Angaben deines Browsers und, aus der Adresse der
+    angeforderten Kachel, den <b>Kartenausschnitt, den du gerade betrachtest</b>. Für die
+    Fernmeldebauplanung heißt das: Der Anbieter der gewählten Karte sieht die Gegend, in der
+    geplant wird. Die Planung selbst – Strecken, Zeichen, Beschriftungen – wird nicht
+    übertragen.
+  </p>
+  <div class="tabellen-huelle">
+    <table>
+      <thead>
+        <tr><th>Kartenebene</th><th>Anbieter</th><th>Abgerufen von</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>TopPlusOpen (Standard, grau, hell)</td>
+          <td>Bundesamt für Kartographie und Geodäsie (BKG), Deutschland</td>
+          <td class="mono">sgx.geodatenzentrum.de</td>
+        </tr>
+        <tr>
+          <td>OpenStreetMap</td>
+          <td>OpenStreetMap Foundation, Vereinigtes Königreich</td>
+          <td class="mono">tile.openstreetmap.org</td>
+        </tr>
+        <tr>
+          <td>OpenTopoMap</td>
+          <td>OpenTopoMap (Deutschland)</td>
+          <td class="mono">tile.opentopomap.org</td>
+        </tr>
+        <tr>
+          <td>Luftbild</td>
+          <td>Esri (Environmental Systems Research Institute, USA)</td>
+          <td class="mono">server.arcgisonline.com</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; das berechtigte Interesse besteht darin,
+    die Planung überhaupt auf einer Karte zu ermöglichen, ohne dafür Kartendaten über einen
+    eigenen Server zu leiten. Beim Luftbild verlässt die Anfrage die EU: Esri ist ein
+    US-Anbieter. Wer das vermeiden will, arbeitet mit den Ebenen des BKG – sie sind
+    voreingestellt, das Luftbild wird nur auf ausdrückliche Auswahl geladen. Es gelten die
+    Nutzungs- und Datenschutzbedingungen des jeweiligen Anbieters.
+  </p>
+
+  <h2>5. Standortbestimmung</h2>
+  <p>
+    Über die Schaltfläche für den eigenen Standort fragt die Anwendung die Ortungsfunktion
+    deines Geräts ab (Standort-Schnittstelle des Browsers). Der Browser holt dazu zuvor deine
+    Erlaubnis. Die ermittelte Position wird nur in der Karte angezeigt und – wenn du sie
+    übernimmst – in deiner lokal gespeicherten Planung abgelegt. Sie wird nicht an dieses
+    Angebot oder an Dritte übermittelt. Wie dein Gerät den Standort ermittelt, richtet sich
+    nach dem Betriebssystem und dem Browser.
+  </p>
+
+  <h2>6. Speicherung im Endgerät und Reichweitenmessung</h2>
+  <p>
+    Es werden <b>keine Cookies</b> gesetzt. Die Anwendung legt ihre Daten aber im lokalen
+    Speicher (localStorage) deines Browsers ab, weil sie ohne Server arbeitet und die Arbeit
+    sonst bei jedem Neuladen verloren wäre:
+  </p>
+  <div class="tabellen-huelle">
+    <table>
+      <thead><tr><th>Eintrag</th><th>Inhalt</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">fbp.projekte.v1</td><td>alle gespeicherten Planungen</td></tr>
+        <tr><td class="mono">fbp.aktiv.v1</td><td>welche Planung zuletzt geöffnet war</td></tr>
+        <tr><td class="mono">fbp.dateisicherung.v1</td><td>Zeitpunkt der letzten Dateisicherung je Planung</td></tr>
+        <tr><td class="mono">fbp.druck.v1</td><td>Einstellungen für den Ausdruck des Bauauftrags</td></tr>
+        <tr><td class="mono">skipgc</td><td>gesetzt, wenn du der Reichweitenmessung widersprochen hast</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Diese Einträge sind für den ausdrücklich gewünschten Dienst technisch erforderlich
+    (§&nbsp;25 Abs.&nbsp;2 Nr.&nbsp;2 TDDDG); eine Einwilligung ist dafür nicht nötig. Sie
+    werden nicht übertragen: kein Server, kein Zugriff durch Dritte, keine Kennung zur
+    Wiedererkennung. Löschen kannst du sie über „Gespeicherte Planungen“ in der Anwendung,
+    durch Löschen der Websitedaten im Browser oder – bei einer einzelnen Planung – über den
+    Löschknopf in der Planungsliste.
+  </p>
+  <p>
+    Zur Reichweitenmessung wird
+    <a href="https://www.goatcounter.com/" target="_blank" rel="noopener noreferrer">GoatCounter</a>
+    eingesetzt. Beim Aufruf der Anwendung wird einmalig ein Zählimpuls gesendet; diese
+    Rechtstexte selbst binden GoatCounter nicht ein. Übertragen werden dabei ausschließlich
+    der Zeitpunkt, die aufgerufene Seite samt Adresszusatz und Seitentitel, die verweisende
+    Seite und die Bildschirmbreite deines Geräts. Aus der Verbindung ergeben sich zusätzlich
+    Browser- und Ländertyp. Die IP-Adresse wird nur flüchtig zur Erkennung
+    wiederkehrender Aufrufe innerhalb eines Tages verwendet und nicht gespeichert; es entsteht
+    keine geräteübergreifende Kennung und kein Personenbezug. Inhalte deiner Planung werden
+    nicht übertragen.
+  </p>
+  <p>
+    Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO. Das berechtigte Interesse besteht darin,
+    die Nutzung des Angebots zu verstehen und es bedarfsgerecht weiterzuentwickeln. Der
+    Verarbeitung kannst du nach Art. 21 DSGVO jederzeit widersprechen:
+  </p>
+  <div class="kasten">
+    <label class="wahl">
+      <input type="checkbox" id="nicht-mitzaehlen">
+      <span>Nicht mitzählen</span>
+    </label>
+    <span class="wahl-stand" id="wahl-stand" role="status">wird geprüft …</span>
+  </div>
+
+  <h2>7. Eigene Verantwortung beim Einsatz</h2>
+  <p>
+    Dass keine Cloud verwendet wird, ist aus Datenschutzsicht ein Vorteil, aber keine
+    vollständige Absicherung: Planungen können Einsatzorte, Objekte und Namen von
+    Ansprechpartnern enthalten und liegen auf den verwendeten Geräten. Bei Verlust,
+    Diebstahl, gemeinsam genutzten Rechnern oder ungeschützten Sicherungen entstehen deshalb
+    trotzdem Risiken. Für diese Geräte und die dort gespeicherten Daten ist die einsetzende
+    Stelle verantwortlich, nicht der Betreiber dieser Website.
+  </p>
+  <p>Sinnvolle Mindestmaßnahmen sind:</p>
+  <ul>
+    <li>Geräte mit PIN oder Biometrie sperren und die Software aktuell halten.</li>
+    <li>Nur die tatsächlich erforderlichen personenbezogenen Daten in die Planung schreiben.</li>
+    <li>Geräte nach Einsatz oder Übung kontrolliert löschen.</li>
+    <li>Ausgedruckte Bauaufträge und exportierte Dateien nicht offen auslegen und nicht unverschlüsselt weiterleiten.</li>
+    <li>Vorab klären, wer innerhalb der Organisation für die Datenverarbeitung verantwortlich ist.</li>
+    <li>
+      Vor einer offiziellen Einführung diese Datenschutzerklärung und den
+      <a href="https://github.com/wattnpapa/fernmeldebauplaner">offenen Quellcode</a> prüfen.
+    </li>
+  </ul>
+
+  <h2>8. Betroffenenrechte</h2>
+  <p>
+    Nach Art. 15–21 DSGVO bestehen Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung
+    der Verarbeitung und Widerspruch. Anfragen bitte an die oben genannte E-Mail-Adresse.
+    Daneben besteht ein Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde
+    (Art. 77 DSGVO).
+  </p>
+  <p>
+    Für die lokal gespeicherten Daten kannst du Auskunft und Löschung unmittelbar selbst
+    ausüben, ohne Anfrage: „Planung als Datei sichern“ im Datei-Menü gibt dir eine Planung
+    vollständig als Datei heraus, „Gespeicherte Planungen“ zeigt und löscht alle Einträge.
+    Der Reichweitenmessung widersprichst du über die Option <em>Nicht mitzählen</em> in
+    Abschnitt 6.
+  </p>
+</main>
+
+<footer>
+  <p>
+    <a href="./">Zur Anwendung</a> ·
+    <a href="./autor.html">Über den Autor</a> ·
+    <a href="./impressum.html">Impressum</a> ·
+    <a href="./datenschutz.html">Datenschutz</a> ·
+    <a href="https://github.com/wattnpapa/fernmeldebauplaner">Quellcode</a>
+  </p>
+</footer>
+
+<script>
+/* Widerspruch gegen die Reichweitenmessung. GoatCounter wertet den Eintrag
+   „skipgc“ im lokalen Speicher aus und sendet dann keinen Zählimpuls mehr.
+   Der Eintrag gilt für die ganze Domain, also auch für die Anwendung selbst.
+   Ohne JavaScript bleibt der Haken sichtbar, aber wirkungslos – deshalb sagt
+   die Standzeile ausdrücklich, woran es liegt, statt still zu bleiben. */
+(function () {
+  var haken = document.getElementById('nicht-mitzaehlen');
+  var stand = document.getElementById('wahl-stand');
+
+  function lesen() {
+    try { return localStorage.getItem('skipgc') === 't'; }
+    catch (e) { return null; }              // privates Fenster, Speicher gesperrt
+  }
+
+  function melden(aus) {
+    if (aus === null) {
+      haken.disabled = true;
+      stand.textContent = 'Dein Browser lässt keinen lokalen Speicher zu. Der Widerspruch '
+        + 'kann deshalb nicht vermerkt werden; blockiere den Zähler ersatzweise im Browser '
+        + 'oder schreibe an die oben genannte Adresse.';
+      return;
+    }
+    haken.checked = aus;
+    stand.textContent = aus
+      ? 'Aufrufe von diesem Browser werden nicht gezählt. Der Widerspruch gilt so lange, '
+        + 'bis die Websitedaten gelöscht werden – in einem anderen Browser oder auf einem '
+        + 'anderen Gerät ist er erneut zu setzen.'
+      : 'Aufrufe von diesem Browser werden anonym gezählt.';
+  }
+
+  var stand0 = lesen();
+  melden(stand0);
+  if (stand0 === null) return;
+
+  haken.addEventListener('change', function () {
+    try {
+      if (haken.checked) localStorage.setItem('skipgc', 't');
+      else localStorage.removeItem('skipgc');
+      melden(haken.checked);
+    } catch (e) { melden(null); }
+  });
+})();
+</script>
+
+</body>
+</html>

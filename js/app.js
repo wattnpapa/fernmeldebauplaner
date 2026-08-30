@@ -11,9 +11,12 @@ import { toMGRS, toDDM, alleFormate } from './geo.js';
 import * as io from './io.js';
 import {
   initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter,
-  symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis
+  symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis,
+  abschnittAnlegen
 } from './ui.js';
-import { bauauftragOffen, schliesseBauauftrag, entferneSeitenformat } from './bauauftrag.js';
+import {
+  bauauftragOffen, schliesseBauauftrag, entferneSeitenformat, oeffneSammeldruck
+} from './bauauftrag.js';
 import { VERSION } from './version.js';
 
 const $ = s => document.querySelector(s);
@@ -240,6 +243,8 @@ karte.on('moveend zoomend', () => {
 
 $('#btn-neue-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();
 $('#btn-neues-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
+$('#btn-neuer-abschnitt').onclick = () => abschnittAnlegen();
+$('#btn-sammel-pdf').onclick = () => oeffneSammeldruck();
 
 $('#wz-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();
 $('#wz-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
@@ -342,6 +347,7 @@ dateiMenu.addEventListener('click', e => {
     oeffnen: projektDialog,
     'export-json': () => planungSichern(),
     'import-json': () => $('#datei-import').click(),
+    'sammel-pdf': () => oeffneSammeldruck(),
     'export-geojson': () => io.geoJSONExportieren(),
     'export-gpx': () => io.gpxExportieren(),
     hilfe: hilfeDialog

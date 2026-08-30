@@ -8,7 +8,10 @@ für jede Strecke lässt sich ein druckfertiger **Bauauftrag** für den Fernmeld
 ausgeben – A4 oder A3, hoch oder quer, in Farbe oder Schwarz-Weiß.
 
 Die Anwendung läuft vollständig im Browser. Es gibt keinen Server, keine Anmeldung
-und keinen Datenabfluss: alle Planungen liegen im lokalen Speicher des Browsers.
+und kein Benutzerkonto: alle Planungen liegen im lokalen Speicher des Browsers und
+verlassen das Gerät nicht. Nach außen gehen nur die Kartenkacheln, die der Browser bei
+den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
+[Datenschutz](#datenschutz).
 
 ---
 
@@ -21,6 +24,13 @@ und keinen Datenabfluss: alle Planungen liegen im lokalen Speicher des Browsers.
 - Punkte verschieben, Zwischenpunkte über Griffe einfügen, Richtung umkehren
 - Leitungsart (Feldkabel, Feldfernkabel, LWL, Netzwerk, Koax, Strom), Verlegeart,
   Bauzuschlag, Trommellänge und Verlegeleistung je Strecke
+
+**Einsatzabschnitte** (freiwillig)
+- Strecken zu benannten Einsatzabschnitten mit Leitung und eigener Farbe zusammenfassen
+- Ganze Abschnitte auf der Karte ein- und ausblenden; der Schalter jeder Strecke bleibt davon unberührt
+- Einen Abschnitt als eigene Planungsdatei sichern: der Empfänger lädt nur seinen
+  Ausschnitt und arbeitet darin weiter
+- Auflösen entfernt nur die Gliederung – die Strecken bleiben erhalten
 
 **Rechengrößen**
 - Trassenlänge als geodätische Direktstrecke (Vincenty auf WGS84) zwischen den Punkten
@@ -53,6 +63,13 @@ und keinen Datenabfluss: alle Planungen liegen im lokalen Speicher des Browsers.
   statt Farben, die Karte wird auf die amtliche Graustufenkarte umgestellt
 - Die Druckkarte wird in doppelter Auflösung gerendert (≈ 190 dpi statt 96 dpi)
 
+**Sammel-Bauauftrag als PDF**
+- Ein Dokument über alle Strecken eines Einsatzabschnitts oder der ganzen Planung
+- Deckblatt mit Übersichtskarte über alle Strecken, Zeichenerklärung und Summenband
+- Streckenverzeichnis mit einer Zeile je Strecke, bei der ganzen Planung nach
+  Einsatzabschnitten gegliedert samt Teilsummen; dazu der Materialbedarf nach Leitungsarten
+- Danach je Strecke die gewohnten Blätter; welche Blattarten entstehen, ist wählbar
+
 **Weitere Ausgaben**
 - Planung als `.json` sichern und laden
 - GeoJSON (auch je Strecke), GPX für Hand-GPS-Geräte, CSV-Punktliste für Excel
@@ -82,10 +99,18 @@ anklicken, mit Doppelklick oder `Enter` abschließen. Punkte lassen sich anschli
 verschieben; die gestrichelten Griffe zwischen zwei Punkten fügen beim Ziehen einen
 Zwischenpunkt ein.
 
+**Einsatzabschnitte:** Im Reiter „Strecken“ über „+ Einsatzabschnitt“ einen anlegen.
+Die Zuteilung steht in jeder geöffneten Strecke und gesammelt im Abschnitt selbst
+(Knopf `⋯` an der Abschnittszeile); dort liegen auch Sammel-Bauauftrag und Teilexport.
+Das Auge an der Abschnittszeile blendet alle seine Strecken zusammen aus.
+
 **Bauauftrag drucken:** Strecke in der Seitenleiste öffnen → „Bauauftrag (PDF)“.
 Format und Farbe einstellen, dann „Drucken / Als PDF speichern“. Im Druckdialog des
 Browsers dasselbe Papierformat wählen und die Ränder auf „Standard“ oder „Keine“ lassen –
 das Blatt bringt seine Ränder selbst mit.
+
+**Sammel-Bauauftrag:** Für einen Einsatzabschnitt über dessen `⋯`, für die ganze Planung
+über „Sammel-PDF (alle Strecken)“ im Reiter „Strecken“ oder über das Menü „Datei“.
 
 ---
 
@@ -155,8 +180,10 @@ Dann `http://localhost:8899` öffnen.
 ```
 CNAME                 Domain für GitHub Pages
 index.html            Grundgerüst der Oberfläche
+autor.html            Über den Autor (statische Seite)
 css/app.css           Oberfläche
 css/print.css         Bauauftrag: Vorschau und Ausdruck
+css/seite.css         Statische Seiten außerhalb der Anwendung
 js/app.js             Zusammenbau, Bedienung, Tastatur
 js/state.js           Datenmodell, Projektverwaltung, LocalStorage, Undo
 js/geo.js             Entfernungen (Vincenty), MGRS/UTM/GPS, Eingabe-Parser
@@ -220,6 +247,29 @@ Prüfung der Anlage obliegen einer Elektrofachkraft.
 Die taktischen Zeichen stammen aus der Sammlung jonas-koeritz/Taktische-Zeichen
 (Release-Exporte unter CC0-1.0). Für förmliche Lagedarstellungen ist die jeweils
 gültige Dienstvorschrift maßgeblich.
+
+---
+
+## Datenschutz
+
+Planungsdaten bleiben auf dem Gerät: Sie liegen im `localStorage` des Browsers
+(`fbp.projekte.v1`, `fbp.aktiv.v1`, `fbp.dateisicherung.v1`, `fbp.druck.v1`) und werden
+nirgendwohin übertragen. Es gibt keinen Server, kein Konto und keine Cookies.
+
+Zwei Verbindungen gehen trotzdem nach außen, beide ohne Planungsinhalte:
+
+- **Kartenkacheln** holt der Browser unmittelbar bei den Anbietern (BKG, OpenStreetMap,
+  OpenTopoMap, Esri). Sie sehen dabei IP-Adresse und angeforderten Kartenausschnitt –
+  also die Gegend, in der geplant wird. Voreingestellt sind die Ebenen des BKG; das
+  Luftbild von Esri (USA) wird nur auf ausdrückliche Auswahl geladen.
+- **Reichweitenmessung** mit [GoatCounter](https://www.goatcounter.com/): ein anonymer
+  Zählimpuls beim Aufruf der Anwendung, ohne Cookie und ohne geräteübergreifende
+  Kennung. Widerspruch über *Nicht mitzählen* auf `datenschutz.html`; das setzt
+  `skipgc` im `localStorage`, worauf GoatCounter nicht mehr zählt.
+
+Der vollständige Text steht in [`datenschutz.html`](datenschutz.html), die
+Anbieterkennzeichnung in [`impressum.html`](impressum.html). Beide sind in der
+Anwendung über **Datei → Impressum / Datenschutz** erreichbar.
 
 ---
 

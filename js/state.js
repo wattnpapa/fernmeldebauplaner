@@ -2,6 +2,7 @@
 
 import { neueStromangabe } from './strom.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
+import { QUERUNG_STANDARD } from './vorschrift.js';
 
 export const SCHEMA = 1;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
@@ -12,9 +13,10 @@ const KEY_DATEI    = 'fbp.dateisicherung.v1';
 export const SPEICHER_KONTINGENT = 5 * 1024 * 1024;
 
 export const KABELTYPEN = [
-  { id: 'fk2',    name: 'Feldkabel 2-adrig (FK 1×2)', kurz: 'FK 1×2',  trommel: 500,  zuschlag: 15, leistung: 900 },
-  { id: 'fk4',    name: 'Feldkabel 4-adrig (FK 2×2)', kurz: 'FK 2×2',  trommel: 500,  zuschlag: 15, leistung: 800 },
-  { id: 'ffk',    name: 'Feldfernkabel',              kurz: 'FFK',     trommel: 1000, zuschlag: 15, leistung: 700 },
+  { id: 'fk2',    name: 'Feldkabel 2-adrig (FK 1×2)', kurz: 'FK 1×2',  trommel: 800,  gewicht: 14.5, zuschlag: 15, leistung: 900 },
+  { id: 'ffk',    name: 'Feldfernkabel (FFK, auch FK 2×2)', kurz: 'FFK', trommel: 400, gewicht: 60, zuschlag: 15, leistung: 700 },
+  { id: 'ak',     name: 'Anschlusskabel (AK 10×2)',   kurz: 'AK',      trommel: 230,  gewicht: 56,   zuschlag: 10, leistung: 500 },
+  { id: 'vk',     name: 'Verbindungskabel (VK 10×2)', kurz: 'VK',      trommel: 200,  gewicht: 56,   zuschlag: 10, leistung: 500 },
   { id: 'lwl',    name: 'Lichtwellenleiter (LWL)',    kurz: 'LWL',     trommel: 500,  zuschlag: 20, leistung: 500 },
   { id: 'lan',    name: 'Netzwerkkabel (Cat.)',       kurz: 'LAN',     trommel: 100,  zuschlag: 15, leistung: 600 },
   { id: 'koax',   name: 'Koaxialkabel / Antennenzuleitung', kurz: 'Koax', trommel: 100, zuschlag: 15, leistung: 500 },
@@ -34,7 +36,7 @@ export const PUNKTARTEN = [
   { id: 'punkt',     name: 'Trassenpunkt',              kurz: '·'  },
   { id: 'muffe',     name: 'Muffe / Verbindung',        kurz: 'M'  },
   { id: 'verteiler', name: 'Verteiler / Endverzweiger', kurz: 'V'  },
-  { id: 'querung',   name: 'Querung (Straße/Bahn/Gewässer)', kurz: 'Q' },
+  { id: 'querung',   name: 'Querung / Kreuzung',          kurz: 'Q'  },
   { id: 'mast',      name: 'Mast / Hochführung',        kurz: 'H'  },
   { id: 'reserve',   name: 'Kabelreserve',              kurz: 'R'  },
   { id: 'ziel',      name: 'Endpunkt',                  kurz: 'E'  }
@@ -45,7 +47,14 @@ export const FARBEN = [
   '#0097a7', '#c2185b', '#5d4037', '#455a64', '#afb42b'
 ];
 
-const kabelById = id => KABELTYPEN.find(k => k.id === id) || KABELTYPEN[0];
+/* Früher wurde das Feldfernkabel zusätzlich als eigener Typ „FK 2×2“ geführt.
+   Beides ist dasselbe Kabel, der alte Schlüssel bleibt nur als Verweis erhalten. */
+export const KABEL_ALIAS = { fk4: 'ffk' };
+
+const kabelById = id => {
+  const schluessel = KABEL_ALIAS[id] || id;
+  return KABELTYPEN.find(k => k.id === schluessel) || KABELTYPEN[0];
+};
 export { kabelById };
 export const punktartById = id => PUNKTARTEN.find(p => p.id === id) || PUNKTARTEN[1];
 
@@ -64,16 +73,52 @@ export function neuesProjekt(name = 'Neue Planung') {
     geaendert: new Date().toISOString(),
     kopf: {
       einsatz: '', ort: '', datum: heute(), ersteller: '',
-      einheit: '', auftragNr: '', fernmeldezone: '', bemerkung: ''
+      einheit: '', auftragNr: '', fernmeldezone: '',
+      /* Kopfangaben der technischen Fernmeldeskizze nach KatS-Dv 861, Anlage 7:
+         Datum-Zeit-Gruppe des Planungsstandes, „Für die Richtigkeit“, Einstufung. */
+      stand: '', fdr: '', vsgrad: '',
+      bemerkung: ''
     },
     ansicht: { lat: 51.1657, lng: 10.4515, zoom: 6, basemap: 'topplus' },
     optionen: {
       teillaengen: true, gesamtlaenge: true, punktnummern: true,
       koordformat: 'mgrs', symbolgroesse: 1
     },
+    einsatzabschnitte: [],
     strecken: [],
     zeichen: []
   };
+}
+
+/* Einsatzabschnitte gliedern eine große Planung in Zuständigkeiten. Sie sind
+   freiwillig: eine Planung ohne Abschnitte verhält sich wie bisher, jede
+   Strecke steht dann für sich. */
+export function neuerEinsatzabschnitt(projekt) {
+  const n = (projekt.einsatzabschnitte || []).length;
+  return {
+    id: id(),
+    name: `Einsatzabschnitt ${n + 1}`,
+    leiter: '',
+    farbe: FARBEN[n % FARBEN.length],
+    bemerkung: '',
+    sichtbar: true
+  };
+}
+
+export const abschnittById = (p, aid) =>
+  (p && aid ? (p.einsatzabschnitte || []).find(a => a.id === aid) : null) || null;
+
+/** Alle Strecken eines Abschnitts; `null` liefert die nicht zugeteilten. */
+export function streckenIm(p, aid) {
+  return p.strecken.filter(s => (s.abschnitt || null) === (aid || null));
+}
+
+/** Zeigt die Karte diese Strecke? Der Abschnitt schaltet seine Strecken
+ *  gemeinsam ab, ohne ihren eigenen Schalter zu überschreiben. */
+export function streckeSichtbar(p, s) {
+  if (s.sichtbar === false) return false;
+  const ea = abschnittById(p, s.abschnitt);
+  return !ea || ea.sichtbar !== false;
 }
 
 export function neueStrecke(projekt) {
@@ -90,6 +135,7 @@ export function neueStrecke(projekt) {
     trommellaenge: k.trommel,
     verlegeleistung: k.leistung,
     strom: neueStromangabe(),
+    abschnitt: null,
     trupp: '',
     bemerkung: '',
     sichtbar: true,
@@ -97,8 +143,11 @@ export function neueStrecke(projekt) {
   };
 }
 
+/* Die Querungsart ist nur bei der Punktart 'querung' von Bedeutung, wird aber an
+   jedem Punkt mitgeführt: ein späterer Wechsel der Punktart soll die einmal
+   getroffene Wahl nicht verlieren. */
 export function neuerPunkt(lat, lng, art = 'punkt') {
-  return { id: id(), lat, lng, art, name: '', bemerkung: '' };
+  return { id: id(), lat, lng, art, name: '', bemerkung: '', querungsart: QUERUNG_STANDARD };
 }
 
 export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
@@ -318,11 +367,20 @@ export function migrieren(p) {
     kopf: { ...v.kopf, ...(p.kopf || {}) },
     ansicht: { ...v.ansicht, ...(p.ansicht || {}) },
     optionen: { ...v.optionen, ...(p.optionen || {}) },
+    einsatzabschnitte: (p.einsatzabschnitte || []).map((a, i) => ({
+      id: a.id || id(),
+      name: a.name || `Einsatzabschnitt ${i + 1}`,
+      leiter: a.leiter || '',
+      farbe: a.farbe || FARBEN[i % FARBEN.length],
+      bemerkung: a.bemerkung || '',
+      sichtbar: a.sichtbar !== false
+    })),
     strecken: (p.strecken || []).map(s => {
       const v = neueStrecke({ strecken: [] });
       return {
         ...v, ...s,
         id: s.id || id(),
+        kabeltyp: KABEL_ALIAS[s.kabeltyp] || s.kabeltyp || v.kabeltyp,
         strom: { ...v.strom, ...(s.strom || {}) },
         punkte: (s.punkte || []).map(pt => ({ ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id() }))
       };
@@ -339,6 +397,11 @@ export function migrieren(p) {
     })
   };
   out.id = p.id || id();
+  /* Eine Teilplanung kann Strecken mitbringen, deren Abschnitt nicht in der
+     Datei steht. Ein Verweis ins Leere wäre eine unsichtbare Gruppe – die
+     Strecke gilt dann als nicht zugeteilt. */
+  const bekannt = new Set(out.einsatzabschnitte.map(a => a.id));
+  out.strecken.forEach(s => { if (!bekannt.has(s.abschnitt)) s.abschnitt = null; });
   return out;
 }
 

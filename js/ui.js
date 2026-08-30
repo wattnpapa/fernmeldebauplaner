@@ -2,18 +2,21 @@
 
 import {
   store, KABELTYPEN, VERLEGEARTEN, PUNKTARTEN, FARBEN,
-  neuesZeichen, punktartById, kabelById,
+  neuesZeichen, punktartById, kabelById, neueStrecke, neuerEinsatzabschnitt, abschnittById, streckenIm,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id
 } from './state.js';
-import { kennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
+import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
 import { formatLaenge, meter, toMGRS, toDDM, alleFormate, parseKoordinate } from './geo.js';
 import {
   NETZFORMEN, LASTEINHEITEN, netzById, MAX_QUERSCHNITT,
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText
 } from './strom.js';
+import {
+  QUERUNGSARTEN, VS_GRADE, querungsartById, massText, dtg
+} from './vorschrift.js';
 import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
 import * as io from './io.js';
-import { oeffneBauauftrag } from './bauauftrag.js';
+import { oeffneBauauftrag, oeffneSammeldruck } from './bauauftrag.js';
 import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
@@ -134,30 +137,111 @@ export function zeichneStreckenListe() {
   const p = store.projekt;
   const liste = document.getElementById('strecken-liste');
   const summe = document.getElementById('strecken-summe');
+  const abschnitte = p.einsatzabschnitte || [];
   liste.innerHTML = '';
 
-  const ges = p.strecken.reduce((a, s) => {
-    const k = kennzahlen(s);
-    a.trasse += k.trasse; a.bedarf += k.bedarf; a.trommeln += k.trommeln;
-    return a;
-  }, { trasse: 0, bedarf: 0, trommeln: 0 });
-
+  const ges = gesamtKennzahlen(p.strecken);
   summe.innerHTML = p.strecken.length
     ? `<span><b>${p.strecken.length}</b> ${p.strecken.length === 1 ? 'Strecke' : 'Strecken'}</span>
+       ${abschnitte.length ? `<span><b>${abschnitte.length}</b> ${abschnitte.length === 1 ? 'Abschnitt' : 'Abschnitte'}</span>` : ''}
        <span>Trasse <b>${formatLaenge(ges.trasse)}</b></span>
        <span>Bedarf <b>${formatLaenge(ges.bedarf)}</b></span>
        <span><b>${ges.trommeln}</b> ${ges.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>`
     : '';
+
+  const sammelKnopf = document.getElementById('btn-sammel-pdf');
+  if (sammelKnopf) {
+    const druckbar = p.strecken.filter(s => s.punkte.length >= 2).length;
+    sammelKnopf.disabled = !druckbar;
+    sammelKnopf.title = druckbar
+      ? `Ein Dokument mit allen ${druckbar} druckbaren Strecken der Planung`
+      : 'Noch keine Strecke mit zwei Trassenpunkten';
+  }
 
   if (!p.strecken.length) {
     liste.appendChild(el('div', 'leer',
       `<p><b>Noch keine Strecke geplant.</b></p>
        <p>„Neue Strecke zeichnen“ wählen und die Trasse auf der Karte anklicken –
        Punkt für Punkt vom Anfangs- zum Endpunkt. Mit Doppelklick oder <kbd>Enter</kbd> abschließen.</p>`));
+    if (!abschnitte.length) return;
+  }
+
+  /* Ohne Einsatzabschnitte bleibt die Liste, was sie war: eine Reihe Strecken.
+     Erst wenn welche gebildet sind, tritt die Gliederung dazwischen. */
+  if (!abschnitte.length) {
+    for (const s of p.strecken) liste.appendChild(streckenKarte(s));
     return;
   }
 
-  for (const s of p.strecken) liste.appendChild(streckenKarte(s));
+  for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea));
+  if (streckenIm(p, null).length) liste.appendChild(abschnittGruppe(null));
+}
+
+/* Zugeklappte Abschnitte sind Ansichtssache und keine Planungsdaten: sie
+   stehen deshalb hier und nicht im Projekt – sonst reisten sie in jeder
+   exportierten Datei mit. */
+const zugeklappt = new Set();
+const klappSchluessel = aid => aid || '\u0000ohne';
+
+function abschnittGruppe(ea) {
+  const p = store.projekt;
+  const aid = ea ? ea.id : null;
+  const strecken = streckenIm(p, aid);
+  const zu = zugeklappt.has(klappSchluessel(aid));
+  const ges = gesamtKennzahlen(strecken);
+
+  const box = el('section', 'ea-gruppe' + (zu ? ' zu' : '') + (ea ? '' : ' ea-ohne') +
+    (ea && ea.sichtbar === false ? ' verborgen' : ''));
+  if (ea) box.dataset.aid = ea.id;
+
+  const kopf = el('header', 'ea-kopf');
+  kopf.innerHTML =
+    `<span class="farbpunkt${ea ? '' : ' hohl'}"${ea ? ` style="--farbe:${ea.farbe}"` : ''}></span>
+     <button type="button" class="ea-name" aria-expanded="${!zu}">
+       <span class="ea-pfeil" aria-hidden="true">▾</span>${escapeHtml(ea ? ea.name : 'Ohne Einsatzabschnitt')}
+     </button>
+     <span class="ea-wert">${strecken.length} · ${formatLaenge(ges.trasse)}</span>
+     ${ea ? augenKnopf(ea.sichtbar !== false) : ''}
+     <button type="button" class="ea-mehr" data-akt="mehr"
+             title="Einsatzabschnitt öffnen" aria-label="Einsatzabschnitt öffnen">⋯</button>`;
+
+  kopf.querySelector('.ea-name').onclick = () => {
+    const s = klappSchluessel(aid);
+    zugeklappt.has(s) ? zugeklappt.delete(s) : zugeklappt.add(s);
+    zeichneStreckenListe();
+  };
+  kopf.querySelector('[data-akt="mehr"]').onclick = () => einsatzabschnittDialog(aid);
+  if (ea) {
+    kopf.querySelector('[data-akt="sichtbar"]').onclick = () => {
+      store.aendern(() => { ea.sichtbar = ea.sichtbar === false; }, 'strecke');
+    };
+  }
+  box.appendChild(kopf);
+
+  if (!zu) {
+    const inhalt = el('div', 'ea-strecken');
+    if (!strecken.length) {
+      inhalt.appendChild(el('p', 'klein ea-leer',
+        'Keine Strecke zugeteilt. Die Zuteilung steht in der geöffneten Strecke oder unter „⋯“.'));
+    }
+    for (const s of strecken) inhalt.appendChild(streckenKarte(s));
+    /* Zeichnen und Zuteilen in einem Griff: sonst müsste jede neue Strecke
+       erst gezeichnet, dann gesucht und dann von Hand zugeteilt werden. */
+    if (ea) {
+      inhalt.appendChild(knopf('+ Strecke in diesem Abschnitt', () => {
+        let sid;
+        store.aendern(p => {
+          const s = neueStrecke(p);
+          s.abschnitt = ea.id;
+          sid = s.id;
+          p.strecken.push(s);
+        }, 'strecke');
+        ctx.weiterzeichnen(sid);
+      }, 'klein ea-neu'));
+    }
+    box.appendChild(inhalt);
+  }
+  return box;
 }
 
 function streckenKarte(s) {
@@ -201,6 +285,17 @@ function streckenKarte(s) {
   kz.innerHTML = kennzahlenHTML(k);
   koerper.appendChild(kz);
 
+  /* Die Sprechreichweite hängt an Kabelart, Verlegeart und der liegenden
+     Kabellänge – also an denselben Feldern wie die Kennzahlen darüber. */
+  const rw = el('div', 'reichweite');
+  const reichweiteFrisch = kz2 => {
+    const r = kz2.reichweite;
+    rw.hidden = !r;
+    rw.className = 'reichweite' + (r ? ' rw-' + r.stufe : '') +
+      (r && r.stufe === 'darueber' ? ' warnung' : '');
+    rw.innerHTML = reichweiteHTML(r);
+  };
+
   /* Der Bauzuschlag verlängert die Leitung und damit den Spannungsfall –
      die Querschnittsanzeige hängt an denselben Feldern und wird mit erneuert. */
   let stromFrisch = () => {};
@@ -210,6 +305,7 @@ function streckenKarte(s) {
     const kopfWert = karte.querySelector('.eintrag-wert');
     if (kopfWert) kopfWert.textContent = formatLaenge(neu.trasse);
     stromFrisch();
+    reichweiteFrisch(neu);
   };
 
   // -- Stammdaten
@@ -224,6 +320,17 @@ function streckenKarte(s) {
     feld('nach', s.nach, v => schreib(() => { s.nach = v; }), { platzhalter: 'z. B. Abschnitt Nord' })
   );
   g1.appendChild(vn);
+  /* Das Feld erscheint erst, wenn es etwas zu wählen gibt – ohne gebildete
+     Abschnitte wäre es eine Auswahl mit einem einzigen Eintrag. */
+  if ((store.projekt.einsatzabschnitte || []).length) {
+    g1.appendChild(feld('Einsatzabschnitt', s.abschnitt || '', v => {
+      store.aendern(() => { s.abschnitt = v || null; }, 'strecke');
+    }, {
+      typ: 'select',
+      werte: [['', '— keinem zugeteilt —'],
+        ...store.projekt.einsatzabschnitte.map(a => [a.id, a.name])]
+    }));
+  }
   g1.appendChild(farbwahl(s, karte));
   koerper.appendChild(g1);
 
@@ -243,6 +350,7 @@ function streckenKarte(s) {
   }, { typ: 'select', werte: KABELTYPEN.map(k => [k.id, k.name]) }));
   g2.appendChild(feld('Verlegeart', s.verlegeart, v => {
     schreib(() => { s.verlegeart = v; });
+    frisch();          // Hoch- oder Tiefbau entscheidet über die Sprechreichweite
     ctx.aufAenderung();
   }, { typ: 'select', werte: VERLEGEARTEN.map(v => [v.id, v.name]) }));
 
@@ -261,6 +369,9 @@ function streckenKarte(s) {
   g2.appendChild(feld('Bemerkung zum Auftrag', s.bemerkung, v => schreib(() => { s.bemerkung = v; }),
     { typ: 'textarea', zeilen: 2 }));
   koerper.appendChild(g2);
+
+  reichweiteFrisch(k);
+  koerper.appendChild(rw);
 
   // -- Stromversorgung (nur bei Stromleitungen)
   if (s.kabeltyp === 'strom') {
@@ -449,6 +560,35 @@ function stromErgebnisHTML(a) {
        trifft eine Elektrofachkraft.</p>`;
 }
 
+/* Die Vorschrift nennt für die Sprechreichweite eine Erfahrungsspanne, keinen
+   gerechneten Wert (KatS-Dv 861, 3.2). Deshalb „etwa“, deshalb runde Kilometer
+   und deshalb drei Tonlagen statt einer Zahl. */
+const kmSpanne = (min, max) => `${Math.round(min / 1000)}–${Math.round(max / 1000)} km`;
+
+function reichweiteHTML(r) {
+  if (!r) return '';
+  const spanne = 'etwa ' + kmSpanne(r.min, r.max);
+  const bedarf = formatLaenge(r.laenge, true);
+
+  /* Im Hochbau ist der Hochbau kein Ausweg mehr; dann bleibt nur die
+     Vermittlung. */
+  const rat = r.bauart === 'Hochbau'
+    ? 'Eine Vermittlung zwischenschalten.'
+    : 'Hochbau vorsehen oder eine Vermittlung zwischenschalten.';
+
+  const satz = r.stufe === 'darueber'
+    ? `Kabelbedarf ${bedarf} überschreitet die Sprechreichweite des ${r.bauart}s (${spanne}). ${rat}`
+    : `Sprechreichweite ${r.bauart}: ${spanne}. Kabelbedarf ${bedarf} liegt ` +
+      (r.stufe === 'grenze' ? 'im Grenzbereich.' : 'darunter.');
+
+  const fuss = [];
+  if (r.gemischt) fuss.push('Bei gemischtem Bau ist der Tiefbau angesetzt.');
+  fuss.push('KatS-Dv 861, ' + r.fundstelle);
+
+  return `<p class="rw-satz">${escapeHtml(satz)}</p>
+          <p class="rw-fuss">${escapeHtml(fuss.join(' · '))}</p>`;
+}
+
 function farbwahl(s, karte) {
   const wrap = el('div', 'feld');
   wrap.appendChild(el('span', 'feld-titel', 'Farbe auf der Karte'));
@@ -505,6 +645,8 @@ function punktTabelle(s, frisch) {
       o.value = a.id; o.textContent = a.name; o.selected = pt.art === a.id;
       sel.appendChild(o);
     });
+    /* Der Grund „strecke“ baut die Streckenliste neu auf (siehe app.js) – nur
+       deshalb kommt und geht die Querungsauswahl darunter beim Umschalten. */
     sel.onchange = () => store.aendern(() => { pt.art = sel.value; pt._manuell = true; }, 'strecke');
     kopf.appendChild(sel);
 
@@ -517,6 +659,14 @@ function punktTabelle(s, frisch) {
     };
     kopf.appendChild(zeigen);
     zeile.appendChild(kopf);
+
+    if (pt.art === 'querung') {
+      const art = querungsartById(pt.querungsart);
+      zeile.appendChild(feld('Art der Querung', art.id,
+        v => store.aendern(() => { pt.querungsart = v; }, 'strecke'),
+        { typ: 'select', werte: QUERUNGSARTEN.map(a => [a.id, a.name]), klasse: 'pz-querung' }));
+      zeile.appendChild(auflagenZeile(art));
+    }
 
     const name = document.createElement('input');
     name.type = 'text'; name.className = 'mini-input pz-name';
@@ -557,6 +707,39 @@ function punktTabelle(s, frisch) {
 
   wrap.appendChild(liste);
   return wrap;
+}
+
+/* Am Bauort wird nach dem Maß gefragt, nicht nach dem Namen der Querungsart:
+   die Auflage steht deshalb ungefragt unter der Auswahl. Der volle Wortlaut der
+   Vorschrift hängt am title – eine Zeile trägt ihn nicht. */
+const VERBOTSTEXT = 'Überbauen verboten – nur an Über- oder Unterführung';
+const AUFLAGE_ZEICHEN = 110;
+
+/** Regeltext auf Zeilenlänge, gekürzt am Satzende statt mitten im Wort */
+function kurzRegel(text) {
+  const t = String(text || '').trim();
+  if (t.length <= AUFLAGE_ZEICHEN) return t;
+  const satz = t.lastIndexOf('. ', AUFLAGE_ZEICHEN);
+  if (satz > 40) return t.slice(0, satz + 1);
+  const luecke = t.lastIndexOf(' ', AUFLAGE_ZEICHEN);
+  return t.slice(0, luecke > 40 ? luecke : AUFLAGE_ZEICHEN).trim() + ' …';
+}
+
+function auflagenZeile(art) {
+  /* Wo die Vorschrift das Überbauen verbietet, ist das Mindestmaß
+     gegenstandslos – dann steht dort das Verbot und sonst nichts. */
+  const mass = massText(art);
+  const kern = art.verbot ? VERBOTSTEXT : (mass !== '–' ? mass : kurzRegel(art.regel));
+
+  const stuecke = [`<b>${escapeHtml(kern)}</b>`,
+    `<span class="pz-fundstelle">KatS-Dv 861, ${escapeHtml(art.fundstelle)}</span>`];
+  if (art.genehmigung) {
+    stuecke.push(`<span class="pz-genehmigung">Genehmigung: ${escapeHtml(art.genehmigung)}</span>`);
+  }
+
+  const p = el('p', 'pz-auflage' + (art.verbot ? ' warnung' : ''), stuecke.join(' · '));
+  p.title = art.regel;
+  return p;
 }
 
 function koordText(pt) {
@@ -608,6 +791,198 @@ function koordinatenDialog(s, pt, i) {
           store.aendern(() => { pt.lat = k.lat; pt.lng = k.lng; }, 'strecke');
           ctx.karte.setView([k.lat, k.lng], Math.max(ctx.karte.getZoom(), 15));
           hinweis(`Punkt gesetzt (${k.format})`);
+        } }
+    ]
+  });
+}
+
+// ---------------------------------------------------------------- Einsatzabschnitte
+
+/** Neuen Einsatzabschnitt bilden und gleich zur Bearbeitung öffnen */
+export function abschnittAnlegen() {
+  let aid;
+  store.aendern(p => {
+    const ea = neuerEinsatzabschnitt(p);
+    aid = ea.id;
+    p.einsatzabschnitte.push(ea);
+  }, 'strecke');
+  einsatzabschnittDialog(aid);
+}
+
+/**
+ * Ein Einsatzabschnitt an einem Ort: benennen, Strecken zuteilen, als
+ * Teilplanung weitergeben und als Sammelauftrag drucken.
+ * `aid = null` öffnet dieselbe Ansicht für die nicht zugeteilten Strecken;
+ * dort gibt es nichts zu benennen, wohl aber zuzuteilen und auszugeben.
+ */
+export function einsatzabschnittDialog(aid) {
+  const p = store.projekt;
+  const ea = abschnittById(p, aid);
+  if (aid && !ea) return;
+
+  const box = el('div', 'ea-dialog');
+
+  if (ea) {
+    const g = el('div', 'feldgruppe');
+    g.appendChild(feld('Bezeichnung', ea.name, v => {
+      schreib(() => { ea.name = v; });
+      /* Nur die Zeile nachziehen: die Liste bei jedem Tastendruck neu zu bauen
+         verlöre Bildlauf und Tastenfokus in den offenen Strecken darunter. */
+      const zeile = document.querySelector(`.ea-gruppe[data-aid="${ea.id}"] .ea-name`);
+      if (zeile) zeile.lastChild.textContent = v;
+      document.getElementById('dialog-titel').textContent = v || 'Einsatzabschnitt';
+    }, { platzhalter: 'z. B. Einsatzabschnitt Nord' }));
+    g.appendChild(feld('Leitung / Verantwortlich', ea.leiter, v => schreib(() => { ea.leiter = v; }),
+      { platzhalter: 'Name, Funktion – steht auf dem Sammelauftrag' }));
+    g.appendChild(abschnittFarbwahl(ea));
+    g.appendChild(feld('Bemerkung', ea.bemerkung, v => schreib(() => { ea.bemerkung = v; }),
+      { typ: 'textarea', zeilen: 2 }));
+    box.appendChild(g);
+  } else {
+    box.appendChild(el('p', 'klein',
+      `Diese Strecken gehören zu keinem Einsatzabschnitt. Sie bleiben auf der Karte
+       sichtbar und lassen sich ebenso gemeinsam ausgeben.`));
+  }
+
+  const pdf = knopf('▤ Sammel-Bauauftrag (PDF)', () => {
+    schliesseDialog();
+    oeffneSammeldruck(aid);
+  }, 'primaer');
+  const datei = knopf('Als Datei sichern (.json)', () => {
+    if (io.abschnittExportieren(aid)) hinweis('Einsatzabschnitt als eigene Planungsdatei gesichert');
+  });
+  /* Ausgeben lässt sich nur, was da ist – die Knöpfe folgen der Zuteilung,
+     die im selben Dialog gerade geändert wird. */
+  const ausgabeAuffrischen = () => {
+    const eigen = streckenIm(store.projekt, aid);
+    pdf.disabled = !eigen.filter(s => s.punkte.length >= 2).length;
+    datei.disabled = !eigen.length;
+  };
+
+  const zut = el('div', 'feldgruppe');
+  zut.appendChild(el('h3', 'gruppen-titel', 'Strecken zuteilen'));
+  const stand = el('p', 'klein ea-stand');
+  zut.appendChild(zuteilungsliste(aid, stand, ausgabeAuffrischen));
+  zut.appendChild(stand);
+  box.appendChild(zut);
+
+  const aus = el('div', 'feldgruppe');
+  aus.appendChild(el('h3', 'gruppen-titel', 'Ausgabe'));
+  const tasten = el('div', 'tastenreihe');
+  ausgabeAuffrischen();
+  tasten.append(pdf, datei);
+  aus.appendChild(tasten);
+  aus.appendChild(el('p', 'klein',
+    `Der Sammelauftrag fasst alle Strecken dieses Abschnitts in einem Dokument
+     zusammen – Deckblatt mit Übersichtskarte, Streckenverzeichnis und je Strecke
+     das gewohnte Kartenblatt. Die Datei enthält nur diesen Ausschnitt und lässt
+     sich beim Empfänger über <b>Datei → Planung aus Datei laden</b> öffnen.`));
+  box.appendChild(aus);
+
+  const fuss = [];
+  if (ea) fuss.push({ text: 'Abschnitt auflösen', gefahr: true,
+    tun: () => { abschnittAufloesen(ea); return false; } });
+  fuss.push({ text: 'Schließen', primaer: true });
+
+  dialog({
+    titel: ea ? (ea.name || 'Einsatzabschnitt') : 'Strecken ohne Einsatzabschnitt',
+    inhalt: box, breit: true, fuss
+  });
+}
+
+/** Liste aller Strecken mit ihrer Zuteilung – von hier aus wandern sie
+ *  zwischen den Abschnitten, ohne dass jede einzeln geöffnet werden muss. */
+function zuteilungsliste(aid, stand, ausgabeAuffrischen) {
+  const p = store.projekt;
+  const box = el('div', 'ea-zuteilung');
+
+  const standSchreiben = () => {
+    const eigen = streckenIm(store.projekt, aid);
+    const ges = gesamtKennzahlen(eigen);
+    stand.innerHTML = eigen.length
+      ? `<b>${eigen.length}</b> ${eigen.length === 1 ? 'Strecke' : 'Strecken'} ·
+         Trasse <b>${formatLaenge(ges.trasse)}</b> · Bedarf <b>${formatLaenge(ges.bedarf)}</b> ·
+         <b>${ges.trommeln}</b> ${ges.trommeln === 1 ? 'Trommel' : 'Trommeln'}`
+      : 'Noch keine Strecke zugeteilt.';
+  };
+
+  if (!p.strecken.length) {
+    box.appendChild(el('p', 'klein', 'Diese Planung enthält noch keine Strecke.'));
+    standSchreiben();
+    return box;
+  }
+
+  for (const s of p.strecken) {
+    const zeile = el('div', 'ez-zeile');
+    zeile.innerHTML =
+      `<span class="farbpunkt" style="--farbe:${s.farbe}"></span>
+       <span class="ez-name">${escapeHtml(s.name)}</span>
+       <span class="ez-wert">${formatLaenge(kennzahlen(s).trasse)}</span>`;
+    const wahl = document.createElement('select');
+    wahl.className = 'mini-select';
+    wahl.setAttribute('aria-label', `Einsatzabschnitt für ${s.name}`);
+    for (const [wert, text] of [['', '— ohne —'], ...p.einsatzabschnitte.map(a => [a.id, a.name])]) {
+      const o = document.createElement('option');
+      o.value = wert; o.textContent = text; o.selected = (s.abschnitt || '') === wert;
+      wahl.appendChild(o);
+    }
+    wahl.onchange = () => {
+      store.aendern(() => { s.abschnitt = wahl.value || null; }, 'strecke');
+      zeile.classList.toggle('eigen', (s.abschnitt || null) === (aid || null));
+      standSchreiben();
+      ausgabeAuffrischen();
+    };
+    zeile.classList.toggle('eigen', (s.abschnitt || null) === (aid || null));
+    zeile.appendChild(wahl);
+    box.appendChild(zeile);
+  }
+  standSchreiben();
+  return box;
+}
+
+function abschnittFarbwahl(ea) {
+  const wrap = el('div', 'feld');
+  wrap.appendChild(el('span', 'feld-titel', 'Farbe des Abschnitts'));
+  const reihe = el('div', 'farbreihe');
+  FARBEN.forEach(f => {
+    const b = el('button', 'farbe' + (ea.farbe === f ? ' aktiv' : ''));
+    b.style.background = f;
+    b.title = f;
+    b.setAttribute('aria-label', 'Farbe ' + f);
+    b.onclick = () => {
+      schreib(() => { ea.farbe = f; });
+      reihe.querySelectorAll('.farbe').forEach(x => x.classList.remove('aktiv'));
+      b.classList.add('aktiv');
+      const punkt = document.querySelector(`.ea-gruppe[data-aid="${ea.id}"] .farbpunkt`);
+      if (punkt) punkt.style.setProperty('--farbe', f);
+    };
+    reihe.appendChild(b);
+  });
+  wrap.appendChild(reihe);
+  return wrap;
+}
+
+/* Auflösen, nicht löschen: die Strecken bleiben, sie sind danach nur keinem
+   Abschnitt mehr zugeteilt. Deshalb reicht eine Rückfrage ohne Namenseingabe –
+   rückgängig machen lässt es sich ohnehin. */
+function abschnittAufloesen(ea) {
+  const anzahl = streckenIm(store.projekt, ea.id).length;
+  dialog({
+    titel: 'Einsatzabschnitt auflösen',
+    inhalt: `<p>Soll <b>${escapeHtml(ea.name)}</b> aufgelöst werden?</p>
+      <p class="klein">${anzahl
+        ? `Die ${anzahl} ${anzahl === 1 ? 'zugeteilte Strecke bleibt' : 'zugeteilten Strecken bleiben'}
+           erhalten und ${anzahl === 1 ? 'gilt' : 'gelten'} danach als nicht zugeteilt.`
+        : 'Diesem Abschnitt ist keine Strecke zugeteilt.'}
+        Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
+    fuss: [
+      { text: 'Abbrechen', tun: () => { einsatzabschnittDialog(ea.id); return false; } },
+      { text: 'Auflösen', gefahr: true, tun: () => {
+          store.aendern(p => {
+            p.strecken.forEach(s => { if (s.abschnitt === ea.id) s.abschnitt = null; });
+            p.einsatzabschnitte = p.einsatzabschnitte.filter(a => a.id !== ea.id);
+          }, 'strecke');
+          hinweis('Einsatzabschnitt aufgelöst');
         } }
     ]
   });
@@ -802,6 +1177,30 @@ export function zeichneProjektReiter() {
       { platzhalter: ph }));
   }
   kopf.appendChild(feld('Datum', p.kopf.datum, v => schreib(() => { p.kopf.datum = v; }), { typ: 'date' }));
+
+  /* Stand, „Für die Richtigkeit“ und Einstufung stehen im Kopf der technischen
+     Fernmeldeskizze beieinander und werden auch zusammen ausgefüllt. */
+  kopf.appendChild(el('h3', 'gruppen-titel', 'Angaben der Fernmeldeskizze (KatS-Dv 861, Anlage 7)'));
+
+  const standReihe = el('div', 'kopf-stand');
+  const standFeld = feld('Stand (Datum-Zeit-Gruppe)', p.kopf.stand,
+    v => schreib(() => { p.kopf.stand = v; }), { platzhalter: 'z. B. 301430aug26' });
+  const standEingabe = standFeld.querySelector('input');
+  standReihe.append(standFeld, knopf('Jetzt', () => {
+    const jetzt = dtg();
+    schreib(() => { p.kopf.stand = jetzt; });
+    standEingabe.value = jetzt;
+  }, 'klein'));
+  kopf.appendChild(standReihe);
+
+  kopf.appendChild(feld('Für die Richtigkeit (F.d.R.)', p.kopf.fdr,
+    v => schreib(() => { p.kopf.fdr = v; }), { platzhalter: 'Name, Funktion' }));
+  kopf.appendChild(feld('Einstufung', p.kopf.vsgrad,
+    v => schreib(() => { p.kopf.vsgrad = v; }), { typ: 'select', werte: VS_GRADE }));
+  kopf.appendChild(el('p', 'klein',
+    `Diese Angaben stehen im Kopf des Bauauftrags; die Einstufung wird zusätzlich
+     auf jedem Blatt oben ausgegeben.`));
+
   kopf.appendChild(feld('Allgemeine Bemerkung', p.kopf.bemerkung,
     v => schreib(() => { p.kopf.bemerkung = v; }), { typ: 'textarea', zeilen: 3 }));
 
@@ -847,6 +1246,11 @@ export function zeichneProjektReiter() {
      <b>EUPL-1.2</b> auf
      <a href="https://github.com/wattnpapa/fernmeldebauplaner" target="_blank"
         rel="noopener noreferrer">GitHub</a>.`));
+  // In neuem Tab: die Planung liegt zwar im Browserspeicher und ginge auch beim
+  // Wegnavigieren nicht verloren, aber ein halb gezeichneter Streckenzug schon.
+  ueber.appendChild(el('p', 'klein',
+    `Wer dahintersteht und woher die Bauregeln stammen:
+     <a href="autor.html" target="_blank" rel="noopener">Über den Autor</a>.`));
 }
 
 export function projektDialog() {
@@ -987,10 +1391,31 @@ export function hilfeDialog() {
            Leiterquerschnitt; er steht auch auf dem Bauauftrag. Der Wert ist ein
            Planungsrichtwert für Kupferleitung – die verbindliche Auslegung trifft eine
            Elektrofachkraft.</p>
+        <h3>Einsatzabschnitte</h3>
+        <p>Große Planungen lassen sich in Einsatzabschnitte gliedern – sie sind freiwillig,
+           ohne sie bleibt alles wie bisher. Über <b>+ Einsatzabschnitt</b> im Reiter
+           „Strecken“ einen anlegen; die Zuteilung steht dann in jeder geöffneten Strecke
+           und gesammelt im Abschnitt selbst (Knopf <b>⋯</b> an der Abschnittszeile).</p>
+        <ul class="tasten-liste">
+          <li>Das <b>Auge</b> an der Abschnittszeile blendet alle seine Strecken zusammen
+              aus der Karte aus – der eigene Schalter jeder Strecke bleibt dabei erhalten.</li>
+          <li><b>Als Datei sichern (.json)</b> gibt nur diesen Abschnitt heraus. Wer sie
+              erhält, lädt sie über <b>Datei → Planung aus Datei laden</b> und arbeitet an
+              seinem Ausschnitt weiter, ohne die übrige Planung zu sehen.</li>
+          <li><b>Abschnitt auflösen</b> entfernt nur die Gliederung; die Strecken bleiben
+              und gelten danach als nicht zugeteilt.</li>
+        </ul>
         <h3>Bauauftrag</h3>
         <p>In der geöffneten Strecke <b>Bauauftrag (PDF)</b> wählen. Dort A4/A3, Hoch/Quer und
            Farbe/Schwarz-Weiß einstellen und über den Druckdialog des Browsers
            <b>„Als PDF speichern“</b> wählen.</p>
+        <p>Für mehrere Strecken in einem Dokument gibt es den <b>Sammel-Bauauftrag</b>:
+           für einen Einsatzabschnitt über dessen <b>⋯</b>, für die ganze Planung über
+           <b>Sammel-PDF (alle Strecken)</b> im Reiter „Strecken“. Er beginnt mit einem
+           Deckblatt samt Übersichtskarte und Summen, danach folgen das
+           Streckenverzeichnis mit dem Materialbedarf nach Leitungsarten und je Strecke
+           das gewohnte Kartenblatt. Welche dieser Blätter entstehen, ist oben in der
+           Gruppe <b>Blätter</b> zu wählen.</p>
         <p>Im Druckdialog dasselbe Papierformat einstellen, das oben gewählt wurde, und
            die Ränder auf „Keine“ stellen – das Blatt bringt seine Ränder selbst mit.
            Der Hinweis am Druckknopf nennt die drei Angaben. Der vorgeschlagene Dateiname

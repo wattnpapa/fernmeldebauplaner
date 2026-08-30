@@ -1,9 +1,17 @@
 // io.js – Sichern, Laden und Austauschformate
 
-import { store, migrieren, neueStrecke, neuerPunkt, id, ladeAlle, dateisicherungVermerken } from './state.js';
+import {
+  store, migrieren, neueStrecke, neuerPunkt, id, ladeAlle, dateisicherungVermerken,
+  abschnittById, streckenIm
+} from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
 import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
+import { querungsartById } from './vorschrift.js';
+
+/* Klartext der Querungsart. An allen anderen Punktarten bleibt die Angabe leer –
+   der mitgeführte Wert gehört dort nicht in die Ausgabe. */
+const querungsartText = pt => pt.art === 'querung' ? querungsartById(pt.querungsart).name : '';
 
 function dateiname(teile, endung) {
   return teile.filter(Boolean).join('_')
@@ -34,6 +42,41 @@ export function projektExportieren(pid) {
     dateiname(['Fernmeldebauplanung', p.name, p.kopf?.datum], 'json'));
   dateisicherungVermerken(p.id);
   store.melden('dateisicherung');
+  return true;
+}
+
+/** Einen Einsatzabschnitt als eigenständige Planungsdatei sichern – `null`
+ *  nimmt die nicht zugeteilten Strecken. Der Empfänger lädt sie über
+ *  „Planung aus Datei laden“ und arbeitet nur an seinem Ausschnitt weiter.
+ *
+ *  Die taktischen Zeichen gehen vollständig mit: sie sind das gemeinsame
+ *  Lagebild und nicht einem Abschnitt zugeteilt. Der Vermerk über die letzte
+ *  Dateisicherung bleibt unberührt – ein Ausschnitt sichert nicht die Planung. */
+export function abschnittExportieren(aid) {
+  const p = store.projekt;
+  const ea = abschnittById(p, aid);
+  const strecken = streckenIm(p, aid);
+  if (!strecken.length) return false;
+  const bezeichnung = ea ? ea.name : 'Ohne Einsatzabschnitt';
+  const jetzt = new Date().toISOString();
+
+  const teil = {
+    ...p,
+    id: id(),
+    name: `${p.name} – ${bezeichnung}`,
+    erstellt: jetzt,
+    geaendert: jetzt,
+    einsatzabschnitte: ea ? [ea] : [],
+    strecken,
+    herkunft: {
+      projekt: p.name,
+      projektId: p.id,
+      einsatzabschnitt: bezeichnung,
+      erzeugt: jetzt
+    }
+  };
+  herunterladen(JSON.stringify(teil, null, 2),
+    dateiname(['Fernmeldebauplanung', p.name, bezeichnung, p.kopf?.datum], 'json'));
   return true;
 }
 
@@ -110,8 +153,8 @@ export function geoJSON(nurStrecke = null) {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [pt.lng, pt.lat] },
       properties: {
-        strecke: s.name, nummer: i + 1, art: pt.art, name: pt.name,
-        bemerkung: pt.bemerkung, mgrs: toMGRS(pt.lat, pt.lng, 5)
+        strecke: s.name, nummer: i + 1, art: pt.art, querungsart: querungsartText(pt),
+        name: pt.name, bemerkung: pt.bemerkung, mgrs: toMGRS(pt.lat, pt.lng, 5)
       }
     }));
   }
@@ -146,7 +189,7 @@ export function gpxExportieren(sid = null) {
   const wpts = strecken.flatMap(s => s.punkte.map((pt, i) =>
     `  <wpt lat="${pt.lat.toFixed(7)}" lon="${pt.lng.toFixed(7)}">
     <name>${esc(s.name)} ${i + 1}</name>
-    <desc>${esc([pt.name, pt.art, toMGRS(pt.lat, pt.lng, 5)].filter(Boolean).join(' · '))}</desc>
+    <desc>${esc([pt.name, pt.art, querungsartText(pt), toMGRS(pt.lat, pt.lng, 5)].filter(Boolean).join(' · '))}</desc>
     <sym>Waypoint</sym>
   </wpt>`)).join('\n');
 
@@ -176,11 +219,11 @@ export function csvExportieren(sid) {
   if (!s) return;
   const seg = segmentLaengen(s), kum = kumuliert(s.punkte);
   const zeilen = [[
-    'Nr', 'Art', 'Bezeichnung', 'MGRS', 'GPS Grad/Dez.-Min.', 'Breite', 'Länge',
+    'Nr', 'Art', 'Querungsart', 'Bezeichnung', 'MGRS', 'GPS Grad/Dez.-Min.', 'Breite', 'Länge',
     'Teilstrecke_m', 'ab_Anfang_m', 'Richtung_Grad', 'Bemerkung'
   ]];
   s.punkte.forEach((pt, i) => zeilen.push([
-    i + 1, pt.art, pt.name || '',
+    i + 1, pt.art, querungsartText(pt), pt.name || '',
     toMGRS(pt.lat, pt.lng, 5), toDDM(pt.lat, pt.lng),
     pt.lat.toFixed(6).replace('.', ','), pt.lng.toFixed(6).replace('.', ','),
     i === 0 ? '' : Math.round(seg[i - 1]),

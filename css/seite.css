@@ -1,0 +1,178 @@
+/* seite.css – Textseiten außerhalb der Anwendung (Impressum, Datenschutz).
+   Eigene Datei statt app.css: Diese Seiten sind reiner Fließtext ohne Karte,
+   ohne Leiste und ohne JavaScript-Gerüst. Die Farben kommen aus derselben
+   Palette wie die Anwendung, damit der Sprung aus dem Programm heraus nicht
+   wie ein Sprung auf eine fremde Seite wirkt. */
+
+:root {
+  --thw: #003399;
+  --thw-hell: #0a4fbf;
+  --grund: #eef1f6;
+  --flaeche: #ffffff;
+  --linie: #d5dce6;
+  --text: #16202e;
+  --text-schwach: #5c6879;
+  --schrift: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--grund);
+  color: var(--text);
+  font-family: var(--schrift);
+  line-height: 1.55;
+}
+
+/* Sprunglink: liegt außerhalb des Sichtfelds und kommt beim ersten Tabstopp
+   hervor. Nicht mit display:none verstecken – dann wäre er auch für die
+   Tastatur weg (WCAG 2.4.1). */
+.sprunglink {
+  position: absolute; left: -9999px; top: 0; z-index: 40;
+  display: inline-flex; align-items: center; min-height: 44px;
+  padding: 0 1rem; background: var(--thw); color: #fff;
+  text-decoration: none; font-weight: 600;
+}
+.sprunglink:focus { left: 0; }
+
+.seitenkopf { background: var(--flaeche); border-bottom: 1px solid var(--linie); }
+.seitenkopf-inner {
+  max-width: 44rem; margin: 0 auto; padding: 0 1rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 1.2rem;
+}
+.seitenkopf-marke {
+  display: inline-flex; align-items: center; gap: .5rem; min-height: 44px;
+  margin-right: auto;
+  color: var(--thw); font-weight: 700; font-size: .95rem; text-decoration: none;
+}
+.seitenkopf-marke svg { width: 22px; height: 22px; }
+.seitenkopf-marke span span { font-weight: 400; }
+.seitenkopf-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 1rem; }
+.seitenkopf-links a {
+  display: inline-flex; align-items: center; min-height: 44px;
+  color: var(--text-schwach); font-size: .85rem; text-decoration: none;
+  white-space: nowrap;
+}
+.seitenkopf-links a:hover { color: var(--thw-hell); text-decoration: underline; }
+.seitenkopf-links a.aktiv { color: var(--thw); font-weight: 600; }
+
+main { max-width: 44rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+h1 { font-size: 1.75rem; margin: .5rem 0 1rem; text-wrap: balance; }
+h2 {
+  font-size: 1.25rem; margin-top: 2rem;
+  padding-bottom: .2rem; border-bottom: 1px solid var(--linie);
+}
+p, ul { margin: .75rem 0; }
+ul { padding-left: 1.2rem; }
+li { margin: .3rem 0; }
+a { color: var(--thw-hell); }
+code, .mono { font-family: var(--mono); font-size: .9em; }
+
+/* Kartendienste und Speicherschlüssel stehen als Tabelle: Anbieter, Zweck und
+   das, was dorthin abfließt, gehören nebeneinander und nicht in einen Satz. */
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .9rem; }
+th, td { text-align: left; vertical-align: top; padding: .45rem .6rem; border-bottom: 1px solid var(--linie); }
+th { color: var(--text-schwach); font-weight: 600; }
+.tabellen-huelle { overflow-x: auto; }
+
+.kasten {
+  margin: 1.25rem 0; padding: .9rem 1rem;
+  background: var(--flaeche); border: 1px solid var(--linie); border-left: 4px solid var(--thw);
+}
+.kasten p:first-child { margin-top: 0; }
+.kasten p:last-child { margin-bottom: 0; }
+
+.wahl { display: flex; align-items: flex-start; gap: .6rem; font-weight: 600; cursor: pointer; }
+.wahl input { width: 1.15rem; height: 1.15rem; margin: .2rem 0 0; flex: none; }
+.wahl-stand { display: block; margin-top: .5rem; font-size: .9rem; color: var(--text-schwach); }
+
+footer {
+  max-width: 44rem; margin: 0 auto; padding: 1rem 1rem 3rem;
+  border-top: 1px solid var(--linie);
+  font-size: .85rem; color: var(--text-schwach);
+}
+footer a { color: var(--text-schwach); }
+
+/* ── Autor-Seite ─────────────────────────────────────────────────────────────
+   Impressum und Datenschutz sind Fließtext mit Zwischenüberschriften; die
+   Autor-Seite hat zusätzlich einen Wegweiser, eine Herkunftskette und
+   aufklappbare Fragen. Die Bausteine stehen hier und nicht in einer eigenen
+   Datei, damit die statischen Seiten ein Stylesheet bleiben. Bewusst ohne
+   abgerundete Ecken – wie die übrigen Kästen dieser Seiten. */
+
+.vorspann { font-size: 1.05rem; color: var(--text-schwach); }
+
+/* Wegweiser: schmaler gesetzt als der Fließtext, damit er als Verzeichnis
+   gelesen wird und nicht als erster Abschnitt. */
+.wegweiser {
+  margin: 1.25rem 0; padding: .9rem 1rem;
+  background: var(--flaeche); border: 1px solid var(--linie);
+  font-size: .9rem;
+}
+.wegweiser ol { margin: .4rem 0 0; padding-left: 1.3rem; }
+.wegweiser li { margin: .15rem 0; }
+
+/* Vier Stationen von der Dienstpraxis bis zum Bauauftrag. Als Reihe, solange
+   Platz ist; darunter untereinander – vier Kästen nebeneinander wären auf dem
+   Telefon nur noch Wortsalat. Der Pfeil kippt dabei mit. */
+.kette { display: flex; flex-wrap: wrap; align-items: stretch; gap: .45rem; margin: 1.25rem 0 .4rem; }
+.kette-glied {
+  flex: 1 1 8rem;
+  background: var(--flaeche); border: 1px solid var(--linie);
+  padding: .6rem .7rem; font-size: .85rem; line-height: 1.4;
+}
+.kette-glied b { display: block; color: var(--thw); font-size: .8rem; }
+.kette-pfeil { align-self: center; flex: none; color: var(--linie); font-size: 1.1rem; }
+@media (max-width: 40rem) {
+  .kette { flex-direction: column; }
+  .kette-pfeil { transform: rotate(90deg); margin-left: 1.2rem; align-self: flex-start; }
+}
+.bild-text { font-size: .85rem; color: var(--text-schwach); }
+
+/* Quellenliste: Bezeichnung über der Erläuterung, getrennt durch Linien statt
+   Aufzählungszeichen – die Einträge sind mehrzeilig und würden als Punkte
+   ineinanderlaufen. */
+.quellen { list-style: none; padding: 0; }
+.quellen li { padding: .55rem 0; border-bottom: 1px solid var(--linie); font-size: .95rem; }
+.quellen li:last-child { border-bottom: 0; }
+.quellen b { display: block; }
+
+.frage { background: var(--flaeche); border: 1px solid var(--linie); margin: .5rem 0; padding: 0 1rem; }
+.frage summary { cursor: pointer; font-weight: 600; padding: .7rem 0; min-height: 44px; display: flex; align-items: center; }
+.frage[open] summary { border-bottom: 1px solid var(--linie); }
+.frage p:last-child { margin-bottom: .9rem; }
+
+.aufruf { margin: 2rem 0 .5rem; padding: 1.1rem 1.2rem; background: var(--thw); color: #fff; }
+.aufruf p { color: #dbe4f7; }
+.aufruf-titel { margin-top: 0; color: #fff; font-size: 1.15rem; font-weight: 700; }
+.aufruf-knopf {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 1.1rem;
+  background: #fff; color: var(--thw); font-weight: 600; text-decoration: none;
+}
+.aufruf-knopf:hover { background: #e8eefb; color: var(--thw); }
+
+/* Sprungziele dürfen nicht unter der Kopfleiste landen. Die Leiste klebt zwar
+   nicht, aber der Abstand hält die Überschrift auch beim Sprung frei. */
+:target { scroll-margin-top: 1rem; }
+
+@media print {
+  .sprunglink, .seitenkopf-links, .aufruf { display: none; }
+  .frage[open] summary { border-bottom: 0; }
+  .frage { break-inside: avoid; }
+}
+
+/* Porträt neben dem Vorspann. Das Bild ist quadratisch beschnitten, aber die
+   Breite wird begrenzt statt fest gesetzt: Auf dem Telefon steht es über dem
+   Text und soll dort nicht die halbe erste Bildschirmhöhe belegen. */
+.autor-kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.25rem; margin: 1rem 0 1.25rem; }
+.autor-bild {
+  flex: none; width: 150px; height: auto; max-width: 40%;
+  border: 1px solid var(--linie);
+}
+.autor-kopf .vorspann { flex: 1 1 16rem; margin: 0; }
+@media (max-width: 30rem) {
+  .autor-bild { width: 110px; }
+}

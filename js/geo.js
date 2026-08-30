@@ -94,6 +94,56 @@ export function formatLaenge(m, kurz = false) {
 /** Immer in Metern, gerundet */
 export function meter(m) { return nf(Math.round(m)) + ' m'; }
 
+// ---------------------------------------------------------------- Ortsangaben
+
+/**
+ * Position auf dem Polygonzug bei der Bogenlänge `meterAbAnfang`.
+ * Vor dem Anfang liefert sie den ersten, hinter dem Ende den letzten Punkt.
+ * @returns {{lat:number,lng:number,index:number}|null} index = davorliegender Trassenpunkt
+ */
+export function punktBeiLaenge(punkte, meterAbAnfang) {
+  if (!punkte || punkte.length < 2) return null;
+  if (!(meterAbAnfang > 0)) return { lat: punkte[0].lat, lng: punkte[0].lng, index: 0 };
+
+  let rest = meterAbAnfang;
+  for (let i = 1; i < punkte.length; i++) {
+    const l = distanz(punkte[i - 1], punkte[i]);
+    if (rest <= l) {
+      const t = l === 0 ? 0 : rest / l;
+      // Lineare Interpolation in Grad: auf den hier üblichen Abschnittslängen
+      // von einigen hundert Metern genau genug.
+      return {
+        lat: punkte[i - 1].lat + (punkte[i].lat - punkte[i - 1].lat) * t,
+        lng: punkte[i - 1].lng + (punkte[i].lng - punkte[i - 1].lng) * t,
+        index: i - 1
+      };
+    }
+    rest -= l;
+  }
+  const letzter = punkte.length - 1;
+  return { lat: punkte[letzter].lat, lng: punkte[letzter].lng, index: letzter };
+}
+
+/**
+ * Ortsangabe im Sprachgebrauch der Baumeldung: "180 m NO von Punkt 7".
+ * @param {string[]} [namen] Punktbezeichnungen; eine gesetzte ersetzt "Punkt N"
+ */
+export function standortText(punkte, meterAbAnfang, namen) {
+  const stelle = punktBeiLaenge(punkte, meterAbAnfang);
+  if (!stelle) return '';
+
+  let nah = 0, abstand = Infinity;
+  for (let i = 0; i < punkte.length; i++) {
+    const d = distanz(punkte[i], stelle);
+    if (d < abstand) { abstand = d; nah = i; }
+  }
+
+  const name = (namen && namen[nah]) ? namen[nah] : `Punkt ${nah + 1}`;
+  // Unter 20 m ist die Richtungsangabe im Gelände nicht mehr auffindbar.
+  if (abstand < 20) return `an ${name}`;
+  return `${meter(abstand)} ${himmelsrichtung(peilung(punkte[nah], stelle))} von ${name}`;
+}
+
 // ---------------------------------------------------------------- MGRS
 
 /**

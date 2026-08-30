@@ -38,6 +38,14 @@ Die Schrift Roboto Slab ist Teil der Sammlung und dort in jedes einzelne Zeichen
 eingebettet; hier liegt sie einmal separat. Roboto Slab steht unter der
 Apache License 2.0 (https://github.com/googlefonts/robotoslab).
 
+## Reichweitenmessung
+
+`js/`-fremdes Skript, das zur Laufzeit von einem fremden Server geladen wird:
+`count.js` von **GoatCounter** (`gc.zgo.at`), eingebunden in `index.html`.
+GoatCounter steht unter der **EUPL-1.2**, Quellcode:
+https://github.com/arp242/goatcounter. Was dabei übertragen wird und wie sich die
+Zählung abschalten lässt, steht in `datenschutz.html`.
+
 ## Kartendienste
 
 Die Kacheldienste werden zur Laufzeit aus dem Browser des Anwenders abgerufen.

@@ -49,10 +49,17 @@
           <button data-akt="export-json">Planung als Datei sichern (.json)</button>
           <button data-akt="import-json">Planung aus Datei laden …</button>
           <hr>
+          <button data-akt="sammel-pdf">Sammel-Bauauftrag aller Strecken (PDF) …</button>
+          <hr>
           <button data-akt="export-geojson">Alles als GeoJSON</button>
           <button data-akt="export-gpx">Alles als GPX (Hand-GPS)</button>
           <hr>
           <button data-akt="hilfe">Kurzanleitung</button>
+          <hr>
+          <!-- Echte Links statt Menüknöpfe: Impressum und Datenschutz müssen
+               als Adresse erreichbar und von außen auffindbar sein. -->
+          <a href="impressum.html" target="_blank" rel="noopener">Impressum</a>
+          <a href="datenschutz.html" target="_blank" rel="noopener">Datenschutz</a>
         </div>
       </div>
     </div>
@@ -76,6 +83,11 @@
       <section class="reiter-inhalt aktiv" data-inhalt="strecken">
         <div class="seite-kopf">
           <button class="knopf primaer breit" id="btn-neue-strecke">+ Neue Strecke zeichnen</button>
+          <div class="seite-kopf-zeile">
+            <button class="knopf klein" id="btn-neuer-abschnitt"
+                    title="Strecken in Zuständigkeiten gliedern">+ Einsatzabschnitt</button>
+            <button class="knopf klein" id="btn-sammel-pdf">▤ Sammel-PDF (alle Strecken)</button>
+          </div>
         </div>
         <div class="summe" id="strecken-summe"></div>
         <div class="liste" id="strecken-liste"></div>
@@ -163,6 +175,11 @@
 
 <script src="vendor/leaflet/leaflet.js"></script>
 <script type="module" src="js/app.js"></script>
+
+<!-- Reichweitenmessung ohne Cookies und ohne personenbezogene Daten (GoatCounter).
+     Blockiert der Browser das Skript, läuft die Anwendung unverändert weiter. -->
+<script data-goatcounter="https://fmbauplaner.goatcounter.com/count"
+        async src="https://gc.zgo.at/count.js"></script>
 <noscript><p style="padding:2rem;font:16px system-ui">Für den FMBauplaner wird JavaScript benötigt.</p></noscript>
 </body>
 </html>
