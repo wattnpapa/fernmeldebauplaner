@@ -285,6 +285,11 @@ body.druckansicht { overflow: hidden; }
   background: linear-gradient(var(--farbe, #111), var(--farbe, #111)) center/100% 1.2pt no-repeat;
 }
 .lg-kabel > b { width: .55mm; height: 3.2mm; background: var(--farbe, #111); }
+/* Die Stufe der Datenverbindung bringt ihr Stück Trasse selbst mit, deshalb
+   entfällt hier die durchlaufende Linie im Hintergrund. */
+.lg-kabel.stufe { background: none; }
+.lg-kabel.stufe > svg { width: 11mm; height: 4.2mm; }
+.lg-kabel.stufe path { fill: none; stroke: var(--farbe, #111); stroke-width: 1.6; }
 .lg-kabel > span {
   background: #fff; padding: 0 .5mm; color: var(--farbe, #111);
   font-family: 'Roboto Slab', Georgia, serif; font-weight: 700; font-size: .84em;

@@ -727,6 +727,12 @@ body.modus-aktiv .kartenoptionen { display: none; }
   border-radius: calc(1px * var(--mass, 1));
   box-shadow: 0 0 0 calc(1.1px * var(--mass, 1)) rgba(255,255,255,.9);
 }
+.kabel-zeichen.stufe > svg {
+  width: calc(34px * var(--mass, 1)); height: calc(20px * var(--mass, 1));
+}
+.kabel-zeichen.stufe rect { fill: #fff; opacity: .92; }
+.kabel-zeichen.stufe path { fill: none; stroke: var(--farbe, #333); stroke-width: 3; }
+
 .kabel-zeichen.schrift {
   color: var(--farbe, #333); background: rgba(255,255,255,.94);
   font-family: 'Roboto Slab', Georgia, serif; font-weight: 700; line-height: 1;

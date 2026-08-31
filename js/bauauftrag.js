@@ -882,8 +882,10 @@ function materialGesamtHTML(ges) {
 function kabelzeichenEintrag(kabeltyp, farbe) {
   const z = kabelzeichen(kabeltyp);
   if (!z) return '';
-  const inhalt = z.text ? `<span>${z.text}</span>` : '<b></b>'.repeat(z.striche);
-  return `<span class="lg-eintrag"><i class="lg-kabel" style="--farbe:${farbe}">${inhalt}</i>` +
+  const inhalt = z.text ? `<span>${z.text}</span>`
+    : z.stufe ? `<svg viewBox="0 4 34 13"><path d="${z.stufe}"></path></svg>`
+    : '<b></b>'.repeat(z.striche);
+  return `<span class="lg-eintrag"><i class="lg-kabel${z.stufe ? ' stufe' : ''}" style="--farbe:${farbe}">${inhalt}</i>` +
          `${escapeHtml(kabelById(kabeltyp).name)}</span>`;
 }
 

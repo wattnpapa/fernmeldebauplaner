@@ -22,7 +22,11 @@ const KABELZEICHEN = {
   ffk: { striche: 2 },
   ak:  { text: '10″' },
   vk:  { text: '30′' },
-  lwl: { text: 'LWL' }
+  lwl: { text: 'LWL' },
+  /* Die Datenverbindung ist keine Marke auf der Linie, sondern eine Stufe im
+     Linienzug – sie bringt ihr Stück Trasse deshalb selbst mit. Der Weg liegt
+     senkrecht mittig, damit das Zeichen auf der Linie sitzt. */
+  lan: { stufe: 'M0,10 H12 V18 H22 V10 H34' }
 };
 
 /* Abstand der Kabelzeichen, in Bildschirmpunkten. In Metern gerechnet würden
@@ -549,7 +553,12 @@ export class StreckenLayer {
       const stil = `--farbe:${farbe};--winkel:${winkel.toFixed(1)}deg;--mass:${f}`;
       const inhalt = zeichen.text
         ? `<span class="kabel-zeichen schrift" style="${stil}">${zeichen.text}</span>`
-        : `<span class="kabel-zeichen" style="${stil}">${'<i></i>'.repeat(zeichen.striche)}</span>`;
+        : zeichen.stufe
+          /* Die weiße Leiste nimmt die durchlaufende Linie unter dem Zeichen
+             heraus; gezeichnet wird sie hier mitsamt der Stufe neu. */
+          ? `<span class="kabel-zeichen stufe" style="${stil}"><svg viewBox="0 0 34 20">` +
+            `<rect x="0" y="7.5" width="34" height="5"></rect><path d="${zeichen.stufe}"></path></svg></span>`
+          : `<span class="kabel-zeichen" style="${stil}">${'<i></i>'.repeat(zeichen.striche)}</span>`;
       L.marker([pos.lat, pos.lng], {
         pane: 'fbp-strecken', interactive: false, keyboard: false,
         icon: L.divIcon({ className: 'fbp-kabelzeichen', html: inhalt, iconSize: null })
