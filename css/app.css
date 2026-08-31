@@ -711,6 +711,30 @@ body.modus-aktiv .kartenoptionen { display: none; }
 .strecken-mass .zus { font-size: 11px; color: #59636f; font-variant-numeric: tabular-nums; }
 .strecken-mass.aktiv { box-shadow: 0 0 0 2px rgba(0,51,153,.3), 0 2px 8px rgba(0,0,0,.22); }
 
+/* Kabelzeichen auf der Trasse. --mass hält sie im doppelt gerenderten
+   Druckbild gleich groß wie am Bildschirm, --winkel legt sie in die
+   Linienrichtung. Die beschrifteten Zeichen bringen ihre eigene weiße
+   Unterbrechung mit – sonst liefe die Trassenlinie durch die Ziffern. */
+.fbp-kabelzeichen { background: none; border: 0; }
+.kabel-zeichen {
+  display: flex; align-items: center; gap: calc(4px * var(--mass, 1));
+  white-space: nowrap; pointer-events: none;
+}
+.fbp-kabelzeichen > .kabel-zeichen { transform: translate(-50%, -50%) rotate(var(--winkel, 0deg)); }
+.kabel-zeichen > i {
+  display: block; background: var(--farbe, #333);
+  width: calc(3px * var(--mass, 1)); height: calc(17px * var(--mass, 1));
+  border-radius: calc(1px * var(--mass, 1));
+  box-shadow: 0 0 0 calc(1.1px * var(--mass, 1)) rgba(255,255,255,.9);
+}
+.kabel-zeichen.schrift {
+  color: var(--farbe, #333); background: rgba(255,255,255,.94);
+  font-family: 'Roboto Slab', Georgia, serif; font-weight: 700; line-height: 1;
+  font-size: calc(12px * var(--mass, 1));
+  padding: calc(1.5px * var(--mass, 1)) calc(3.5px * var(--mass, 1));
+  border-radius: calc(2px * var(--mass, 1));
+}
+
 .fbp-punkt-icon { background: none; border: 0; }
 .fbp-punkt {
   display: flex; align-items: center; justify-content: center;

@@ -14,6 +14,29 @@ const MUFFEN_NAEHE = 30;
    kennzahlen() läuft in der Seitenleiste bei jedem Tastendruck. */
 const MAX_STOESSE = 500;
 
+/* Kartografische Zeichen der Kabelarten (KatS-Dv 861): das Kabel wird nicht als
+   nackte Linie geführt, sondern trägt in Abständen sein Zeichen – Querstrich,
+   Doppelquerstrich oder die Aderzahl im Linienzug. */
+const KABELZEICHEN = {
+  fk2: { striche: 1 },
+  ffk: { striche: 2 },
+  ak:  { text: '10″' },
+  vk:  { text: '30′' },
+  lwl: { text: 'LWL' }
+};
+
+/* Abstand der Kabelzeichen, in Bildschirmpunkten. In Metern gerechnet würden
+   sie beim Herauszoomen zu einem Balken verschmelzen. Kurze Trassen bekommen
+   erst ab MIND_LAENGE überhaupt ein Zeichen, sonst sitzt es auf den Punkten. */
+const ZEICHEN_ABSTAND = 140;
+const MIND_LAENGE = 46;
+
+/** Das Kabelzeichen einer Kabelart – auch die Zeichenerklärung des
+ *  Bauauftrags baut sich daraus ihr Musterstück. */
+export function kabelzeichen(kabeltyp) {
+  return KABELZEICHEN[kabelById(kabeltyp).id] || null;
+}
+
 /** Kennzahlen einer Strecke – überall gleich gerechnet */
 export function kennzahlen(strecke) {
   const p = strecke.punkte;
@@ -198,6 +221,11 @@ export class StreckenLayer {
     this.karte = karte;
     this.interaktiv = opt.interaktiv !== false;
     this.gruppe = L.layerGroup().addTo(karte);
+    /* Die Kabelzeichen liegen in einer eigenen Gruppe: ihr Abstand wird am
+       Bildschirm gemessen und muss nach jedem Zoom neu gesetzt werden, ohne
+       dass dafür die ganze Karte neu entsteht. */
+    this.zeichenGruppe = L.layerGroup().addTo(karte);
+    this._zeichenAuftraege = [];
     this.auswahl = null;        // Strecken-ID
     this.aktiverPunkt = null;   // Punkt-ID
     this.zeichenModus = null;   // Strecken-ID während des Zeichnens
@@ -215,6 +243,8 @@ export class StreckenLayer {
     this.strichFaktor = opt.strichFaktor || 1;
     this._vorschau = null;
     this._vorschauLabel = null;
+    this._zoomWaechter = () => this._kabelzeichenSetzen();
+    this.karte.on('zoomend', this._zoomWaechter);
     this._bind();
   }
 
@@ -231,7 +261,9 @@ export class StreckenLayer {
       this.karte.off('click', this._klick);
       this.karte.off('mousemove', this._move);
     }
+    this.karte.off('zoomend', this._zoomWaechter);
     this.gruppe.remove();
+    this.zeichenGruppe.remove();
   }
 
   // ------------------------------------------------------------ Zeichenmodus
@@ -325,6 +357,7 @@ export class StreckenLayer {
     const o = optionen || p.optionen;
     this.gruppe.clearLayers();
     this._vorschau = null; this._vorschauLabel = null;
+    this._zeichenAuftraege = [];
 
     for (const s of p.strecken) {
       if (this.nurStrecke && s.id !== this.nurStrecke) continue;
@@ -336,6 +369,7 @@ export class StreckenLayer {
       if (!angefordert && !streckeSichtbar(p, s)) continue;
       this._zeichneStrecke(s, o);
     }
+    this._kabelzeichenSetzen();
   }
 
   /**
@@ -399,6 +433,13 @@ export class StreckenLayer {
         linie.on('click', e => { L.DomEvent.stop(e); if (!this.zeichenModus) this.waehle(s.id); });
         linie.bindTooltip(() => this._tooltipText(s), { sticky: true, direction: 'top', className: 'fbp-tooltip' });
       }
+
+      /* Blass gezeichnete Nebenstrecken bleiben ohne Kabelzeichen – auf ihnen
+         käme es nur zur Unruhe, gefragt ist dort der Verlauf. */
+      const zeichen = kabelzeichen(s.kabeltyp);
+      if (zeichen && !nebensache) {
+        this._zeichenAuftraege.push({ punkte: s.punkte, zeichen, farbe: st.farbe });
+      }
     }
 
     // Teillängen
@@ -461,6 +502,58 @@ export class StreckenLayer {
           iconSize: null
         })
       }).addTo(this.gruppe);
+    }
+  }
+
+  /**
+   * Setzt die Kabelzeichen aller gezeichneten Strecken neu. Wird nach jedem
+   * Zeichnen und nach jedem Zoom aufgerufen.
+   */
+  _kabelzeichenSetzen() {
+    this.zeichenGruppe.clearLayers();
+    const mpp = this._meterJePixel();
+    if (!mpp) return;
+    for (const auftrag of this._zeichenAuftraege) this._kabelzeichen(auftrag, mpp);
+  }
+
+  /** Meter je Bildschirmpunkt – ohne gesetzte Ansicht (Druckkarte vor
+   *  fitBounds) gibt es noch keinen Maßstab, dann wartet das Zeichen aufs
+   *  nächste zoomend. */
+  _meterJePixel() {
+    const k = this.karte;
+    if (k.getZoom() === undefined) return null;
+    const mitte = k.getCenter();
+    const punkt = k.latLngToLayerPoint(mitte);
+    return k.distance(mitte, k.layerPointToLatLng([punkt.x + 100, punkt.y])) / 100;
+  }
+
+  _kabelzeichen({ punkte, zeichen, farbe }, mpp) {
+    if (punkte.length < 2) return;
+    const f = this.strichFaktor;
+    const kum = kumuliert(punkte);
+    const laenge = kum[kum.length - 1];
+    const bildlaenge = laenge / mpp;
+    if (!(bildlaenge >= MIND_LAENGE * f)) return;
+
+    const anzahl = Math.max(1, Math.round(bildlaenge / (ZEICHEN_ABSTAND * f)));
+    for (let i = 0; i < anzahl; i++) {
+      const pos = punktBeiLaenge(punkte, laenge * (i + 0.5) / anzahl);
+      if (!pos) continue;
+      const a = punkte[pos.index], b = punkte[pos.index + 1] || a;
+      const pa = this.karte.latLngToLayerPoint([a.lat, a.lng]);
+      const pb = this.karte.latLngToLayerPoint([b.lat, b.lng]);
+      let winkel = Math.atan2(pb.y - pa.y, pb.x - pa.x) * 180 / Math.PI;
+      // Beschriftete Zeichen dürfen nicht auf dem Kopf stehen
+      if (zeichen.text && (winkel > 90 || winkel < -90)) winkel += 180;
+
+      const stil = `--farbe:${farbe};--winkel:${winkel.toFixed(1)}deg;--mass:${f}`;
+      const inhalt = zeichen.text
+        ? `<span class="kabel-zeichen schrift" style="${stil}">${zeichen.text}</span>`
+        : `<span class="kabel-zeichen" style="${stil}">${'<i></i>'.repeat(zeichen.striche)}</span>`;
+      L.marker([pos.lat, pos.lng], {
+        pane: 'fbp-strecken', interactive: false, keyboard: false,
+        icon: L.divIcon({ className: 'fbp-kabelzeichen', html: inhalt, iconSize: null })
+      }).addTo(this.zeichenGruppe);
     }
   }
 

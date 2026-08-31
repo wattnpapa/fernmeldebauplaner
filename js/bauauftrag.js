@@ -1,9 +1,9 @@
 // bauauftrag.js – Druckfertiger Bauauftrag: je Strecke und als Sammelauftrag
 //                 (A4/A3, Farbe/SW, PDF über den Druckdialog)
 
-import { store, punktartById, VERLEGEARTEN, abschnittById, streckenIm } from './state.js';
+import { store, punktartById, kabelById, VERLEGEARTEN, abschnittById, streckenIm } from './state.js';
 import {
-  StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml
+  StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen
 } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById } from './map.js';
@@ -757,7 +757,11 @@ function sammelLegendeHTML(auftrag, sw) {
     ? auftrag.strecken.map(s =>
         `<span class="lg-eintrag"><i class="lg-linie voll" style="--farbe:${s.farbe}"></i>${escapeHtml(s.name)}</span>`).join('')
     : '';
-  return `<div class="bl-legende"><span class="lg-titel">Zeichenerklärung</span>${eintraege}
+  /* Die Kabelzeichen gelten für alle Strecken gleich, deshalb steht jede
+     vorkommende Kabelart nur einmal in der Erklärung. */
+  const arten = [...new Set(auftrag.strecken.map(s => s.kabeltyp))];
+  const zeichen = arten.map(a => kabelzeichenEintrag(a, '#000')).join('');
+  return `<div class="bl-legende"><span class="lg-titel">Zeichenerklärung</span>${eintraege}${zeichen}
     <span class="lg-eintrag lg-hinweis">Bezeichnung und Trassenlänge stehen an jeder Strecke</span></div>`;
 }
 
@@ -873,6 +877,16 @@ function materialGesamtHTML(ges) {
   </section>`;
 }
 
+/** Musterstück des Kabelzeichens für die Zeichenerklärung: dasselbe Zeichen,
+ *  das auf der Karte im Linienzug steht, auf einem kurzen Stück Trasse. */
+function kabelzeichenEintrag(kabeltyp, farbe) {
+  const z = kabelzeichen(kabeltyp);
+  if (!z) return '';
+  const inhalt = z.text ? `<span>${z.text}</span>` : '<b></b>'.repeat(z.striche);
+  return `<span class="lg-eintrag"><i class="lg-kabel" style="--farbe:${farbe}">${inhalt}</i>` +
+         `${escapeHtml(kabelById(kabeltyp).name)}</span>`;
+}
+
 function legendeHTML(s, sw, opt) {
   const arten = [...new Set(s.punkte.map(p => p.art))];
   const punkte = arten.map(a => {
@@ -881,7 +895,8 @@ function legendeHTML(s, sw, opt) {
   }).join('');
   const linien =
     `<span class="lg-eintrag"><i class="lg-linie voll" style="--farbe:${sw ? '#000' : s.farbe}"></i>Auftragsstrecke</span>` +
-    (opt.andereStrecken ? `<span class="lg-eintrag"><i class="lg-linie ander"></i>andere Strecken</span>` : '');
+    (opt.andereStrecken ? `<span class="lg-eintrag"><i class="lg-linie ander"></i>andere Strecken</span>` : '') +
+    kabelzeichenEintrag(s.kabeltyp, sw ? '#000' : s.farbe);
   return `<div class="bl-legende"><span class="lg-titel">Zeichenerklärung</span>${linien}${punkte}
     <span class="lg-eintrag lg-hinweis">Zahlen an der Trasse = Teilstrecken in Metern</span></div>`;
 }
