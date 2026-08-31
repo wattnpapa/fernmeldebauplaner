@@ -45,9 +45,26 @@ body.druckansicht { overflow: hidden; }
   padding: 4px 6px; border: 1px solid var(--linie-stark); border-radius: var(--radius-klein);
   background: var(--flaeche); font-size: 12px; color: var(--text);
 }
+/* Ein Feld, das gerade nicht gilt, verschwindet – „display: flex“ oben würde
+   das hidden-Attribut sonst überstimmen und Ausrichtung und freies Maß
+   nebeneinander stehen lassen. */
+.ds-feld[hidden] { display: none; }
 .ds-haken { cursor: pointer; }
 .ds-haken input { accent-color: var(--thw); }
 .ds-zoomtasten { display: flex; align-items: center; gap: 4px; }
+
+/* Freies Blattmaß: zwei Zahlen mit dem Malzeichen dazwischen, wie ein
+   Papierformat geschrieben wird. */
+.ds-massefelder { display: flex; align-items: center; gap: 4px; }
+/* Breit genug für vier Ziffern neben dem Zahlenpfeil des Browsers – „1200“
+   darf nicht abgeschnitten werden, sonst steht dort ein anderes Maß, als
+   gedruckt wird. */
+.ds-massefelder input {
+  width: 9ch; padding: 4px 5px; border: 1px solid var(--linie-stark);
+  border-radius: var(--radius-klein); background: var(--flaeche);
+  font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums;
+}
+.ds-mal, .ds-einheit { color: var(--text-schwach); }
 .ds-zoomwert { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
 .ds-tasten { grid-area: tasten; display: flex; align-items: flex-end; gap: 8px; }
 
@@ -471,6 +488,78 @@ body.druckansicht { overflow: hidden; }
    Vorlauflänge der Bestätigungsfelder nicht. */
 .us-fdr .us-titel { margin-bottom: 2mm; }
 
+/* ---------------------------------------------------------------- Lagekarte
+
+   Ein einziges Blatt, auf dem die Karte fast alles ist. Es hängt in der
+   Führungsstelle an der Wand und wird aus zwei Metern gelesen, nicht wie der
+   Bauauftrag aus vierzig Zentimetern in der Hand. Deshalb gibt es die
+   Lagekarte bis A0 und in freiem Maß – und deshalb wächst auf ihr alles mit
+   dem Blatt.
+
+   Getragen wird das vom --blattfaktor in der Schriftgröße des Blattes; alles
+   Weitere ist hier in em bemessen und folgt von selbst. Zwei Dinge tun das
+   nicht und stehen deshalb ausdrücklich:
+
+   - Der Papierrand bleibt auf jedem Format gleich breit. Er hält den
+     unbedruckbaren Streifen der Ausgabegeräte frei, und der wächst nicht mit
+     dem Papier. Ihn mitwachsen zu lassen hieße, auf A0 fünf Zentimeter Weiß
+     zu drucken, die der Karte fehlen.
+   - Strichstärken sind in Punkt bemessen. Eine Haarlinie um eine A0-Karte ist
+     keine Umrandung mehr. */
+
+.lageblatt {
+  --strich: calc(.5pt * var(--blattfaktor, 1));
+  font-size: calc(8.6pt * var(--blattfaktor, 1));
+  padding: 10mm;
+}
+.lageblatt .bl-einstufung {
+  margin: 0 0 .53em; padding: .16em .66em;
+  border-width: calc(var(--strich) * 1.6);
+  letter-spacing: calc(1.6pt * var(--blattfaktor, 1));
+  text-indent: calc(1.6pt * var(--blattfaktor, 1));
+}
+.lageblatt .bl-kopf {
+  gap: 2em; padding-bottom: .66em; border-bottom-width: calc(var(--strich) * 3.2);
+}
+/* Die Kopfdaten sind eine Zeile am Blattrand und sollen der Karte keine Höhe
+   wegnehmen – deshalb so viele Spalten, wie nebeneinander passen, statt einer
+   festen Zahl: das Blatt kann hoch oder quer liegen und ist zwischen A4 und
+   A0 dreimal so breit. Der Wert bricht um, statt abzuschneiden: „Übung
+   Rheinboge…“ sagt der Führungsstelle nichts, und die Zeile darf dafür
+   zweizeilig werden. */
+.lageblatt .bl-stamm {
+  grid-template-columns: repeat(auto-fit, minmax(13em, 1fr));
+  gap: .33em 1.32em; margin: .79em 0; padding: .66em 0; border-width: var(--strich);
+}
+.lageblatt .st-wert { white-space: normal; overflow: visible; }
+.lageblatt .kartenfeld { margin: .5em 0; }
+.lageblatt .karten-rahmen { border-width: calc(var(--strich) * 1.6); }
+.lageblatt .karten-nord {
+  top: .66em; right: .66em; padding: .33em .53em;
+  border-radius: .33em; border-width: var(--strich);
+}
+.lageblatt .karten-nord svg { width: 2.27em; height: 2.96em; }
+.lageblatt .karten-massstab {
+  left: .66em; bottom: .66em; gap: .66em; padding: .33em .66em;
+  border-radius: .33em; border-width: var(--strich);
+}
+.lageblatt .ms-balken i { height: .53em; border-width: var(--strich); }
+.lageblatt .bl-legende { gap: .33em 1.32em; padding: .46em 0; border-top-width: var(--strich); }
+.lageblatt .lg-punkt { width: 1.32em; height: 1.32em; border-width: calc(var(--strich) * 1.4); }
+.lageblatt .lg-linie { width: 2.97em; border-top-width: calc(var(--strich) * 2.4); }
+.lageblatt .lg-kabel {
+  width: 3.63em; height: 1.12em; background-size: 100% calc(var(--strich) * 2.4);
+}
+.lageblatt .lg-kabel > b { width: .18em; height: 1.05em; }
+.lageblatt .lg-kabel.stufe > svg { width: 3.63em; height: 1.38em; }
+.lageblatt .lg-kabel > span { padding: 0 .16em; }
+.lageblatt .bl-kennzahlen { gap: .46em; margin-top: .53em; }
+.lageblatt .bl-kennzahlen .kz {
+  padding: .4em .53em; border-radius: .26em;
+  border-width: var(--strich); border-top-width: calc(var(--strich) * 3.2);
+}
+.lageblatt .bl-fuss { gap: 1.32em; padding-top: .46em; border-top-width: var(--strich); }
+
 /* ---------------------------------------------------------------- Schwarz-Weiß */
 
 /* Kein CSS-Filter auf der Karte: Firefox gibt gefilterte Bereiche beim Drucken
@@ -489,13 +578,49 @@ body.druckansicht { overflow: hidden; }
    ein CSS-Filter und würde die Zeichen aus dem Firefox-PDF verschwinden lassen. */
 #druck .tz-wrap { filter: none; }
 
-/* Beschriftungen auf der Druckkarte kleiner halten (Karte wird 2× gerendert) */
-.karten-inner .seg-mass { font-size: 17px; padding: 2px 8px; border-width: 2px; border-left-width: 5px; }
-.karten-inner .fbp-punkt { width: 34px; height: 34px; font-size: 15px; border-width: 4px; }
-.karten-inner .tz-label { font-size: 17px; padding: 0 6px; }
-.karten-inner .gitter-zahl { font-size: 19px; }
-.karten-inner .gitter-zahl small { font-size: 14px; }
-.karten-inner .gitter-info { font-size: 16px; padding: 2px 8px; border-width: 2px; }
+/* Beschriftungen auf der Druckkarte.
+
+   Die Karte wird um --schaerfe überzeichnet und per CSS wieder verkleinert;
+   die Beschriftung wird deshalb um denselben Faktor größer angesetzt und
+   kommt dadurch in ihrer gewollten Größe aufs Papier. Dazu tritt der
+   --blattfaktor: auf der Lagekarte wächst alles mit dem Blatt, weil ein
+   A0-Bogen an der Wand hängt und nicht in der Hand liegt. Beide Werte setzt
+   bauauftrag.js am Dokument; im Bauauftrag ergeben sie 2 × 1 und damit genau
+   die Maße, mit denen A4 und A3 abgestimmt sind. */
+.karten-inner { --karten-schrift: calc(var(--schaerfe, 2) * var(--blattfaktor, 1)); }
+.karten-inner .seg-mass {
+  font-size: calc(8.5px * var(--karten-schrift));
+  padding: calc(1px * var(--karten-schrift)) calc(4px * var(--karten-schrift));
+  border-width: calc(1px * var(--karten-schrift));
+  border-left-width: calc(2.5px * var(--karten-schrift));
+}
+.karten-inner .fbp-punkt {
+  width: calc(17px * var(--karten-schrift)); height: calc(17px * var(--karten-schrift));
+  font-size: calc(7.5px * var(--karten-schrift)); border-width: calc(2px * var(--karten-schrift));
+}
+.karten-inner .tz-label {
+  font-size: calc(8.5px * var(--karten-schrift)); padding: 0 calc(3px * var(--karten-schrift));
+}
+/* Streckenname und Trassenlänge standen bisher in Bildschirmgröße im
+   überzeichneten Kartenbild und wurden mit ihm verkleinert – auf dem
+   Deckblatt landen sie so bei anderthalb Millimetern, auf einer A0-Lagekarte
+   wären sie nicht mehr zu lesen. Sie folgen deshalb derselben Rechnung wie
+   die übrige Kartenbeschriftung. */
+.karten-inner .strecken-mass {
+  border-width: calc(1px * var(--karten-schrift));
+  border-radius: calc(3px * var(--karten-schrift));
+  padding: calc(2px * var(--karten-schrift)) calc(5px * var(--karten-schrift));
+}
+.karten-inner .strecken-mass b { font-size: calc(8.5px * var(--karten-schrift)); }
+.karten-inner .strecken-mass .wert { font-size: calc(9px * var(--karten-schrift)); }
+.karten-inner .strecken-mass .zus { font-size: calc(7px * var(--karten-schrift)); }
+.karten-inner .gitter-zahl { font-size: calc(9.5px * var(--karten-schrift)); }
+.karten-inner .gitter-zahl small { font-size: calc(7px * var(--karten-schrift)); }
+.karten-inner .gitter-info {
+  font-size: calc(8px * var(--karten-schrift));
+  padding: calc(1px * var(--karten-schrift)) calc(4px * var(--karten-schrift));
+  border-width: calc(1px * var(--karten-schrift));
+}
 
 /* ---------------------------------------------------------------- Ausdruck */
 

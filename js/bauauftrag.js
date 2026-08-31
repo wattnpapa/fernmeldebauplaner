@@ -1,11 +1,12 @@
-// bauauftrag.js – Druckfertiger Bauauftrag: je Strecke und als Sammelauftrag
-//                 (A4/A3, Farbe/SW, PDF über den Druckdialog)
+// bauauftrag.js – Druckfertige Erzeugnisse: der Bauauftrag je Strecke und als
+//                 Sammelauftrag (A4/A3) und die Lagekarte der Führungsstelle
+//                 (bis A0 und in freiem Maß)
 
 import { store, punktartById, kabelById, VERLEGEARTEN, abschnittById, streckenIm } from './state.js';
 import {
   StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen
 } from './strecken.js';
-import { ZeichenLayer } from './zeichen.js';
+import { ZeichenLayer, gezeichneteZeichen } from './zeichen.js';
 import { GitterLayer } from './gitter.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
@@ -19,15 +20,36 @@ import {
 import { hinweis } from './ui.js';
 import { VERSION } from './version.js';
 
-const FORMATE = { a4: [210, 297], a3: [297, 420] };
-const KEY = 'fbp.druck.v1';
+const FORMATE = {
+  a4: [210, 297], a3: [297, 420], a2: [420, 594], a1: [594, 841], a0: [841, 1189]
+};
 const MM_PX = 96 / 25.4;         // CSS-Pixel je Millimeter
 const SCHAERFE = 2;              // Karte doppelt rendern und halbieren -> ~192 dpi
 
-const STANDARD = {
+/* Der Bauauftrag geht in der Tasche zum Bauplatz – dort sind A4 und A3 die
+   Formate, und mehr wäre dort nur unhandlich. Das große Papier gibt es
+   ausschließlich bei der Lagekarte. */
+const PAPIERE_AUFTRAG = [['a4', 'A4'], ['a3', 'A3']];
+const PAPIERE_LAGE = [
+  ['a4', 'A4'], ['a3', 'A3'], ['a2', 'A2'], ['a1', 'A1'], ['a0', 'A0'], ['frei', 'Freies Maß']
+];
+
+/* Grenzen des freien Maßes. Nach unten das kleinste sinnvolle Blatt, nach oben
+   knapp über A0: darüber wird die Karte zu einem Bild, das kein Browser mehr
+   zeichnet (siehe blattmasse). 1200 mm decken A0 und die üblichen
+   Plotterrollen ab. */
+const FREI_MIN = 100, FREI_MAX = 1200;
+
+/* Längste Kante der gerenderten Karte in Bildpunkten. Ein A0-Blatt mit dem
+   vollen Schärfefaktor wären rund 57 Millionen Bildpunkte und über 900
+   Kacheln – so viel hält kein Browser durch. Bei dieser Schranke bleiben auf
+   A0 noch gut 100 dpi, und aus zwei Metern sieht man den Unterschied nicht. */
+const KARTE_MAX_PX = 4800;
+
+const STANDARD_AUFTRAG = {
   format: 'a4', ausrichtung: 'quer', farbe: 'farbe',
   punkttabelle: true, uebersicht: true, unterschrift: true,
-  /* Gespeicherte Optionen werden über STANDARD gelegt; neue Haken erben so
+  /* Gespeicherte Optionen werden über den Standard gelegt; neue Haken erben so
      ihren Standard, statt bei bisherigen Nutzern als „aus“ zu erscheinen. */
   querungen: true, laengenverbindungen: true,
   /* Das Gitter ist im Ausdruck von vornherein an: auf dem Bauplatz ist es
@@ -38,12 +60,29 @@ const STANDARD = {
   deckblatt: true, verzeichnis: true, einzelblaetter: true
 };
 
-function ladeOptionen() {
-  try { return { ...STANDARD, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
-  catch (e) { return { ...STANDARD }; }
+/* Die Lagekarte merkt sich ihre Einstellungen getrennt vom Bauauftrag. Sonst
+   stünde nach einer A0-Lagekarte auch der nächste Bauauftrag auf A0 – und der
+   soll in die Tasche passen. */
+const STANDARD_LAGE = {
+  format: 'a1', ausrichtung: 'quer', farbe: 'farbe',
+  freiBreite: 900, freiHoehe: 600,
+  zeichen: true, gitter: true, punktnummern: false, zoomVersatz: 0,
+  stammdaten: true, legende: true, kennzahlen: true
+};
+
+const PROFILE = {
+  auftrag: { schluessel: 'fbp.druck.v1', standard: STANDARD_AUFTRAG },
+  lage: { schluessel: 'fbp.lagekarte.v1', standard: STANDARD_LAGE }
+};
+
+const profilVon = auftrag => PROFILE[auftrag.modus === 'lage' ? 'lage' : 'auftrag'];
+
+function ladeOptionen(profil) {
+  try { return { ...profil.standard, ...JSON.parse(localStorage.getItem(profil.schluessel) || '{}') }; }
+  catch (e) { return { ...profil.standard }; }
 }
-function speicherOptionen(o) {
-  try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* egal */ }
+function speicherOptionen(profil, o) {
+  try { localStorage.setItem(profil.schluessel, JSON.stringify(o)); } catch (e) { /* egal */ }
 }
 
 let aktiv = null;   // {wurzel, karten:[], opt, auftrag}
@@ -101,6 +140,42 @@ export function oeffneSammeldruck(aid) {
   });
 }
 
+/**
+ * Lagekarte: ein einziges großes Blatt für die Führungsstelle.
+ * `aid` = Einsatzabschnitt, `null` die nicht zugeteilten Strecken,
+ * ohne Angabe die ganze Planung.
+ */
+export function oeffneLagekarte(aid) {
+  const p = store.projekt;
+  const ganzeplanung = aid === undefined;
+  const ea = ganzeplanung ? null : abschnittById(p, aid);
+  if (!ganzeplanung && aid && !ea) return;
+
+  const quelle = ganzeplanung ? p.strecken : streckenIm(p, aid);
+  const strecken = sortiertNachAbschnitt(p, quelle.filter(s => s.punkte.length >= 2));
+  const auftrag = {
+    modus: 'lage', strecken, abschnitt: ea,
+    umfang: ganzeplanung ? 'projekt' : (ea ? 'abschnitt' : 'ohne')
+  };
+  /* Anders als der Bauauftrag darf die Lagekarte aus Zeichen allein bestehen:
+     zu Beginn einer Lage steht dort oft nur, wo die Führungsstelle und die
+     Abschnitte liegen – die Trassen kommen erst. */
+  if (!strecken.length && !lageZeichen(auftrag).length) {
+    hinweis('Für die Lagekarte wird mindestens eine Strecke oder ein taktisches Zeichen gebraucht.', 'warnung');
+    return;
+  }
+  oeffneDruckansicht(auftrag);
+}
+
+/** Die taktischen Zeichen, die auf dieser Lagekarte erscheinen – dieselbe
+ *  Auswahl, die auch die Kartenebene zeichnet. */
+function lageZeichen(auftrag) {
+  return gezeichneteZeichen(store.projekt, {
+    nurAbschnitt: auftrag.abschnitt ? auftrag.abschnitt.id : undefined,
+    abschnittSchaltet: false
+  });
+}
+
 /** Reihenfolge des Sammeldrucks: nach Einsatzabschnitten in der Reihenfolge
  *  der Planung, die nicht zugeteilten Strecken zuletzt. */
 function sortiertNachAbschnitt(p, strecken) {
@@ -124,7 +199,14 @@ function auftragTitel(auftrag) {
 const streckenzahl = n => `${n} ${n === 1 ? 'Strecke' : 'Strecken'}`;
 
 function doktyp(auftrag) {
+  if (auftrag.modus === 'lage') return 'Lagekarte Fernmeldebau';
   return auftrag.modus === 'sammel' ? 'Sammel-Bauauftrag Fernmeldebau' : 'Bauauftrag Fernmeldebau';
+}
+
+/** Name des Erzeugnisses in der Steuerleiste und im Dateinamen */
+function erzeugnis(auftrag) {
+  return auftrag.modus === 'lage' ? 'Lagekarte'
+    : auftrag.modus === 'sammel' ? 'Sammel-Bauauftrag' : 'Bauauftrag';
 }
 
 // ---------------------------------------------------------------- Druckansicht
@@ -132,15 +214,17 @@ function doktyp(auftrag) {
 function oeffneDruckansicht(auftrag) {
   schliesseBauauftrag();
   const sammel = auftrag.modus === 'sammel';
-  const opt = ladeOptionen();
+  const lage = auftrag.modus === 'lage';
+  const profil = profilVon(auftrag);
+  const opt = ladeOptionen(profil);
   const titel = auftragTitel(auftrag);
 
   const wurzel = document.createElement('div');
   wurzel.id = 'druck';
   wurzel.innerHTML = `
     <div class="druck-steuerung" role="group" aria-label="Druckeinstellungen">
-      <div class="ds-titel">${sammel ? 'Sammel-Bauauftrag' : 'Bauauftrag'} · <b>${escapeHtml(titel)}</b>${
-        sammel ? ` <span class="ds-umfang">${streckenzahl(auftrag.strecken.length)}</span>` : ''}</div>
+      <div class="ds-titel">${erzeugnis(auftrag)} · <b>${escapeHtml(titel)}</b>${
+        sammel || lage ? ` <span class="ds-umfang">${umfangText(auftrag)}</span>` : ''}</div>
       <div class="ds-felder"></div>
       <div class="ds-tasten">
         <button class="knopf" data-akt="schliessen">Schließen</button>
@@ -168,25 +252,47 @@ function oeffneDruckansicht(auftrag) {
       haken('Blätter je Strecke', 'einzelblaetter', opt, neuAufbau)
     ]));
   }
+
+  /* Freies Maß und Ausrichtung schließen einander aus: zwei Kantenlängen sagen
+     bereits, wie das Blatt liegt. Es steht deshalb immer nur eines der beiden
+     Felder in der Leiste – sichtbar gemacht wird das in neuAufbau. */
+  const ausrichtungFeld = auswahl('Ausrichtung', 'ausrichtung',
+    [['quer', 'Quer'], ['hoch', 'Hoch']], opt, neuAufbau);
+  const masseFeld = lage ? freiesMassFeld(opt, neuAufbau) : null;
+
   felder.append(
     gruppe('Papier', [
-      auswahl('Format', 'format', [['a4', 'A4'], ['a3', 'A3']], opt, neuAufbau),
-      auswahl('Ausrichtung', 'ausrichtung', [['quer', 'Quer'], ['hoch', 'Hoch']], opt, neuAufbau),
+      auswahl('Format', 'format', lage ? PAPIERE_LAGE : PAPIERE_AUFTRAG, opt, neuAufbau),
+      ...(masseFeld ? [masseFeld] : []),
+      ausrichtungFeld,
       auswahl('Farbe', 'farbe', [['farbe', 'Farbe'], ['sw', 'Schwarz-Weiß']], opt, neuAufbau)
     ]),
-    gruppe('Kartenblatt', [
-      haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
-      haken('Andere Strecken', 'andereStrecken', opt, neuAufbau),
-      haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
-      haken('Koordinatengitter', 'gitter', opt, neuAufbau),
-      zoomFeld(opt, neuAufbau)
-    ]),
-    gruppe('Datenblatt', [
-      haken('Punkttabelle', 'punkttabelle', opt, neuAufbau),
-      haken('Querungstabelle', 'querungen', opt, neuAufbau),
-      haken('Längenverbindungen', 'laengenverbindungen', opt, neuAufbau),
-      haken('Unterschriften', 'unterschrift', opt, neuAufbau)
-    ])
+    lage
+      ? gruppe('Karte', [
+          haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
+          haken('Koordinatengitter', 'gitter', opt, neuAufbau),
+          haken('Trassenpunkte', 'punktnummern', opt, neuAufbau),
+          zoomFeld(opt, neuAufbau)
+        ])
+      : gruppe('Kartenblatt', [
+          haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
+          haken('Andere Strecken', 'andereStrecken', opt, neuAufbau),
+          haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
+          haken('Koordinatengitter', 'gitter', opt, neuAufbau),
+          zoomFeld(opt, neuAufbau)
+        ]),
+    lage
+      ? gruppe('Blattrand', [
+          haken('Kopfdaten', 'stammdaten', opt, neuAufbau),
+          haken('Zeichenerklärung', 'legende', opt, neuAufbau),
+          haken('Kennzahlen', 'kennzahlen', opt, neuAufbau)
+        ])
+      : gruppe('Datenblatt', [
+          haken('Punkttabelle', 'punkttabelle', opt, neuAufbau),
+          haken('Querungstabelle', 'querungen', opt, neuAufbau),
+          haken('Längenverbindungen', 'laengenverbindungen', opt, neuAufbau),
+          haken('Unterschriften', 'unterschrift', opt, neuAufbau)
+        ])
   );
 
   wurzel.querySelector('[data-akt="schliessen"]').onclick = schliesseBauauftrag;
@@ -212,10 +318,20 @@ function oeffneDruckansicht(auftrag) {
   if (sammel && auftrag.strecken.length > 8) {
     hinweis(`${streckenzahl(auftrag.strecken.length)} – der Aufbau der Kartenblätter dauert einen Augenblick.`);
   }
+  /* Ein A1- oder A0-Blatt zieht ein paar hundert Kartenkacheln. Das dauert
+     spürbar länger als bei einem A4-Bauauftrag, und wer nicht weiß, warum,
+     hält es für einen Fehler. */
+  if (lage && Math.max(...seitenmasse(opt)) > 594) {
+    hinweis('Großes Blatt – die Karte wird in vielen Kacheln geladen, das dauert einen Augenblick.');
+  }
 
   function neuAufbau() {
-    speicherOptionen(opt);
+    speicherOptionen(profil, opt);
     formatHinweis.textContent = druckHinweisText(opt);
+    if (masseFeld) {
+      masseFeld.hidden = opt.format !== 'frei';
+      ausrichtungFeld.hidden = opt.format === 'frei';
+    }
     aktiv.karten.forEach(k => { try { k.remove(); } catch (e) {} });
     aktiv.karten = [];
     aufbauen(wurzel.querySelector('.druck-doku'), auftrag, opt, aktiv.karten, druckKnopf);
@@ -273,6 +389,50 @@ function haken(titel, schluessel, opt, aendern) {
   return el;
 }
 
+/* Freies Blattmaß in Millimetern. Zwei Zahlen statt einer Formatliste: wer
+   auf eine Plotterrolle druckt, kennt deren Breite und will die Länge selbst
+   bestimmen. Übernommen wird erst beim Verlassen des Feldes – bei jedem
+   Tastendruck neu aufzubauen hieße, die Karte für „9“, „90“ und „900“
+   dreimal zu rendern. */
+function freiesMassFeld(opt, aendern) {
+  const el = document.createElement('div');
+  el.className = 'ds-feld ds-masse';
+  el.innerHTML = '<span>Blattmaß</span>';
+  const box = document.createElement('div');
+  box.className = 'ds-massefelder';
+
+  const zahl = (schluessel, titel) => {
+    const e = document.createElement('input');
+    e.type = 'number'; e.min = FREI_MIN; e.max = FREI_MAX; e.step = 10;
+    e.value = opt[schluessel];
+    e.title = titel;
+    e.setAttribute('aria-label', titel);
+    e.onchange = () => {
+      const wert = grenzeMM(e.value, opt[schluessel]);
+      e.value = wert;
+      if (wert === opt[schluessel]) return;
+      opt[schluessel] = wert;
+      aendern();
+    };
+    return e;
+  };
+
+  box.append(zahl('freiBreite', 'Blattbreite in Millimetern'),
+    Object.assign(document.createElement('span'), { className: 'ds-mal', textContent: '×' }),
+    zahl('freiHoehe', 'Blatthöhe in Millimetern'),
+    Object.assign(document.createElement('span'), { className: 'ds-einheit', textContent: 'mm' }));
+  el.appendChild(box);
+  return el;
+}
+
+/** Eine Kantenlänge auf das Machbare bringen; unbrauchbare Eingaben behalten
+ *  den bisherigen Wert, statt das Blatt auf 0 mm zu setzen. */
+function grenzeMM(wert, bisher) {
+  const n = Math.round(Number(wert));
+  if (!isFinite(n) || n <= 0) return bisher;
+  return Math.min(FREI_MAX, Math.max(FREI_MIN, n));
+}
+
 function zoomFeld(opt, aendern) {
   const el = document.createElement('div');
   el.className = 'ds-feld ds-zoom';
@@ -304,8 +464,69 @@ function nachLayout(fn) {
 }
 
 function seitenmasse(opt) {
+  /* Beim freien Maß steckt die Ausrichtung schon in den beiden Zahlen –
+     sie noch einmal zu drehen, würde die Eingabe umdeuten. */
+  if (opt.format === 'frei') {
+    return [grenzeMM(opt.freiBreite, STANDARD_LAGE.freiBreite),
+      grenzeMM(opt.freiHoehe, STANDARD_LAGE.freiHoehe)];
+  }
   const [b, h] = FORMATE[opt.format] || FORMATE.a4;
   return opt.ausrichtung === 'quer' ? [h, b] : [b, h];
+}
+
+/**
+ * Die beiden Maßzahlen, mit denen ein Blatt gezeichnet wird.
+ *
+ * `schaerfe` – um diesen Faktor wird die Karte überzeichnet und per CSS wieder
+ * verkleinert; das ergibt den schärferen Ausdruck. Auf großem Papier muss der
+ * Faktor sinken, sonst entsteht ein Bild, das kein Browser mehr zeichnet.
+ *
+ * `blatt` – um diesen Faktor wächst auf der Lagekarte alles Sichtbare:
+ * Schrift, Kartenbeschriftung, Strichstärken, Zier am Kartenrand. Ein
+ * A0-Blatt hängt an der Wand der Führungsstelle und wird aus zwei Metern
+ * gelesen, ein A4-Bauauftrag liegt in der Hand. Bezugsmaß ist die kurze
+ * Blattkante gegen die kurze A4-Kante – so bleibt der Faktor gleich, ob das
+ * Blatt hoch oder quer liegt. Der Bauauftrag bleibt bei 1: A4 und A3 werden
+ * beide aus der Hand gelesen, und ihr Satzspiegel ist erprobt.
+ */
+function blattmasse(auftrag, opt) {
+  const [bmm, hmm] = seitenmasse(opt);
+  if (auftrag.modus !== 'lage') return { schaerfe: SCHAERFE, blatt: 1, bmm, hmm };
+  const langePx = Math.max(bmm, hmm) * MM_PX;
+  return {
+    schaerfe: Math.max(1, Math.min(SCHAERFE, KARTE_MAX_PX / langePx)),
+    blatt: Math.max(1, Math.min(bmm, hmm) / 210),
+    bmm, hmm
+  };
+}
+
+/** Rand, den fitBounds um die Strecken frei lässt, in Kartenbildpunkten.
+ *  Er hält die Beschriftung von der Blattkante fern und wächst deshalb mit
+ *  ihr – aber nur bis zum Doppelten: auf großem Papier gehört die Fläche der
+ *  Karte, nicht dem Rand. */
+function kartenrand(mass, grund = 50) {
+  return Math.round(grund * mass.schaerfe * Math.min(2, mass.blatt));
+}
+
+/** Kartenebenen in Blattgröße: Striche und Symbole werden überzeichnet wie
+ *  die Karte selbst und wachsen zusätzlich mit dem Blatt. */
+function strichFaktor(mass) {
+  return mass.schaerfe * mass.blatt;
+}
+
+function zeichenOptionen(p, mass) {
+  /* Taktische Zeichen bemisst die Ebene über `symbolgroesse`. Der Faktor
+     bezieht sich auf den vollen Schärfefaktor, mit dem die Größen abgestimmt
+     sind – bei A4 und A3 kommt genau 1 heraus und nichts ändert sich. */
+  return { ...p.optionen, symbolgroesse: (p.optionen.symbolgroesse || 1) * strichFaktor(mass) / SCHAERFE };
+}
+
+/** Wie lange auf die Kacheln gewartet wird. Ein A0-Blatt zieht ein paar
+ *  hundert Kacheln – die acht Sekunden des Bauauftrags reichen dafür nicht,
+ *  und ein zu früh freigegebener Druck hätte weiße Flecken. */
+function kachelfrist(mass) {
+  const megapixel = mass.bmm * mass.hmm * MM_PX * MM_PX * mass.schaerfe * mass.schaerfe / 1e6;
+  return Math.min(45000, Math.round(8000 + megapixel * 1600));
 }
 
 /**
@@ -315,27 +536,37 @@ function seitenmasse(opt) {
  */
 function aufbauen(ziel, auftrag, opt, karten, druckKnopf) {
   const p = store.projekt;
-  const [bmm, hmm] = seitenmasse(opt);
   const sw = opt.farbe === 'sw';
   const sammel = auftrag.modus === 'sammel';
+  const lage = auftrag.modus === 'lage';
+  const mass = blattmasse(auftrag, opt);
   // Im Sammeldruck meint „andere Strecken“ die übrigen der Sammlung,
   // nicht alles, was sonst noch in der Planung liegt.
-  const sammlung = sammel ? auftrag.strecken.map(s => s.id) : null;
+  const sammlung = sammel || lage ? auftrag.strecken.map(s => s.id) : null;
 
-  ziel.style.setProperty('--seite-b', bmm + 'mm');
-  ziel.style.setProperty('--seite-h', hmm + 'mm');
-  ziel.className = 'druck-doku ' + opt.format + ' ' + opt.ausrichtung + (sw ? ' sw' : '');
+  ziel.style.setProperty('--seite-b', mass.bmm + 'mm');
+  ziel.style.setProperty('--seite-h', mass.hmm + 'mm');
+  ziel.style.setProperty('--schaerfe', mass.schaerfe.toFixed(4));
+  ziel.style.setProperty('--blattfaktor', mass.blatt.toFixed(4));
+  /* Die Lagekarte trägt kein Formatkennwort: die Regeln zu `.a3` gelten dem
+     Satzspiegel des Bauauftrags, und auf dem Lageblatt richtet sich alles
+     nach dem Blattfaktor. */
+  ziel.className = 'druck-doku ' + (lage ? 'lage' : opt.format) +
+    ' ' + opt.ausrichtung + (sw ? ' sw' : '');
   ziel.innerHTML = '';
 
   const kartenbau = [];
 
+  if (lage) {
+    lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau);
+  }
   if (sammel) {
-    if (opt.deckblatt) deckblatt(ziel, auftrag, opt, sw, karten, kartenbau);
+    if (opt.deckblatt) deckblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau);
     if (opt.verzeichnis) verzeichnisblaetter(ziel, auftrag, opt);
   }
-  if (!sammel || opt.einzelblaetter) {
+  if (auftrag.modus === 'einzel' || (sammel && opt.einzelblaetter)) {
     for (const s of auftrag.strecken) {
-      streckenblaetter(ziel, s, auftrag, opt, sw, sammlung, karten, kartenbau);
+      streckenblaetter(ziel, s, auftrag, opt, mass, sw, sammlung, karten, kartenbau);
     }
   }
 
@@ -367,7 +598,7 @@ function aufbauen(ziel, auftrag, opt, karten, druckKnopf) {
 }
 
 /** Kartenblatt und Datenblätter einer einzelnen Strecke */
-function streckenblaetter(ziel, strecke, auftrag, opt, sw, sammlung, karten, kartenbau) {
+function streckenblaetter(ziel, strecke, auftrag, opt, mass, sw, sammlung, karten, kartenbau) {
   const p = store.projekt;
   const k = kennzahlen(strecke);
 
@@ -375,33 +606,26 @@ function streckenblaetter(ziel, strecke, auftrag, opt, sw, sammlung, karten, kar
   b1.innerHTML =
     streckenKopfHTML(p, strecke) +
     stammHTML(p, strecke, k) +
-    `<div class="kartenfeld">
-       <div class="karten-rahmen">
-         <div class="karten-buehne"></div>
-         <div class="karten-nord" aria-hidden="true">${nordpfeilSVG()}</div>
-         <div class="karten-massstab"><span class="ms-balken"><i></i></span><span class="ms-text">—</span></div>
-         ${opt.uebersicht ? '<div class="karten-uebersicht"><div class="uk-buehne"></div><span class="uk-titel">Übersicht</span></div>' : ''}
-       </div>
-     </div>
-     ${legendeHTML(strecke, sw, opt)}
-     ${kennzahlenHTML(k, strecke)}` +
+    kartenfeldHTML(opt.uebersicht) +
+    legendeHTML(strecke, sw, opt) +
+    kennzahlenHTML(k, strecke) +
     fussHTML(p, opt);
 
   if (datenblattNoetig(opt)) datenblaetter(ziel, p, strecke, k, opt);
 
   kartenbau.push(() => {
-    const karte = baueDruckkarte(b1.querySelector('.karten-buehne'), strecke, opt, sw, karten, sammlung);
+    const karte = baueDruckkarte(b1.querySelector('.karten-buehne'), strecke, opt, mass, sw, karten, sammlung);
     const ukBuehne = b1.querySelector('.uk-buehne');
-    const uk = ukBuehne ? baueUebersichtskarte(ukBuehne, strecke, opt, sw, karten, sammlung) : null;
+    const uk = ukBuehne ? baueUebersichtskarte(ukBuehne, strecke, mass, sw, karten, sammlung) : null;
     massstabSchreiben(b1, karte);
-    return Promise.all([warteAufKacheln(karte), uk ? warteAufKacheln(uk) : null])
+    return Promise.all([warteAufKacheln(karte, kachelfrist(mass)), uk ? warteAufKacheln(uk) : null])
       .then(() => massstabSchreiben(b1, karte));
   });
 }
 
 /** Deckblatt des Sammelauftrags: eine Karte über alle Strecken der Sammlung
  *  und darunter, was zusammen gebraucht wird. */
-function deckblatt(ziel, auftrag, opt, sw, karten, kartenbau) {
+function deckblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
   const p = store.projekt;
   const ges = gesamtKennzahlen(auftrag.strecken);
 
@@ -414,22 +638,70 @@ function deckblatt(ziel, auftrag, opt, sw, karten, kartenbau) {
       doktyp: doktyp(auftrag)
     }) +
     sammelStammHTML(p, auftrag) +
-    `<div class="kartenfeld">
-       <div class="karten-rahmen">
-         <div class="karten-buehne"></div>
-         <div class="karten-nord" aria-hidden="true">${nordpfeilSVG()}</div>
-         <div class="karten-massstab"><span class="ms-balken"><i></i></span><span class="ms-text">—</span></div>
-       </div>
-     </div>
-     ${sammelLegendeHTML(auftrag, sw)}
-     ${sammelKennzahlenHTML(ges)}` +
+    kartenfeldHTML() +
+    sammelLegendeHTML(auftrag, sw, 12) +
+    sammelKennzahlenHTML(ges) +
     fussHTML(p, opt);
 
   kartenbau.push(() => {
-    const karte = baueSammelkarte(el.querySelector('.karten-buehne'), auftrag, opt, sw, karten);
+    const karte = baueSammelkarte(el.querySelector('.karten-buehne'), auftrag, opt, mass, sw, karten);
     massstabSchreiben(el, karte);
-    return warteAufKacheln(karte).then(() => massstabSchreiben(el, karte));
+    return warteAufKacheln(karte, kachelfrist(mass)).then(() => massstabSchreiben(el, karte));
   });
+}
+
+/**
+ * Lagekarte: ein einziges Blatt, auf dem die Karte fast alles ist.
+ *
+ * Sie hängt in der Führungsstelle und beantwortet eine andere Frage als der
+ * Bauauftrag – nicht „was baue ich hier“, sondern „wie steht die Lage“.
+ * Deshalb fehlen Punkttabelle, Querungen und Unterschriften, und deshalb
+ * bekommt die Karte das ganze Blatt: was am Rand steht, sagt nur, worauf man
+ * sieht, wie groß es ist und wie es zu lesen ist.
+ */
+function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
+  const p = store.projekt;
+  const el = blatt(ziel, opt);
+  el.classList.add('lageblatt');
+  el.innerHTML =
+    kopfHTML(p, { titel: auftragTitel(auftrag), unter: umfangText(auftrag), doktyp: doktyp(auftrag) }) +
+    (opt.stammdaten ? sammelStammHTML(p, auftrag) : '') +
+    kartenfeldHTML() +
+    (opt.legende ? lageLegendeHTML(auftrag, sw, mass) : '') +
+    (opt.kennzahlen && auftrag.strecken.length
+      ? sammelKennzahlenHTML(gesamtKennzahlen(auftrag.strecken)) : '') +
+    fussHTML(p, opt);
+
+  kartenbau.push(() => {
+    const karte = baueLagekarte(el.querySelector('.karten-buehne'), auftrag, opt, mass, sw, karten);
+    massstabSchreiben(el, karte);
+    return warteAufKacheln(karte, kachelfrist(mass)).then(() => massstabSchreiben(el, karte));
+  });
+}
+
+/** Kartenrahmen samt Nordpfeil und Maßstabsleiste – auf jedem Blatt gleich */
+function kartenfeldHTML(uebersicht = false) {
+  return `<div class="kartenfeld">
+    <div class="karten-rahmen">
+      <div class="karten-buehne"></div>
+      <div class="karten-nord" aria-hidden="true">${nordpfeilSVG()}</div>
+      <div class="karten-massstab"><span class="ms-balken"><i></i></span><span class="ms-text">—</span></div>
+      ${uebersicht ? '<div class="karten-uebersicht"><div class="uk-buehne"></div><span class="uk-titel">Übersicht</span></div>' : ''}
+    </div>
+  </div>`;
+}
+
+/** „12 Strecken · 7 taktische Zeichen“ – der Umfang in einem Halbsatz */
+function umfangText(auftrag) {
+  const teile = [];
+  if (auftrag.strecken.length || auftrag.modus !== 'lage') {
+    teile.push(streckenzahl(auftrag.strecken.length));
+  }
+  if (auftrag.modus === 'lage') {
+    const n = lageZeichen(auftrag).length;
+    if (n) teile.push(`${n} ${n === 1 ? 'taktisches Zeichen' : 'taktische Zeichen'}`);
+  }
+  return teile.join(' · ');
 }
 
 function blatt(ziel, opt) {
@@ -441,15 +713,17 @@ function blatt(ziel, opt) {
 
 // ---------------------------------------------------------------- Karten
 
-/** Leere Druckkarte in doppelter Pixelauflösung, per CSS halbiert –
- *  das ergibt den deutlich schärferen Ausdruck. */
-function neueDruckkarte(buehne, zusatz = {}) {
+/** Leere Druckkarte in mehrfacher Pixelauflösung, per CSS wieder verkleinert –
+ *  das ergibt den deutlich schärferen Ausdruck. Das Blattmaß bleibt an der
+ *  Karte hängen: die Maßstabsleiste muss später wissen, wie stark verkleinert
+ *  wurde, um aus Kartenpixeln Millimeter zu machen. */
+function neueDruckkarte(buehne, mass, zusatz = {}) {
   const bp = buehne.offsetWidth, hp = buehne.offsetHeight;
   const inner = document.createElement('div');
   inner.className = 'karten-inner';
-  inner.style.width = (bp * SCHAERFE) + 'px';
-  inner.style.height = (hp * SCHAERFE) + 'px';
-  inner.style.transform = `scale(${1 / SCHAERFE})`;
+  inner.style.width = Math.round(bp * mass.schaerfe) + 'px';
+  inner.style.height = Math.round(hp * mass.schaerfe) + 'px';
+  inner.style.transform = `scale(${1 / mass.schaerfe})`;
   buehne.appendChild(inner);
 
   const karte = L.map(inner, {
@@ -462,19 +736,20 @@ function neueDruckkarte(buehne, zusatz = {}) {
   const lbl = karte.createPane('fbp-labels');
   lbl.style.zIndex = 620; lbl.style.pointerEvents = 'none';
   karte.createPane('fbp-zeichen').style.zIndex = 640;
+  karte._fbpMass = mass;
   return karte;
 }
 
 /* Jede Karte zeigt die Zeichen ihres eigenen Gegenstands: das Streckenblatt
    die des Abschnitts dieser Strecke, das Deckblatt die des gedruckten
    Abschnitts – und dazu jeweils die nicht zugeteilten. Ohne Abschnitt alle. */
-function baueDruckkarte(buehne, strecke, opt, sw, karten, sammlung) {
+function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
   const p = store.projekt;
-  const karte = neueDruckkarte(buehne, { zoomSnap: 0.25 });
+  const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.25 });
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
 
   const sl = new StreckenLayer(karte, {
-    interaktiv: false, sw, strichFaktor: SCHAERFE,
+    interaktiv: false, sw, strichFaktor: strichFaktor(mass),
     hervorheben: strecke.id,
     nurStrecke: opt.andereStrecken ? null : strecke.id,
     nurStrecken: opt.andereStrecken ? sammlung : null
@@ -486,16 +761,17 @@ function baueDruckkarte(buehne, strecke, opt, sw, karten, sammlung) {
       interaktiv: false, sw, abschnittSchaltet: false,
       nurAbschnitt: strecke.abschnitt || undefined
     });
-    zl.zeichne(p.optionen);
+    zl.zeichne(zeichenOptionen(p, mass));
   }
 
   const grenzen = L.latLngBounds(strecke.punkte.map(x => [x.lat, x.lng]));
-  karte.fitBounds(grenzen, { padding: [50 * SCHAERFE, 50 * SCHAERFE], animate: false });
+  const rand = kartenrand(mass);
+  karte.fitBounds(grenzen, { padding: [rand, rand], animate: false });
   if (opt.zoomVersatz) karte.setZoom(karte.getZoom() + opt.zoomVersatz, { animate: false });
   karte.invalidateSize({ animate: false });
   // erst nach dem endgültigen Ausschnitt – das Gitter zeichnet, was es vorfindet
   if (opt.gitter) {
-    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: SCHAERFE }).zeichne({ gitter: true });
+    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: strichFaktor(mass) }).zeichne({ gitter: true });
   }
   karten.push(karte);
   return karte;
@@ -503,13 +779,13 @@ function baueDruckkarte(buehne, strecke, opt, sw, karten, sammlung) {
 
 /** Übersichtskarte des Deckblatts: alle Strecken der Sammlung gleichrangig,
  *  jede mit ihrem Namen und ihrer Länge beschriftet. */
-function baueSammelkarte(buehne, auftrag, opt, sw, karten) {
+function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
   const p = store.projekt;
-  const karte = neueDruckkarte(buehne, { zoomSnap: 0.25 });
+  const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.25 });
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
 
   const sl = new StreckenLayer(karte, {
-    interaktiv: false, sw, strichFaktor: SCHAERFE,
+    interaktiv: false, sw, strichFaktor: strichFaktor(mass),
     nurStrecken: auftrag.strecken.map(s => s.id)
   });
   /* Teillängen und Punktnummern aller Strecken übereinander wären auf einem
@@ -522,27 +798,77 @@ function baueSammelkarte(buehne, auftrag, opt, sw, karten) {
       interaktiv: false, sw, abschnittSchaltet: false,
       nurAbschnitt: auftrag.abschnitt ? auftrag.abschnitt.id : undefined
     });
-    zl.zeichne(p.optionen);
+    zl.zeichne(zeichenOptionen(p, mass));
   }
 
   const alle = auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng]));
-  karte.fitBounds(L.latLngBounds(alle), { padding: [55 * SCHAERFE, 55 * SCHAERFE], animate: false });
+  const rand = kartenrand(mass, 55);
+  karte.fitBounds(L.latLngBounds(alle), { padding: [rand, rand], animate: false });
   if (opt.zoomVersatz) karte.setZoom(karte.getZoom() + opt.zoomVersatz, { animate: false });
   karte.invalidateSize({ animate: false });
   if (opt.gitter) {
-    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: SCHAERFE }).zeichne({ gitter: true });
+    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: strichFaktor(mass) }).zeichne({ gitter: true });
   }
   karten.push(karte);
   return karte;
 }
 
-function baueUebersichtskarte(buehne, strecke, opt, sw, karten, sammlung) {
+/**
+ * Karte der Lagekarte: alle Strecken der Auswahl gleichrangig, dazu die
+ * taktischen Zeichen – und die bestimmen den Ausschnitt mit. Auf der
+ * Deckblattkarte des Bauauftrags richtet er sich allein nach den Trassen;
+ * hier wäre das falsch, denn eine Lagekarte kann aus Zeichen allein bestehen,
+ * und ein Zeichen außerhalb der Trassen fiele sonst vom Blatt.
+ */
+function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   const p = store.projekt;
-  const karte = neueDruckkarte(buehne);
+  const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.25 });
+  setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
+
+  const sl = new StreckenLayer(karte, {
+    interaktiv: false, sw, strichFaktor: strichFaktor(mass),
+    nurStrecken: auftrag.strecken.map(s => s.id)
+  });
+  sl.zeichne({
+    ...p.optionen, teillaengen: false, gesamtlaenge: true, punktnummern: !!opt.punktnummern
+  });
+
+  const zeichen = opt.zeichen ? lageZeichen(auftrag) : [];
+  if (opt.zeichen) {
+    const zl = new ZeichenLayer(karte, {
+      interaktiv: false, sw, abschnittSchaltet: false,
+      nurAbschnitt: auftrag.abschnitt ? auftrag.abschnitt.id : undefined
+    });
+    zl.zeichne(zeichenOptionen(p, mass));
+  }
+
+  const ecken = [
+    ...auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng])),
+    ...zeichen.map(z => [z.lat, z.lng])
+  ];
+  if (ecken.length) {
+    const rand = kartenrand(mass, 55);
+    karte.fitBounds(L.latLngBounds(ecken), { padding: [rand, rand], animate: false });
+  } else {
+    // Nichts zu umfassen: dann gilt der Ausschnitt der Arbeitskarte
+    karte.setView([p.ansicht.lat, p.ansicht.lng], p.ansicht.zoom, { animate: false });
+  }
+  if (opt.zoomVersatz) karte.setZoom(karte.getZoom() + opt.zoomVersatz, { animate: false });
+  karte.invalidateSize({ animate: false });
+  if (opt.gitter) {
+    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: strichFaktor(mass) }).zeichne({ gitter: true });
+  }
+  karten.push(karte);
+  return karte;
+}
+
+function baueUebersichtskarte(buehne, strecke, mass, sw, karten, sammlung) {
+  const p = store.projekt;
+  const karte = neueDruckkarte(buehne, mass);
   setzeBasiskarte(karte, 'topplus_grau');
 
   const sl = new StreckenLayer(karte, {
-    interaktiv: false, sw, strichFaktor: SCHAERFE,
+    interaktiv: false, sw, strichFaktor: strichFaktor(mass),
     hervorheben: strecke.id, nurStrecken: sammlung
   });
   sl.zeichne({ teillaengen: false, gesamtlaenge: false, punktnummern: false });
@@ -763,8 +1089,9 @@ function kennzahlenHTML(k, s) {
 /** Zeichenerklärung des Deckblatts. In Farbe trägt die Linienfarbe die
  *  Zuordnung; im Schwarz-Weiß-Druck und bei vielen Strecken tut das allein
  *  die Beschriftung an der Strecke. */
-function sammelLegendeHTML(auftrag, sw) {
-  const zeigbar = !sw && auftrag.strecken.length <= 12;
+function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '') {
+  if (!auftrag.strecken.length) return '';
+  const zeigbar = !sw && auftrag.strecken.length <= grenze;
   const eintraege = zeigbar
     ? auftrag.strecken.map(s =>
         `<span class="lg-eintrag"><i class="lg-linie voll" style="--farbe:${s.farbe}"></i>${escapeHtml(s.name)}</span>`).join('')
@@ -773,8 +1100,27 @@ function sammelLegendeHTML(auftrag, sw) {
      vorkommende Kabelart nur einmal in der Erklärung. */
   const arten = [...new Set(auftrag.strecken.map(s => s.kabeltyp))];
   const zeichen = arten.map(a => kabelzeichenEintrag(a, '#000')).join('');
-  return `<div class="bl-legende"><span class="lg-titel">Zeichenerklärung</span>${eintraege}${zeichen}
+  return `<div class="bl-legende"><span class="lg-titel">Zeichenerklärung</span>${eintraege}${zeichen}${zusatz}
     <span class="lg-eintrag lg-hinweis">Bezeichnung und Trassenlänge stehen an jeder Strecke</span></div>`;
+}
+
+/**
+ * Zeichenerklärung der Lagekarte. Sie führt zusätzlich die vorkommenden
+ * Punktarten auf: vor der Lagekarte steht nicht, wer sie geplant hat – dort
+ * muss ablesbar sein, was ein Quadrat und was eine Raute bedeutet. Auf großem
+ * Papier ist außerdem Raum für mehr Streckennamen; die Grenze, ab der die
+ * Farbzuordnung der Beschriftung an der Strecke überlassen wird, wächst
+ * deshalb mit dem Blatt.
+ */
+function lageLegendeHTML(auftrag, sw, mass) {
+  const arten = [...new Set(auftrag.strecken.flatMap(s => s.punkte.map(x => x.art)))]
+    .filter(a => a !== 'punkt');
+  const punkte = arten.map(a => {
+    const pa = punktartById(a);
+    return `<span class="lg-eintrag"><i class="lg-punkt art-${a}" style="--farbe:#111">${
+      pa.kurz === '·' ? '' : pa.kurz}</i>${escapeHtml(pa.name)}</span>`;
+  }).join('');
+  return sammelLegendeHTML(auftrag, sw, Math.round(12 * mass.blatt), punkte);
 }
 
 function sammelKennzahlenHTML(ges) {
@@ -1187,15 +1533,18 @@ function nordpfeilSVG() {
 function massstabSchreiben(blattEl, karte) {
   const el = blattEl.querySelector('.karten-massstab');
   if (!el || !karte) return;
+  const mass = karte._fbpMass || { schaerfe: SCHAERFE, blatt: 1 };
   const mitte = karte.getCenter();
-  // Meter je dargestelltem CSS-Pixel (Karte wird um 1/SCHAERFE verkleinert)
+  // Meter je dargestelltem CSS-Pixel (Karte wird um 1/schaerfe verkleinert)
   const mProKartenPx = 156543.03392 * Math.cos(mitte.lat * Math.PI / 180) / Math.pow(2, karte.getZoom());
-  const mProAnzeigePx = mProKartenPx * SCHAERFE;
+  const mProAnzeigePx = mProKartenPx * mass.schaerfe;
   const mProMm = mProAnzeigePx * MM_PX;
   const nenner = Math.round(mProMm * 1000);
 
-  // Balken auf eine runde Länge bringen
-  const zielMm = 40;
+  /* Balken auf eine runde Länge bringen. Er wächst mit dem Blatt, sonst stünde
+     auf einer A0-Lagekarte ein fingerlanger Strich neben zentimeterhoher
+     Schrift – aber gedeckelt, damit er nicht das halbe Blatt quert. */
+  const zielMm = 40 * Math.min(3, mass.blatt);
   const rohMeter = mProMm * zielMm;
   const stufe = [10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000]
     .reduce((a, b) => Math.abs(b - rohMeter) < Math.abs(a - rohMeter) ? b : a, 10);
@@ -1228,6 +1577,15 @@ function passeVorschauAn(wurzel, opt) {
      die Schrift auf einem kleinen Schirm zu lesen. */
   const skala = doku.classList.contains('gross') ? 1 : passend;
   doku.style.setProperty('--vorschau-skala', skala.toFixed(4));
+  /* Ein Transform verkleinert nur das Bild, nicht den Platz, den das Dokument
+     im Layout beansprucht. Bei A4 fällt der Überhang kaum auf; um ein auf ein
+     Drittel verkleinertes A0-Blatt stünden zwei Bildschirmlängen Leerraum, durch
+     die erst zu scrollen wäre, um das Blatt überhaupt zu finden. Die eingesparten
+     Maße werden deshalb wieder abgezogen – seitlich je zur Hälfte, weil das Blatt
+     von der Mitte aus verkleinert wird. */
+  const uebrigB = doku.offsetWidth * (1 - skala);
+  const uebrigH = doku.offsetHeight * (1 - skala);
+  doku.style.margin = skala < 1 ? `0 ${-uebrigB / 2}px ${-uebrigH}px` : '';
   const lupe = wurzel.querySelector('.druck-lupe');
   if (lupe) {
     lupe.hidden = passend >= 0.62;
@@ -1240,9 +1598,15 @@ function passeVorschauAn(wurzel, opt) {
    nicht – er muss sie noch einmal gesagt bekommen. Der Satz dafür steht neben
    dem Druckknopf und nicht in der Kurzanleitung, und er ändert sich mit. */
 function druckHinweisText(opt) {
-  const format = opt.format === 'a3' ? 'A3' : 'A4';
+  const [bmm, hmm] = seitenmasse(opt);
+  /* Beim freien Maß und bei den großen Formaten nennt der Hinweis die
+     Millimeter: kein Druckdialog führt „A0 quer“ als Wahl, dort wird ein
+     eigenes Papierformat mit genau diesen Kanten angelegt. */
+  if (opt.format === 'frei') return `Im Druckdialog: eigenes Format ${bmm} × ${hmm} mm · Ränder „Keine“`;
+  const name = (PAPIERE_LAGE.find(([w]) => w === opt.format) || [, 'A4'])[1];
   const lage = opt.ausrichtung === 'hoch' ? 'Hoch' : 'Quer';
-  return `Im Druckdialog: ${format} · ${lage} · Ränder „Keine“`;
+  const masse = FORMATE[opt.format] && Math.max(bmm, hmm) > 420 ? ` (${bmm} × ${hmm} mm)` : '';
+  return `Im Druckdialog: ${name} · ${lage}${masse} · Ränder „Keine“`;
 }
 
 function drucken(auftrag, opt) {
@@ -1257,7 +1621,7 @@ function drucken(auftrag, opt) {
 
   const alterTitel = document.title;
   const p = store.projekt;
-  document.title = [auftrag.modus === 'sammel' ? 'Sammel-Bauauftrag' : 'Bauauftrag',
+  document.title = [erzeugnis(auftrag),
     p.kopf.auftragNr, auftragTitel(auftrag), p.kopf.datum]
     .filter(Boolean).join('_')
     .replace(/[^\wäöüÄÖÜß.\-_]+/g, '-')

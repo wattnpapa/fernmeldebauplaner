@@ -18,7 +18,7 @@ import {
 } from './vorschrift.js';
 import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
 import * as io from './io.js';
-import { oeffneBauauftrag, oeffneSammeldruck } from './bauauftrag.js';
+import { oeffneBauauftrag, oeffneSammeldruck, oeffneLagekarte } from './bauauftrag.js';
 import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
@@ -939,6 +939,10 @@ export function einsatzabschnittDialog(aid) {
     schliesseDialog();
     oeffneSammeldruck(aid);
   }, 'primaer');
+  const lage = knopf('▦ Lagekarte (PDF)', () => {
+    schliesseDialog();
+    oeffneLagekarte(aid);
+  });
   const datei = knopf('Als Datei sichern (.json)', () => {
     if (io.abschnittExportieren(aid)) hinweis('Einsatzabschnitt als eigene Planungsdatei gesichert');
   });
@@ -946,10 +950,12 @@ export function einsatzabschnittDialog(aid) {
      die im selben Dialog gerade geändert wird. */
   const ausgabeAuffrischen = () => {
     const strecken = streckenIm(store.projekt, aid);
+    const zeichen = zeichenIm(store.projekt, aid);
     pdf.disabled = !strecken.filter(s => s.punkte.length >= 2).length;
     // Ein Abschnitt darf auch aus Zeichen allein bestehen – etwa als Lagebild
-    // eines Abschnitts, dessen Strecken erst noch geplant werden.
-    datei.disabled = !strecken.length && !zeichenIm(store.projekt, aid).length;
+    // eines Abschnitts, dessen Strecken erst noch geplant werden. Die
+    // Lagekarte gibt genau das aus, der Sammelauftrag braucht Trassen.
+    lage.disabled = datei.disabled = !strecken.length && !zeichen.length;
   };
 
   const zut = el('div', 'feldgruppe');
@@ -972,14 +978,16 @@ export function einsatzabschnittDialog(aid) {
   aus.appendChild(el('h3', 'gruppen-titel', 'Ausgabe'));
   const tasten = el('div', 'tastenreihe');
   ausgabeAuffrischen();
-  tasten.append(pdf, datei);
+  tasten.append(pdf, lage, datei);
   aus.appendChild(tasten);
   aus.appendChild(el('p', 'klein',
     `Der Sammelauftrag fasst alle Strecken dieses Abschnitts in einem Dokument
      zusammen – Deckblatt mit Übersichtskarte, Streckenverzeichnis und je Strecke
-     das gewohnte Kartenblatt. Die Datei enthält nur diesen Ausschnitt und lässt
+     das gewohnte Kartenblatt. Die Lagekarte ist dagegen ein einzelnes Blatt,
+     auf dem die Karte alles ist – bis A0 und in freiem Maß, zum Aushängen in
+     der Führungsstelle. Die Datei enthält nur diesen Ausschnitt und lässt
      sich beim Empfänger über <b>Datei → Planung oder KML laden</b> öffnen.
-     Beides führt die Zeichen dieses Abschnitts mit und dazu die nicht
+     Alle drei führen die Zeichen dieses Abschnitts mit und dazu die nicht
      zugeteilten – die gehören zum gemeinsamen Lagebild.`));
   box.appendChild(aus);
 
@@ -1769,6 +1777,18 @@ export function hilfeDialog() {
            die Ränder auf „Keine“ stellen – das Blatt bringt seine Ränder selbst mit.
            Der Hinweis am Druckknopf nennt die drei Angaben. Der vorgeschlagene Dateiname
            enthält Auftragsnummer, Strecke und Datum.</p>
+        <h3>Lagekarte</h3>
+        <p>Für die Führungsstelle gibt es ein einzelnes großes Blatt, auf dem die Karte
+           alles ist: <b>Lagekarte (PDF)</b> im Reiter „Strecken“ oder im Menü „Datei“,
+           für einen Einsatzabschnitt über dessen <b>⋯</b>. Sie zeigt alle Strecken mit
+           Namen und Länge, die taktischen Zeichen und das Koordinatengitter; am Rand
+           stehen Kopfdaten, Zeichenerklärung und Kennzahlen, jedes davon abschaltbar.</p>
+        <p>Formate sind <b>A4 bis A0</b> und ein <b>freies Maß</b> in Millimetern – für
+           Plotterrollen. Schrift, Beschriftung und Strichstärken wachsen mit dem Blatt,
+           damit eine A0-Karte auch aus zwei Metern zu lesen ist. Große Blätter kennt
+           kein Druckdialog von sich aus: dort ein eigenes Papierformat mit den
+           Kantenlängen anlegen, die der Hinweis am Druckknopf nennt. In der Regel wird
+           die Lagekarte als PDF gespeichert und beim Plotter ausgegeben.</p>
         <h3>Koordinaten</h3>
         <p>Unten steht die Koordinate der Stelle, über der die Maus steht oder die zuletzt
            angetippt wurde – in MGRS und als GPS-Angabe. Ein Klick auf die Angabe legt sie in

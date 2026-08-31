@@ -5,7 +5,9 @@
 GIS-Planungswerkzeug für den **Fernmeldebau**, ausgelegt auf die Arbeitsweise des THW.
 Strecken werden auf der Karte geplant, die Längen stehen direkt an der Trasse, und
 für jede Strecke lässt sich ein druckfertiger **Bauauftrag** für den Fernmeldebautrupp
-ausgeben – A4 oder A3, hoch oder quer, in Farbe oder Schwarz-Weiß.
+ausgeben – A4 oder A3, hoch oder quer, in Farbe oder Schwarz-Weiß. Für die
+Führungsstelle gibt es dieselbe Lage als **Lagekarte** auf einem einzelnen Blatt
+bis A0 oder in freiem Maß.
 
 Die Anwendung läuft vollständig im Browser. Es gibt keinen Server, keine Anmeldung
 und kein Benutzerkonto: alle Planungen liegen im lokalen Speicher des Browsers und
@@ -87,6 +89,20 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Einsatzabschnitten gegliedert samt Teilsummen; dazu der Materialbedarf nach Leitungsarten
 - Danach je Strecke die gewohnten Blätter; welche Blattarten entstehen, ist wählbar
 
+**Lagekarte als PDF**
+- Ein einzelnes Blatt für die Führungsstelle, auf dem die Karte fast alles ist:
+  alle Strecken mit Namen und Länge, die taktischen Zeichen, das Koordinatengitter
+- **A4 bis A0** und ein freies Maß von 100 bis 1200 mm je Kante – für Plotterrollen
+- Schrift, Kartenbeschriftung und Strichstärken wachsen mit dem Blatt: eine A0-Karte
+  wird an der Wand aus zwei Metern gelesen, nicht in der Hand aus vierzig Zentimetern
+- Am Rand Kopfdaten, Zeichenerklärung und Kennzahlen, jedes davon abschaltbar –
+  abgeschaltet gehört das Blatt allein der Karte
+- Für die ganze Planung oder einen Einsatzabschnitt; sie darf auch aus taktischen
+  Zeichen allein bestehen, wenn die Trassen erst noch geplant werden
+- Die Auflösung der Druckkarte richtet sich nach dem Format: bei A4 und A3 bleibt es
+  bei der doppelten (≈ 190 dpi), auf A0 werden es gut 100 dpi – mehr zeichnet kein
+  Browser mehr in einem Bild
+
 **Austausch mit anderen Werkzeugen**
 - Planung als `.json` sichern und laden
 - KML und KMZ aus Google Earth laden: Pfade werden Strecken, Ortsmarken taktische Zeichen
@@ -155,6 +171,15 @@ das Blatt bringt seine Ränder selbst mit.
 
 **Sammel-Bauauftrag:** Für einen Einsatzabschnitt über dessen `⋯`, für die ganze Planung
 über „Sammel-PDF (alle Strecken)“ im Reiter „Strecken“ oder über das Menü „Datei“.
+
+**Lagekarte drucken:** „Lagekarte (PDF)“ im Reiter „Strecken“, im Menü „Datei“ oder für
+einen Einsatzabschnitt über dessen `⋯`. Format bis A0 oder ein freies Maß in Millimetern
+wählen, dann „Drucken / Als PDF speichern“. Formate über A3 kennt kein Druckdialog von
+sich aus: dort ein eigenes Papierformat mit den Kantenlängen anlegen, die der Hinweis am
+Druckknopf nennt. In aller Regel wird die Lagekarte als PDF gespeichert und beim Plotter
+ausgegeben. Große Blätter ziehen mehrere hundert Kartenkacheln – der Aufbau dauert
+entsprechend, und wenn der Kartendienst dabei einzelne Kacheln abweist, hilft ein
+erneutes Umschalten des Formats.
 
 ---
 
@@ -231,7 +256,7 @@ autor/index.html      Über den Autor (statische Seite)
 impressum.html        Anbieterkennzeichnung nach § 5 DDG
 datenschutz.html      Datenschutzerklärung
 css/app.css           Oberfläche
-css/print.css         Bauauftrag: Vorschau und Ausdruck
+css/print.css         Bauauftrag und Lagekarte: Vorschau und Ausdruck
 css/seite.css         Statische Seiten außerhalb der Anwendung
 js/app.js             Zusammenbau, Bedienung, Tastatur
 js/state.js           Datenmodell, Projektverwaltung, LocalStorage, Undo
@@ -243,7 +268,7 @@ js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
 js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
 js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
-js/bauauftrag.js      Druckdokument
+js/bauauftrag.js      Druckdokumente: Bauauftrag und Lagekarte
 js/ui.js              Seitenleiste, Formulare, Dialoge
 js/io.js              Sichern und Laden, GeoJSON, GPX, CSV, KML
 js/kml.js             KML und KMZ mit Google Earth austauschen

@@ -4,6 +4,25 @@ import { store, neuesZeichen, zeichenSichtbar, zeichengruppeZeigt } from './stat
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
 
+/**
+ * Welche Zeichen eine Ebene mit diesen Einstellungen zeichnen würde.
+ * Steht außerhalb der Klasse, weil die Auswahl auch gebraucht wird, ohne zu
+ * zeichnen: der Ausschnitt der Lagekarte muss die Zeichen einschließen, die
+ * darauf erscheinen – und das ist dieselbe Auswahl, nicht eine ähnliche.
+ */
+export function gezeichneteZeichen(p, { nurAbschnitt, abschnittSchaltet = true } = {}) {
+  return p.zeichen.filter(z => {
+    if (z.sichtbar === false) return false;
+    /* Die Zeichengruppe ist ein Filter des Lagebildes und gilt überall –
+       auch auf dem Blatt eines eigens angeforderten Abschnitts. Wer die
+       Gefahrenstellen ausblendet, will sie nicht im Druck wiederfinden. */
+    if (!zeichengruppeZeigt(p, z)) return false;
+    const angefordert = !abschnittSchaltet && !!nurAbschnitt && z.abschnitt === nurAbschnitt;
+    if (!angefordert && !zeichenSichtbar(p, z)) return false;
+    return !(nurAbschnitt && z.abschnitt && z.abschnitt !== nurAbschnitt);
+  });
+}
+
 export class ZeichenLayer {
   constructor(karte, opt = {}) {
     this.karte = karte;
@@ -79,16 +98,7 @@ export class ZeichenLayer {
     this.gruppe.clearLayers();
     const skala = o.symbolgroesse || 1;
 
-    for (const z of p.zeichen) {
-      if (z.sichtbar === false) continue;
-      /* Die Zeichengruppe ist ein Filter des Lagebildes und gilt überall –
-         auch auf dem Blatt eines eigens angeforderten Abschnitts. Wer die
-         Gefahrenstellen ausblendet, will sie nicht im Druck wiederfinden. */
-      if (!zeichengruppeZeigt(p, z)) continue;
-      const angefordert = !this.abschnittSchaltet && !!this.nurAbschnitt &&
-        z.abschnitt === this.nurAbschnitt;
-      if (!angefordert && !zeichenSichtbar(p, z)) continue;
-      if (this.nurAbschnitt && z.abschnitt && z.abschnitt !== this.nurAbschnitt) continue;
+    for (const z of gezeichneteZeichen(p, this)) {
       const basis = symbolById(z.symbol);
       const breite = Math.round(GRUNDBREITE * skala * (z.groesse || 1));
       const opt = { symbol: z.symbol, drehung: z.drehung, breite, sw: this.sw };

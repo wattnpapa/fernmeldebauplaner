@@ -16,7 +16,7 @@ import {
   abschnittAnlegen, zeichengruppeAnlegen
 } from './ui.js';
 import {
-  bauauftragOffen, schliesseBauauftrag, entferneSeitenformat, oeffneSammeldruck
+  bauauftragOffen, schliesseBauauftrag, entferneSeitenformat, oeffneSammeldruck, oeffneLagekarte
 } from './bauauftrag.js';
 import { VERSION } from './version.js';
 
@@ -262,6 +262,7 @@ $('#btn-neues-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modus
 $('#btn-neuer-abschnitt').onclick = () => abschnittAnlegen();
 $('#btn-neue-zeichengruppe').onclick = () => zeichengruppeAnlegen();
 $('#btn-sammel-pdf').onclick = () => oeffneSammeldruck();
+$('#btn-lagekarte').onclick = () => oeffneLagekarte();
 
 $('#wz-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();
 $('#wz-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
@@ -370,6 +371,7 @@ dateiMenu.addEventListener('click', e => {
     'export-json': () => planungSichern(),
     import: () => $('#datei-import').click(),
     'sammel-pdf': () => oeffneSammeldruck(),
+    lagekarte: () => oeffneLagekarte(),
     'export-geojson': () => io.geoJSONExportieren(),
     'export-gpx': () => io.gpxExportieren(),
     'export-kml': () => io.kmlExportieren(),
