@@ -210,12 +210,26 @@ export function toUTM(lat, lng) {
     const zone = roh.match(/^(\d{1,2}[A-Z])/)[1];
     // Ostwert/Nordwert aus dem 100-km-Quadrat rekonstruieren
     const p = mgrsToPoint(roh);
-    return `${zone} ${utmWerte(p[1], p[0])}`;
+    const u = nachUTM(p[1], p[0]);
+    return `${zone} ${Math.round(u.ost)} ${Math.round(u.nord)}`;
   } catch (e) { return m; }
 }
 
-function utmWerte(lat, lng) {
-  const zone = Math.floor((lng + 180) / 6) + 1;
+/** UTM-Zonennummer eines Längengrads (Regelzuschnitt von 6°, ohne die
+ *  Ausnahmen um Norwegen und Spitzbergen – dort plant niemand Feldkabel). */
+export function utmZone(lng) {
+  return Math.floor((lng + 180) / 6) + 1;
+}
+
+const K0 = 0.9996;   // UTM-Maßstabsfaktor am Mittelmeridian
+
+/**
+ * UTM-Werte (WGS84) mit Zone, Ostwert und Nordwert.
+ * `zoneFest` rechnet in eine vorgegebene Zone statt in die eigene – das
+ * Koordinatengitter braucht am Zonenrand durchgehende Werte einer Zone.
+ */
+export function nachUTM(lat, lng, zoneFest) {
+  const zone = zoneFest || utmZone(lng);
   const lam0 = rad(6 * (zone - 1) - 180 + 3);
   const phi = rad(lat), lam = rad(lng);
   const e2 = 2 * F - F * F, ep2 = e2 / (1 - e2);
@@ -226,13 +240,41 @@ function utmWerte(lat, lng) {
     - (3 * e2 / 8 + 3 * e2 ** 2 / 32 + 45 * e2 ** 3 / 1024) * Math.sin(2 * phi)
     + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * Math.sin(4 * phi)
     - (35 * e2 ** 3 / 3072) * Math.sin(6 * phi));
-  const k0 = 0.9996;
-  const ost = k0 * N * (Aa + (1 - T + C) * Aa ** 3 / 6 +
+  const ost = K0 * N * (Aa + (1 - T + C) * Aa ** 3 / 6 +
     (5 - 18 * T + T * T + 72 * C - 58 * ep2) * Aa ** 5 / 120) + 500000;
-  let nord = k0 * (M + N * Math.tan(phi) * (Aa ** 2 / 2 + (5 - T + 9 * C + 4 * C * C) * Aa ** 4 / 24 +
+  let nord = K0 * (M + N * Math.tan(phi) * (Aa ** 2 / 2 + (5 - T + 9 * C + 4 * C * C) * Aa ** 4 / 24 +
     (61 - 58 * T + T * T + 600 * C - 330 * ep2) * Aa ** 6 / 720));
   if (lat < 0) nord += 10000000;
-  return `${Math.round(ost)} ${Math.round(nord)}`;
+  return { zone, ost, nord };
+}
+
+/**
+ * Umkehrung von nachUTM: geographische Koordinate zu Zone/Ostwert/Nordwert.
+ * Reihenentwicklung nach Snyder (Map Projections, USGS PP 1395) – auf
+ * Zonenbreite deutlich unter einem Millimeter genau, mehr als genug fürs Gitter.
+ */
+export function vonUTM(zone, ost, nord, sued = false) {
+  const e2 = 2 * F - F * F, ep2 = e2 / (1 - e2);
+  const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+  const x = ost - 500000;
+  const M = (sued ? nord - 10000000 : nord) / K0;
+  const mu = M / (A * (1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256));
+  const phi1 = mu
+    + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * Math.sin(2 * mu)
+    + (21 * e1 ** 2 / 16 - 55 * e1 ** 4 / 32) * Math.sin(4 * mu)
+    + (151 * e1 ** 3 / 96) * Math.sin(6 * mu)
+    + (1097 * e1 ** 4 / 512) * Math.sin(8 * mu);
+  const sin1 = Math.sin(phi1), cos1 = Math.cos(phi1), tan1 = Math.tan(phi1);
+  const C1 = ep2 * cos1 * cos1, T1 = tan1 * tan1;
+  const N1 = A / Math.sqrt(1 - e2 * sin1 * sin1);
+  const R1 = A * (1 - e2) / Math.pow(1 - e2 * sin1 * sin1, 1.5);
+  const D = x / (N1 * K0);
+  const lat = phi1 - (N1 * tan1 / R1) * (D * D / 2
+    - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * ep2) * D ** 4 / 24
+    + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * ep2 - 3 * C1 * C1) * D ** 6 / 720);
+  const lng = (D - (1 + 2 * T1 + C1) * D ** 3 / 6
+    + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * ep2 + 24 * T1 * T1) * D ** 5 / 120) / cos1;
+  return { lat: grad(lat), lng: 6 * (zone - 1) - 180 + 3 + grad(lng) };
 }
 
 // ---------------------------------------------------------------- Eingabe-Parser

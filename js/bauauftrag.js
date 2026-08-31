@@ -6,6 +6,7 @@ import {
   StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen
 } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
+import { GitterLayer } from './gitter.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
 import {
@@ -29,7 +30,10 @@ const STANDARD = {
   /* Gespeicherte Optionen werden über STANDARD gelegt; neue Haken erben so
      ihren Standard, statt bei bisherigen Nutzern als „aus“ zu erscheinen. */
   querungen: true, laengenverbindungen: true,
-  andereStrecken: true, zeichen: true, zoomVersatz: 0,
+  /* Das Gitter ist im Ausdruck von vornherein an: auf dem Bauplatz ist es
+     neben der Punkttabelle der einzige Weg, eine beliebige Stelle der Karte
+     als MGRS-Angabe durchzugeben. */
+  andereStrecken: true, zeichen: true, gitter: true, zoomVersatz: 0,
   // nur im Sammeldruck von Belang
   deckblatt: true, verzeichnis: true, einzelblaetter: true
 };
@@ -174,6 +178,7 @@ function oeffneDruckansicht(auftrag) {
       haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
       haken('Andere Strecken', 'andereStrecken', opt, neuAufbau),
       haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
+      haken('Koordinatengitter', 'gitter', opt, neuAufbau),
       zoomFeld(opt, neuAufbau)
     ]),
     gruppe('Datenblatt', [
@@ -488,6 +493,10 @@ function baueDruckkarte(buehne, strecke, opt, sw, karten, sammlung) {
   karte.fitBounds(grenzen, { padding: [50 * SCHAERFE, 50 * SCHAERFE], animate: false });
   if (opt.zoomVersatz) karte.setZoom(karte.getZoom() + opt.zoomVersatz, { animate: false });
   karte.invalidateSize({ animate: false });
+  // erst nach dem endgültigen Ausschnitt – das Gitter zeichnet, was es vorfindet
+  if (opt.gitter) {
+    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: SCHAERFE }).zeichne({ gitter: true });
+  }
   karten.push(karte);
   return karte;
 }
@@ -520,6 +529,9 @@ function baueSammelkarte(buehne, auftrag, opt, sw, karten) {
   karte.fitBounds(L.latLngBounds(alle), { padding: [55 * SCHAERFE, 55 * SCHAERFE], animate: false });
   if (opt.zoomVersatz) karte.setZoom(karte.getZoom() + opt.zoomVersatz, { animate: false });
   karte.invalidateSize({ animate: false });
+  if (opt.gitter) {
+    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: SCHAERFE }).zeichne({ gitter: true });
+  }
   karten.push(karte);
   return karte;
 }

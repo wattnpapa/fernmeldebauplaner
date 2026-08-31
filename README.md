@@ -57,6 +57,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Je Punkt abrufbar: MGRS (1 m und 10 m), UTM, Grad/Dezimalminuten, Grad/Minuten/Sekunden,
   Dezimalgrad – zum Kopieren
 - Eingabefeld erkennt alle diese Formate und springt die Koordinate an
+- Zuschaltbares UTM-Kilometergitter (UTMREF/MGRS) mit Randzahlen – auf der
+  Arbeitskarte wie auf dem gedruckten Bauauftrag; Maschenweite je nach Maßstab
+  100 m bis 100 km, 100-km-Quadrat und Weite stehen in der Kartenecke
 
 **Bauauftrag als PDF**
 - Blatt 1: Kopf- und Stammdaten, Karte mit hervorgehobener Trasse, Nordpfeil,
@@ -219,6 +222,7 @@ js/state.js           Datenmodell, Projektverwaltung, LocalStorage, Undo
 js/geo.js             Entfernungen (Vincenty), MGRS/UTM/GPS, Eingabe-Parser
 js/strom.js           Querschnitt von Stromleitungen aus Last und Länge
 js/map.js             Leaflet-Karte und Basiskarten
+js/gitter.js          UTM-Kilometergitter (UTMREF/MGRS) auf Karte und Bauauftrag
 js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
 js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
 js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)

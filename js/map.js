@@ -80,6 +80,9 @@ export function setzeBasiskarte(karte, id) {
   }).addTo(karte);
   karte._fbpBasisId = id;
   document.body.classList.toggle('karte-dunkel', !!def.dunkel);
+  // Das Koordinatengitter färbt sich nach der Unterlage und hört auf diesen
+  // Wechsel – ein Projektereignis gibt es beim Kartenwechsel nicht.
+  karte.fire('fbp:basiskarte', { id });
   return def;
 }
 

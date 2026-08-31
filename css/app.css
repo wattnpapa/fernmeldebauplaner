@@ -692,6 +692,28 @@ body.modus-aktiv .kartenoptionen { display: none; }
 .fbp-label { background: none; border: 0; }
 .fbp-label > span { display: inline-block; transform: translate(-50%, -50%); white-space: nowrap; }
 
+/* Koordinatengitter: Randzahlen wie auf der topografischen Karte. Der weiße
+   Lichthof ist ein Textschatten, kein CSS-Filter – gefilterte Bereiche lässt
+   Firefox beim Drucken weg (siehe map.js). */
+.gitter-label { background: none; border: 0; }
+.gitter-zahl {
+  display: inline-block; white-space: nowrap;
+  color: #24418c; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 3px #fff;
+}
+.gitter-zahl small { font-size: 9px; font-weight: 700; }
+.gitter-zahl.oben   { transform: translate(-50%, 0); }
+.gitter-zahl.unten  { transform: translate(-50%, -100%); }
+.gitter-zahl.links  { transform: translate(0, -50%); }
+.gitter-zahl.rechts { transform: translate(-100%, -50%); }
+.gitter-zahl.dunkel { color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000, 0 0 3px #000; }
+
+.gitter-info {
+  background: rgba(255,255,255,.92); color: #24344f;
+  border: 1px solid rgba(36,65,140,.45); border-radius: 3px; padding: 1px 6px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+
 .seg-mass {
   background: rgba(255,255,255,.94); color: #101820; border: 1px solid var(--farbe, #555);
   border-left-width: 3px; border-radius: 3px; padding: 1px 5px;

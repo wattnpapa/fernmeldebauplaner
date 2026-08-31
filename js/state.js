@@ -81,7 +81,7 @@ export function neuesProjekt(name = 'Neue Planung') {
     },
     ansicht: { lat: 51.1657, lng: 10.4515, zoom: 6, basemap: 'topplus' },
     optionen: {
-      teillaengen: true, gesamtlaenge: true, punktnummern: true,
+      teillaengen: true, gesamtlaenge: true, punktnummern: true, gitter: false,
       koordformat: 'mgrs', symbolgroesse: 1
     },
     einsatzabschnitte: [],

@@ -7,6 +7,7 @@ import {
 import { erstelleKarte, setzeBasiskarte, BASISKARTEN } from './map.js';
 import { StreckenLayer, escapeHtml } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
+import { GitterLayer } from './gitter.js';
 import { toMGRS, toDDM, alleFormate } from './geo.js';
 import * as io from './io.js';
 import {
@@ -36,6 +37,8 @@ const zl = new ZeichenLayer(karte, {
   aufAuswahl: zid => { if (zid) { sl.auswahl = null; reiterWechseln('zeichen'); } zeichneSeite(); },
   aufAenderung: () => {}
 });
+
+const gl = new GitterLayer(karte);
 
 initUI({ karte, sl, zl, weiterzeichnen, zeichenSetzen, zurKarte, aufAenderung: () => {} });
 
@@ -298,6 +301,7 @@ basisSelect.onchange = () => {
 };
 
 const optionsFelder = [
+  ['#opt-gitter', 'gitter'],
   ['#opt-teillaengen', 'teillaengen'],
   ['#opt-gesamtlaenge', 'gesamtlaenge'],
   ['#opt-punktnummern', 'punktnummern']
@@ -541,6 +545,7 @@ window.addEventListener('afterprint', hinweisblattEntfernen);
 function zeichneAlles() {
   sl.zeichne();
   zl.zeichne();
+  gl.zeichne();
   zeichneSeite();
 }
 
@@ -606,6 +611,7 @@ store.on((p, grund) => {
 
   sl.zeichne();
   zl.zeichne();
+  gl.zeichne();
   modusAnzeigen();
 
   $('#btn-undo').disabled = !store.undoStapel.length;
@@ -641,7 +647,7 @@ window.addEventListener('beforeunload', e => {
 });
 
 // Zugriff aus der Browser-Konsole (Fehlersuche, eigene Auswertungen)
-window.fbp = { store, karte, sl, zl };
+window.fbp = { store, karte, sl, zl, gl };
 
 zeichneAlles();
 modusAnzeigen();

@@ -477,6 +477,11 @@ body.druckansicht { overflow: hidden; }
    nicht aus. Die Graustufen kommen deshalb aus der Kachelquelle (grauVariante). */
 .druck-doku.sw .seg-mass { border-color: #000 !important; color: #000; }
 .druck-doku.sw .strecken-mass { border-color: #000 !important; }
+/* Auf dunkler Unterlage (Luftbild) bleibt das Gitter auch im S/W-Druck weiß –
+   die Klasse „dunkel“ setzt die Gitterebene selbst nach der Basiskarte. */
+.druck-doku.sw .gitter-zahl { color: #000; }
+.druck-doku.sw .gitter-zahl.dunkel { color: #fff; }
+.druck-doku.sw .gitter-info { color: #000; border-color: #000; }
 .druck-doku.sw .fbp-punkt { border-color: #000 !important; color: #000; }
 .druck-doku.sw .fbp-punkt.art-start,
 .druck-doku.sw .fbp-punkt.art-ziel { background: #000 !important; color: #fff; }
@@ -488,6 +493,9 @@ body.druckansicht { overflow: hidden; }
 .karten-inner .seg-mass { font-size: 17px; padding: 2px 8px; border-width: 2px; border-left-width: 5px; }
 .karten-inner .fbp-punkt { width: 34px; height: 34px; font-size: 15px; border-width: 4px; }
 .karten-inner .tz-label { font-size: 17px; padding: 0 6px; }
+.karten-inner .gitter-zahl { font-size: 19px; }
+.karten-inner .gitter-zahl small { font-size: 14px; }
+.karten-inner .gitter-info { font-size: 16px; padding: 2px 8px; border-width: 2px; }
 
 /* ---------------------------------------------------------------- Ausdruck */
 
