@@ -66,8 +66,10 @@ const STANDARD_AUFTRAG = {
 const STANDARD_LAGE = {
   format: 'a1', ausrichtung: 'quer', farbe: 'farbe',
   freiBreite: 900, freiHoehe: 600,
-  zeichen: true, gitter: true, punktnummern: false, zoomVersatz: 0,
-  stammdaten: true, legende: true, kennzahlen: true
+  zeichen: true, beschriftung: true, gitter: true, punktnummern: false, zoomVersatz: 0,
+  /* Jeder Streifen um die Karte lässt sich einzeln abräumen – alle fünf aus
+     ergibt das nackte Kartenblatt, auf dem nur noch die Lage steht. */
+  kopf: true, stammdaten: true, legende: true, kennzahlen: true, fuss: true
 };
 
 const PROFILE = {
@@ -270,6 +272,10 @@ function oeffneDruckansicht(auftrag) {
     lage
       ? gruppe('Karte', [
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
+          /* Nimmt Name und Trassenlänge zusammen von der Karte – beide stehen
+             in einem Schild, und wer die Namen loswerden will, will kein
+             Schild mit einer nackten Zahl darin behalten. */
+          haken('Streckenbeschriftung', 'beschriftung', opt, neuAufbau),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
           haken('Trassenpunkte', 'punktnummern', opt, neuAufbau),
           zoomFeld(opt, neuAufbau)
@@ -282,10 +288,14 @@ function oeffneDruckansicht(auftrag) {
           zoomFeld(opt, neuAufbau)
         ]),
     lage
+      /* In der Reihenfolge, in der die Streifen auf dem Blatt liegen –
+         von der Titelzeile oben bis zur Fußzeile unten. */
       ? gruppe('Blattrand', [
+          haken('Titelzeile', 'kopf', opt, neuAufbau),
           haken('Kopfdaten', 'stammdaten', opt, neuAufbau),
           haken('Zeichenerklärung', 'legende', opt, neuAufbau),
-          haken('Kennzahlen', 'kennzahlen', opt, neuAufbau)
+          haken('Kennzahlen', 'kennzahlen', opt, neuAufbau),
+          haken('Fußzeile', 'fuss', opt, neuAufbau)
         ])
       : gruppe('Datenblatt', [
           haken('Punkttabelle', 'punkttabelle', opt, neuAufbau),
@@ -606,7 +616,7 @@ function streckenblaetter(ziel, strecke, auftrag, opt, mass, sw, sammlung, karte
   b1.innerHTML =
     streckenKopfHTML(p, strecke) +
     stammHTML(p, strecke, k) +
-    kartenfeldHTML(opt.uebersicht) +
+    kartenfeldHTML({ uebersicht: opt.uebersicht }) +
     legendeHTML(strecke, sw, opt) +
     kennzahlenHTML(k, strecke) +
     fussHTML(p, opt);
@@ -658,19 +668,27 @@ function deckblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
  * Deshalb fehlen Punkttabelle, Querungen und Unterschriften, und deshalb
  * bekommt die Karte das ganze Blatt: was am Rand steht, sagt nur, worauf man
  * sieht, wie groß es ist und wie es zu lesen ist.
+ *
+ * Jeder dieser Streifen lässt sich abräumen, bis nur noch die Karte übrig
+ * ist. Zwei Angaben bleiben davon unberührt: die Einstufung, die auf jedes
+ * Blatt gehört, und die Namensnennung der Kartengrundlage – die zieht ohne
+ * Fußzeile in die Karte, statt zu verschwinden.
  */
 function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
   const p = store.projekt;
   const el = blatt(ziel, opt);
   el.classList.add('lageblatt');
   el.innerHTML =
-    kopfHTML(p, { titel: auftragTitel(auftrag), unter: umfangText(auftrag), doktyp: doktyp(auftrag) }) +
+    einstufungHTML(p) +
+    (opt.kopf
+      ? blattkopfHTML(p, { titel: auftragTitel(auftrag), unter: umfangText(auftrag), doktyp: doktyp(auftrag) })
+      : '') +
     (opt.stammdaten ? sammelStammHTML(p, auftrag) : '') +
-    kartenfeldHTML() +
-    (opt.legende ? lageLegendeHTML(auftrag, sw, mass) : '') +
+    kartenfeldHTML({ quelle: opt.fuss ? '' : kartenquelle(p, opt) }) +
+    (opt.legende ? lageLegendeHTML(auftrag, opt, sw, mass) : '') +
     (opt.kennzahlen && auftrag.strecken.length
       ? sammelKennzahlenHTML(gesamtKennzahlen(auftrag.strecken)) : '') +
-    fussHTML(p, opt);
+    (opt.fuss ? fussHTML(p, opt) : '');
 
   kartenbau.push(() => {
     const karte = baueLagekarte(el.querySelector('.karten-buehne'), auftrag, opt, mass, sw, karten);
@@ -679,13 +697,15 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
   });
 }
 
-/** Kartenrahmen samt Nordpfeil und Maßstabsleiste – auf jedem Blatt gleich */
-function kartenfeldHTML(uebersicht = false) {
+/** Kartenrahmen samt Nordpfeil und Maßstabsleiste – auf jedem Blatt gleich.
+ *  `quelle` wird nur gesetzt, wenn die Namensnennung sonst nirgends steht. */
+function kartenfeldHTML({ uebersicht = false, quelle = '' } = {}) {
   return `<div class="kartenfeld">
     <div class="karten-rahmen">
       <div class="karten-buehne"></div>
       <div class="karten-nord" aria-hidden="true">${nordpfeilSVG()}</div>
       <div class="karten-massstab"><span class="ms-balken"><i></i></span><span class="ms-text">—</span></div>
+      ${quelle ? `<p class="karten-quelle">${quelle}</p>` : ''}
       ${uebersicht ? '<div class="karten-uebersicht"><div class="uk-buehne"></div><span class="uk-titel">Übersicht</span></div>' : ''}
     </div>
   </div>`;
@@ -830,7 +850,8 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
     nurStrecken: auftrag.strecken.map(s => s.id)
   });
   sl.zeichne({
-    ...p.optionen, teillaengen: false, gesamtlaenge: true, punktnummern: !!opt.punktnummern
+    ...p.optionen, teillaengen: false,
+    gesamtlaenge: !!opt.beschriftung, punktnummern: !!opt.punktnummern
   });
 
   const zeichen = opt.zeichen ? lageZeichen(auftrag) : [];
@@ -995,13 +1016,23 @@ function elementAus(html) {
 
 // ---------------------------------------------------------------- Bausteine
 
-function kopfHTML(p, { titel, unter = '', doktyp: typ }) {
+/* Die Einstufung gehört auf jedes Blatt und über alles andere – ein
+   eingestuftes Blatt muss sich auch einzeln erkennen lassen. Sie steht
+   deshalb getrennt vom Blattkopf: auf der Lagekarte darf die Titelzeile
+   weichen, die Einstufung nicht. Was abschaltbar ist, ist die Beschriftung
+   des Blattes, nicht seine Einstufung. */
+function einstufungHTML(p) {
+  const grad = (p.kopf.vsgrad || '').trim();
+  return grad ? `<p class="bl-einstufung">${escapeHtml(grad)}</p>` : '';
+}
+
+function kopfHTML(p, angaben) {
+  return einstufungHTML(p) + blattkopfHTML(p, angaben);
+}
+
+function blattkopfHTML(p, { titel, unter = '', doktyp: typ }) {
   const k = p.kopf;
-  /* Die Einstufung gehört auf jedes Blatt und über alles andere – ein
-     eingestuftes Blatt muss sich auch einzeln erkennen lassen. */
-  const einstufung = (k.vsgrad || '').trim();
-  return `${einstufung ? `<p class="bl-einstufung">${escapeHtml(einstufung)}</p>` : ''}
-  <header class="bl-kopf">
+  return `<header class="bl-kopf">
     <div class="bl-marke">
       <span class="bl-org">${escapeHtml(k.einheit || 'THW')}</span>
       <span class="bl-doktyp">${escapeHtml(typ)}</span>
@@ -1089,7 +1120,8 @@ function kennzahlenHTML(k, s) {
 /** Zeichenerklärung des Deckblatts. In Farbe trägt die Linienfarbe die
  *  Zuordnung; im Schwarz-Weiß-Druck und bei vielen Strecken tut das allein
  *  die Beschriftung an der Strecke. */
-function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '') {
+function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '',
+  hinweis = 'Bezeichnung und Trassenlänge stehen an jeder Strecke') {
   if (!auftrag.strecken.length) return '';
   const zeigbar = !sw && auftrag.strecken.length <= grenze;
   const eintraege = zeigbar
@@ -1101,7 +1133,7 @@ function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '') {
   const arten = [...new Set(auftrag.strecken.map(s => s.kabeltyp))];
   const zeichen = arten.map(a => kabelzeichenEintrag(a, '#000')).join('');
   return `<div class="bl-legende"><span class="lg-titel">Zeichenerklärung</span>${eintraege}${zeichen}${zusatz}
-    <span class="lg-eintrag lg-hinweis">Bezeichnung und Trassenlänge stehen an jeder Strecke</span></div>`;
+    ${hinweis ? `<span class="lg-eintrag lg-hinweis">${escapeHtml(hinweis)}</span>` : ''}</div>`;
 }
 
 /**
@@ -1112,7 +1144,7 @@ function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '') {
  * Farbzuordnung der Beschriftung an der Strecke überlassen wird, wächst
  * deshalb mit dem Blatt.
  */
-function lageLegendeHTML(auftrag, sw, mass) {
+function lageLegendeHTML(auftrag, opt, sw, mass) {
   const arten = [...new Set(auftrag.strecken.flatMap(s => s.punkte.map(x => x.art)))]
     .filter(a => a !== 'punkt');
   const punkte = arten.map(a => {
@@ -1120,7 +1152,13 @@ function lageLegendeHTML(auftrag, sw, mass) {
     return `<span class="lg-eintrag"><i class="lg-punkt art-${a}" style="--farbe:#111">${
       pa.kurz === '·' ? '' : pa.kurz}</i>${escapeHtml(pa.name)}</span>`;
   }).join('');
-  return sammelLegendeHTML(auftrag, sw, Math.round(12 * mass.blatt), punkte);
+  /* Ohne Beschriftung auf der Karte verweist der Hinweis ins Leere – dann
+     trägt allein die Farbe in dieser Liste die Zuordnung, und genau das
+     muss dort stehen. */
+  const hinweis = opt.beschriftung
+    ? 'Bezeichnung und Trassenlänge stehen an jeder Strecke'
+    : (sw ? '' : 'Die Farbe der Linie ordnet die Strecke zu');
+  return sammelLegendeHTML(auftrag, sw, Math.round(12 * mass.blatt), punkte, hinweis);
 }
 
 function sammelKennzahlenHTML(ges) {
@@ -1510,13 +1548,21 @@ function ohneMarken(html) {
   return escapeHtml(text);
 }
 
-function fussHTML(p, opt) {
+/* Die Namensnennung der Kartengrundlage ist keine Zierde: die Datenlizenz
+   Deutschland (dl-de/by-2-0) des BKG und die ODbL von OpenStreetMap verlangen
+   sie. Sie steht deshalb als eigener Baustein da und rückt in die Karte, wenn
+   die Fußzeile abgeschaltet wird – abschalten lässt sie sich nicht. */
+function kartenquelle(p, opt) {
   const bk = basiskarteById(p.ansicht.basemap);
   const quelle = opt.farbe === 'sw' ? basiskarteById(grauVariante(p.ansicht.basemap)) : bk;
+  return `Kartengrundlage: ${ohneMarken(quelle.attribution)}`;
+}
+
+function fussHTML(p, opt) {
   return `<footer class="bl-fuss">
     <span>${escapeHtml(p.name)} · erstellt ${new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
       mit FMBauplaner ${VERSION} (fmbauplaner.app)</span>
-    <span class="bf-quelle">Kartengrundlage: ${ohneMarken(quelle.attribution)}</span>
+    <span class="bf-quelle">${kartenquelle(p, opt)}</span>
   </footer>`;
 }
 

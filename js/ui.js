@@ -1782,7 +1782,12 @@ export function hilfeDialog() {
            alles ist: <b>Lagekarte (PDF)</b> im Reiter „Strecken“ oder im Menü „Datei“,
            für einen Einsatzabschnitt über dessen <b>⋯</b>. Sie zeigt alle Strecken mit
            Namen und Länge, die taktischen Zeichen und das Koordinatengitter; am Rand
-           stehen Kopfdaten, Zeichenerklärung und Kennzahlen, jedes davon abschaltbar.</p>
+           stehen Titelzeile, Kopfdaten, Zeichenerklärung, Kennzahlen und Fußzeile –
+           jeder dieser Streifen einzeln abschaltbar. Alle fünf aus ergibt das nackte
+           Kartenblatt; auch die Streckenbeschriftung lässt sich von der Karte nehmen,
+           wenn nur die Lage zählt. Stehen bleiben nur zwei Angaben: die Einstufung,
+           die auf jedes Blatt gehört, und die Nennung der Kartengrundlage – sie
+           rückt ohne Fußzeile in die Kartenecke, weil die Lizenz sie verlangt.</p>
         <p>Formate sind <b>A4 bis A0</b> und ein <b>freies Maß</b> in Millimetern – für
            Plotterrollen. Schrift, Beschriftung und Strichstärken wachsen mit dem Blatt,
            damit eine A0-Karte auch aus zwei Metern zu lesen ist. Große Blätter kennt

@@ -264,6 +264,16 @@ body.druckansicht { overflow: hidden; }
 .ms-text b { font-size: .84em; }
 .ms-text span { font-size: .72em; color: #444; }
 
+/* Die Namensnennung der Kartengrundlage steht sonst im Blattfuß. Ist der
+   abgeschaltet, rückt sie hierher – dl-de/by-2-0 und ODbL verlangen sie, sie
+   darf mit der Fußzeile nicht verschwinden. Unten rechts, weil dort auf dem
+   Lageblatt nichts liegt: der Maßstab sitzt links, der Nordpfeil oben. */
+.karten-quelle {
+  position: absolute; right: 2mm; bottom: 2mm; z-index: 900; margin: 0;
+  background: rgba(255,255,255,.92); border: .5pt solid #111; border-radius: 1mm;
+  padding: .6mm 1.6mm; font-size: .68em; color: #333;
+}
+
 .karten-uebersicht {
   position: absolute; right: 2mm; bottom: 2mm; z-index: 900;
   width: 38mm; height: 30mm; border: .8pt solid #111; background: #fff; overflow: hidden;
@@ -544,6 +554,10 @@ body.druckansicht { overflow: hidden; }
   border-radius: .33em; border-width: var(--strich);
 }
 .lageblatt .ms-balken i { height: .53em; border-width: var(--strich); }
+.lageblatt .karten-quelle {
+  right: .66em; bottom: .66em; padding: .2em .53em;
+  border-radius: .33em; border-width: var(--strich);
+}
 .lageblatt .bl-legende { gap: .33em 1.32em; padding: .46em 0; border-top-width: var(--strich); }
 .lageblatt .lg-punkt { width: 1.32em; height: 1.32em; border-width: calc(var(--strich) * 1.4); }
 .lageblatt .lg-linie { width: 2.97em; border-top-width: calc(var(--strich) * 2.4); }

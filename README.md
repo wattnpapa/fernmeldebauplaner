@@ -95,8 +95,12 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - **A4 bis A0** und ein freies Maß von 100 bis 1200 mm je Kante – für Plotterrollen
 - Schrift, Kartenbeschriftung und Strichstärken wachsen mit dem Blatt: eine A0-Karte
   wird an der Wand aus zwei Metern gelesen, nicht in der Hand aus vierzig Zentimetern
-- Am Rand Kopfdaten, Zeichenerklärung und Kennzahlen, jedes davon abschaltbar –
-  abgeschaltet gehört das Blatt allein der Karte
+- Am Rand Titelzeile, Kopfdaten, Zeichenerklärung, Kennzahlen und Fußzeile – jeder
+  Streifen einzeln abschaltbar; alle fünf aus ergibt das nackte Kartenblatt. Auch
+  die Streckenbeschriftung lässt sich von der Karte nehmen, wenn nur die Lage zählt
+- Zwei Angaben bleiben: die Einstufung, die auf jedes Blatt gehört, und die Nennung
+  der Kartengrundlage – ohne Fußzeile rückt sie in die Kartenecke, weil
+  `dl-de/by-2-0` und ODbL sie verlangen
 - Für die ganze Planung oder einen Einsatzabschnitt; sie darf auch aus taktischen
   Zeichen allein bestehen, wenn die Trassen erst noch geplant werden
 - Die Auflösung der Druckkarte richtet sich nach dem Format: bei A4 und A3 bleibt es
