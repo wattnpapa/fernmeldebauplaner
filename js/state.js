@@ -4,7 +4,7 @@ import { neueStromangabe } from './strom.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 import { QUERUNG_STANDARD } from './vorschrift.js';
 
-export const SCHEMA = 1;
+export const SCHEMA = 2;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -85,6 +85,7 @@ export function neuesProjekt(name = 'Neue Planung') {
       koordformat: 'mgrs', symbolgroesse: 1
     },
     einsatzabschnitte: [],
+    zeichengruppen: [],
     strecken: [],
     zeichen: []
   };
@@ -107,6 +108,32 @@ export function neuerEinsatzabschnitt(projekt) {
 
 export const abschnittById = (p, aid) =>
   (p && aid ? (p.einsatzabschnitte || []).find(a => a.id === aid) : null) || null;
+
+/* Zeichengruppen liegen quer zum Einsatzabschnitt: der sagt, wer zuständig ist,
+   die Gruppe, was im Lagebild zusammengehört – „Kräfte“, „Gefahrenstellen“,
+   „Fernmeldemittel“. Deshalb ein eigenes Feld statt einer zweiten Bedeutung des
+   Abschnitts: ein Zeichen des Abschnitts Nord kann eine Gefahrenstelle sein, und
+   beim Ausblenden aller Gefahrenstellen darf der Abschnitt nicht mitgehen.
+   Sie sind ebenso freiwillig wie die Abschnitte – ohne sie bleibt die
+   Zeichenliste, was sie war. */
+export function neueZeichengruppe(projekt) {
+  const n = (projekt.zeichengruppen || []).length;
+  return {
+    id: id(),
+    name: `Zeichengruppe ${n + 1}`,
+    farbe: FARBEN[n % FARBEN.length],
+    bemerkung: '',
+    sichtbar: true
+  };
+}
+
+export const zeichengruppeById = (p, gid) =>
+  (p && gid ? (p.zeichengruppen || []).find(g => g.id === gid) : null) || null;
+
+/** Alle Zeichen einer Gruppe; `null` liefert die nicht gruppierten. */
+export function zeichenInGruppe(p, gid) {
+  return p.zeichen.filter(z => (z.gruppe || null) === (gid || null));
+}
 
 const gehoertZu = (x, aid) => (x.abschnitt || null) === (aid || null);
 
@@ -134,8 +161,18 @@ export function streckeSichtbar(p, s) {
   return s.sichtbar !== false && abschnittZeigt(p, s);
 }
 
+/** Zeigt die Gruppe dieses Zeichens? Ohne Gruppe: immer. */
+export function zeichengruppeZeigt(p, z) {
+  const g = zeichengruppeById(p, z.gruppe);
+  return !g || g.sichtbar !== false;
+}
+
+/* Drei Schalter können ein Zeichen verbergen: sein eigenes Auge, das seines
+   Einsatzabschnitts und das seiner Gruppe. Jeder für sich genügt – sonst
+   brächte das Ausblenden einer Gruppe die Zeichen wieder hervor, die einzeln
+   schon abgeschaltet waren. */
 export function zeichenSichtbar(p, z) {
-  return z.sichtbar !== false && abschnittZeigt(p, z);
+  return z.sichtbar !== false && abschnittZeigt(p, z) && zeichengruppeZeigt(p, z);
 }
 
 export function neueStrecke(projekt) {
@@ -169,7 +206,7 @@ export function neuerPunkt(lat, lng, art = 'punkt') {
 
 export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
   return {
-    id: id(), lat, lng, symbol, abschnitt: null,
+    id: id(), lat, lng, symbol, abschnitt: null, gruppe: null,
     drehung: 0, groesse: 1, label: '', bemerkung: '', sichtbar: true
   };
 }
@@ -397,6 +434,16 @@ export function migrieren(p) {
       bemerkung: a.bemerkung || '',
       sichtbar: a.sichtbar !== false
     })),
+    /* Schema 2 hat die Zeichengruppen eingeführt. Ältere Stände bringen das
+       Feld nicht mit – sie öffnen dann ungegliedert, so wie sie zuletzt
+       aussahen. */
+    zeichengruppen: (p.zeichengruppen || []).map((g, i) => ({
+      id: g.id || id(),
+      name: g.name || `Zeichengruppe ${i + 1}`,
+      farbe: g.farbe || FARBEN[i % FARBEN.length],
+      bemerkung: g.bemerkung || '',
+      sichtbar: g.sichtbar !== false
+    })),
     strecken: (p.strecken || []).map(s => {
       const v = neueStrecke({ strecken: [] });
       return {
@@ -425,6 +472,10 @@ export function migrieren(p) {
   const bekannt = new Set(out.einsatzabschnitte.map(a => a.id));
   out.strecken.forEach(s => { if (!bekannt.has(s.abschnitt)) s.abschnitt = null; });
   out.zeichen.forEach(z => { if (!bekannt.has(z.abschnitt)) z.abschnitt = null; });
+  // Ebenso für die Gruppen: ein Verweis ins Leere wäre ein Zeichen, das kein
+  // Auge mehr erreicht.
+  const gruppen = new Set(out.zeichengruppen.map(g => g.id));
+  out.zeichen.forEach(z => { if (!gruppen.has(z.gruppe)) z.gruppe = null; });
   return out;
 }
 

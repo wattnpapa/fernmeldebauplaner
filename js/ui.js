@@ -3,7 +3,8 @@
 import {
   store, KABELTYPEN, VERLEGEARTEN, PUNKTARTEN, FARBEN,
   neuesZeichen, punktartById, kabelById, neueStrecke, neuerEinsatzabschnitt, abschnittById,
-  streckenIm, zeichenIm,
+  neueZeichengruppe, zeichengruppeById, zeichenInGruppe,
+  streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
@@ -185,6 +186,68 @@ const zugeklappt = new Set();
 const klappSchluessel = (aid, art) => art + ':' + (aid || '\u0000ohne');
 
 /**
+ * Eine Klammer über ihre Einträge: Farbpunkt, Name zum Auf- und Zuklappen,
+ * Zählwert, Auge und „⋯“. Einsatzabschnitte und Zeichengruppen teilen sich
+ * diese Zeile – beide Gliederungen sollen gleich aussehen und gleich zu
+ * bedienen sein, deshalb steht sie nur einmal hier.
+ *
+ * @param o.hat          Abschnitt bzw. Gruppe; `null` steht für „nicht zugeteilt“
+ * @param o.art          Merker des Klappzustandes, je Liste eigen
+ * @param o.ohneName     Überschrift der Klammer ohne Zuteilung
+ * @param o.wert         erzeugter Text rechts im Kopf (kein Nutzertext)
+ * @param o.oeffnenTitel Beschriftung des „⋯“-Knopfes
+ * @param o.oeffnen      was „⋯“ aufschlägt
+ * @param o.grund        Änderungsgrund des Augenschalters
+ * @param o.neu          baut die Liste nach dem Auf- und Zuklappen neu auf
+ * @param o.eintraege    Strecken bzw. Zeichen dieser Klammer
+ * @param o.leer         Satz, wenn nichts zugeteilt ist
+ * @param o.karte        baut den einzelnen Eintrag
+ * @param o.neuKnopf     liefert den Knopf zum Anlegen darin; ohne Zuteilung `null`
+ */
+function klammerBox(o) {
+  const hat = o.hat;
+  const schluessel = klappSchluessel(hat ? hat.id : null, o.art);
+  const zu = zugeklappt.has(schluessel);
+
+  const box = el('section', 'ea-gruppe' + (zu ? ' zu' : '') + (hat ? '' : ' ea-ohne') +
+    (hat && hat.sichtbar === false ? ' verborgen' : ''));
+
+  const kopf = el('header', 'ea-kopf');
+  kopf.innerHTML =
+    `<span class="farbpunkt${hat ? '' : ' hohl'}"${hat ? ` style="--farbe:${hat.farbe}"` : ''}></span>
+     <button type="button" class="ea-name" aria-expanded="${!zu}">
+       <span class="ea-pfeil" aria-hidden="true">▾</span>${escapeHtml(hat ? hat.name : o.ohneName)}
+     </button>
+     <span class="ea-wert">${o.wert}</span>
+     ${hat ? augenKnopf(hat.sichtbar !== false) : ''}
+     <button type="button" class="ea-mehr" data-akt="mehr"
+             title="${o.oeffnenTitel}" aria-label="${o.oeffnenTitel}">⋯</button>`;
+
+  kopf.querySelector('.ea-name').onclick = () => {
+    zugeklappt.has(schluessel) ? zugeklappt.delete(schluessel) : zugeklappt.add(schluessel);
+    o.neu();
+  };
+  kopf.querySelector('[data-akt="mehr"]').onclick = o.oeffnen;
+  if (hat) {
+    kopf.querySelector('[data-akt="sichtbar"]').onclick = () => {
+      store.aendern(() => { hat.sichtbar = hat.sichtbar === false; }, o.grund);
+    };
+  }
+  box.appendChild(kopf);
+
+  if (!zu) {
+    const inhalt = el('div', 'ea-strecken');
+    if (!o.eintraege.length) inhalt.appendChild(el('p', 'klein ea-leer', o.leer));
+    for (const x of o.eintraege) inhalt.appendChild(o.karte(x));
+    /* Anlegen und Zuteilen in einem Griff: sonst müsste jeder neue Eintrag
+       erst gesetzt, dann gesucht und dann von Hand zugeteilt werden. */
+    if (hat && o.neuKnopf) inhalt.appendChild(o.neuKnopf());
+    box.appendChild(inhalt);
+  }
+  return box;
+}
+
+/**
  * Ein Einsatzabschnitt als Klammer über seine Einträge – dieselbe Zeile über
  * den Strecken wie über den taktischen Zeichen. `art` bestimmt, was darin
  * steht und was der Kopf zählt.
@@ -194,59 +257,53 @@ function abschnittGruppe(ea, art) {
   const zeichenliste = art === 'zeichen';
   const aid = ea ? ea.id : null;
   const eintraege = zeichenliste ? zeichenIm(p, aid) : streckenIm(p, aid);
-  const zu = zugeklappt.has(klappSchluessel(aid, art));
 
-  const box = el('section', 'ea-gruppe' + (zu ? ' zu' : '') + (ea ? '' : ' ea-ohne') +
-    (ea && ea.sichtbar === false ? ' verborgen' : ''));
+  const box = klammerBox({
+    hat: ea, art, ohneName: 'Ohne Einsatzabschnitt',
+    wert: zeichenliste
+      ? `${eintraege.length} Zeichen`
+      : `${eintraege.length} · ${formatLaenge(gesamtKennzahlen(eintraege).trasse)}`,
+    oeffnenTitel: 'Einsatzabschnitt öffnen',
+    oeffnen: () => einsatzabschnittDialog(aid),
+    grund: 'strecke',
+    neu: () => zeichenliste ? zeichneZeichenListe() : zeichneStreckenListe(),
+    eintraege,
+    leer: zeichenliste
+      ? 'Kein Zeichen zugeteilt. Nicht zugeteilte Zeichen gehören ohnehin zu jedem Abschnitt.'
+      : 'Keine Strecke zugeteilt. Die Zuteilung steht in der geöffneten Strecke oder unter „⋯“.',
+    karte: x => zeichenliste ? zeichenKarte(x) : streckenKarte(x),
+    neuKnopf: ea ? () => neuKnopf(ea, art) : null
+  });
   if (ea) box.dataset.aid = ea.id;
+  return box;
+}
 
-  const kopf = el('header', 'ea-kopf');
-  kopf.innerHTML =
-    `<span class="farbpunkt${ea ? '' : ' hohl'}"${ea ? ` style="--farbe:${ea.farbe}"` : ''}></span>
-     <button type="button" class="ea-name" aria-expanded="${!zu}">
-       <span class="ea-pfeil" aria-hidden="true">▾</span>${escapeHtml(ea ? ea.name : 'Ohne Einsatzabschnitt')}
-     </button>
-     <span class="ea-wert">${zeichenliste
-       ? `${eintraege.length} Zeichen`
-       : `${eintraege.length} · ${formatLaenge(gesamtKennzahlen(eintraege).trasse)}`}</span>
-     ${ea ? augenKnopf(ea.sichtbar !== false) : ''}
-     <button type="button" class="ea-mehr" data-akt="mehr"
-             title="Einsatzabschnitt öffnen" aria-label="Einsatzabschnitt öffnen">⋯</button>`;
-
-  const neuZeichnen = () => zeichenliste ? zeichneZeichenListe() : zeichneStreckenListe();
-  kopf.querySelector('.ea-name').onclick = () => {
-    const s = klappSchluessel(aid, art);
-    zugeklappt.has(s) ? zugeklappt.delete(s) : zugeklappt.add(s);
-    neuZeichnen();
-  };
-  kopf.querySelector('[data-akt="mehr"]').onclick = () => einsatzabschnittDialog(aid);
-  if (ea) {
-    kopf.querySelector('[data-akt="sichtbar"]').onclick = () => {
-      store.aendern(() => { ea.sichtbar = ea.sichtbar === false; }, 'strecke');
-    };
-  }
-  box.appendChild(kopf);
-
-  if (!zu) {
-    const inhalt = el('div', 'ea-strecken');
-    if (!eintraege.length) {
-      inhalt.appendChild(el('p', 'klein ea-leer', zeichenliste
-        ? 'Kein Zeichen zugeteilt. Nicht zugeteilte Zeichen gehören ohnehin zu jedem Abschnitt.'
-        : 'Keine Strecke zugeteilt. Die Zuteilung steht in der geöffneten Strecke oder unter „⋯“.'));
-    }
-    for (const x of eintraege) inhalt.appendChild(zeichenliste ? zeichenKarte(x) : streckenKarte(x));
-    /* Anlegen und Zuteilen in einem Griff: sonst müsste jeder neue Eintrag
-       erst gesetzt, dann gesucht und dann von Hand zugeteilt werden. */
-    if (ea) inhalt.appendChild(neuKnopf(ea, art));
-    box.appendChild(inhalt);
-  }
+/** Dieselbe Klammer über einer Zeichengruppe. Sie zählt und schaltet nur
+ *  Zeichen – Strecken kennt diese Gliederung nicht. */
+function zeichengruppenGruppe(gr) {
+  const eintraege = zeichenInGruppe(store.projekt, gr ? gr.id : null);
+  const box = klammerBox({
+    hat: gr, art: 'zeichengruppe', ohneName: 'Ohne Gruppe',
+    wert: `${eintraege.length} Zeichen`,
+    oeffnenTitel: 'Zeichengruppe öffnen',
+    oeffnen: () => zeichengruppeDialog(gr ? gr.id : null),
+    grund: 'zeichen',
+    neu: zeichneZeichenListe,
+    eintraege,
+    leer: 'Kein Zeichen in dieser Gruppe. Die Zuteilung steht im geöffneten Zeichen oder unter „⋯“.',
+    karte: zeichenKarte,
+    neuKnopf: gr ? () => knopf('+ Zeichen in dieser Gruppe', () => {
+      symbolPalette(sym => ctx.zeichenSetzen(sym, { gruppe: gr.id }));
+    }, 'klein ea-neu') : null
+  });
+  if (gr) box.dataset.gid = gr.id;
   return box;
 }
 
 function neuKnopf(ea, art) {
   if (art === 'zeichen') {
     return knopf('+ Zeichen in diesem Abschnitt', () => {
-      symbolPalette(sym => ctx.zeichenSetzen(sym, ea.id));
+      symbolPalette(sym => ctx.zeichenSetzen(sym, { abschnitt: ea.id }));
     }, 'klein ea-neu');
   }
   return knopf('+ Strecke in diesem Abschnitt', () => {
@@ -264,8 +321,12 @@ function neuKnopf(ea, art) {
 function streckenKarte(s) {
   const gewaehlt = ctx.sl.auswahl === s.id;
   const k = kennzahlen(s);
-  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') +
-    (s.sichtbar === false ? ' verborgen' : ''));
+  /* Wie beim Zeichen: „verborgen“ meint den eigenen Schalter, „entzogen“ den
+     des Einsatzabschnitts – sonst sieht eine Strecke, die der Abschnitt
+     abgeschaltet hat, aus wie eine auf der Karte. */
+  const zustand = s.sichtbar === false ? ' verborgen'
+    : (streckeSichtbar(store.projekt, s) ? '' : ' entzogen');
+  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') + zustand);
   karte.dataset.sid = s.id;
 
   /* Der Handler sitzt auf der Kopfzeile, nicht auf einzelnen Feldern darin:
@@ -817,6 +878,14 @@ function koordinatenDialog(s, pt, i) {
 
 // ---------------------------------------------------------------- Einsatzabschnitte
 
+/* Die Zuteilungsliste im selben Dialog trägt den Namen ein zweites Mal – in
+   jedem Auswahlfeld. Wird oben umbenannt, muss sie nachziehen, ohne dass die
+   Liste neu gebaut wird: das verlöre den Bildlauf mitten in der Eingabe. */
+function benenneAuswahlNach(kennung, name) {
+  document.querySelectorAll(`#dialog-inhalt .mini-select option[value="${kennung}"]`)
+    .forEach(o => { o.textContent = name; });
+}
+
 /** Neuen Einsatzabschnitt bilden und gleich zur Bearbeitung öffnen */
 export function abschnittAnlegen() {
   let aid;
@@ -851,11 +920,12 @@ export function einsatzabschnittDialog(aid) {
          stehen gleichzeitig im DOM. */
       document.querySelectorAll(`.ea-gruppe[data-aid="${ea.id}"] .ea-name`)
         .forEach(zeile => { zeile.lastChild.textContent = v; });
+      benenneAuswahlNach(ea.id, v);
       document.getElementById('dialog-titel').textContent = v || 'Einsatzabschnitt';
     }, { platzhalter: 'z. B. Einsatzabschnitt Nord' }));
     g.appendChild(feld('Leitung / Verantwortlich', ea.leiter, v => schreib(() => { ea.leiter = v; }),
       { platzhalter: 'Name, Funktion – steht auf dem Sammelauftrag' }));
-    g.appendChild(abschnittFarbwahl(ea));
+    g.appendChild(klammerFarbwahl(ea, 'Farbe des Abschnitts', 'aid'));
     g.appendChild(feld('Bemerkung', ea.bemerkung, v => schreib(() => { ea.bemerkung = v; }),
       { typ: 'textarea', zeilen: 2 }));
     box.appendChild(g);
@@ -925,15 +995,33 @@ export function einsatzabschnittDialog(aid) {
 }
 
 /** Liste aller Strecken bzw. Zeichen mit ihrer Zuteilung – von hier aus wandern
- *  sie zwischen den Abschnitten, ohne dass jedes einzeln geöffnet werden muss. */
-function zuteilungsliste(art, aid, stand, ausgabeAuffrischen) {
+ *  sie zwischen den Klammern, ohne dass jede einzeln geöffnet werden muss.
+ *  `art`: 'strecken' und 'zeichen' teilen einem Einsatzabschnitt zu,
+ *  'zeichengruppe' einer Zeichengruppe. */
+function zuteilungsliste(art, ziel, stand, danach = () => {}) {
   const p = store.projekt;
-  const zeichenliste = art === 'zeichen';
+  const zeichenliste = art !== 'strecken';
+  const nachGruppe = art === 'zeichengruppe';
   const alle = zeichenliste ? p.zeichen : p.strecken;
+  const feldname = nachGruppe ? 'gruppe' : 'abschnitt';
+  const klammern = nachGruppe ? (p.zeichengruppen || []) : (p.einsatzabschnitte || []);
+  const bezeichner = nachGruppe ? 'Zeichengruppe' : 'Einsatzabschnitt';
   const box = el('div', 'ea-zuteilung');
 
+  const eigene = () => {
+    if (nachGruppe) return zeichenInGruppe(store.projekt, ziel);
+    return zeichenliste ? zeichenIm(store.projekt, ziel) : streckenIm(store.projekt, ziel);
+  };
+
   const standSchreiben = () => {
-    const eigen = zeichenliste ? zeichenIm(store.projekt, aid) : streckenIm(store.projekt, aid);
+    const eigen = eigene();
+    if (nachGruppe) {
+      stand.innerHTML = eigen.length
+        ? `<b>${eigen.length}</b> in dieser Gruppe. Das Auge der Gruppe blendet sie
+           gemeinsam ein und aus.`
+        : 'Noch kein Zeichen in dieser Gruppe.';
+      return;
+    }
     if (zeichenliste) {
       stand.innerHTML = eigen.length
         ? `<b>${eigen.length}</b> zugeteilt. Nicht zugeteilte Zeichen erscheinen ohnehin
@@ -969,19 +1057,19 @@ function zuteilungsliste(art, aid, stand, ausgabeAuffrischen) {
 
     const wahl = document.createElement('select');
     wahl.className = 'mini-select';
-    wahl.setAttribute('aria-label', `Einsatzabschnitt für ${bezeichnung}`);
-    for (const [wert, text] of [['', '— ohne —'], ...p.einsatzabschnitte.map(a => [a.id, a.name])]) {
+    wahl.setAttribute('aria-label', `${bezeichner} für ${bezeichnung}`);
+    for (const [wert, text] of [['', '— ohne —'], ...klammern.map(k => [k.id, k.name])]) {
       const o = document.createElement('option');
-      o.value = wert; o.textContent = text; o.selected = (x.abschnitt || '') === wert;
+      o.value = wert; o.textContent = text; o.selected = (x[feldname] || '') === wert;
       wahl.appendChild(o);
     }
     wahl.onchange = () => {
-      store.aendern(() => { x.abschnitt = wahl.value || null; }, zeichenliste ? 'zeichen' : 'strecke');
-      zeile.classList.toggle('eigen', (x.abschnitt || null) === (aid || null));
+      store.aendern(() => { x[feldname] = wahl.value || null; }, zeichenliste ? 'zeichen' : 'strecke');
+      zeile.classList.toggle('eigen', (x[feldname] || null) === (ziel || null));
       standSchreiben();
-      ausgabeAuffrischen();
+      danach();
     };
-    zeile.classList.toggle('eigen', (x.abschnitt || null) === (aid || null));
+    zeile.classList.toggle('eigen', (x[feldname] || null) === (ziel || null));
     zeile.appendChild(wahl);
     box.appendChild(zeile);
   }
@@ -989,21 +1077,25 @@ function zuteilungsliste(art, aid, stand, ausgabeAuffrischen) {
   return box;
 }
 
-function abschnittFarbwahl(ea) {
+/** Farbwahl für eine Klammer – `merkmal` benennt das Datenattribut, an dem die
+ *  offenen Listen ihren Farbpunkt tragen (`aid` Abschnitt, `gid` Gruppe).
+ *  Die Strecken haben ihre eigene `farbwahl`: dort hängt an der Farbe auch die
+ *  Linie auf der Karte, hier nur der Punkt in der Kopfzeile. */
+function klammerFarbwahl(hat, titel, merkmal) {
   const wrap = el('div', 'feld');
-  wrap.appendChild(el('span', 'feld-titel', 'Farbe des Abschnitts'));
+  wrap.appendChild(el('span', 'feld-titel', titel));
   const reihe = el('div', 'farbreihe');
   FARBEN.forEach(f => {
-    const b = el('button', 'farbe' + (ea.farbe === f ? ' aktiv' : ''));
+    const b = el('button', 'farbe' + (hat.farbe === f ? ' aktiv' : ''));
     b.style.background = f;
     b.title = f;
     b.setAttribute('aria-label', 'Farbe ' + f);
     b.onclick = () => {
-      schreib(() => { ea.farbe = f; });
+      schreib(() => { hat.farbe = f; });
       reihe.querySelectorAll('.farbe').forEach(x => x.classList.remove('aktiv'));
       b.classList.add('aktiv');
       // Ebenso in beiden Listen; der Punkt im Gruppenkopf, nicht die der Einträge.
-      document.querySelectorAll(`.ea-gruppe[data-aid="${ea.id}"] .ea-kopf .farbpunkt`)
+      document.querySelectorAll(`.ea-gruppe[data-${merkmal}="${hat.id}"] .ea-kopf .farbpunkt`)
         .forEach(punkt => { punkt.style.setProperty('--farbe', f); });
     };
     reihe.appendChild(b);
@@ -1044,20 +1136,144 @@ function abschnittAufloesen(ea) {
   });
 }
 
+// ---------------------------------------------------------------- Zeichengruppen
+
+/** Neue Zeichengruppe bilden und gleich zur Bearbeitung öffnen */
+export function zeichengruppeAnlegen() {
+  let gid;
+  store.aendern(p => {
+    const gr = neueZeichengruppe(p);
+    gid = gr.id;
+    /* Ältere Stände kennen das Feld nicht; die Migration legt es an, ein per
+       Rückgängig zurückgeholter Zwischenstand aber nicht zwingend. */
+    p.zeichengruppen = p.zeichengruppen || [];
+    p.zeichengruppen.push(gr);
+  }, 'zeichen');
+  zeichengruppeDialog(gid);
+}
+
+/**
+ * Eine Zeichengruppe an einem Ort: benennen, einfärben, Zeichen zuteilen.
+ * `gid = null` öffnet dieselbe Ansicht für die nicht gruppierten Zeichen –
+ * dort gibt es nichts zu benennen, wohl aber zuzuteilen.
+ *
+ * Anders als der Einsatzabschnitt gibt die Gruppe nichts aus: sie ordnet das
+ * Lagebild auf dem Schirm, sie ist keine Zuständigkeit, für die ein eigener
+ * Bauauftrag oder eine Teildatei entstünde.
+ */
+export function zeichengruppeDialog(gid) {
+  const p = store.projekt;
+  const gr = zeichengruppeById(p, gid);
+  if (gid && !gr) return;
+
+  const box = el('div', 'ea-dialog');
+
+  if (gr) {
+    const g = el('div', 'feldgruppe');
+    g.appendChild(feld('Bezeichnung', gr.name, v => {
+      schreib(() => { gr.name = v; });
+      // Nur die Zeile nachziehen – ein Neuaufbau verlöre Bildlauf und Fokus.
+      document.querySelectorAll(`.ea-gruppe[data-gid="${gr.id}"] .ea-name`)
+        .forEach(zeile => { zeile.lastChild.textContent = v; });
+      benenneAuswahlNach(gr.id, v);
+      document.getElementById('dialog-titel').textContent = v || 'Zeichengruppe';
+    }, { platzhalter: 'z. B. Gefahrenstellen, Kräfte, Fernmeldemittel' }));
+    g.appendChild(klammerFarbwahl(gr, 'Farbe der Gruppe', 'gid'));
+    g.appendChild(feld('Bemerkung', gr.bemerkung, v => schreib(() => { gr.bemerkung = v; }),
+      { typ: 'textarea', zeilen: 2 }));
+    box.appendChild(g);
+  } else {
+    box.appendChild(el('p', 'klein',
+      `Diese Zeichen gehören zu keiner Gruppe. Sie bleiben auf der Karte sichtbar –
+       nur wer in einer Gruppe steht, lässt sich mit ihr gemeinsam ausblenden.`));
+  }
+
+  const zut = el('div', 'feldgruppe');
+  zut.appendChild(el('h3', 'gruppen-titel', 'Zeichen zuteilen'));
+  const stand = el('p', 'klein ea-stand');
+  zut.appendChild(zuteilungsliste('zeichengruppe', gid, stand));
+  zut.appendChild(stand);
+  box.appendChild(zut);
+
+  const fuss = [];
+  if (gr) fuss.push({ text: 'Gruppe auflösen', gefahr: true,
+    tun: () => { zeichengruppeAufloesen(gr); return false; } });
+  fuss.push({ text: 'Schließen', primaer: true });
+
+  dialog({
+    titel: gr ? (gr.name || 'Zeichengruppe') : 'Zeichen ohne Gruppe',
+    inhalt: box, breit: true, fuss
+  });
+}
+
+/* Auflösen, nicht löschen: die Zeichen bleiben stehen und sind danach nur
+   ungruppiert. Ein ausgeblendetes Zeichen käme dabei unbemerkt zurück – deshalb
+   sagt die Rückfrage es an, wenn die Gruppe gerade ausgeblendet ist. */
+function zeichengruppeAufloesen(gr) {
+  const anzahl = zeichenInGruppe(store.projekt, gr.id).length;
+  dialog({
+    titel: 'Zeichengruppe auflösen',
+    inhalt: `<p>Soll <b>${escapeHtml(gr.name)}</b> aufgelöst werden?</p>
+      <p class="klein">${anzahl
+        ? `${anzahl} ${anzahl === 1 ? 'Zeichen bleibt' : 'Zeichen bleiben'} erhalten und
+           ${anzahl === 1 ? 'gilt' : 'gelten'} danach als ungruppiert.` +
+          (gr.sichtbar === false
+            ? ` Da die Gruppe ausgeblendet ist, ${anzahl === 1 ? 'erscheint es' : 'erscheinen sie'}
+               danach wieder auf der Karte.`
+            : '')
+        : 'Dieser Gruppe ist kein Zeichen zugeteilt.'}
+        Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
+    fuss: [
+      { text: 'Abbrechen', tun: () => { zeichengruppeDialog(gr.id); return false; } },
+      { text: 'Auflösen', gefahr: true, tun: () => {
+          store.aendern(p => {
+            p.zeichen.forEach(z => { if (z.gruppe === gr.id) z.gruppe = null; });
+            p.zeichengruppen = p.zeichengruppen.filter(g => g.id !== gr.id);
+          }, 'zeichen');
+          hinweis('Zeichengruppe aufgelöst');
+        } }
+    ]
+  });
+}
+
 // ---------------------------------------------------------------- Taktische Zeichen
+
+/* Zwei Gliederungen liegen quer zueinander: der Einsatzabschnitt sagt, wer
+   zuständig ist, die Zeichengruppe, was im Lagebild zusammengehört. Ineinander
+   geschachtelt wäre die Liste in der schmalen Seitenleiste nicht mehr zu lesen –
+   sie zeigt deshalb eine von beiden. Wonach gegliedert wird, ist Ansichtssache
+   und steht wie der Klappzustand außerhalb des Projekts. */
+let zeichenGliederung = 'gruppen';
 
 export function zeichneZeichenListe() {
   const p = store.projekt;
   const liste = document.getElementById('zeichen-liste');
+  const wahlbox = document.getElementById('zeichen-gliederung');
   const abschnitte = p.einsatzabschnitte || [];
+  const gruppen = p.zeichengruppen || [];
   liste.innerHTML = '';
+
+  /* Der Umschalter darf nicht auf eine Gliederung zeigen, die es nicht mehr
+     gibt – die letzte Gruppe kann eben aufgelöst worden sein. */
+  if (!gruppen.length) zeichenGliederung = 'abschnitte';
+  else if (!abschnitte.length) zeichenGliederung = 'gruppen';
+
+  wahlbox.innerHTML = '';
+  wahlbox.hidden = !(gruppen.length && abschnitte.length);
+  if (!wahlbox.hidden) wahlbox.appendChild(gliederungsWahl());
 
   if (!p.zeichen.length) {
     liste.appendChild(el('div', 'leer',
       `<p><b>Noch keine taktischen Zeichen gesetzt.</b></p>
        <p>„Taktisches Zeichen setzen“ wählen, Symbol aus der Auswahl nehmen und
        auf der Karte platzieren.</p>`));
-    if (!abschnitte.length) return;
+    if (!abschnitte.length && !gruppen.length) return;
+  }
+
+  if (zeichenGliederung === 'gruppen' && gruppen.length) {
+    for (const gr of gruppen) liste.appendChild(zeichengruppenGruppe(gr));
+    if (zeichenInGruppe(p, null).length) liste.appendChild(zeichengruppenGruppe(null));
+    return;
   }
 
   if (!abschnitte.length) {
@@ -1069,11 +1285,31 @@ export function zeichneZeichenListe() {
   if (zeichenIm(p, null).length) liste.appendChild(abschnittGruppe(null, 'zeichen'));
 }
 
+/** Umschalter zwischen den beiden Gliederungen der Zeichenliste */
+function gliederungsWahl() {
+  const reihe = el('div', 'gl-wahl');
+  reihe.appendChild(el('span', 'gl-titel', 'Gliedern nach'));
+  for (const [wert, text] of [['gruppen', 'Gruppen'], ['abschnitte', 'Einsatzabschnitten']]) {
+    const b = el('button', 'gl-knopf' + (zeichenGliederung === wert ? ' aktiv' : ''), text);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(zeichenGliederung === wert));
+    b.onclick = () => { zeichenGliederung = wert; zeichneZeichenListe(); };
+    reihe.appendChild(b);
+  }
+  return reihe;
+}
+
 function zeichenKarte(z) {
   const gewaehlt = ctx.zl.auswahl === z.id;
   const basis = symbolById(z.symbol);
-  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') +
-    (z.sichtbar === false ? ' verborgen' : ''));
+  /* Ein Zeichen kann auch dann von der Karte verschwunden sein, wenn sein
+     eigenes Auge offen steht – dann hat es seine Gruppe oder sein Abschnitt
+     ausgeblendet. Das muss die Zeile zeigen, sonst wird es auf der Karte
+     vergeblich gesucht. „entzogen“ dämpft dafür wie „verborgen“, lässt aber
+     das Auge in Ruhe: dieser Schalter steht ja weiter offen. */
+  const zustand = z.sichtbar === false ? ' verborgen'
+    : (zeichenSichtbar(store.projekt, z) ? '' : ' entzogen');
+  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') + zustand);
 
   const kopf = el('header', 'eintrag-kopf');
   kopf.innerHTML =
@@ -1120,6 +1356,18 @@ function zeichenFormular(z, basis) {
       typ: 'select',
       werte: [['', '— keinem zugeteilt (gilt für alle) —'],
         ...store.projekt.einsatzabschnitte.map(a => [a.id, a.name])]
+    }));
+  }
+
+  /* Die Gruppe steht neben dem Abschnitt, nicht an seiner Stelle: das eine sagt,
+     wer zuständig ist, das andere, was zusammen ein- und ausgeblendet wird. */
+  if ((store.projekt.zeichengruppen || []).length) {
+    g.appendChild(feld('Zeichengruppe', z.gruppe || '', v => {
+      store.aendern(() => { z.gruppe = v || null; }, 'zeichen');
+    }, {
+      typ: 'select',
+      werte: [['', '— ohne Gruppe —'],
+        ...store.projekt.zeichengruppen.map(gr => [gr.id, gr.name])]
     }));
   }
 
@@ -1487,6 +1735,24 @@ export function hilfeDialog() {
               seinem Ausschnitt weiter, ohne die übrige Planung zu sehen.</li>
           <li><b>Abschnitt auflösen</b> entfernt nur die Gliederung; Strecken und Zeichen
               bleiben und gelten danach als nicht zugeteilt.</li>
+        </ul>
+        <h3>Zeichengruppen</h3>
+        <p>Zeichengruppen fassen taktische Zeichen zu einem Lagebild zusammen –
+           „Gefahrenstellen“, „Kräfte“, „Fernmeldemittel“ – und blenden sie gemeinsam
+           ein und aus. Über <b>+ Zeichengruppe</b> im Reiter „Taktische Zeichen“ eine
+           anlegen; die Zuteilung steht dann in jedem geöffneten Zeichen und gesammelt
+           in der Gruppe selbst (Knopf <b>⋯</b> an der Gruppenzeile).</p>
+        <ul class="tasten-liste">
+          <li>Sie liegen <b>quer zum Einsatzabschnitt</b>: der sagt, wer zuständig ist,
+              die Gruppe, was zusammengehört. Ein Zeichen kann beides tragen.</li>
+          <li>Das <b>Auge</b> an der Gruppenzeile nimmt alle ihre Zeichen von der Karte –
+              auch aus dem Bauauftrag. Der eigene Schalter jedes Zeichens bleibt dabei
+              erhalten. Ein Zeichen, das nur die Gruppe verbirgt, steht blass in der
+              Liste, sein Auge aber offen.</li>
+          <li>Bestehen Gruppen <b>und</b> Einsatzabschnitte, wählt <b>Gliedern nach</b>
+              über der Liste, welche der beiden sie zeigt.</li>
+          <li><b>Gruppe auflösen</b> entfernt nur die Gliederung; die Zeichen bleiben und
+              sind danach ungruppiert.</li>
         </ul>
         <h3>Bauauftrag</h3>
         <p>In der geöffneten Strecke <b>Bauauftrag (PDF)</b> wählen. Dort A4/A3, Hoch/Quer und

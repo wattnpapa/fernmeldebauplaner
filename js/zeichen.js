@@ -1,6 +1,6 @@
 // zeichen.js – taktische Zeichen als Kartenmarker
 
-import { store, neuesZeichen, zeichenSichtbar } from './state.js';
+import { store, neuesZeichen, zeichenSichtbar, zeichengruppeZeigt } from './state.js';
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
 
@@ -10,7 +10,8 @@ export class ZeichenLayer {
     this.interaktiv = opt.interaktiv !== false;
     this.gruppe = L.layerGroup().addTo(karte);
     this.auswahl = null;
-    this.setzModus = null;   // Symbol-ID, das beim nächsten Klick gesetzt wird
+    this.setzModus = null;      // Symbol-ID, das beim nächsten Klick gesetzt wird
+    this.setzZuteilung = null;  // {abschnitt, gruppe} für das neue Zeichen
     this.aufAuswahl = opt.aufAuswahl || (() => {});
     this.aufAenderung = opt.aufAenderung || (() => {});
     this.sw = !!opt.sw;
@@ -22,7 +23,6 @@ export class ZeichenLayer {
        auf der Arbeitskarte – aber nur für den gedruckten Abschnitt selbst,
        genau wie bei den Strecken. */
     this.abschnittSchaltet = opt.abschnittSchaltet !== false;
-    this.setzAbschnitt = null;
     if (this.interaktiv) {
       this._klick = e => this._kartenKlick(e);
       karte.on('click', this._klick);
@@ -34,27 +34,30 @@ export class ZeichenLayer {
     this.gruppe.remove();
   }
 
-  /** `abschnitt` teilt das Zeichen beim Setzen gleich einem Einsatzabschnitt zu */
-  starteSetzen(symbolId, abschnitt = null) {
+  /** `zuteilung` teilt das Zeichen beim Setzen gleich zu: `{abschnitt, gruppe}`.
+   *  So legt „+ Zeichen in dieser Gruppe“ in einem Griff an, was sonst erst
+   *  gesetzt, gesucht und von Hand zugeteilt werden müsste. */
+  starteSetzen(symbolId, zuteilung = {}) {
     this.setzModus = symbolId;
-    this.setzAbschnitt = abschnitt;
+    this.setzZuteilung = zuteilung;
     L.DomUtil.addClass(this.karte.getContainer(), 'modus-zeichen');
   }
 
   beendeSetzen() {
     this.setzModus = null;
-    this.setzAbschnitt = null;
+    this.setzZuteilung = null;
     L.DomUtil.removeClass(this.karte.getContainer(), 'modus-zeichen');
   }
 
   _kartenKlick(e) {
     if (!this.setzModus) return;
     const sym = this.setzModus;
-    const aid = this.setzAbschnitt;
+    const zut = this.setzZuteilung || {};
     let neu;
     store.aendern(p => {
       neu = neuesZeichen(e.latlng.lat, e.latlng.lng, sym);
-      neu.abschnitt = aid;
+      neu.abschnitt = zut.abschnitt || null;
+      neu.gruppe = zut.gruppe || null;
       p.zeichen.push(neu);
     }, 'zeichen');
     this.beendeSetzen();
@@ -78,6 +81,10 @@ export class ZeichenLayer {
 
     for (const z of p.zeichen) {
       if (z.sichtbar === false) continue;
+      /* Die Zeichengruppe ist ein Filter des Lagebildes und gilt überall –
+         auch auf dem Blatt eines eigens angeforderten Abschnitts. Wer die
+         Gefahrenstellen ausblendet, will sie nicht im Druck wiederfinden. */
+      if (!zeichengruppeZeigt(p, z)) continue;
       const angefordert = !this.abschnittSchaltet && !!this.nurAbschnitt &&
         z.abschnitt === this.nurAbschnitt;
       if (!angefordert && !zeichenSichtbar(p, z)) continue;

@@ -13,7 +13,7 @@ import * as io from './io.js';
 import {
   initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter,
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis,
-  abschnittAnlegen
+  abschnittAnlegen, zeichengruppeAnlegen
 } from './ui.js';
 import {
   bauauftragOffen, schliesseBauauftrag, entferneSeitenformat, oeffneSammeldruck
@@ -84,12 +84,12 @@ function zeichenSetzenStarten() {
   symbolPalette(symbolId => zeichenSetzen(symbolId));
 }
 
-/** Setzmodus starten – `abschnitt` teilt das Zeichen gleich beim Setzen zu.
- *  Die Seitenleiste ruft das über den Kontext auf; die Modusanzeige gehört
- *  hierher, weil sie an der Werkzeugleiste hängt. */
-function zeichenSetzen(symbolId, abschnitt = null) {
+/** Setzmodus starten – `zuteilung` ({abschnitt, gruppe}) teilt das Zeichen
+ *  gleich beim Setzen zu. Die Seitenleiste ruft das über den Kontext auf; die
+ *  Modusanzeige gehört hierher, weil sie an der Werkzeugleiste hängt. */
+function zeichenSetzen(symbolId, zuteilung = {}) {
   zeichnenBeenden(true);
-  zl.starteSetzen(symbolId, abschnitt);
+  zl.starteSetzen(symbolId, zuteilung);
   zurKarte();
   modusAnzeigen();
   hinweis('Auf die Karte klicken, um das Zeichen zu setzen.');
@@ -260,6 +260,7 @@ karte.on('moveend zoomend', () => {
 $('#btn-neue-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();
 $('#btn-neues-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
 $('#btn-neuer-abschnitt').onclick = () => abschnittAnlegen();
+$('#btn-neue-zeichengruppe').onclick = () => zeichengruppeAnlegen();
 $('#btn-sammel-pdf').onclick = () => oeffneSammeldruck();
 
 $('#wz-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();

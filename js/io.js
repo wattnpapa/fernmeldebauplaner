@@ -2,7 +2,7 @@
 
 import {
   store, migrieren, neueStrecke, neuerPunkt, neuesZeichen, id, ladeAlle, dateisicherungVermerken,
-  abschnittById, streckenIm, zeichenIm, zeichenFuer, punktartById, VERLEGEARTEN
+  abschnittById, zeichengruppeById, streckenIm, zeichenIm, zeichenFuer, punktartById, VERLEGEARTEN
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
@@ -63,6 +63,10 @@ export function abschnittExportieren(aid) {
   if (!strecken.length && !zeichenIm(p, aid).length) return false;
   const bezeichnung = ea ? ea.name : 'Ohne Einsatzabschnitt';
   const jetzt = new Date().toISOString();
+  const zeichen = aid ? zeichenFuer(p, aid) : zeichenIm(p, aid);
+  /* Nur die Gruppen, die in diesem Ausschnitt vorkommen: eine leere Gruppe
+     träfe beim Empfänger auf nichts, ihr Auge schaltete ins Leere. */
+  const benutzt = new Set(zeichen.map(z => z.gruppe).filter(Boolean));
 
   const teil = {
     ...p,
@@ -71,8 +75,9 @@ export function abschnittExportieren(aid) {
     erstellt: jetzt,
     geaendert: jetzt,
     einsatzabschnitte: ea ? [ea] : [],
+    zeichengruppen: (p.zeichengruppen || []).filter(g => benutzt.has(g.id)),
     strecken,
-    zeichen: aid ? zeichenFuer(p, aid) : zeichenIm(p, aid),
+    zeichen,
     herkunft: {
       projekt: p.name,
       projektId: p.id,
@@ -237,6 +242,7 @@ export function geoJSON(nurStrecke = null) {
       geometry: { type: 'Point', coordinates: [z.lng, z.lat] },
       properties: {
         name: z.label || symbolById(z.symbol).name, symbol: z.symbol,
+        gruppe: (zeichengruppeById(p, z.gruppe) || {}).name || '',
         bemerkung: z.bemerkung, mgrs: toMGRS(z.lat, z.lng, 5)
       }
     });
@@ -314,18 +320,34 @@ const streckenOrdner = s => ({
   ]
 });
 
-const zeichenOrdner = (zeichen, farbe) => ({
-  name: 'Taktische Zeichen',
-  offen: false,
-  eintraege: zeichen.map(z => ({
-    art: 'punkt',
-    name: z.label || symbolById(z.symbol).name,
-    farbe: farbe || '#455a64',
-    sichtbar: z.sichtbar,
-    lat: z.lat, lng: z.lng,
-    beschreibung: [symbolById(z.symbol).name, `MGRS ${toMGRS(z.lat, z.lng, 5)}`, z.bemerkung]
-  }))
-});
+const zeichenEintraege = (zeichen, farbe) => zeichen.map(z => ({
+  art: 'punkt',
+  name: z.label || symbolById(z.symbol).name,
+  farbe: farbe || '#455a64',
+  sichtbar: z.sichtbar,
+  lat: z.lat, lng: z.lng,
+  beschreibung: [symbolById(z.symbol).name, `MGRS ${toMGRS(z.lat, z.lng, 5)}`, z.bemerkung]
+}));
+
+/* Je Zeichengruppe ein Unterordner: in Google Earth schaltet ihn derselbe Haken
+   ein und aus wie im Planer das Auge der Gruppe. Innerhalb der Gruppe trägt ihre
+   eigene Farbe – sie ist es, die den Ordner benennt; was ungruppiert bleibt,
+   behält die Farbe des Abschnitts. Leere Ordner lässt `kmlSchreiben` weg. */
+function zeichenOrdner(zeichen, farbe) {
+  const gruppen = store.projekt.zeichengruppen || [];
+  const ordner = { name: 'Taktische Zeichen', offen: false };
+  if (!gruppen.length) return { ...ordner, eintraege: zeichenEintraege(zeichen, farbe) };
+  return {
+    ...ordner,
+    ordner: gruppen.map(g => ({
+      name: g.name,
+      sichtbar: g.sichtbar,
+      beschreibung: [g.bemerkung],
+      eintraege: zeichenEintraege(zeichen.filter(z => z.gruppe === g.id), g.farbe)
+    })),
+    eintraege: zeichenEintraege(zeichen.filter(z => !z.gruppe), farbe)
+  };
+}
 
 /* Kopf der Planung als Beschreibung des Dokuments – wer die Datei weitergibt,
    soll in Google Earth sehen, zu welchem Einsatz und welchem Stand sie gehört. */

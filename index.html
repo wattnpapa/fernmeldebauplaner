@@ -101,7 +101,13 @@
       <section class="reiter-inhalt" data-inhalt="zeichen">
         <div class="seite-kopf">
           <button class="knopf primaer breit" id="btn-neues-zeichen">+ Taktisches Zeichen setzen</button>
+          <div class="seite-kopf-zeile">
+            <button class="knopf klein" id="btn-neue-zeichengruppe"
+                    title="Zeichen zu einem Lagebild zusammenfassen und gemeinsam ein- und ausblenden">+ Zeichengruppe</button>
+          </div>
         </div>
+        <!-- Der Umschalter erscheint erst, wenn beide Gliederungen bestehen -->
+        <div class="gliederung" id="zeichen-gliederung" hidden></div>
         <div class="liste" id="zeichen-liste"></div>
       </section>
 

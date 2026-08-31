@@ -52,6 +52,16 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - SVG: scharf in jeder Zoomstufe; für den Schwarz-Weiß-Druck bringt die Sammlung
   eine eigene Druckfassung mit
 
+**Zeichengruppen** (freiwillig)
+- Taktische Zeichen zu benannten Gruppen mit eigener Farbe zusammenfassen –
+  „Gefahrenstellen“, „Kräfte“, „Fernmeldemittel“
+- Ganze Gruppen auf der Karte und im Bauauftrag ein- und ausblenden; der Schalter
+  jedes einzelnen Zeichens bleibt davon unberührt
+- Sie liegen quer zum Einsatzabschnitt: der sagt, wer zuständig ist, die Gruppe,
+  was zusammengehört – ein Zeichen kann beides tragen
+- Im KML-Export wird jede Gruppe ein eigener Ordner, in Google Earth ebenso schaltbar
+- Auflösen entfernt nur die Gliederung – die Zeichen bleiben erhalten
+
 **Koordinaten in MGRS und GPS**
 - Laufende Anzeige von MGRS und GPS unter der Karte
 - Je Punkt abrufbar: MGRS (1 m und 10 m), UTM, Grad/Dezimalminuten, Grad/Minuten/Sekunden,
@@ -114,6 +124,12 @@ Die Zuteilung steht in jeder geöffneten Strecke, in jedem geöffneten taktische
 und gesammelt im Abschnitt selbst (Knopf `⋯` an der Abschnittszeile); dort liegen auch
 Sammel-Bauauftrag und Teilexport. Das Auge an der Abschnittszeile blendet alle seine
 Strecken und Zeichen zusammen aus.
+
+**Zeichengruppen:** Im Reiter „Taktische Zeichen“ über „+ Zeichengruppe“ eine anlegen.
+Die Zuteilung steht in jedem geöffneten Zeichen und gesammelt in der Gruppe selbst
+(Knopf `⋯` an der Gruppenzeile). Das Auge an der Gruppenzeile nimmt alle ihre Zeichen
+von der Karte und aus dem Bauauftrag. Bestehen Gruppen und Einsatzabschnitte, wählt
+„Gliedern nach“ über der Liste, welche der beiden sie zeigt.
 
 **Aus Google Earth übernehmen:** Dort die Vorplanung als Datei sichern – in Google Earth
 Pro über „Ort speichern unter …“ am Ordner oder Pfad, in Google Earth im Browser über
