@@ -52,6 +52,10 @@ const STANDARD_AUFTRAG = {
   /* Gespeicherte Optionen werden über den Standard gelegt; neue Haken erben so
      ihren Standard, statt bei bisherigen Nutzern als „aus“ zu erscheinen. */
   querungen: true, laengenverbindungen: true,
+  /* Beides gehört auf den Bauauftrag und ist deshalb an. Abschalten lohnt
+     erst, wenn die Trasse eng geführt ist: dann liegen Zahl an Zahl und
+     verdecken den Verlauf, den der Trupp auf dem Blatt sucht. */
+  zwischenpunkte: true, teillaengen: true,
   /* Das Gitter ist im Ausdruck von vornherein an: auf dem Bauplatz ist es
      neben der Punkttabelle der einzige Weg, eine beliebige Stelle der Karte
      als MGRS-Angabe durchzugeben. */
@@ -283,6 +287,12 @@ function oeffneDruckansicht(auftrag) {
       : gruppe('Kartenblatt', [
           haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
           haken('Andere Strecken', 'andereStrecken', opt, neuAufbau),
+          /* „Zwischenpunkte“ meint nur die durchnumerierten Knicke der Trasse.
+             Muffe, Verteiler, Querung, Mast, Reserve, Anfang und Ende bleiben
+             stehen – die werden am Bauplatz gesucht und dürfen nicht mit
+             einem Haken vom Blatt verschwinden. */
+          haken('Zwischenpunkte', 'zwischenpunkte', opt, neuAufbau),
+          haken('Teillängen', 'teillaengen', opt, neuAufbau),
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
           zoomFeld(opt, neuAufbau)
@@ -625,6 +635,8 @@ function streckenblaetter(ziel, strecke, auftrag, opt, mass, sw, sammlung, karte
 
   kartenbau.push(() => {
     const karte = baueDruckkarte(b1.querySelector('.karten-buehne'), strecke, opt, mass, sw, karten, sammlung);
+    // erst nach fitBounds: vorher steht die Trasse noch nicht dort, wo sie druckt
+    setzeUebersichtsecke(b1.querySelector('.karten-rahmen'), karte, strecke);
     const ukBuehne = b1.querySelector('.uk-buehne');
     const uk = ukBuehne ? baueUebersichtskarte(ukBuehne, strecke, mass, sw, karten, sammlung) : null;
     massstabSchreiben(b1, karte);
@@ -774,7 +786,11 @@ function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
     nurStrecke: opt.andereStrecken ? null : strecke.id,
     nurStrecken: opt.andereStrecken ? sammlung : null
   });
-  sl.zeichne({ ...p.optionen, teillaengen: true, gesamtlaenge: false, punktnummern: true });
+  sl.zeichne({
+    ...p.optionen, gesamtlaenge: false, punktnummern: true,
+    teillaengen: opt.teillaengen !== false,
+    zwischenpunkte: opt.zwischenpunkte !== false
+  });
 
   if (opt.zeichen) {
     const zl = new ZeichenLayer(karte, {
@@ -795,6 +811,58 @@ function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
   }
   karten.push(karte);
   return karte;
+}
+
+/* Die Übersichtskarte hat ihren Platz unten rechts, weil dort auf dem
+   Kartenblatt sonst nichts liegt – oben rechts steht der Nordpfeil, unten
+   links der Maßstab. Läuft die Trasse aber gerade durch diese Ecke, verdeckt
+   das Kästchen genau das, worum es auf dem Blatt geht. Dann weicht es nach
+   oben links aus – aber nur, wenn dort wirklich nichts liegt: eine Ecke gegen
+   eine zweite verdeckte zu tauschen verschöbe den Schaden bloß, und den
+   Anfang der Trasse zu verdecken ist nicht besser als ihr Ende. Ist auch oben
+   links etwas, bleibt das Kästchen am gewohnten Ort und wird abgeschaltet,
+   wem das zu viel ist. */
+function setzeUebersichtsecke(rahmen, karte, strecke) {
+  const kasten = rahmen?.querySelector('.karten-uebersicht');
+  if (!kasten) return;
+  const b = kasten.offsetWidth, h = kasten.offsetHeight;
+  if (!b || !h) return;
+
+  /* Die Karte ist um den Schärfefaktor größer gerendert und per CSS wieder
+     verkleinert – ihre Bildpunkte müssen erst auf das Blattmaß zurück. */
+  const f = karte._fbpMass?.schaerfe || 1;
+  const roh = strecke.punkte.map(pt => {
+    const q = karte.latLngToContainerPoint([pt.lat, pt.lng]);
+    return { x: q.x / f, y: q.y / f };
+  });
+
+  /* Nur die Ecken zu prüfen, in denen ein Trassenpunkt liegt, reicht nicht:
+     eine lange Gerade überquert sie auch ohne Knick. Der Zug wird deshalb in
+     kurze Schritte zerlegt. */
+  const pfad = [];
+  roh.forEach((pkt, i) => {
+    pfad.push(pkt);
+    const naechster = roh[i + 1];
+    if (!naechster) return;
+    const schritte = Math.ceil(Math.hypot(naechster.x - pkt.x, naechster.y - pkt.y) / 4);
+    for (let k = 1; k < schritte; k++) {
+      pfad.push({
+        x: pkt.x + (naechster.x - pkt.x) * k / schritte,
+        y: pkt.y + (naechster.y - pkt.y) * k / schritte
+      });
+    }
+  });
+
+  // Ein Streifen um das Kästchen herum zählt mit: eine Trasse, die es streift,
+  // ist genauso schlecht zu lesen wie eine, die darunter verschwindet.
+  const luft = 4;
+  const belegt = (x, y) => pfad.some(q =>
+    q.x >= x - luft && q.x <= x + b + luft && q.y >= y - luft && q.y <= y + h + luft);
+
+  if (!belegt(kasten.offsetLeft, kasten.offsetTop)) return;
+  const randX = rahmen.clientWidth - kasten.offsetLeft - b;
+  const randY = rahmen.clientHeight - kasten.offsetTop - h;
+  if (!belegt(randX, randY)) kasten.classList.add('uk-oben-links');
 }
 
 /** Übersichtskarte des Deckblatts: alle Strecken der Sammlung gleichrangig,
@@ -1286,7 +1354,10 @@ function kabelzeichenEintrag(kabeltyp, farbe) {
 }
 
 function legendeHTML(s, sw, opt) {
-  const arten = [...new Set(s.punkte.map(p => p.art))];
+  /* Die Zeichenerklärung erklärt, was auf dem Blatt steht. Ausgeblendete
+     Zwischenpunkte und Teillängen fallen deshalb auch aus ihr heraus. */
+  const arten = [...new Set(s.punkte.map(p => p.art))]
+    .filter(a => opt.zwischenpunkte !== false || a !== 'punkt');
   const punkte = arten.map(a => {
     const pa = punktartById(a);
     return `<span class="lg-eintrag"><i class="lg-punkt art-${a}" style="--farbe:${sw ? '#000' : s.farbe}">${pa.kurz === '·' ? '' : pa.kurz}</i>${pa.name}</span>`;
@@ -1295,8 +1366,10 @@ function legendeHTML(s, sw, opt) {
     `<span class="lg-eintrag"><i class="lg-linie voll" style="--farbe:${sw ? '#000' : s.farbe}"></i>Auftragsstrecke</span>` +
     (opt.andereStrecken ? `<span class="lg-eintrag"><i class="lg-linie ander"></i>andere Strecken</span>` : '') +
     kabelzeichenEintrag(s.kabeltyp, sw ? '#000' : s.farbe);
+  const hinweisText = opt.teillaengen === false ? ''
+    : '<span class="lg-eintrag lg-hinweis">Zahlen an der Trasse = Teilstrecken in Metern</span>';
   return `<div class="bl-legende"><span class="lg-titel">Zeichenerklärung</span>${linien}${punkte}
-    <span class="lg-eintrag lg-hinweis">Zahlen an der Trasse = Teilstrecken in Metern</span></div>`;
+    ${hinweisText}</div>`;
 }
 
 function punkttabelleRahmenHTML(fortsetzung) {

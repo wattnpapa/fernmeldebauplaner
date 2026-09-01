@@ -473,7 +473,17 @@ export class StreckenLayer {
 
     // Punkte
     if ((o.punktnummern !== false || gewaehlt) && !nebensache) {
-      s.punkte.forEach((pt, i) => this._zeichnePunkt(s, pt, i, gewaehlt, o, st));
+      s.punkte.forEach((pt, i) => {
+        /* Abgeschaltete Zwischenpunkte nehmen nur die reine Geometrie heraus.
+           Alles, was am Bauplatz aufgesucht wird – Anfang, Ende, Muffe,
+           Verteiler, Querung, Mast, Reserve –, bleibt stehen: sonst nennt die
+           Punkttabelle eine Muffe, die auf der Karte nicht zu finden ist. Die
+           Numerierung bleibt die des ganzen Zuges, damit beides zusammenpasst.
+           Bei ausgewählter Strecke greift der Haken nicht – was man ziehen
+           können soll, muss man auch sehen. */
+        if (o.zwischenpunkte === false && pt.art === 'punkt' && !gewaehlt) return;
+        this._zeichnePunkt(s, pt, i, gewaehlt, o, st);
+      });
     }
 
     // Einfügegriffe zwischen den Punkten

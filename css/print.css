@@ -279,6 +279,10 @@ body.druckansicht { overflow: hidden; }
   width: 38mm; height: 30mm; border: .8pt solid #111; background: #fff; overflow: hidden;
 }
 .druck-doku.a3 .karten-uebersicht { width: 52mm; height: 40mm; }
+/* Ausweichplatz, wenn die Trasse durch die untere rechte Ecke läuft – gesetzt
+   in setzeUebersichtsecke. Oben links ist die einzige Ecke, auf der nicht
+   ohnehin Nordpfeil oder Maßstab liegen. */
+.karten-uebersicht.uk-oben-links { right: auto; bottom: auto; left: 2mm; top: 2mm; }
 .uk-buehne { position: absolute; inset: 0; overflow: hidden; }
 .uk-titel {
   position: absolute; top: 0; left: 0; z-index: 5; background: rgba(255,255,255,.9);
