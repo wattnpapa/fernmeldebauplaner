@@ -171,27 +171,6 @@ export function fromMGRS(text) {
 
 // ---------------------------------------------------------------- GPS-Formate
 
-/**
- * Holt die Höhe über dem Meeresspiegel (in Metern) für einen Punkt.
- * Nutzt den OpenTopoData‑Dienst (z. B. eudem25m). Gibt `null` zurück, wenn
- * kein Ergebnis vorliegt oder ein Fehler auftritt.
- */
-export async function getElevation(lat, lng) {
-  try {
-    const url = `https://api.opentopodata.org/v1/eudem25m?locations=${lat},${lng}`;
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const result = data.results?.[0];
-    if (result && typeof result.elevation === 'number') return result.elevation;
-    return null;
-  } catch (e) {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------- GPS-Formate
-
 /** Dezimalgrad: "51.234567° N, 6.987654° O" */
 export function toDezimal(lat, lng, d = 6) {
   return `${Math.abs(lat).toFixed(d)}° ${lat >= 0 ? 'N' : 'S'}, ` +

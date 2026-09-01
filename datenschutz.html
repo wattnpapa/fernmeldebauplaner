@@ -128,6 +128,11 @@
           <td>Esri (Environmental Systems Research Institute, USA)</td>
           <td class="mono">server.arcgisonline.com</td>
         </tr>
+        <tr>
+          <td>Höhenkacheln (Höhe in der Statusleiste)</td>
+          <td>Amazon Web Services, Terrain Tiles auf AWS Open Data (USA)</td>
+          <td class="mono">s3.amazonaws.com</td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -136,7 +141,10 @@
     die Planung überhaupt auf einer Karte zu ermöglichen, ohne dafür Kartendaten über einen
     eigenen Server zu leiten. Beim Luftbild verlässt die Anfrage die EU: Esri ist ein
     US-Anbieter. Wer das vermeiden will, arbeitet mit den Ebenen des BKG – sie sind
-    voreingestellt, das Luftbild wird nur auf ausdrückliche Auswahl geladen. Es gelten die
+    voreingestellt, das Luftbild wird nur auf ausdrückliche Auswahl geladen. Die
+    Höhenkacheln kommen ebenfalls von einem US-Anbieter und werden bei jeder Kartenebene
+    geladen, sobald die Statusleiste eine Höhe anzeigt; sie verraten wie die Kartenkacheln
+    nur den Ausschnitt, nicht die genaue Position. Es gelten die
     Nutzungs- und Datenschutzbedingungen des jeweiligen Anbieters.
   </p>
 

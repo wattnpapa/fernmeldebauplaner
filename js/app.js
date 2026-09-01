@@ -10,7 +10,8 @@ import { ZeichenLayer } from './zeichen.js';
 import { BilderLayer, uebernahmeLaeuft } from './bilder.js';
 import { aufraeumen as bilderAufraeumen } from './bildspeicher.js';
 import { GitterLayer } from './gitter.js';
-import { toMGRS, toDDM, alleFormate, getElevation } from './geo.js';
+import { toMGRS, toDDM, alleFormate } from './geo.js';
+import { hoeheAn } from './hoehe.js';
 import * as io from './io.js';
 import {
   initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter, zeichneBilderListe,
@@ -232,15 +233,21 @@ const OHNE_KOORD = 'Karte antippen für die Koordinate';
    dass es die angetippte und nicht die überfahrene ist. */
 let angetippt = null;
 
+/* Die Höhe kommt asynchron aus der Kachel. Bei schnellen Mausbewegungen
+   können Antworten in anderer Reihenfolge eintreffen als die Anfragen –
+   nur die jüngste darf in die Leiste, sonst zeigt sie eine alte Position. */
+let hoehenLauf = 0;
+
 function koordZeigen(ll, quelle) {
   slMgrs.textContent = toMGRS(ll.lat, ll.lng, 5);
   slGps.textContent = toDDM(ll.lat, ll.lng);
   slDez.textContent = `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
   slQuelle.textContent = quelle;
-  // Die Höhe kommt aus dem Netz und darf die Leiste nicht aufhalten.
-  getElevation(ll.lat, ll.lng).then(e => {
-    slElev.textContent = (e !== null && e !== undefined) ? `${e} m` : '–';
-  }).catch(() => { slElev.textContent = '–'; });
+  const lauf = ++hoehenLauf;
+  hoeheAn(ll.lat, ll.lng).then(h => {
+    if (lauf !== hoehenLauf) return;
+    slElev.textContent = h === null ? '–' : `${Math.round(h)} m`;
+  });
 }
 
 function koordLeeren() {

@@ -76,5 +76,8 @@ Es gelten deren Nutzungsbedingungen:
 - **OpenStreetMap** – © OpenStreetMap-Mitwirkende, ODbL
 - **OpenTopoMap** – CC-BY-SA, Daten aus OpenStreetMap
 - **Esri World Imagery** – nur für Sichtprüfung, Nutzungsbedingungen von Esri beachten
+- **Terrain Tiles** (Höhenkacheln, `js/hoehe.js`) – AWS Open Data, Terrarium-Format;
+  in Deutschland aus dem EU-DEM des Copernicus-Programms (© Europäische Union),
+  Quellenangabe der Höhendaten: https://github.com/tilezen/joerd/blob/master/docs/attribution.md
 
 Die Quellenangabe wird auf jedem Bauauftrag im Blattfuß mitgedruckt.
