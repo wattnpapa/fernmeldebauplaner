@@ -13,7 +13,7 @@ const KEY_DATEI    = 'fbp.dateisicherung.v1';
 export const SPEICHER_KONTINGENT = 5 * 1024 * 1024;
 
 export const KABELTYPEN = [
-  { id: 'fk2',    name: 'Feldkabel 2-adrig (FK 1×2)', kurz: 'FK 1×2',  trommel: 800,  gewicht: 14.5, zuschlag: 15, leistung: 900 },
+  { id: 'fk2',    name: 'Feldkabel 2-adrig (FK 1×2)', kurz: 'FK',      trommel: 800,  gewicht: 14.5, zuschlag: 15, leistung: 900 },
   { id: 'ffk',    name: 'Feldfernkabel (FFK, auch FK 2×2)', kurz: 'FFK', trommel: 400, gewicht: 60, zuschlag: 15, leistung: 700 },
   { id: 'ak',     name: 'Anschlusskabel (AK 10×2)',   kurz: 'AK',      trommel: 230,  gewicht: 56,   zuschlag: 10, leistung: 500 },
   { id: 'vk',     name: 'Verbindungskabel (VK 10×2)', kurz: 'VK',      trommel: 200,  gewicht: 56,   zuschlag: 10, leistung: 500 },
