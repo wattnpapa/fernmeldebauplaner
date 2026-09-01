@@ -65,7 +65,12 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   libheif als WebAssembly unter `vendor/libheif/` und wird nachgeladen, sobald
   eine HEIC-Datei ankommt (siehe `LIZENZEN.md`)
 - Bilder ohne Ortsangabe der Kamera bleiben erhalten und lassen sich von Hand auf
-  der Karte setzen; gesetzte Punkte lassen sich verschieben
+  der Karte setzen
+- Ein von der Kamera aufgezeichneter Ort ist gegen Verschieben gesichert – er ist
+  eine Messung; geändert wird er nur ausdrücklich über „Ort von Hand setzen“.
+  Von Hand gesetzte Orte lassen sich auf der Karte weiter verschieben
+- Blickrichtung der Aufnahme als kleine Spitze am Kartenpunkt, wenn die Kamera
+  sie mitgeschrieben hat
 - Beim Hinzufügen auf die lange Kante 1600 px gebracht und im Bildspeicher des
   Browsers (IndexedDB) abgelegt, nicht im `localStorage` – die Sicherungsdatei
   nimmt sie mit auf

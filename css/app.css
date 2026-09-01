@@ -877,6 +877,11 @@ body.modus-aktiv .kartenoptionen { display: none; }
   transition: transform .12s;
   pointer-events: auto;
 }
+/* Nur ein von Hand gesetzter Ort hängt am Griff – Leaflet setzt die Klasse an
+   die ziehbare Marke. Ein aufgezeichneter Ort zeigt darum keinen Greifzeiger
+   an, den es nicht gibt. */
+.leaflet-marker-draggable .fbp-bild { cursor: grab; }
+.leaflet-marker-draggable .fbp-bild:active { cursor: grabbing; }
 
 /* Hat die Kamera ihre Blickrichtung mitgeschrieben, sitzt sie als kleine Spitze
    am Punkt – sie sagt, wohin fotografiert wurde, nicht wo der Fotograf stand.

@@ -1662,6 +1662,16 @@ function bildFormular(b) {
     ? 'Die Kamera hat keinen Ort aufgezeichnet.'
     : `${toMGRS(b.lat, b.lng, 5)}<br>${toDDM(b.lat, b.lng)}`));
 
+  /* Woher der Ort stammt, entscheidet, ob die Marke am Griff hängt. Das gehört
+     an die Koordinate und nicht nur in die Sperre selbst – sonst sucht man auf
+     der Karte nach einem Griff, den es aus gutem Grund nicht gibt. */
+  if (b.lat !== null) {
+    koerper.appendChild(el('p', 'klein', b.ortAusKamera
+      ? 'Ort <b>von der Kamera aufgezeichnet</b>. Er ist auf der Karte gegen Verschieben '
+        + 'gesichert – zu ändern nur über „Ort von Hand setzen“.'
+      : 'Ort <b>von Hand gesetzt</b>. Die Marke lässt sich auf der Karte verschieben.'));
+  }
+
   const tasten = el('div', 'tastenreihe');
   tasten.append(knopf('Groß ansehen', () => bildAnsehen(b)));
   if (b.lat === null) {
@@ -1672,7 +1682,8 @@ function bildFormular(b) {
         ctx.karte.setView([b.lat, b.lng], Math.max(ctx.karte.getZoom(), 16));
         ctx.zurKarte?.();
       }),
-      knopf('Ort neu setzen', () => ctx.bildOrtSetzen(b.id))
+      knopf(b.ortAusKamera ? 'Ort von Hand setzen' : 'Ort neu setzen',
+        () => ctx.bildOrtSetzen(b.id))
     );
   }
   tasten.append(knopf('Löschen', () => {
@@ -2090,8 +2101,12 @@ export function hilfeDialog() {
            Klick darauf zeigt sie groß.</p>
         <ul class="tasten-liste">
           <li>Bilder <b>ohne Ortsangabe</b> der Kamera gehen nicht verloren: sie stehen in
-              der Liste und warten auf <b>Ort auf Karte setzen</b>. Ebenso lässt sich ein
-              gesetzter Punkt auf der Karte verschieben.</li>
+              der Liste und warten auf <b>Ort auf Karte setzen</b>.</li>
+          <li>Was die Kamera aufgezeichnet hat, ist eine <b>Messung</b> und wird auf der
+              Karte <b>nicht verschoben</b> – ein Rutscher mit der Maus darf daraus keine
+              Behauptung machen. Weicht der Ort ab, setzt ihn <b>Ort von Hand setzen</b>
+              im geöffneten Bild ausdrücklich neu. Von Hand gesetzte Orte hängen danach
+              am Griff und lassen sich auf der Karte nachjustieren.</li>
           <li>Beschriftung und Bemerkung erklären, was zu sehen ist; Aufnahmezeit,
               Blickrichtung und Gitterangabe stehen darunter, soweit die Kamera sie
               aufgezeichnet hat.</li>

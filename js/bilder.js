@@ -228,7 +228,12 @@ export class BilderLayer {
     const bid = this.setzModus;
     store.aendern(p => {
       const b = p.bilder.find(x => x.id === bid);
-      if (b) { b.lat = e.latlng.lat; b.lng = e.latlng.lng; }
+      if (!b) return;
+      b.lat = e.latlng.lat;
+      b.lng = e.latlng.lng;
+      /* Von Hand gesetzt: ab jetzt ist der Ort eine Setzung des Planenden und
+         darf am Griff nachjustiert werden. */
+      b.ortAusKamera = false;
     }, 'bild');
     this.beendeSetzen();
     this.auswahl = bid;
@@ -254,7 +259,11 @@ export class BilderLayer {
     const gewaehlt = b.id === this.auswahl;
     const m = L.marker([b.lat, b.lng], {
       pane: 'fbp-bilder',
-      draggable: true,
+      /* Was die Kamera aufgezeichnet hat, ist eine Messung – ein Rutscher mit
+         der Maus darf daraus keine Behauptung machen. Geändert wird ein solcher
+         Ort nur ausdrücklich, über „Ort von Hand setzen“ im Eintrag. Ein von
+         Hand gesetzter Ort ist dagegen eine Setzung und bleibt am Griff. */
+      draggable: !b.ortAusKamera,
       keyboard: false,
       icon: L.divIcon({
         className: 'fbp-bild-icon',

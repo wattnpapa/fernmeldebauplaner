@@ -4,7 +4,7 @@ import { neueStromangabe } from './strom.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 import { QUERUNG_STANDARD } from './vorschrift.js';
 
-export const SCHEMA = 3;
+export const SCHEMA = 4;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -221,10 +221,17 @@ export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
    nicht verworfen, sondern wartet in der Liste darauf, auf der Karte gesetzt
    zu werden. */
 export function neuesBild(o = {}) {
+  /* Nur der Weg über den EXIF-Block gibt hier Koordinaten mit. Ein Ort, den die
+     Kamera beim Auslösen aufgezeichnet hat, ist eine Messung und keine Setzung –
+     er wird auf der Karte gegen das Verschieben gesichert (siehe `js/bilder.js`).
+     Für Bestandsplanungen fällt daraus zugleich die vorsichtige Annahme: ein
+     Bild, das schon einen Ort hat, gilt als gemessen und ist geschützt. */
+  const ausKamera = Number.isFinite(o.lat) && Number.isFinite(o.lng);
   return {
     id: o.id || id(),
-    lat: Number.isFinite(o.lat) ? o.lat : null,
-    lng: Number.isFinite(o.lng) ? o.lng : null,
+    lat: ausKamera ? o.lat : null,
+    lng: ausKamera ? o.lng : null,
+    ortAusKamera: ausKamera,
     name: o.name || '',
     bemerkung: '',
     aufgenommen: o.aufgenommen || '',
@@ -498,7 +505,9 @@ export function migrieren(p) {
         symbol: symbolBekannt(z.symbol) ? z.symbol : STANDARD_SYMBOL
       };
     }),
-    /* Schema 3 hat die Lichtbilder eingeführt. `daten` und `mini` tragen sie
+    /* Schema 3 hat die Lichtbilder eingeführt, Schema 4 den Vermerk, woher ihr
+       Ort stammt – für ältere Stände setzt ihn `neuesBild` aus den vorhandenen
+       Koordinaten. `daten` und `mini` tragen sie
        nur in der Sicherungsdatei; im Browserspeicher haben sie nichts zu
        suchen – dort liegen die Bilddaten im Bildspeicher, und der localStorage
        wäre mit dem ersten Bild voll. */
