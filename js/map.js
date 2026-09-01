@@ -72,7 +72,12 @@ export function erstelleKarte(el, ansicht = {}) {
 
 export function setzeBasiskarte(karte, id) {
   const def = basiskarteById(id);
-  if (karte._fbpBasis) karte.removeLayer(karte._fbpBasis);
+  if (karte._fbpBasis) {
+    // Remove any listeners attached to the previous base layer (e.g., from warteAufKacheln)
+    karte._fbpBasis.off('load');
+    karte._fbpBasis.off('tileerror');
+    karte.removeLayer(karte._fbpBasis);
+  }
   karte._fbpBasis = L.tileLayer(def.url, {
     attribution: def.attribution,
     maxZoom: 19,
