@@ -4,7 +4,7 @@ import { neueStromangabe } from './strom.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 import { QUERUNG_STANDARD } from './vorschrift.js';
 
-export const SCHEMA = 2;
+export const SCHEMA = 3;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -87,7 +87,8 @@ export function neuesProjekt(name = 'Neue Planung') {
     einsatzabschnitte: [],
     zeichengruppen: [],
     strecken: [],
-    zeichen: []
+    zeichen: [],
+    bilder: []
   };
 }
 
@@ -210,6 +211,35 @@ export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
     drehung: 0, groesse: 1, label: '', bemerkung: '', sichtbar: true
   };
 }
+
+/* Ein Lichtbild vom Bauort. Hier steht nur, was das Bild zeigt und wo es
+   aufgenommen wurde – die Bilddaten selbst liegen im Bildspeicher des Geräts
+   (`js/bildspeicher.js`) und nicht im Projekt: sonst spränge jeder
+   Undo-Abzug um das Vielfache an.
+
+   `lat`/`lng` dürfen `null` sein: ein Bild ohne Ortsangabe der Kamera wird
+   nicht verworfen, sondern wartet in der Liste darauf, auf der Karte gesetzt
+   zu werden. */
+export function neuesBild(o = {}) {
+  return {
+    id: o.id || id(),
+    lat: Number.isFinite(o.lat) ? o.lat : null,
+    lng: Number.isFinite(o.lng) ? o.lng : null,
+    name: o.name || '',
+    bemerkung: '',
+    aufgenommen: o.aufgenommen || '',
+    richtung: Number.isFinite(o.richtung) ? o.richtung : null,
+    breite: o.breite || 0, hoehe: o.hoehe || 0,
+    groesse: o.groesse || 0,
+    sichtbar: true
+  };
+}
+
+/** Ein Bild erscheint auf der Karte, sobald es einen Ort hat und sein Auge offen steht. */
+export const bildAufKarte = b => b.sichtbar !== false && b.lat !== null && b.lng !== null;
+
+/** Belegter Platz aller Bilder einer Planung in Bytes */
+export const bilderBelegung = p => (p.bilder || []).reduce((n, b) => n + (b.groesse || 0), 0);
 
 // ---------------------------------------------------------------- Store
 
@@ -369,7 +399,8 @@ export function projektListe() {
   return Object.values(ladeAlle())
     .map(p => ({
       id: p.id, name: p.name, geaendert: p.geaendert,
-      strecken: (p.strecken || []).length, zeichen: (p.zeichen || []).length
+      strecken: (p.strecken || []).length, zeichen: (p.zeichen || []).length,
+      bilder: (p.bilder || []).length
     }))
     .sort((a, b) => (b.geaendert || '').localeCompare(a.geaendert || ''));
 }
@@ -414,7 +445,10 @@ export function istGehaltvoll(p) {
   if (!p) return false;
   const punkte = p.strecken.reduce(
     (n, s) => n + ((s.punkte || []).length >= 2 ? s.punkte.length : 0), 0);
-  return punkte >= 4 || (p.zeichen || []).length >= 3;
+  /* Auch aufgenommene Lichtbilder sind geleistete Arbeit: sie sind vom Bauort
+     mitgebracht und in keiner Kamerarolle wiederzufinden, wenn der
+     Browserspeicher fällt. */
+  return punkte >= 4 || (p.zeichen || []).length >= 3 || (p.bilder || []).length >= 2;
 }
 
 /** Ältere/fremde Projektdateien auf das aktuelle Schema heben */
@@ -463,6 +497,16 @@ export function migrieren(p) {
         ...neuesZeichen(z.lat, z.lng), ...rest, id: z.id || id(),
         symbol: symbolBekannt(z.symbol) ? z.symbol : STANDARD_SYMBOL
       };
+    }),
+    /* Schema 3 hat die Lichtbilder eingeführt. `daten` und `mini` tragen sie
+       nur in der Sicherungsdatei; im Browserspeicher haben sie nichts zu
+       suchen – dort liegen die Bilddaten im Bildspeicher, und der localStorage
+       wäre mit dem ersten Bild voll. */
+    bilder: (p.bilder || []).map(b => {
+      const { daten, mini, ...rest } = b;
+      return { ...neuesBild(rest), ...rest, id: b.id || id(),
+        lat: Number.isFinite(b.lat) ? b.lat : null,
+        lng: Number.isFinite(b.lng) ? b.lng : null };
     })
   };
   out.id = p.id || id();

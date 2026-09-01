@@ -9,6 +9,7 @@ import { toMGRS, toDDM, peilung } from './geo.js';
 import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
 import { querungsartById } from './vorschrift.js';
 import { kmlLesen, kmlSchreiben, kmlAusKMZ, istKMZ, alsText } from './kml.js';
+import { alsDatenUrls, ausDatei as bilderAusDatei } from './bildspeicher.js';
 
 /* Klartext der Querungsart. An allen anderen Punktarten bleibt die Angabe leer –
    der mitgeführte Wert gehört dort nicht in die Ausgabe. */
@@ -36,14 +37,30 @@ function herunterladen(inhalt, name, typ = 'application/json') {
 
 /** Planung als .json sichern. Ohne Angabe die geöffnete, sonst eine beliebige
  *  aus dem Browserspeicher (z. B. vor dem Löschen aus der Planungsliste). */
-export function projektExportieren(pid) {
+export async function projektExportieren(pid) {
   const p = (!pid || pid === store.projekt.id) ? store.projekt : ladeAlle()[pid];
   if (!p) return false;
-  herunterladen(JSON.stringify(p, null, 2),
+  const gesichert = { ...p, bilder: await bilderEinpacken(p.bilder) };
+  herunterladen(JSON.stringify(gesichert, null, 2),
     dateiname(['Fernmeldebauplanung', p.name, p.kopf?.datum], 'json'));
   dateisicherungVermerken(p.id);
   store.melden('dateisicherung');
   return true;
+}
+
+/* Die Bilddaten liegen im Bildspeicher des Geräts, nicht in der Planung. In
+   die Sicherungsdatei gehören sie trotzdem: sie ist der einzige Weg, eine
+   Planung aus diesem Browser herauszubekommen, und die Anwendung mahnt zu ihr.
+   Eine Sicherung, die die Bilder vom Bauort zurückließe, wäre keine.
+   Fehlt zu einem Eintrag das Bild – etwa nach dem Aufräumen –, reist er ohne
+   Bilddaten mit; der Ort und die Beschriftung bleiben so erhalten. */
+async function bilderEinpacken(liste = []) {
+  const raus = [];
+  for (const b of liste) {
+    const daten = await alsDatenUrls(b.id);
+    raus.push(daten ? { ...b, ...daten } : b);
+  }
+  return raus;
 }
 
 /** Einen Einsatzabschnitt als eigenständige Planungsdatei sichern – `null`
@@ -56,7 +73,7 @@ export function projektExportieren(pid) {
  *  Abschnitte gehören nicht in einen Ausschnitt, der weitergegeben wird.
  *  Der Vermerk über die letzte Dateisicherung bleibt unberührt – ein Ausschnitt
  *  sichert nicht die Planung. */
-export function abschnittExportieren(aid) {
+export async function abschnittExportieren(aid) {
   const p = store.projekt;
   const ea = abschnittById(p, aid);
   const strecken = streckenIm(p, aid);
@@ -78,6 +95,11 @@ export function abschnittExportieren(aid) {
     zeichengruppen: (p.zeichengruppen || []).filter(g => benutzt.has(g.id)),
     strecken,
     zeichen,
+    /* Die Lichtbilder sind keinem Abschnitt zugeteilt und gehören deshalb –
+       wie die nicht zugeteilten Zeichen – zu jedem Ausschnitt. Ein Ausschnitt
+       wird dadurch so schwer wie die ganze Planung; das ist der Preis dafür,
+       dass der Empfänger sieht, wie es an der Stelle aussieht. */
+    bilder: await bilderEinpacken(p.bilder),
     herkunft: {
       projekt: p.name,
       projektId: p.id,
@@ -104,20 +126,31 @@ export async function projektImportieren(datei) {
   if (istKMZ(puffer)) return kmlUebernehmen(await kmlAusKMZ(puffer), datei.name);
 
   const inhalt = alsText(puffer);
-  if (/^\s*[[{]/.test(inhalt)) return jsonUebernehmen(inhalt, datei.name);
+  if (/^\s*[[{]/.test(inhalt)) return await jsonUebernehmen(inhalt, datei.name);
   if (/<kml[\s>]/i.test(inhalt)) return kmlUebernehmen(inhalt, datei.name);
   throw new Error('Unbekanntes Format – erwartet werden .json, .geojson, .kml oder .kmz.');
 }
 
-function jsonUebernehmen(inhalt, dateiname) {
+async function jsonUebernehmen(inhalt, dateiname) {
   const roh = JSON.parse(inhalt);
   if (roh.type === 'FeatureCollection') return geoJSONUebernehmen(roh);
   if (!roh.strecken && !roh.zeichen) throw new Error('Keine Planungsdaten in der Datei gefunden.');
+  /* Erst die Bilddaten in den Bildspeicher, dann die Planung öffnen: sonst
+     stünden für einen Augenblick Bildpunkte auf der Karte, hinter denen nichts
+     liegt. Bilder, die der Speicher nicht annimmt, fehlen – der Eintrag bleibt
+     und lässt sich später neu belegen. */
+  const bilder = (roh.bilder || []).length;
+  const uebernommen = bilder ? await bilderAusDatei(roh.bilder) : 0;
   const p = migrieren(roh);
   p.id = id();                       // als eigene Kopie ablegen
   p.name = roh.name || dateiname.replace(/\.json$/i, '');
   store.uebernehmen(p);
-  return { projekt: p, meldung: `„${p.name}“ geladen` };
+  const fehlend = bilder - uebernommen;
+  return {
+    projekt: p,
+    meldung: `„${p.name}“ geladen` +
+      (fehlend > 0 ? ` – ${fehlend} ${fehlend === 1 ? 'Bild' : 'Bilder'} ohne Bilddaten` : '')
+  };
 }
 
 /** „2 Strecken und 5 Zeichen“ – die Rückmeldung nach einem Import. */

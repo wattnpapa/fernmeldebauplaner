@@ -54,6 +54,20 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - SVG: scharf in jeder Zoomstufe; für den Schwarz-Weiß-Druck bringt die Sammlung
   eine eigene Druckfassung mit
 
+**Bilder vom Bauort**
+- Lichtbilder vom Telefon setzen sich an ihren Aufnahmeort: Ortsangabe, Aufnahmezeit
+  und Blickrichtung kommen aus dem EXIF-Block der Datei
+- Auf der Karte ein kleiner Punkt; beim Überfahren geht die Aufnahme auf, ein Klick
+  zeigt sie groß
+- Auswählen über den Reiter „Bilder“ – am Telefon öffnet das unmittelbar die
+  Fotoauswahl – oder aus einem Ordner auf die Karte ziehen
+- Bilder ohne Ortsangabe der Kamera bleiben erhalten und lassen sich von Hand auf
+  der Karte setzen; gesetzte Punkte lassen sich verschieben
+- Beim Hinzufügen auf die lange Kante 1600 px gebracht und im Bildspeicher des
+  Browsers (IndexedDB) abgelegt, nicht im `localStorage` – die Sicherungsdatei
+  nimmt sie mit auf
+- Nicht Bestandteil von Bauauftrag, Lagekarte, GeoJSON, GPX und KML
+
 **Zeichengruppen** (freiwillig)
 - Taktische Zeichen zu benannten Gruppen mit eigener Farbe zusammenfassen –
   „Gefahrenstellen“, „Kräfte“, „Fernmeldemittel“
@@ -272,6 +286,9 @@ js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
 js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
 js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
+js/bilder.js          Lichtbilder aufnehmen, verkleinern, auf der Karte zeigen
+js/bildspeicher.js    Bilddaten im Gerätespeicher (IndexedDB)
+js/exif.js            Ort, Aufnahmezeit und Blickrichtung aus dem Lichtbild
 js/bauauftrag.js      Druckdokumente: Bauauftrag und Lagekarte
 js/ui.js              Seitenleiste, Formulare, Dialoge
 js/io.js              Sichern und Laden, GeoJSON, GPX, CSV, KML
@@ -287,6 +304,12 @@ LICENSE               EUPL-1.2
 Der Datenbestand liegt unter dem LocalStorage-Schlüssel `fbp.projekte.v1`, das zuletzt
 geöffnete Projekt unter `fbp.aktiv.v1`. `js/state.js` hebt ältere Dateien beim Laden
 über `migrieren()` auf das aktuelle Schema.
+
+Die Bilddaten liegen als einziger Bestand außerhalb: in der IndexedDB-Datenbank
+`fbp.bilder`, im Projekt steht zu jedem Bild nur der Eintrag mit Ort, Zeit und Maßen.
+Der Grund steht im Kopf von `js/bildspeicher.js` – ein Lichtbild sprengt das
+5-MB-Kontingent des `localStorage`, und der Undo-Stapel legt bis zu 60 Abzüge der
+Planung ab. Bilddaten ohne Planung räumt der nächste Start weg.
 
 ### Taktische Zeichen auffrischen
 
@@ -334,8 +357,10 @@ gültige Dienstvorschrift maßgeblich.
 ## Datenschutz
 
 Planungsdaten bleiben auf dem Gerät: Sie liegen im `localStorage` des Browsers
-(`fbp.projekte.v1`, `fbp.aktiv.v1`, `fbp.dateisicherung.v1`, `fbp.druck.v1`) und werden
-nirgendwohin übertragen. Es gibt keinen Server, kein Konto und keine Cookies.
+(`fbp.projekte.v1`, `fbp.aktiv.v1`, `fbp.dateisicherung.v1`, `fbp.druck.v1`), die
+Lichtbilder in der IndexedDB-Datenbank `fbp.bilder`. Nichts davon wird übertragen –
+auch nicht der Aufnahmeort in den Bildern. Es gibt keinen Server, kein Konto und keine
+Cookies.
 
 Zwei Verbindungen gehen trotzdem nach außen, beide ohne Planungsinhalte:
 

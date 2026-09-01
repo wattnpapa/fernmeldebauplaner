@@ -2,18 +2,20 @@
 
 import {
   store, neueStrecke, neuerPunkt, neuesZeichen,
-  dateisicherung, istGehaltvoll
+  dateisicherung, istGehaltvoll, ladeAlle
 } from './state.js';
 import { erstelleKarte, setzeBasiskarte, BASISKARTEN } from './map.js';
 import { StreckenLayer, escapeHtml } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
+import { BilderLayer } from './bilder.js';
+import { aufraeumen as bilderAufraeumen } from './bildspeicher.js';
 import { GitterLayer } from './gitter.js';
 import { toMGRS, toDDM, alleFormate } from './geo.js';
 import * as io from './io.js';
 import {
-  initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter,
+  initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter, zeichneBilderListe,
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis,
-  abschnittAnlegen, zeichengruppeAnlegen
+  abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen
 } from './ui.js';
 import {
   bauauftragOffen, schliesseBauauftrag, entferneSeitenformat, oeffneSammeldruck, oeffneLagekarte
@@ -38,9 +40,17 @@ const zl = new ZeichenLayer(karte, {
   aufAenderung: () => {}
 });
 
+const bl = new BilderLayer(karte, {
+  aufAuswahl: bid => { if (bid) { sl.auswahl = null; zl.auswahl = null; reiterWechseln('bilder'); } zeichneSeite(); },
+  aufAenderung: () => {}
+});
+
 const gl = new GitterLayer(karte);
 
-initUI({ karte, sl, zl, weiterzeichnen, zeichenSetzen, zurKarte, aufAenderung: () => {} });
+initUI({
+  karte, sl, zl, bl, weiterzeichnen, zeichenSetzen, zurKarte,
+  bildOrtSetzen, aufAenderung: () => {}
+});
 
 // Der Stand steht dauerhaft im Kopf: Wer zu einem gedruckten Bauauftrag
 // zurückfragt, hat dieselbe Nummer vor Augen, die im Blattfuß steht – ohne
@@ -58,6 +68,7 @@ function neueStreckeStarten() {
 
 function weiterzeichnen(sid) {
   zl.beendeSetzen();
+  bl.beendeSetzen();
   sl.starteZeichnen(sid);
   zurKarte();
   modusAnzeigen();
@@ -100,10 +111,21 @@ function zeichenSetzenStarten() {
  *  Modusanzeige gehört hierher, weil sie an der Werkzeugleiste hängt. */
 function zeichenSetzen(symbolId, zuteilung = {}) {
   zeichnenBeenden(true);
+  bl.beendeSetzen();
   zl.starteSetzen(symbolId, zuteilung);
   zurKarte();
   modusAnzeigen();
   hinweis('Auf die Karte klicken, um das Zeichen zu setzen.');
+}
+
+/** Ort eines Bildes auf der Karte nachtragen – der nächste Klick setzt ihn */
+function bildOrtSetzen(bid) {
+  zeichnenBeenden(true);
+  zl.beendeSetzen();
+  bl.starteSetzen(bid);
+  zurKarte();
+  modusAnzeigen();
+  hinweis('Auf die Karte klicken, um den Aufnahmeort zu setzen.');
 }
 
 function modusAnzeigen() {
@@ -140,8 +162,11 @@ $('#zeichen-hinweis').addEventListener('click', e => {
 // ---------------------------------------------------------------- Karten-Klick ohne Modus
 
 karte.on('click', e => {
-  if (sl.zeichenModus || zl.setzModus) return;
-  if (sl.auswahl || zl.auswahl) { sl.auswahl = null; zl.auswahl = null; zeichneAlles(); return; }
+  if (sl.zeichenModus || zl.setzModus || bl.setzModus) return;
+  if (sl.auswahl || zl.auswahl || bl.auswahl) {
+    sl.auswahl = null; zl.auswahl = null; bl.auswahl = null;
+    zeichneAlles(); return;
+  }
   koordinatenPopup(e.latlng);
 });
 
@@ -358,7 +383,11 @@ nameFeld.oninput = () => store.aendern(p => { p.name = nameFeld.value; }, 'formu
 
 /** Planung als Datei sichern – der einzige Weg, sie aus diesem Browser herauszubekommen */
 function planungSichern(pid) {
-  if (io.projektExportieren(pid)) hinweis('Planung als Datei gesichert');
+  /* Seit die Lichtbilder mitgehen, wird die Datei erst zusammengestellt und
+     dann heruntergeladen – die Meldung wartet auf das Ergebnis. */
+  io.projektExportieren(pid)
+    .then(ok => { if (ok) hinweis('Planung als Datei gesichert'); })
+    .catch(e => hinweis('Sichern fehlgeschlagen: ' + e.message, 'fehler'));
 }
 $('#sb-sichern').onclick = () => planungSichern();
 $('#speicherstatus').onclick = () => planungSichern();
@@ -436,6 +465,74 @@ function neuesProjektDialog() {
   });
 }
 
+// ---------------------------------------------------------------- Lichtbilder
+
+$('#btn-neue-bilder').onclick = () => $('#bild-import').click();
+$('#bild-import').onchange = e => {
+  const dateien = Array.from(e.target.files || []);
+  e.target.value = '';                 // dieselbe Auswahl soll erneut möglich sein
+  bilderHinzufuegen(dateien);
+};
+
+function bilderHinzufuegen(dateien) {
+  bilderUebernehmen(dateien).then(ergebnis => {
+    const verortet = (ergebnis?.angenommen || []).filter(b => b.lat !== null);
+    /* Wartet noch ein Bild auf seinen Ort, bleibt die Liste vorn – dort steht
+       der Knopf, mit dem er gesetzt wird. */
+    if (!verortet.length || ergebnis.ohneOrt) return reiterWechseln('bilder');
+    /* Die Bilder eines Bauorts liegen selten dort, wo die Karte gerade steht.
+       Ohne den Sprung dorthin bliebe von der Übernahme nur die Meldung. */
+    if (!verortet.some(b => karte.getBounds().contains([b.lat, b.lng]))) {
+      karte.fitBounds(L.latLngBounds(verortet.map(b => [b.lat, b.lng])),
+        { padding: [80, 80], maxZoom: 17 });
+    }
+    zurKarte();
+  });
+}
+
+/* Aufgefangen wird der Abwurf im ganzen Fenster, nicht nur über der Karte:
+   fiele eine Datei daneben, öffnete der Browser sie an Stelle der Anwendung –
+   und ein halb gezeichneter Streckenzug wäre verloren. */
+const abwurf = $('#abwurf');
+let abwurfTiefe = 0;
+
+function traegtDateien(e) {
+  return Array.from(e.dataTransfer?.types || []).includes('Files');
+}
+
+document.addEventListener('dragenter', e => {
+  if (!traegtDateien(e)) return;
+  e.preventDefault();
+  abwurfTiefe++;
+  abwurf.hidden = false;
+});
+document.addEventListener('dragover', e => { if (traegtDateien(e)) e.preventDefault(); });
+/* Gezählt statt geschaltet: dragleave feuert auch beim Übergang von einem
+   Element zum nächsten – ein einfaches Ausblenden ließe die Fläche flackern.
+   Verlässt der Griff dagegen das Fenster, wird nicht gezählt, sondern
+   zurückgesetzt: dort bleibt sonst ein Zähler stehen, den nichts mehr
+   herunterbringt. */
+document.addEventListener('dragleave', e => {
+  if (!traegtDateien(e)) return;
+  const hinaus = e.clientX <= 0 || e.clientY <= 0 ||
+    e.clientX >= window.innerWidth || e.clientY >= window.innerHeight;
+  abwurfTiefe = hinaus ? 0 : Math.max(0, abwurfTiefe - 1);
+  if (!abwurfTiefe) abwurf.hidden = true;
+});
+document.addEventListener('drop', e => {
+  if (!traegtDateien(e)) return;
+  e.preventDefault();
+  abwurfTiefe = 0;
+  abwurf.hidden = true;
+  const dateien = Array.from(e.dataTransfer.files || []);
+  const bilder = dateien.filter(d => /^image\//.test(d.type));
+  if (bilder.length) return bilderHinzufuegen(bilder);
+  if (dateien.length) {
+    hinweis('Hier lassen sich nur Bilder ablegen – Planungen und KML kommen über ' +
+      '„Datei → Planung oder KML laden“.', 'warnung');
+  }
+});
+
 $('#datei-import').onchange = e => {
   const datei = e.target.files[0];
   if (!datei) return;
@@ -506,6 +603,7 @@ document.addEventListener('keydown', e => {
     }
     if (sl.zeichenModus) return zeichnenBeenden(true);
     if (zl.setzModus) { zl.beendeSetzen(); return modusAnzeigen(); }
+    if (bl.setzModus) { bl.beendeSetzen(); return hinweis('Ort setzen abgebrochen.'); }
     return;
   }
 
@@ -614,6 +712,7 @@ window.addEventListener('afterprint', hinweisblattEntfernen);
 function zeichneAlles() {
   sl.zeichne();
   zl.zeichne();
+  bl.zeichne();
   gl.zeichne();
   zeichneSeite();
 }
@@ -621,6 +720,7 @@ function zeichneAlles() {
 function zeichneSeite() {
   zeichneStreckenListe();
   zeichneZeichenListe();
+  zeichneBilderListe();
   zeichneProjektReiter();
 }
 
@@ -680,6 +780,7 @@ store.on((p, grund) => {
 
   sl.zeichne();
   zl.zeichne();
+  bl.zeichne();
   gl.zeichne();
   modusAnzeigen();
 
@@ -715,8 +816,23 @@ window.addEventListener('beforeunload', e => {
   }
 });
 
+/* Bilddaten, die keine gespeicherte Planung mehr nennt, werden beim Start
+   weggeräumt – nicht schon beim Löschen des Eintrags: dort muss ein
+   Rückgängig das Bild noch vorfinden. Beim Start ist der Undo-Stapel leer,
+   dann ist das Wegräumen ohne Verlust. Verzögert, damit es dem ersten
+   Kartenaufbau nicht in die Quere kommt. */
+setTimeout(() => {
+  const planungen = Object.values(ladeAlle());
+  // Ohne lesbare Projektliste wird nichts weggeräumt – sonst nähme ein
+  // Lesefehler alle Bilder mit.
+  if (!planungen.length) return;
+  const behalten = new Set();
+  for (const pr of planungen) for (const b of pr.bilder || []) behalten.add(b.id);
+  bilderAufraeumen(behalten);
+}, 4000);
+
 // Zugriff aus der Browser-Konsole (Fehlersuche, eigene Auswertungen)
-window.fbp = { store, karte, sl, zl, gl };
+window.fbp = { store, karte, sl, zl, bl, gl };
 
 zeichneAlles();
 modusAnzeigen();

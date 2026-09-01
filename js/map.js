@@ -58,6 +58,9 @@ export function erstelleKarte(el, ansicht = {}) {
   karte.createPane('fbp-griffe').style.zIndex = 470;
   karte.createPane('fbp-labels').style.zIndex = 620;
   karte.getPane('fbp-labels').style.pointerEvents = 'none';
+  /* Die Lichtbilder liegen unter den taktischen Zeichen: das Lagebild geht
+     vor, die Bilder belegen es. */
+  karte.createPane('fbp-bilder').style.zIndex = 630;
   karte.createPane('fbp-zeichen').style.zIndex = 640;
 
   L.control.zoom({ position: 'topright', zoomInTitle: 'Vergrößern', zoomOutTitle: 'Verkleinern' }).addTo(karte);

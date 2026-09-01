@@ -4,11 +4,11 @@ import {
   store, KABELTYPEN, VERLEGEARTEN, PUNKTARTEN, FARBEN,
   neuesZeichen, punktartById, kabelById, neueStrecke, neuerEinsatzabschnitt, abschnittById,
   neueZeichengruppe, zeichengruppeById, zeichenInGruppe,
-  streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar,
+  streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar, bilderBelegung,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
-import { formatLaenge, meter, toMGRS, toDDM, alleFormate, parseKoordinate } from './geo.js';
+import { formatLaenge, meter, toMGRS, toDDM, alleFormate, parseKoordinate, himmelsrichtung } from './geo.js';
 import {
   NETZFORMEN, LASTEINHEITEN, netzById, MAX_QUERSCHNITT,
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText
@@ -17,6 +17,8 @@ import {
   QUERUNGSARTEN, VS_GRADE, querungsartById, massText, dtg
 } from './vorschrift.js';
 import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
+import { bilderAufnehmen } from './bilder.js';
+import { bildUrl, miniUrl } from './bildspeicher.js';
 import * as io from './io.js';
 import { oeffneBauauftrag, oeffneSammeldruck, oeffneLagekarte } from './bauauftrag.js';
 import { VERSION } from './version.js';
@@ -132,6 +134,14 @@ function feld(titel, wert, beiAenderung, o = {}) {
 /** Änderung aus einem Formular: kein Neuaufbau der Seitenleiste */
 function schreib(fn) {
   store.aendern(fn, 'formular');
+}
+
+/* Eine Sicherungsdatei wird erst zusammengestellt und dann heruntergeladen –
+   seit die Lichtbilder mitgehen, dauert das einen Augenblick. Gemeldet wird
+   deshalb das Ergebnis, nicht der Knopfdruck. */
+function sicherungMelden(lauf, meldung) {
+  lauf.then(ok => { if (ok) hinweis(meldung); })
+      .catch(e => hinweis('Sichern fehlgeschlagen: ' + e.message, 'fehler'));
 }
 
 /* Sichtbar oder nicht ist ein Zustand, den man auf einen Blick erkennen muss,
@@ -988,7 +998,8 @@ export function einsatzabschnittDialog(aid) {
     oeffneLagekarte(aid);
   });
   const datei = knopf('Als Datei sichern (.json)', () => {
-    if (io.abschnittExportieren(aid)) hinweis('Einsatzabschnitt als eigene Planungsdatei gesichert');
+    sicherungMelden(io.abschnittExportieren(aid),
+      'Einsatzabschnitt als eigene Planungsdatei gesichert');
   });
   /* Ausgeben lässt sich nur, was da ist – die Knöpfe folgen der Zuteilung,
      die im selben Dialog gerade geändert wird. */
@@ -1534,6 +1545,202 @@ export function symbolPalette(beiWahl) {
   dialog({ titel: 'Taktisches Zeichen wählen', inhalt: box, breit: true, fuss: [{ text: 'Abbrechen' }] });
 }
 
+// ---------------------------------------------------------------- Lichtbilder
+
+/* Ein Lichtbild vom Bauort beantwortet Fragen, für die es keine Zeichenerklärung
+   gibt: wie der Mast steht, wo die Einführung sitzt, wie breit der Graben werden
+   muss. Es tritt deshalb neben die taktischen Zeichen und nicht in sie hinein –
+   ein Bild ist keine Aussage über die Lage, sondern ein Beleg.
+
+   Bewusst ohne Zuteilung zu Einsatzabschnitt und Zeichengruppe: die beiden
+   Gliederungen tragen das Lagebild, und ein Beleg gehört zu jedem, der an der
+   Stelle baut. */
+
+export function zeichneBilderListe() {
+  const p = store.projekt;
+  const liste = document.getElementById('bilder-liste');
+  const summe = document.getElementById('bilder-summe');
+  if (!liste) return;
+  liste.innerHTML = '';
+
+  const bilder = p.bilder || [];
+  const ohneOrt = bilder.filter(b => b.lat === null).length;
+  summe.innerHTML = bilder.length
+    ? `<span><b>${bilder.length}</b> ${bilder.length === 1 ? 'Bild' : 'Bilder'}</span>
+       <span>Belegt <b>${Math.round(bilderBelegung(p) / 1024)} kB</b></span>
+       ${ohneOrt ? `<span class="summe-mahnung"><b>${ohneOrt}</b> ohne Ort</span>` : ''}`
+    : '';
+
+  if (!bilder.length) {
+    liste.appendChild(el('div', 'leer',
+      `<p><b>Noch keine Bilder in dieser Planung.</b></p>
+       <p>„Bilder vom Gerät hinzufügen“ wählen – oder Bilddateien aus einem Ordner
+       auf die Karte ziehen. Jedes Bild setzt sich an den Ort, den die Kamera beim
+       Auslösen aufgezeichnet hat; auf der Karte steht dort ein Punkt, der beim
+       Überfahren aufgeht.</p>
+       <p class="klein">Die Bilder bleiben wie die Planung auf diesem Gerät. Sie gehen
+       in die Sicherungsdatei ein, erscheinen aber nicht im Bauauftrag und nicht in
+       den Austauschformaten.</p>`));
+    return;
+  }
+
+  for (const b of bilder) liste.appendChild(bildKarte(b));
+}
+
+function bildKarte(b) {
+  const gewaehlt = ctx.bl.auswahl === b.id;
+  /* Ohne Ort steht das Bild nicht auf der Karte – das ist kein Ausblenden,
+     sondern eine offene Aufgabe und wird als solche benannt. */
+  const zustand = b.sichtbar === false ? ' verborgen' : (b.lat === null ? ' ortlos' : '');
+  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') + zustand);
+
+  const kopf = el('header', 'eintrag-kopf');
+  kopf.innerHTML =
+    `<span class="mini-bild"></span>
+     <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(bildTitel(b))}</button>
+     ${b.lat === null ? '<span class="eintrag-wert ortlos-marke">ohne Ort</span>' : ''}
+     ${augenKnopf(b.sichtbar !== false)}`;
+  vorschauEinsetzen(kopf.querySelector('.mini-bild'), b, miniUrl);
+  kopf.onclick = () => ctx.bl.waehle(gewaehlt ? null : b.id);
+  kopf.querySelector('[data-akt="sichtbar"]').onclick = e => {
+    e.stopPropagation();
+    store.aendern(() => { b.sichtbar = b.sichtbar === false; }, 'bild');
+  };
+  karte.appendChild(kopf);
+
+  if (gewaehlt) karte.appendChild(bildFormular(b));
+  return karte;
+}
+
+/** Beschriftung, unter der ein Bild in Liste und Vorschau steht */
+const bildTitel = b => b.name || (b.aufgenommen ? zeitpunkt(b.aufgenommen) : 'Lichtbild');
+
+function zeitpunkt(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+/* Die Bilddaten kommen aus dem Bildspeicher und damit erst nach dem Aufbau der
+   Zeile. Das Feld hat deshalb schon vorher seine Größe – sonst zuckte die
+   ganze Liste, sobald die Bilder eintreffen. */
+function vorschauEinsetzen(halter, b, adresse) {
+  if (!halter) return;
+  adresse(b.id).then(url => {
+    if (!url || !halter.isConnected) return;
+    const bild = document.createElement('img');
+    bild.src = url;
+    bild.alt = '';
+    halter.appendChild(bild);
+  }).catch(() => { /* fehlt das Bild, bleibt das Feld leer – die Angaben stehen weiter */ });
+}
+
+function bildFormular(b) {
+  const koerper = el('div', 'eintrag-koerper');
+
+  const schau = el('button', 'bild-schau');
+  schau.type = 'button';
+  schau.title = 'Bild groß ansehen';
+  vorschauEinsetzen(schau, b, bildUrl);
+  schau.onclick = () => bildAnsehen(b);
+  koerper.appendChild(schau);
+
+  const g = el('div', 'feldgruppe');
+  g.appendChild(feld('Beschriftung', b.name, v => schreib(() => { b.name = v; }),
+    { platzhalter: 'z. B. Mastfuß an der Einfahrt' }));
+  g.appendChild(feld('Bemerkung', b.bemerkung, v => schreib(() => { b.bemerkung = v; }),
+    { typ: 'textarea', zeilen: 2 }));
+  koerper.appendChild(g);
+
+  const angaben = [];
+  if (b.aufgenommen) angaben.push(`Aufgenommen ${escapeHtml(zeitpunkt(b.aufgenommen))}`);
+  if (b.richtung !== null) {
+    angaben.push(`Blickrichtung ${Math.round(b.richtung)}° (${himmelsrichtung(b.richtung)})`);
+  }
+  if (angaben.length) koerper.appendChild(el('p', 'klein', angaben.join(' · ')));
+
+  koerper.appendChild(el('p', 'klein mono koord-hinweis', b.lat === null
+    ? 'Die Kamera hat keinen Ort aufgezeichnet.'
+    : `${toMGRS(b.lat, b.lng, 5)}<br>${toDDM(b.lat, b.lng)}`));
+
+  const tasten = el('div', 'tastenreihe');
+  tasten.append(knopf('Groß ansehen', () => bildAnsehen(b)));
+  if (b.lat === null) {
+    tasten.append(knopf('Ort auf Karte setzen', () => ctx.bildOrtSetzen(b.id), 'primaer'));
+  } else {
+    tasten.append(
+      knopf('Auf Karte zeigen', () => {
+        ctx.karte.setView([b.lat, b.lng], Math.max(ctx.karte.getZoom(), 16));
+        ctx.zurKarte?.();
+      }),
+      knopf('Ort neu setzen', () => ctx.bildOrtSetzen(b.id))
+    );
+  }
+  tasten.append(knopf('Löschen', () => {
+    store.aendern(p => { p.bilder = p.bilder.filter(x => x.id !== b.id); }, 'bild');
+    ctx.bl.auswahl = null;
+    hinweis('Bild gelöscht');
+  }, 'gefahr'));
+  koerper.appendChild(tasten);
+  return koerper;
+}
+
+/** Das Bild in voller Größe – am Bauort der einzige Weg, es genau anzusehen */
+export function bildAnsehen(b) {
+  const box = el('div', 'bild-gross');
+  bildUrl(b.id).then(url => {
+    if (!url || !box.isConnected) {
+      box.appendChild(el('p', 'klein fehlertext', 'Zu diesem Eintrag liegen keine Bilddaten vor.'));
+      return;
+    }
+    const bild = document.createElement('img');
+    bild.src = url;
+    bild.alt = bildTitel(b);
+    box.insertBefore(bild, box.firstChild);
+  });
+
+  const fuss = [];
+  if (b.bemerkung) fuss.push(escapeHtml(b.bemerkung));
+  if (b.aufgenommen) fuss.push(escapeHtml(zeitpunkt(b.aufgenommen)));
+  if (b.lat !== null) fuss.push(escapeHtml(toMGRS(b.lat, b.lng, 5)));
+  if (fuss.length) box.appendChild(el('p', 'klein', fuss.join(' · ')));
+
+  dialog({ titel: bildTitel(b), inhalt: box, breit: true, fuss: [{ text: 'Schließen', primaer: true }] });
+}
+
+/**
+ * Bilddateien übernehmen und das Ergebnis in einem Satz melden.
+ * Aufgerufen aus der Dateiauswahl und vom Abwurf auf die Karte.
+ */
+export async function bilderUebernehmen(dateien) {
+  const anzahl = Array.from(dateien || []).length;
+  if (!anzahl) return;
+  hinweis(anzahl === 1 ? 'Bild wird übernommen …' : `${anzahl} Bilder werden übernommen …`);
+
+  let ergebnis;
+  try {
+    ergebnis = await bilderAufnehmen(dateien);
+  } catch (e) {
+    return hinweis('Bilder konnten nicht übernommen werden: ' + e.message, 'fehler');
+  }
+
+  const { angenommen, ohneOrt, abgewiesen } = ergebnis;
+  if (!angenommen.length) {
+    // Der Grund kommt aus verschiedenen Quellen und bringt seinen Punkt teils mit
+    const grund = (abgewiesen[0]?.grund || '').replace(/\.$/, '');
+    hinweis(grund ? `Kein Bild übernommen – ${grund}.` : 'Kein Bild übernommen.', 'fehler');
+    return ergebnis;
+  }
+
+  /* Der Satz nennt beides: was angekommen ist und was fehlt. Ein Bild ohne
+     Ortsangabe verschwindet sonst still in der Liste, und der Nutzer sucht es
+     auf der Karte. */
+  const teile = [`${angenommen.length} ${angenommen.length === 1 ? 'Bild' : 'Bilder'} übernommen`];
+  if (ohneOrt) teile.push(`${ohneOrt} davon ohne Ortsangabe der Kamera`);
+  if (abgewiesen.length) teile.push(`${abgewiesen.length} nicht lesbar`);
+  hinweis(teile.join(' – '), ohneOrt || abgewiesen.length ? 'warnung' : 'info');
+  return ergebnis;
+}
+
 // ---------------------------------------------------------------- Projekt
 
 export function zeichneProjektReiter() {
@@ -1593,6 +1800,17 @@ export function zeichneProjektReiter() {
      automatisch gespeichert. Belegt sind <b>${Math.round(belegt / 1024)} kB</b> von den
      rund <b>5 MB</b>, die ein Browser je Website bereitstellt – ${anteilText}.`));
 
+  /* Die Bilddaten zählen nicht in dieses Kontingent: sie liegen im Bildspeicher
+     des Browsers, der weit mehr fasst. Genannt werden sie trotzdem – es ist
+     der Posten, der eine Planung schwer macht. */
+  const bilder = (p.bilder || []).length;
+  if (bilder) {
+    sp.appendChild(el('p', 'klein',
+      `Dazu kommen <b>${bilder} ${bilder === 1 ? 'Bild' : 'Bilder'}</b> mit
+       <b>${Math.round(bilderBelegung(p) / 1024)} kB</b> im Bildspeicher des Browsers
+       (IndexedDB). Sie gehen in die Sicherungsdatei ein und machen sie entsprechend groß.`));
+  }
+
   const gesichert = dateisicherung(store.projekt.id);
   sp.appendChild(el('p', 'klein',
     gesichert
@@ -1605,7 +1823,7 @@ export function zeichneProjektReiter() {
   const tasten = el('div', 'tastenreihe');
   tasten.append(
     knopf('Als Datei sichern', () => {
-      if (io.projektExportieren()) hinweis('Planung als Datei gesichert');
+      sicherungMelden(io.projektExportieren(), 'Planung als Datei gesichert');
     }, 'primaer'),
     knopf('Jetzt im Browser speichern', () => { store.speichern(); hinweis('Planung gespeichert'); }),
     knopf('Gespeicherte Planungen', () => projektDialog())
@@ -1639,7 +1857,8 @@ export function projektDialog() {
     const zeile = el('div', 'pl-zeile' + (pr.id === store.projekt.id ? ' aktiv' : ''));
     zeile.innerHTML =
       `<div class="pl-text"><b>${escapeHtml(pr.name)}</b>
-        <span class="klein">${pr.strecken} Strecken · ${pr.zeichen} Zeichen ·
+        <span class="klein">${pr.strecken} Strecken · ${pr.zeichen} Zeichen${
+          pr.bilder ? ` · ${pr.bilder} Bilder` : ''} ·
         ${new Date(pr.geaendert).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</span></div>`;
     const t = el('div', 'pl-tasten');
     t.append(
@@ -1669,8 +1888,8 @@ function loeschDialog(pr) {
   const box = el('div');
   box.innerHTML =
     `<p>Die Planung <b>${escapeHtml(pr.name || '(ohne Namen)')}</b> mit ${pr.strecken}
-        ${pr.strecken === 1 ? 'Strecke' : 'Strecken'} und ${pr.zeichen}
-        taktischen Zeichen
+        ${pr.strecken === 1 ? 'Strecke' : 'Strecken'}, ${pr.zeichen}
+        taktischen Zeichen${pr.bilder ? ` und ${pr.bilder} ${pr.bilder === 1 ? 'Bild' : 'Bildern'}` : ''}
         wird endgültig aus dem Browserspeicher entfernt.</p>
      <p class="klein"><b>Rückgängig machen ist danach nicht mehr möglich</b> –
         auch nicht mit <kbd>Strg</kbd>+<kbd>Z</kbd>. Liegt keine Datei vor,
@@ -1685,7 +1904,7 @@ function loeschDialog(pr) {
     inhalt: box,
     fuss: [
       { text: 'Vorher als Datei sichern', tun: () => {
-          if (io.projektExportieren(pr.id)) hinweis('Planung als Datei gesichert');
+          sicherungMelden(io.projektExportieren(pr.id), 'Planung als Datei gesichert');
           return false;                       // Dialog bleibt offen
         } },
       { text: 'Abbrechen', tun: () => { projektDialog(); return false; } },
@@ -1862,6 +2081,26 @@ export function hilfeDialog() {
            kein Druckdialog von sich aus: dort ein eigenes Papierformat mit den
            Kantenlängen anlegen, die der Hinweis am Druckknopf nennt. In der Regel wird
            die Lagekarte als PDF gespeichert und beim Plotter ausgegeben.</p>
+        <h3>Bilder vom Bauort</h3>
+        <p>Lichtbilder, die ein Telefon aufgenommen hat, tragen ihren Aufnahmeort in sich.
+           Im Reiter <b>Bilder</b> über <b>Bilder vom Gerät hinzufügen</b> auswählen – am
+           Telefon öffnet das unmittelbar die Fotoauswahl – oder Bilddateien aus einem
+           Ordner auf die Karte ziehen. Jedes Bild setzt sich an seinen Aufnahmeort; dort
+           steht ein kleiner Punkt, der beim Überfahren die Aufnahme aufgehen lässt. Ein
+           Klick darauf zeigt sie groß.</p>
+        <ul class="tasten-liste">
+          <li>Bilder <b>ohne Ortsangabe</b> der Kamera gehen nicht verloren: sie stehen in
+              der Liste und warten auf <b>Ort auf Karte setzen</b>. Ebenso lässt sich ein
+              gesetzter Punkt auf der Karte verschieben.</li>
+          <li>Beschriftung und Bemerkung erklären, was zu sehen ist; Aufnahmezeit,
+              Blickrichtung und Gitterangabe stehen darunter, soweit die Kamera sie
+              aufgezeichnet hat.</li>
+          <li>Die Bilder werden auf handliche Größe gebracht und liegen im
+              <b>Bildspeicher dieses Browsers</b>, nicht im Netz. In die
+              <b>Sicherungsdatei</b> gehen sie mit ein – sie wird dadurch entsprechend groß.</li>
+          <li>Sie erscheinen <b>nicht</b> im Bauauftrag, nicht auf der Lagekarte und nicht
+              in GeoJSON, GPX oder KML.</li>
+        </ul>
         <h3>Koordinaten</h3>
         <p>Unten steht die Koordinate der Stelle, über der die Maus steht oder die zuletzt
            angetippt wurde – in MGRS und als GPS-Angabe. Ein Klick auf die Angabe legt sie in
@@ -1879,7 +2118,7 @@ export function hilfeDialog() {
            Sprechblase des Pfades.</p>
         <h3>Speichern</h3>
         <p>Alles wird laufend im Browserspeicher gespeichert. Für Sicherung und Weitergabe
-           <b>Datei → Planung als Datei sichern</b> verwenden.</p>
+           <b>Datei → Planung als Datei sichern</b> verwenden – die Bilder gehen mit ein.</p>
         <h3>Tastatur</h3>
         <ul class="tasten-liste">
           <li><kbd>S</kbd> neue Strecke · <kbd>T</kbd> taktisches Zeichen · <kbd>K</kbd> Koordinate</li>

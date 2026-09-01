@@ -217,15 +217,6 @@ body.seite-zu .seite { display: none; }
 }
 .reiter button:hover { color: var(--text); }
 .reiter button.aktiv { color: var(--thw); border-bottom-color: var(--thw); background: var(--flaeche); }
-/* Schmal trägt der mittlere Reiter das kurze Wort: „Taktische Zeichen“ bräche
-   zweizeilig um und machte die Reiterreihe ungleich hoch. „Zeichen“ ist
-   dasselbe Wort wie am Werkzeug und am Setzen-Knopf. */
-.reiter-kurz { display: none; }
-@media (max-width: 480px) {
-  .reiter-lang { display: none; }
-  .reiter-kurz { display: inline; }
-}
-
 .reiter-inhalt { display: none; flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
 .reiter-inhalt.aktiv { display: block; }
 /* Im Streckenreiter trägt die Liste die Polsterung am Fuß, nicht der
@@ -404,7 +395,8 @@ body.seite-zu .seite { display: none; }
 .eintrag.verborgen .eintrag-name,
 .eintrag.verborgen .eintrag-wert { color: var(--text-schwach); }
 .eintrag.verborgen .farbpunkt,
-.eintrag.verborgen .mini-symbol { opacity: .4; }
+.eintrag.verborgen .mini-symbol,
+.eintrag.verborgen .mini-bild { opacity: .4; }
 .eintrag.verborgen .augen { color: var(--warnung); }
 
 /* Nicht auf der Karte, obwohl das eigene Auge offen steht: Gruppe oder
@@ -644,6 +636,7 @@ body.seite-zu .seite { display: none; }
 #karte { position: absolute; inset: 0; background: #dfe5ec; }
 #karte.modus-zeichnen { cursor: crosshair; }
 #karte.modus-zeichen { cursor: copy; }
+#karte.modus-bild { cursor: copy; }
 
 .werkzeuge {
   position: absolute; top: 12px; left: 12px; z-index: 700;
@@ -860,6 +853,95 @@ body.modus-aktiv .kartenoptionen { display: none; }
   background: rgba(255,255,255,.85); border: 2px dashed #4a5768; cursor: grab;
 }
 .fbp-einfuegen:hover i { background: #fff; border-color: var(--thw); border-style: solid; }
+
+/* ---------------------------------------------------------------- Lichtbilder
+
+   Auf der Karte steht ein Punkt, kein Bild: zwanzig aufgeklappte Aufnahmen
+   verdeckten die Trasse, um die es geht. Als abgerundetes Viereck und nicht
+   als Kreis – die Trassenpunkte sind rund, und zwei Bedeutungen dürfen nicht
+   dieselbe Gestalt haben. Der weiße Rand trägt ihn auch über dem Luftbild. */
+
+.fbp-bild-icon { background: none; border: 0; }
+.fbp-bild {
+  display: block; width: 14px; height: 14px; margin: 2px; border-radius: 4px;
+  background: var(--thw); border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.45); cursor: pointer;
+  transition: transform .12s;
+}
+.fbp-bild-icon:hover .fbp-bild { transform: scale(1.25); }
+.fbp-bild.gewaehlt { box-shadow: 0 0 0 3px rgba(0,51,153,.45), 0 1px 4px rgba(0,0,0,.4); }
+
+/* Die Vorschau ist das Bild selbst – der dunkle Grund der übrigen Tooltips
+   wäre hier ein Rahmen um ein Rahmenbild. Die Beschriftung liegt darin. */
+.fbp-bild-vorschau {
+  padding: 3px; background: #fff; border: 0; border-radius: var(--radius-klein);
+  box-shadow: var(--schatten-stark); color: var(--text); font-size: 11.5px;
+}
+.fbp-bild-vorschau::before { display: none; }
+.fbp-bild-vorschau img { display: block; border-radius: 3px; }
+.fbp-bild-vorschau .bv-titel {
+  display: block; max-width: 300px; padding: 3px 2px 1px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Vorschaubild in der Liste: feste Fläche, damit die Zeilen nicht springen,
+   wenn die Bilder aus dem Bildspeicher eintreffen. */
+.mini-bild {
+  display: block; flex-shrink: 0; width: 34px; height: 34px; border-radius: 4px;
+  background: var(--flaeche-2); border: 1px solid var(--linie); overflow: hidden;
+}
+.mini-bild img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* Das geöffnete Bild in der Liste ist selbst der Knopf zur großen Ansicht –
+   ein Bild, das man anklickt, ist die naheliegendste Bedienung, die es gibt. */
+.bild-schau {
+  display: block; width: 100%; margin: 4px 0 10px; padding: 0; border: 1px solid var(--linie);
+  border-radius: var(--radius-klein); background: var(--flaeche-2); cursor: zoom-in; overflow: hidden;
+  min-height: 60px;
+}
+.bild-schau:hover { border-color: var(--thw-hell); }
+/* Gedeckelt und nicht beschnitten: ein hochkant aufgenommenes Bild füllte in
+   der schmalen Ansicht sonst den ganzen Schirm, und Beschriftung, Bemerkung
+   und Löschknopf lägen darunter außer Sicht. Beschneiden verbietet sich – ein
+   Beleg vom Bauort zeigt gerade an den Rändern, worauf es ankommt. */
+.bild-schau img {
+  display: block; width: 100%; height: auto; max-height: 240px; object-fit: contain;
+}
+
+/* Der Dialog misst höchstens 88vh; davon gehen Kopf, Fuß, Polsterung und die
+   Angabenzeile darunter ab. Ohne diesen Abzug schöbe ein hochkant aufgenommenes
+   Bild Aufnahmezeit und Gitterangabe unter die Kante – und dort sucht sie
+   niemand. */
+.bild-gross img {
+  display: block; max-width: 100%; max-height: calc(88vh - 180px); margin: 0 auto;
+  border-radius: var(--radius-klein);
+}
+
+/* Ohne Ortsangabe der Kamera steht das Bild nicht auf der Karte. Das ist kein
+   Ausblenden, sondern eine offene Aufgabe – deshalb Warnton statt Dämpfung. */
+.eintrag.ortlos { border-color: var(--warnung-linie); background: var(--warnung-flaeche); }
+.ortlos-marke { color: var(--warnung-tief); font-weight: 650; }
+.summe-mahnung { color: var(--warnung-tief); }
+.summe-mahnung b { color: var(--warnung-tief); }
+
+/* Abwurffläche für Bilddateien: liegt über allem, auch über dem Dialog –
+   während der Griff über dem Fenster hängt, ist sie das Einzige, was zählt. */
+.abwurf {
+  position: fixed; inset: 0; z-index: 3000;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(0,51,153,.18); backdrop-filter: blur(1px);
+  /* Die Fläche sagt etwas, sie fängt nichts: der Abwurf wird am Dokument
+     entgegengenommen. Ohne diese Zeile legte sie sich zwischen Zeiger und
+     Anwendung – und bliebe sie nach einem verunglückten Griff einmal stehen,
+     wäre nichts mehr zu bedienen. */
+  pointer-events: none;
+}
+.abwurf[hidden] { display: none; }
+.abwurf-text {
+  padding: 18px 26px; border: 2px dashed var(--thw); border-radius: var(--radius);
+  background: var(--flaeche); color: var(--thw); font-size: 15px; font-weight: 650;
+  text-align: center; box-shadow: var(--schatten-stark);
+}
 
 .fbp-zeichen-icon { background: none; border: 0; }
 .tz-wrap { display: flex; flex-direction: column; align-items: center; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
@@ -1100,6 +1182,9 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   .sl-kopie::after { content: ''; position: absolute; inset: -9px -4px; }
   .menu button { padding: 11px 12px; }
   .palette-knopf { min-height: 108px; }
+  /* Am Bauort wird das Bild mit dem Handschuh geöffnet – die Zeile ist der
+     Griff, das Vorschaubild wächst mit. */
+  .mini-bild { width: 40px; height: 40px; }
 }
 
 /* ------------------------------------------------- Bewegung zurücknehmen

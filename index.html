@@ -22,6 +22,9 @@
 <link rel="modulepreload" href="js/strecken.js">
 <link rel="modulepreload" href="js/symbols.js">
 <link rel="modulepreload" href="js/zeichen.js">
+<link rel="modulepreload" href="js/bilder.js">
+<link rel="modulepreload" href="js/bildspeicher.js">
+<link rel="modulepreload" href="js/exif.js">
 <link rel="modulepreload" href="js/gitter.js">
 <link rel="modulepreload" href="js/io.js">
 <link rel="modulepreload" href="js/kml.js">
@@ -105,14 +108,19 @@
     <aside class="seite" id="seite">
       <!-- role=tablist verlangt den ganzen Vertrag: Pfeiltasten wechseln, Tab
            betritt das Reiterwerk nur einmal (wandernder tabindex, siehe app.js),
-           und jedes Blatt kennt seinen Reiter. Der mittlere Reiter trägt schmal
-           das kurze Wort – „Taktische Zeichen“ bräche dort zweizeilig um. -->
+           und jedes Blatt kennt seinen Reiter. Zu viert tragen die Reiter nur
+           noch ein Wort – „Taktische Zeichen“ bräche zweizeilig um und machte
+           die Reiterreihe ungleich hoch. „Zeichen“ ist dasselbe Wort wie am
+           Werkzeug und am Setzen-Knopf; der volle Begriff bleibt für die
+           Sprachausgabe im aria-label. -->
       <nav class="reiter" role="tablist">
         <button role="tab" id="reiter-strecken" class="aktiv" aria-selected="true"
                 aria-controls="inhalt-strecken" data-reiter="strecken">Strecken</button>
         <button role="tab" id="reiter-zeichen" aria-selected="false" tabindex="-1"
-                aria-controls="inhalt-zeichen" data-reiter="zeichen"><span
-                class="reiter-lang">Taktische Zeichen</span><span class="reiter-kurz">Zeichen</span></button>
+                aria-controls="inhalt-zeichen" data-reiter="zeichen"
+                aria-label="Taktische Zeichen">Zeichen</button>
+        <button role="tab" id="reiter-bilder" aria-selected="false" tabindex="-1"
+                aria-controls="inhalt-bilder" data-reiter="bilder">Bilder</button>
         <button role="tab" id="reiter-projekt" aria-selected="false" tabindex="-1"
                 aria-controls="inhalt-projekt" data-reiter="projekt">Planung</button>
       </nav>
@@ -145,6 +153,15 @@
         <!-- Der Umschalter erscheint erst, wenn beide Gliederungen bestehen -->
         <div class="gliederung" id="zeichen-gliederung" hidden></div>
         <div class="liste" id="zeichen-liste"></div>
+      </section>
+
+      <section class="reiter-inhalt" role="tabpanel" id="inhalt-bilder"
+               aria-labelledby="reiter-bilder" data-inhalt="bilder">
+        <div class="seite-kopf">
+          <button class="knopf primaer breit" id="btn-neue-bilder">+ Bilder vom Gerät hinzufügen</button>
+        </div>
+        <div class="summe" id="bilder-summe"></div>
+        <div class="liste" id="bilder-liste"></div>
       </section>
 
       <section class="reiter-inhalt" role="tabpanel" id="inhalt-projekt"
@@ -222,6 +239,10 @@
   </div>
 </div>
 
+<!-- „image/*“ öffnet auf dem iPhone unmittelbar die Fotoauswahl; von dort
+     kommen HEIC-Aufnahmen als JPEG mit erhaltenem EXIF-Block an. -->
+<input type="file" id="bild-import" hidden multiple accept="image/*">
+
 <input type="file" id="datei-import" hidden
        accept=".json,.geojson,.kml,.kmz,application/json,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz">
 
@@ -234,6 +255,15 @@
     <div class="dialog-inhalt" id="dialog-inhalt"></div>
     <footer class="dialog-fuss" id="dialog-fuss"></footer>
   </div>
+</div>
+
+<!-- Erscheint erst, wenn Dateien über dem Fenster hängen: der Griff vom Ordner
+     auf die Karte ist am Schreibtisch der kürzeste Weg zu den Bildern eines
+     Bauorts, und die Fläche sagt zugleich, was mit ihnen geschieht. Sie liegt
+     über dem ganzen Fenster, nicht über der Karte – schmal liegt die Liste
+     davor, und dort wäre sie nicht zu sehen. -->
+<div class="abwurf" id="abwurf" hidden aria-hidden="true">
+  <span class="abwurf-text">Bilder hier ablegen – sie setzen sich an ihren Aufnahmeort</span>
 </div>
 
 <div class="hinweisbox" id="hinweisbox" role="status" aria-live="polite" hidden></div>

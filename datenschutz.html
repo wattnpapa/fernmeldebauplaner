@@ -82,6 +82,15 @@
     selbst eine Datei erzeugst und teilst (JSON-Sicherung, GeoJSON, GPX oder ein gedrucktes
     bzw. als PDF gesichertes Bauauftragsblatt).
   </p>
+  <p>
+    Dasselbe gilt für <b>Lichtbilder</b>, die du einer Planung hinzufügst. Sie werden im
+    Browser verkleinert und im Speicher deines Geräts abgelegt; ihre Bildinhalte und die
+    darin enthaltenen Angaben – Aufnahmeort, Aufnahmezeit, Blickrichtung – verlassen das
+    Gerät nicht. Wer ein Bild aufnimmt, auf dem <b>Personen</b> zu erkennen sind, verarbeitet
+    damit personenbezogene Daten; dafür ist die einsetzende Stelle verantwortlich, nicht
+    dieses Angebot. Beim Sichern als Datei gehen die Bilder in die Datei ein – wer sie
+    weitergibt, gibt auch die Bilder weiter.
+  </p>
 
   <h2>4. Kartendienste</h2>
   <p>
@@ -145,7 +154,8 @@
   <p>
     Es werden <b>keine Cookies</b> gesetzt. Die Anwendung legt ihre Daten aber im lokalen
     Speicher (localStorage) deines Browsers ab, weil sie ohne Server arbeitet und die Arbeit
-    sonst bei jedem Neuladen verloren wäre:
+    sonst bei jedem Neuladen verloren wäre. Hinzu kommt der Bildspeicher (IndexedDB), in dem
+    die Lichtbilder liegen – für den localStorage sind sie zu groß:
   </p>
   <div class="tabellen-huelle">
     <table>
@@ -156,6 +166,7 @@
         <tr><td class="mono">fbp.dateisicherung.v1</td><td>Zeitpunkt der letzten Dateisicherung je Planung</td></tr>
         <tr><td class="mono">fbp.druck.v1</td><td>Einstellungen für den Ausdruck des Bauauftrags</td></tr>
         <tr><td class="mono">skipgc</td><td>gesetzt, wenn du der Reichweitenmessung widersprochen hast</td></tr>
+        <tr><td class="mono">fbp.bilder</td><td>die Lichtbilder der Planungen (IndexedDB, nicht localStorage)</td></tr>
       </tbody>
     </table>
   </div>
@@ -165,7 +176,8 @@
     werden nicht übertragen: kein Server, kein Zugriff durch Dritte, keine Kennung zur
     Wiedererkennung. Löschen kannst du sie über „Gespeicherte Planungen“ in der Anwendung,
     durch Löschen der Websitedaten im Browser oder – bei einer einzelnen Planung – über den
-    Löschknopf in der Planungsliste.
+    Löschknopf in der Planungsliste. Bilddaten, auf die keine gespeicherte Planung mehr
+    verweist, räumt die Anwendung beim nächsten Start von selbst weg.
   </p>
   <p>
     Zur Reichweitenmessung wird
