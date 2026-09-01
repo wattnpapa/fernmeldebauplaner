@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-01",
+  "title": "Design System: FMBauplaner",
+  "extensions": {
+    "colorMeta": {
+      "thw": { "role": "primary", "displayName": "THW-Blau", "canonical": "#003399", "tonalRamp": ["oklch(15% 0.15 262)", "oklch(26% 0.15 262)", "oklch(38% 0.15 262)", "oklch(49% 0.15 262)", "oklch(60% 0.13 262)", "oklch(72% 0.10 262)", "oklch(83% 0.06 262)", "oklch(95% 0.02 262)"] },
+      "thw-hell": { "role": "primary", "displayName": "THW-Blau hell", "canonical": "#0a4fbf" },
+      "thw-blass": { "role": "primary", "displayName": "THW-Blass", "canonical": "#e8eefb" },
+      "grund": { "role": "neutral", "displayName": "Grund (Werkbank)", "canonical": "#eef1f6" },
+      "flaeche": { "role": "neutral", "displayName": "Fläche (Papier)", "canonical": "#ffffff" },
+      "flaeche-2": { "role": "neutral", "displayName": "Fläche 2", "canonical": "#f7f9fc" },
+      "linie": { "role": "neutral", "displayName": "Linie", "canonical": "#d5dce6" },
+      "linie-stark": { "role": "neutral", "displayName": "Linie stark", "canonical": "#b6c1d1" },
+      "text": { "role": "neutral", "displayName": "Marineschwarz", "canonical": "#16202e", "tonalRamp": ["oklch(15% 0.02 250)", "oklch(26% 0.02 250)", "oklch(38% 0.02 250)", "oklch(49% 0.02 250)", "oklch(60% 0.02 250)", "oklch(72% 0.015 250)", "oklch(83% 0.01 250)", "oklch(95% 0.005 250)"] },
+      "text-schwach": { "role": "neutral", "displayName": "Text schwach", "canonical": "#5c6879" },
+      "gefahr": { "role": "tertiary", "displayName": "Gefahr", "canonical": "#c62828", "tonalRamp": ["oklch(15% 0.10 28)", "oklch(26% 0.14 28)", "oklch(38% 0.17 28)", "oklch(49% 0.18 28)", "oklch(60% 0.16 28)", "oklch(72% 0.12 28)", "oklch(83% 0.07 28)", "oklch(95% 0.02 28)"] },
+      "warnung": { "role": "tertiary", "displayName": "Warnung", "canonical": "#b26a00", "tonalRamp": ["oklch(15% 0.06 68)", "oklch(26% 0.09 68)", "oklch(38% 0.11 68)", "oklch(49% 0.13 68)", "oklch(60% 0.13 68)", "oklch(72% 0.11 68)", "oklch(83% 0.08 68)", "oklch(95% 0.03 68)"] },
+      "warnung-flaeche": { "role": "tertiary", "displayName": "Warnfläche", "canonical": "#fdf3e0" },
+      "warnung-linie": { "role": "tertiary", "displayName": "Warnlinie", "canonical": "#e6c893" },
+      "warnung-tief": { "role": "tertiary", "displayName": "Warnton tief", "canonical": "#7a4b00" },
+      "gut": { "role": "tertiary", "displayName": "Gut", "canonical": "#1b7a3d", "tonalRamp": ["oklch(15% 0.06 152)", "oklch(26% 0.09 152)", "oklch(38% 0.11 152)", "oklch(49% 0.12 152)", "oklch(60% 0.12 152)", "oklch(72% 0.10 152)", "oklch(83% 0.07 152)", "oklch(95% 0.02 152)"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Wortmarke und Dialogtitel – die größte Schrift der Anwendung." },
+      "titel": { "displayName": "Titel", "purpose": "Namen von Strecken, Zeichen, Listeneinträgen." },
+      "body": { "displayName": "Body", "purpose": "Grundtext; Formulare und Menüs 13 px." },
+      "bedienschrift": { "displayName": "Bedienschrift", "purpose": "Knöpfe – halbfett genug für Tageslicht." },
+      "label": { "displayName": "Label", "purpose": "Versalien-Rubriken: Gruppentitel, Statusleiste, Kennzahlen." },
+      "mono": { "displayName": "Mono", "purpose": "MGRS, GPS, Datum-Zeit-Gruppe – alles Funk- und Abtippbare, tabellarisch." }
+    },
+    "shadows": [
+      { "name": "schatten", "value": "0 1px 2px rgba(16,32,56,.08), 0 4px 9px rgba(16,32,56,.12)", "purpose": "Normalerhebung: Kopfzeile, Kartenaufsätze." },
+      { "name": "schatten-stark", "value": "0 2px 4px rgba(16,32,56,.12), 0 8px 14px rgba(16,32,56,.22)", "purpose": "Schwebende Schichten: Menü, Dialog, Modusleiste, Hinweisbox." },
+      { "name": "schatten-oben", "value": "0 -1px 2px rgba(16,32,56,.08), 0 -4px 9px rgba(16,32,56,.12)", "purpose": "Gespiegelte Erhebung für Leisten an der Unterkante." },
+      { "name": "ausgabezeile", "value": "0 -2px 7px -4px rgba(16,32,56,.30)", "purpose": "Bewusst zurückgenommen: zeigt den Durchlauf, hebt die Zeile nicht ab." }
+    ],
+    "motion": [
+      { "name": "uebergang-standard", "value": "background .12s, border-color .12s, box-shadow .12s", "purpose": "Einzige Bewegungssprache: kurze Zustandsübergänge; prefers-reduced-motion erhält die Zustände und nimmt nur den Weg." }
+    ],
+    "breakpoints": [
+      { "name": "schmalgrenze", "value": "900px" },
+      { "name": "einspaltig-eng", "value": "600px" },
+      { "name": "marke-weicht", "value": "520px" },
+      { "name": "reiter-kurzwort", "value": "480px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primärknopf",
+      "kind": "button",
+      "refersTo": "knopf-primaer",
+      "description": "Die eine Haupthandlung je Ansicht – THW-Blau gefüllt.",
+      "html": "<button class=\"ds-knopf-primaer\">+ Neue Strecke zeichnen</button>",
+      "css": ".ds-knopf-primaer { display: inline-flex; align-items: center; justify-content: center; gap: .4em; padding: 7px 12px; border: 1px solid var(--thw, #003399); border-radius: 5px; background: var(--thw, #003399); color: #fff; cursor: pointer; font-size: 13px; font-weight: 550; white-space: nowrap; transition: background .12s, border-color .12s; } .ds-knopf-primaer:hover { background: var(--thw-hell, #0a4fbf); border-color: var(--thw-hell, #0a4fbf); } .ds-knopf-primaer:focus-visible { outline: 2px solid var(--thw-hell, #0a4fbf); outline-offset: 1px; }"
+    },
+    {
+      "name": "Standardknopf",
+      "kind": "button",
+      "refersTo": "knopf",
+      "description": "Alle Nebenhandlungen – weiße Fläche, Rand färbt sich beim Hover.",
+      "html": "<button class=\"ds-knopf\">Als Datei sichern</button>",
+      "css": ".ds-knopf { display: inline-flex; align-items: center; justify-content: center; padding: 7px 12px; border: 1px solid var(--linie-stark, #b6c1d1); border-radius: 5px; background: var(--flaeche, #fff); color: var(--text, #16202e); cursor: pointer; font-size: 13px; font-weight: 550; white-space: nowrap; transition: background .12s, border-color .12s; } .ds-knopf:hover { background: var(--flaeche-2, #f7f9fc); border-color: var(--thw-hell, #0a4fbf); } .ds-knopf:focus-visible { outline: 2px solid var(--thw-hell, #0a4fbf); outline-offset: 1px; }"
+    },
+    {
+      "name": "Gefahrknopf",
+      "kind": "button",
+      "refersTo": "knopf",
+      "description": "Löschen und Unumkehrbares – rote Schrift, füllt sich nie.",
+      "html": "<button class=\"ds-knopf-gefahr\">Strecke löschen</button>",
+      "css": ".ds-knopf-gefahr { display: inline-flex; align-items: center; justify-content: center; padding: 4px 9px; border: 1px solid #e6c2c2; border-radius: 5px; background: var(--flaeche, #fff); color: var(--gefahr, #c62828); cursor: pointer; font-size: 12px; font-weight: 550; transition: background .12s, border-color .12s; } .ds-knopf-gefahr:hover { background: #fdf2f2; border-color: var(--gefahr, #c62828); } .ds-knopf-gefahr:focus-visible { outline: 2px solid var(--thw-hell, #0a4fbf); outline-offset: 1px; }"
+    },
+    {
+      "name": "Eingabefeld mit Einheit",
+      "kind": "input",
+      "refersTo": "feld-eingabe",
+      "description": "Feldtitel klein und halbfett über der Eingabe; die Einheit steht im Feld rechts.",
+      "html": "<label class=\"ds-feld\"><span class=\"ds-feld-titel\">Bauzuschlag</span><input class=\"ds-feld-eingabe\" type=\"number\" value=\"15\"><span class=\"ds-feld-einheit\">%</span></label>",
+      "css": ".ds-feld { display: flex; flex-direction: column; gap: 3px; position: relative; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 220px; } .ds-feld-titel { font-size: 11.5px; font-weight: 600; color: var(--text-schwach, #5c6879); } .ds-feld-eingabe { width: 100%; padding: 6px 42px 6px 9px; border: 1px solid var(--linie-stark, #b6c1d1); border-radius: 5px; background: var(--flaeche, #fff); font-size: 13px; color: var(--text, #16202e); } .ds-feld-eingabe:focus-visible { outline: 2px solid var(--thw-hell, #0a4fbf); outline-offset: 1px; } .ds-feld-einheit { position: absolute; right: 9px; bottom: 7px; font-size: 11.5px; color: var(--text-schwach, #5c6879); pointer-events: none; }"
+    },
+    {
+      "name": "Reiter",
+      "kind": "nav",
+      "refersTo": "knopf",
+      "description": "Drei gleichbreite Reiter mit 2-px-Unterkante; aktiv in THW-Blau auf weißer Fläche.",
+      "html": "<nav class=\"ds-reiter\"><button class=\"ds-reiter-knopf aktiv\">Strecken</button><button class=\"ds-reiter-knopf\">Taktische Zeichen</button><button class=\"ds-reiter-knopf\">Planung</button></nav>",
+      "css": ".ds-reiter { display: flex; border-bottom: 1px solid var(--linie, #d5dce6); background: var(--flaeche-2, #f7f9fc); width: 340px; } .ds-reiter-knopf { flex: 1; padding: 10px 6px; border: 0; background: none; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--text-schwach, #5c6879); border-bottom: 2px solid transparent; transition: color .12s; } .ds-reiter-knopf:hover { color: var(--text, #16202e); } .ds-reiter-knopf.aktiv { color: var(--thw, #003399); border-bottom-color: var(--thw, #003399); background: var(--flaeche, #fff); } .ds-reiter-knopf:focus-visible { outline: 2px solid var(--thw-hell, #0a4fbf); outline-offset: -2px; }"
+    },
+    {
+      "name": "Werkzeugknopf mit Taste",
+      "kind": "custom",
+      "refersTo": "knopf",
+      "description": "Signatur: Glyphe, Wort und Tastenkürzel als gerahmtes Kästchen – kein Icon-Rätsel.",
+      "html": "<button class=\"ds-wz\"><span class=\"ds-wz-icon\">╱</span><span>Strecke<i class=\"ds-wz-taste\">S</i></span></button>",
+      "css": ".ds-wz { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 7px; border: 1px solid var(--linie, #d5dce6); background: var(--flaeche, #fff); border-radius: 5px; cursor: pointer; font-size: 12.5px; font-weight: 550; white-space: nowrap; color: var(--text, #16202e); box-shadow: 0 1px 2px rgba(16,32,56,.08), 0 4px 9px rgba(16,32,56,.12); transition: background .12s; } .ds-wz:hover { background: var(--flaeche-2, #f7f9fc); } .ds-wz:focus-visible { outline: 2px solid var(--thw-hell, #0a4fbf); outline-offset: 1px; } .ds-wz-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font-size: 15px; line-height: 1; } .ds-wz-taste { display: inline-block; margin-left: 7px; padding: 0 4px; min-width: 15px; border: 1px solid var(--linie-stark, #b6c1d1); border-radius: 3px; font-size: 11px; font-style: normal; font-weight: 600; line-height: 15px; text-align: center; color: var(--text-schwach, #5c6879); background: var(--flaeche-2, #f7f9fc); }"
+    },
+    {
+      "name": "Kennzahl",
+      "kind": "card",
+      "refersTo": "eintrag",
+      "description": "Flache Kachel: Versalien-Label über tabellarischer Zahl – kein KPI-Schmuck.",
+      "html": "<div class=\"ds-kz\"><span>Trasse</span><b>6,53 km</b></div>",
+      "css": ".ds-kz { background: var(--flaeche-2, #f7f9fc); border: 1px solid var(--linie, #d5dce6); border-radius: 5px; padding: 6px 4px; text-align: center; width: 96px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; } .ds-kz span { display: block; font-size: 11px; color: var(--text-schwach, #5c6879); text-transform: uppercase; letter-spacing: .3px; } .ds-kz b { display: block; font-size: 13.5px; font-variant-numeric: tabular-nums; margin-top: 1px; color: var(--text, #16202e); }"
+    },
+    {
+      "name": "Hinweisbox",
+      "kind": "custom",
+      "refersTo": "hinweisbox",
+      "description": "Flüchtige Meldung als dunkle Pille; Fehler füllen sich rot.",
+      "html": "<div class=\"ds-hinweis\">Planung als Datei gesichert</div>",
+      "css": ".ds-hinweis { display: inline-block; background: rgba(20,28,40,.95); color: #fff; padding: 9px 16px; border-radius: 20px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 2px 4px rgba(16,32,56,.12), 0 8px 14px rgba(16,32,56,.22); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Das Blatt hinter dem Glas",
+    "overview": "Die Oberfläche ist das Werkzeug, das ein amtliches Blatt erzeugt – Bauauftrag, Sammel-Bauauftrag, Lagekarte. Der Bildschirm ahmt das Papier nie nach, aber er dient ihm: harte Kanten statt weicher Höfe, Formularsprache statt App-Sprache, und die Ausgabezeile klebt am unteren Rand jeder Streckenkarte, weil das Erzeugnis nie mehr als null Scrolls entfernt sein darf. Der Charakter der Bedienung ist dienstlich-präzise: wie gutes Gerät – klare Rastung, keine Verzierung, jede Fläche hat einen Zweck. Bestätigte Abgrenzung: kein GIS-Profi-Wust – Mächtigkeit darf nie Einweisung verlangen.",
+    "keyCharacteristics": [
+      "Vom gedruckten Erzeugnis her komponiert; die Karte ist der Weg, das Blatt das Ziel",
+      "Eine einzige Bedienfarbe (THW-Blau); Streckenfarben sind Daten",
+      "Systemschrift, Ziffern tabellarisch, Koordinaten in Mono – funktauglich",
+      "Harte, gerichtete Schatten; Tiefe erklärt Zustand, nie Dekoration",
+      "Fachsprache und Fundstellen der KatS-Dv 861 als sichtbarer Teil der Oberfläche"
+    ],
+    "rules": [
+      { "name": "Die Ein-Stimme-Regel", "body": "THW-Blau ist die einzige Bedienfarbe der Oberfläche. Die zehn Streckenfarben sind Nutzdaten (--farbe je Element), niemals Gestaltung – eine neue Bedienfarbe gibt es nicht.", "section": "colors" },
+      { "name": "Die Farbe-plus-Fettung-Regel", "body": "Eine Warnung trägt nie Farbe allein, sondern immer Farbe und Fettung – wegen Tageslicht auf blassen Schirmen und weil im Schwarz-Weiß-Druck jede Farbe verschwindet.", "section": "colors" },
+      { "name": "Die 11-Pixel-Regel", "body": "Keine Schrift der Oberfläche unterschreitet 11 px – sie wird bei Tageslicht auf kleinen Schirmen gelesen.", "section": "typography" },
+      { "name": "Die Ziffern-Regel", "body": "Wo Zahlen stehen, stehen sie tabellarisch (font-variant-numeric: tabular-nums); Koordinaten und Zeitgruppen zusätzlich in Mono. Werte müssen untereinander fluchten wie im Formular.", "section": "typography" },
+      { "name": "Die Druckkanten-Regel", "body": "Schatten haben Versatz und kurze Weichzeichnung; ein farbiger Hof ohne Versatz ist Dekoration und kommt nicht vor.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do Tastenkürzel sichtbar in die Beschriftung schreiben (Fertig (Enter), Tastenkästchen im Werkzeugknopf) – title zeigt kein Touchgerät.",
+      "Do den Grund einer Sperrung neben das gesperrte Element stellen (.ausgabe-grund), im Klartext.",
+      "Do Trefferzonen bei pointer: coarse über ::after aufziehen – senkrecht großzügig, waagerecht nie über die Fuge zum Nachbarn.",
+      "Do fachliche Werte mit ihrer Dv-861-Gliederungsnummer zeigen – am Bauort wird nach der Nummer gesucht.",
+      "Do Zustände doppelt tragen: Farbe und Fettung, Symbol und Zeilenverhalten (ausgeblendete Einträge verblassen als Ganzes).",
+      "Do neue Farben und Maße ausschließlich über die :root-Variablen von css/app.css einführen."
+    ],
+    "donts": [
+      "Don't eine zweite Bedienfarbe neben THW-Blau einführen; Streckenfarben bleiben Daten.",
+      "Don't Schrift unter 11 px setzen – auch nicht in Fremd-Overrides.",
+      "Don't breite, versatzlose Schattenhöfe oder Glanz verwenden; die Druckkanten-Regel gilt überall.",
+      "Don't Funktionen hinter Werkzeugleisten-Gebirgen oder Menübäumen stapeln (bestätigte Abgrenzung: kein GIS-Profi-Wust) – jede neue Funktion muss ohne Einweisung auffindbar sein, notfalls über gestufte Enthüllung.",
+      "Don't Icon-Fonts, Emoji oder Icon-Bibliotheken einbinden; Sinnbilder sind sparsame Textglyphen des Bestands oder eigenes Inline-SVG in einer Strichstärke.",
+      "Don't im Druckpfad „vereinfachen“, was als Firefox-Umgehung kommentiert ist (Graustufen-Kachelquelle, mix-blend-mode: normal) – vier Formate in Farbe und S/W sind der Prüfmaßstab."
+    ]
+  }
+}
