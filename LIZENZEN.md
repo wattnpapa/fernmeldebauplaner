@@ -75,6 +75,10 @@ Es gelten deren Nutzungsbedingungen:
   Datenlizenz Deutschland – Namensnennung 2.0 (`dl-de/by-2-0`)
 - **OpenStreetMap** – © OpenStreetMap-Mitwirkende, ODbL
 - **OpenTopoMap** – CC-BY-SA, Daten aus OpenStreetMap
+- **DWD Topo** – Deutscher Wetterdienst (DWD), Nutzungsbedingungen des DWD-GeoPortals
+  (maps.dwd.de) beachten
+- **basemap.de Web Raster** (GeoPortal DE) – Bundesamt für Kartographie und Geodäsie (BKG),
+  Datenlizenz Deutschland – Namensnennung 2.0 (`dl-de/by-2-0`)
 - **Esri World Imagery** – nur für Sichtprüfung, Nutzungsbedingungen von Esri beachten
 - **Terrain Tiles** (Höhenkacheln, `js/hoehe.js`) – AWS Open Data, Terrarium-Format;
   in Deutschland aus dem EU-DEM des Copernicus-Programms (© Europäische Union),
