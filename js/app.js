@@ -232,8 +232,16 @@ const OHNE_KOORD = 'Karte antippen für die Koordinate';
    dass es die angetippte und nicht die überfahrene ist. */
 let angetippt = null;
 
-function koordZeigen(ll, quelle) {\n  slMgrs.textContent = toMGRS(ll.lat, ll.lng, 5);\n  slGps.textContent = toDDM(ll.lat, ll.lng);\n  slDez.textContent = `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;\n  slQuelle.textContent = quelle;\n  // fetch elevation asynchronously
-  getElevation(ll.lat, ll.lng).then(e => {\n    slElev.textContent = (e !== null && e !== undefined) ? `${e} m` : '–';\n  }).catch(() => { slElev.textContent = '–'; });\n}
+function koordZeigen(ll, quelle) {
+  slMgrs.textContent = toMGRS(ll.lat, ll.lng, 5);
+  slGps.textContent = toDDM(ll.lat, ll.lng);
+  slDez.textContent = `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
+  slQuelle.textContent = quelle;
+  // Die Höhe kommt aus dem Netz und darf die Leiste nicht aufhalten.
+  getElevation(ll.lat, ll.lng).then(e => {
+    slElev.textContent = (e !== null && e !== undefined) ? `${e} m` : '–';
+  }).catch(() => { slElev.textContent = '–'; });
+}
 
 function koordLeeren() {
   if (angetippt) return koordZeigen(angetippt, 'zuletzt angetippte Position');
