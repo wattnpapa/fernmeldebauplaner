@@ -248,6 +248,22 @@ body.seite-zu .seite { display: none; }
 .summe:empty { display: none; }
 .summe b { color: var(--thw); }
 
+/* Aufschlüsselung nach Kabelart: eigenes Raster statt weiterer Flexglieder,
+   sonst rutschten Längen und Trommelzahlen je nach Namenslänge gegeneinander
+   und ließen sich zwischen den Zeilen nicht mehr vergleichen. Die Kabelart
+   trägt die volle Bezeichnung im Titel – in der Leiste steht die Kurzform,
+   damit die beiden Zahlenspalten nicht zusammengedrückt werden. */
+.summe-kabel {
+  flex-basis: 100%; display: grid; grid-template-columns: 1fr auto auto;
+  gap: 2px 12px; margin-top: 2px; padding-top: 6px; border-top: 1px solid var(--linie);
+}
+.summe-kabel i {
+  font-style: normal; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.summe-kabel b, .summe-kabel span { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.summe-kabel > b, .summe-kabel > span { text-align: right; }
+
 .leer {
   padding: 18px 14px; border: 1px dashed var(--linie-stark); border-radius: var(--radius);
   background: var(--flaeche-2); color: var(--text-schwach); font-size: 13px;

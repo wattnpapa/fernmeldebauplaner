@@ -158,6 +158,26 @@ function augenKnopf(sichtbar) {
 
 // ---------------------------------------------------------------- Strecken
 
+/**
+ * Bedarf und Trommeln je Kabelart, unter der Gesamtzeile. Bestellt und auf den
+ * Bauplatz gefahren wird nach Leitungsart – die Gesamtsumme sagt, wie viel
+ * Kabel gebraucht wird, aber nicht wovon. Aufgeschlüsselt werden dieselben
+ * zwei Größen wie darüber, damit sich Teil und Ganzes gegeneinander lesen
+ * lassen; gerechnet wird mit dem Bedarf einschließlich Bauzuschlag, denn
+ * danach richtet sich die Trommelzahl.
+ *
+ * Bei einer einzigen Kabelart entfällt die Aufstellung: sie wiederholte dann
+ * Wort für Wort die Zahlen der Zeile darüber.
+ */
+function kabelSummeHTML(ges) {
+  if (ges.nachKabel.length < 2) return '';
+  const zeilen = ges.nachKabel.map(e =>
+    `<i title="${escapeHtml(e.kabel.name)}">${escapeHtml(e.kabel.kurz)}</i>
+     <b>${formatLaenge(e.bedarf)}</b>
+     <span><b>${e.trommeln}</b> ${e.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>`).join('');
+  return `<div class="summe-kabel">${zeilen}</div>`;
+}
+
 export function zeichneStreckenListe() {
   const p = store.projekt;
   const liste = document.getElementById('strecken-liste');
@@ -171,7 +191,8 @@ export function zeichneStreckenListe() {
        ${abschnitte.length ? `<span><b>${abschnitte.length}</b> ${abschnitte.length === 1 ? 'Abschnitt' : 'Abschnitte'}</span>` : ''}
        <span>Trasse <b>${formatLaenge(ges.trasse)}</b></span>
        <span>Bedarf <b>${formatLaenge(ges.bedarf)}</b></span>
-       <span><b>${ges.trommeln}</b> ${ges.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>`
+       <span><b>${ges.trommeln}</b> ${ges.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>
+       ${kabelSummeHTML(ges)}`
     : '';
 
   const sammelKnopf = document.getElementById('btn-sammel-pdf');
