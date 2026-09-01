@@ -132,8 +132,20 @@ function feld(titel, wert, beiAenderung, o = {}) {
 }
 
 /** Änderung aus einem Formular: kein Neuaufbau der Seitenleiste */
+let _debounceTimer = null;
+let _debounceQueue = [];
+function debounceAendern(fn) {
+  _debounceQueue.push(fn);
+  if (_debounceTimer) clearTimeout(_debounceTimer);
+  _debounceTimer = setTimeout(() => {
+    const combined = () => { _debounceQueue.forEach(f => f()); };
+    store.aendern(combined, 'formular');
+    _debounceQueue = [];
+    _debounceTimer = null;
+  }, 100);
+}
 function schreib(fn) {
-  store.aendern(fn, 'formular');
+  debounceAendern(fn);
 }
 
 /* Eine Sicherungsdatei wird erst zusammengestellt und dann heruntergeladen –

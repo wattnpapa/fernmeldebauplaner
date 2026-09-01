@@ -51,7 +51,11 @@ function winkel(o) {
  * Vollständiges <svg> für ein taktisches Zeichen.
  * @param {object} o {symbol, breite, drehung, sw}
  */
+const _symbolSvgCache = new Map();
 export function symbolSVG(o = {}) {
+  const cacheKey = JSON.stringify([o.symbol, o.breite, o.drehung, o.sw]);
+  if (_symbolSvgCache.has(cacheKey)) return _symbolSvgCache.get(cacheKey);
+
   const sym = symbolById(o.symbol);
   const inhalt = (o.sw && DRUCK[sym.id]) || ZEICHEN[sym.id].i;
 
@@ -65,9 +69,11 @@ export function symbolSVG(o = {}) {
 
   const dreh = grad ? ` transform="rotate(${grad} ${SEITE / 2} ${SEITE / 2})"` : '';
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-rand} ${-rand} ${feld} ${feld}"
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-rand} ${-rand} ${feld} ${feld}"
     width="${kante}" height="${kante}" class="tz" role="img"
     aria-label="${escapeAttr(sym.name)}"><g${dreh}>${inhalt}</g></svg>`;
+  _symbolSvgCache.set(cacheKey, svg);
+  return svg;
 }
 
 /** Maße, die ein Marker mit diesem Symbol belegt (für Leaflet-Anker) */
