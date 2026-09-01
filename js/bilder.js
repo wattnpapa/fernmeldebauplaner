@@ -5,6 +5,7 @@ import { ablegen, bildUrl } from './bildspeicher.js';
 import { exifLesen, istHeif } from './exif.js';
 import { heicEntschluesseln } from './heic.js';
 import { escapeHtml } from './strecken.js';
+import { himmelsrichtung } from './geo.js';
 
 /* Ein Lichtbild vom Telefon bringt 12 Megapixel und mehrere Megabyte mit. Für
    den Zweck – „so sah die Stelle aus“ – genügt die lange Kante bei 1600 px;
@@ -257,10 +258,11 @@ export class BilderLayer {
       keyboard: false,
       icon: L.divIcon({
         className: 'fbp-bild-icon',
-        html: `<span class="fbp-bild${gewaehlt ? ' gewaehlt' : ''}"></span>`,
-        iconSize: [18, 18], iconAnchor: [9, 9]
+        html: `<span class="fbp-bild-marke">${blickSpitze(b)}` +
+              `<span class="fbp-bild${gewaehlt ? ' gewaehlt' : ''}"></span></span>`,
+        iconSize: [MARKE, MARKE], iconAnchor: [MARKE / 2, MARKE / 2]
       }),
-      title: b.name || 'Lichtbild'
+      title: markenTitel(b)
     }).addTo(this.gruppe);
 
     /* Beim Überfahren geht das Bild groß auf – der Punkt ist nur die Marke,
@@ -305,6 +307,37 @@ export class BilderLayer {
     const y = this.karte.latLngToContainerPoint(m.getLatLng()).y;
     return y < VORSCHAU.hoehe + 40 ? 'bottom' : 'top';
   }
+}
+
+/* Kantenlänge des Markenfeldes. Größer als das Viereck selbst, damit die
+   Blickspitze in jeder Drehung darin Platz hat – angeklickt wird trotzdem nur
+   das Viereck, dafür sorgt `pointer-events` im Stilblatt. Ohne das griffe eine
+   Marke weit über ihren sichtbaren Rand hinaus und nähme der benachbarten die
+   Klicks weg. */
+const MARKE = 38;
+
+/**
+ * Die kleine Spitze am Punkt: wohin die Kamera geblickt hat.
+ *
+ * Sie erscheint nur, wenn die Aufnahme die Richtung mitbringt – viele Kameras
+ * zeichnen sie nicht auf, und eine geratene Richtung wäre schlimmer als keine.
+ * Gedreht wird unmittelbar um den EXIF-Winkel: auf der Karte liegt Norden
+ * immer oben.
+ */
+function blickSpitze(b) {
+  if (!Number.isFinite(b.richtung)) return '';
+  const mitte = MARKE / 2;
+  return `<svg class="fbp-blick" viewBox="0 0 ${MARKE} ${MARKE}" width="${MARKE}" height="${MARKE}"
+     aria-hidden="true" style="--blick:${b.richtung.toFixed(1)}deg"
+   ><path d="M${mitte} 2 L${mitte + 5.5} 11.5 L${mitte - 5.5} 11.5 Z" paint-order="stroke"/></svg>`;
+}
+
+/** Beschriftung am Mauszeiger – nennt die Richtung, weil die Spitze sie nur zeigt */
+function markenTitel(b) {
+  const name = b.name || 'Lichtbild';
+  return Number.isFinite(b.richtung)
+    ? `${name} – Blick nach ${himmelsrichtung(b.richtung)} (${Math.round(b.richtung)}°)`
+    : name;
 }
 
 function vorschauHTML(b, adresse) {

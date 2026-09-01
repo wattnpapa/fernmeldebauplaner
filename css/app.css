@@ -861,12 +861,32 @@ body.modus-aktiv .kartenoptionen { display: none; }
    als Kreis – die Trassenpunkte sind rund, und zwei Bedeutungen dürfen nicht
    dieselbe Gestalt haben. Der weiße Rand trägt ihn auch über dem Luftbild. */
 
-.fbp-bild-icon { background: none; border: 0; }
+/* Angeklickt wird das Viereck, nicht das Feld darum: das ist größer, damit die
+   Blickspitze in jeder Drehung hineinpasst, und nähme der Nachbarmarke sonst
+   die Klicks weg. Leaflet hängt seine Handhabung an das Feld – die Ereignisse
+   des Vierecks steigen dorthin auf. */
+.fbp-bild-icon { background: none; border: 0; pointer-events: none; }
+.fbp-bild-marke {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+}
 .fbp-bild {
-  display: block; width: 14px; height: 14px; margin: 2px; border-radius: 4px;
+  display: block; width: 14px; height: 14px; border-radius: 4px;
   background: var(--thw); border: 2px solid #fff;
   box-shadow: 0 1px 3px rgba(0,0,0,.45); cursor: pointer;
   transition: transform .12s;
+  pointer-events: auto;
+}
+
+/* Hat die Kamera ihre Blickrichtung mitgeschrieben, sitzt sie als kleine Spitze
+   am Punkt – sie sagt, wohin fotografiert wurde, nicht wo der Fotograf stand.
+   Weiß umrandet wie das Viereck, damit sie auch über dem Luftbild steht;
+   `paint-order` legt den Rand nach außen, sonst fräße er die kleine Fläche auf. */
+.fbp-blick {
+  position: absolute; inset: 0; display: block; overflow: visible;
+  transform: rotate(var(--blick, 0deg));
+  fill: var(--thw); stroke: #fff; stroke-width: 1.6; stroke-linejoin: round;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.35));
 }
 .fbp-bild-icon:hover .fbp-bild { transform: scale(1.25); }
 .fbp-bild.gewaehlt { box-shadow: 0 0 0 3px rgba(0,51,153,.45), 0 1px 4px rgba(0,0,0,.4); }
