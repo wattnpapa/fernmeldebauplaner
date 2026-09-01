@@ -2,36 +2,72 @@
 
 export const BASISKARTEN = [
   {
-    id: 'topplus', name: 'TopPlusOpen (BKG)', grau: false,
+    id: 'topplus',
+    name: 'TopPlusOpen (BKG)',
+    grau: false,
     url: 'https://sgx.geodatenzentrum.de/wmts_topplus_open/tile/1.0.0/web/default/WEBMERCATOR/{z}/{y}/{x}.png',
-    attribution: '© <a href="https://www.bkg.bund.de">BKG</a> (TopPlusOpen, dl-de/by-2-0)', maxZoom: 18
+    attribution: '© <a href="https://www.bkg.bund.de">BKG</a> (TopPlusOpen, dl-de/by-2-0)',
+    maxZoom: 18
   },
   {
-    id: 'topplus_grau', name: 'TopPlusOpen grau (BKG)', grau: true,
+    id: 'topplus_grau',
+    name: 'TopPlusOpen grau (BKG)',
+    grau: true,
     url: 'https://sgx.geodatenzentrum.de/wmts_topplus_open/tile/1.0.0/web_grau/default/WEBMERCATOR/{z}/{y}/{x}.png',
-    attribution: '© <a href="https://www.bkg.bund.de">BKG</a> (TopPlusOpen, dl-de/by-2-0)', maxZoom: 18
+    attribution: '© <a href="https://www.bkg.bund.de">BKG</a> (TopPlusOpen, dl-de/by-2-0)',
+    maxZoom: 18
   },
   {
-    id: 'topplus_light', name: 'TopPlusOpen hell (BKG)', grau: false,
+    id: 'topplus_light',
+    name: 'TopPlusOpen hell (BKG)',
+    grau: false,
     url: 'https://sgx.geodatenzentrum.de/wmts_topplus_open/tile/1.0.0/web_light/default/WEBMERCATOR/{z}/{y}/{x}.png',
-    attribution: '© <a href="https://www.bkg.bund.de">BKG</a> (TopPlusOpen, dl-de/by-2-0)', maxZoom: 18
+    attribution: '© <a href="https://www.bkg.bund.de">BKG</a> (TopPlusOpen, dl-de/by-2-0)',
+    maxZoom: 18
   },
   {
-    id: 'osm', name: 'OpenStreetMap', grau: false,
+    id: 'osm',
+    name: 'OpenStreetMap',
+    grau: false,
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende', maxZoom: 19
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
+    maxZoom: 19
   },
   {
-    id: 'topo', name: 'OpenTopoMap', grau: false,
+    id: 'topo',
+    name: 'OpenTopoMap',
+    grau: false,
     url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: '© <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA), © OpenStreetMap', maxZoom: 17
+    attribution: '© <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA), © OpenStreetMap',
+    maxZoom: 17
   },
   {
-    id: 'luftbild', name: 'Luftbild (Esri)', grau: false,
+    id: 'luftbild',
+    name: 'Luftbild (Esri)',
+    grau: false,
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Luftbild © Esri, Maxar, Earthstar Geographics', maxZoom: 19, dunkel: true
+    attribution: 'Luftbild © Esri, Maxar, Earthstar Geographics',
+    maxZoom: 19,
+    dunkel: true
+  },
+  {
+    id: 'dwd_topo',
+    name: 'DWD Topo (WMTS)',
+    grau: false,
+    url: 'https://maps.dwd.de/geoserver/gwc/service/wmts?layer=dwd:WORLDMAP&style=default&tilematrixset=EPSG:3857&Service=WMTS&Request=GetTile&Version=1.0.0&TileMatrix={z}&TileRow={y}&TileCol={x}',
+    attribution: '© <a href="https://www.dwd.de">Deutscher Wetterdienst (DWD)</a>',
+    maxZoom: 19
+  },
+  {
+    id: 'geoportal_de',
+    name: 'GeoPortal DE (BKG)',
+    grau: false,
+    url: 'https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_farbe/default/DE_EPSG_25832_ADV/{z}/{y}/{x}.png',
+    attribution: '© <a href="https://gdz.bkg.bund.de">BKG</a>',
+    maxZoom: 19
   }
 ];
+
 
 export const basiskarteById = id => BASISKARTEN.find(b => b.id === id) || BASISKARTEN[0];
 
