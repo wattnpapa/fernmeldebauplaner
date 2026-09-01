@@ -62,7 +62,7 @@ export const BASISKARTEN = [
     id: 'geoportal_de',
     name: 'GeoPortal DE (BKG)',
     grau: false,
-    url: 'https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_farbe/default/DE_EPSG_25832_ADV/{z}/{y}/{x}.png',
+    url: 'https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_farbe/default/DE_EPSG_3857_ADV/{z}/{y}/{x}.png',
     attribution: '© <a href="https://gdz.bkg.bund.de">BKG</a>',
     maxZoom: 19
   }

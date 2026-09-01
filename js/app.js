@@ -10,7 +10,7 @@ import { ZeichenLayer } from './zeichen.js';
 import { BilderLayer, uebernahmeLaeuft } from './bilder.js';
 import { aufraeumen as bilderAufraeumen } from './bildspeicher.js';
 import { GitterLayer } from './gitter.js';
-import { toMGRS, toDDM, alleFormate } from './geo.js';
+import { toMGRS, toDDM, alleFormate, getElevation } from './geo.js';
 import * as io from './io.js';
 import {
   initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter, zeichneBilderListe,
@@ -224,7 +224,7 @@ function koordinatenPopup(ll) {
 
 // ---------------------------------------------------------------- Statusleiste
 
-const slMgrs = $('#sl-mgrs'), slGps = $('#sl-gps'), slDez = $('#sl-dez'), slQuelle = $('#sl-quelle');
+const slMgrs = $('#sl-mgrs'), slGps = $('#sl-gps'), slDez = $('#sl-dez'), slElev = $('#sl-elev'), slQuelle = $('#sl-quelle');
 const OHNE_KOORD = 'Karte antippen für die Koordinate';
 
 /* Auf einem Touchgerät gibt es kein mousemove – die Leiste blieb dort dauerhaft
@@ -232,12 +232,8 @@ const OHNE_KOORD = 'Karte antippen für die Koordinate';
    dass es die angetippte und nicht die überfahrene ist. */
 let angetippt = null;
 
-function koordZeigen(ll, quelle) {
-  slMgrs.textContent = toMGRS(ll.lat, ll.lng, 5);
-  slGps.textContent = toDDM(ll.lat, ll.lng);
-  slDez.textContent = `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
-  slQuelle.textContent = quelle;
-}
+function koordZeigen(ll, quelle) {\n  slMgrs.textContent = toMGRS(ll.lat, ll.lng, 5);\n  slGps.textContent = toDDM(ll.lat, ll.lng);\n  slDez.textContent = `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;\n  slQuelle.textContent = quelle;\n  // fetch elevation asynchronously
+  getElevation(ll.lat, ll.lng).then(e => {\n    slElev.textContent = (e !== null && e !== undefined) ? `${e} m` : '–';\n  }).catch(() => { slElev.textContent = '–'; });\n}
 
 function koordLeeren() {
   if (angetippt) return koordZeigen(angetippt, 'zuletzt angetippte Position');
