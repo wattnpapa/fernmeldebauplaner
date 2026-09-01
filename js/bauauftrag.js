@@ -10,6 +10,7 @@ import { ZeichenLayer, gezeichneteZeichen } from './zeichen.js';
 import { GitterLayer } from './gitter.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
+import { HOEHEN_QUELLE } from './hoehe.js';
 import {
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText, MAX_QUERSCHNITT
 } from './strom.js';
@@ -1628,7 +1629,7 @@ function ohneMarken(html) {
 function kartenquelle(p, opt) {
   const bk = basiskarteById(p.ansicht.basemap);
   const quelle = opt.farbe === 'sw' ? basiskarteById(grauVariante(p.ansicht.basemap)) : bk;
-  return `Kartengrundlage: ${ohneMarken(quelle.attribution)}`;
+  return `Kartengrundlage: ${ohneMarken(quelle.attribution)} · ${escapeHtml(HOEHEN_QUELLE)}`;
 }
 
 function fussHTML(p, opt) {
