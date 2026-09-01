@@ -61,6 +61,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   zeigt sie groß
 - Auswählen über den Reiter „Bilder“ – am Telefon öffnet das unmittelbar die
   Fotoauswahl – oder aus einem Ordner auf die Karte ziehen
+- **HEIC** wird gelesen, auch aus dem Dateisystem eines Rechners: dafür liegt
+  libheif als WebAssembly unter `vendor/libheif/` und wird nachgeladen, sobald
+  eine HEIC-Datei ankommt (siehe `LIZENZEN.md`)
 - Bilder ohne Ortsangabe der Kamera bleiben erhalten und lassen sich von Hand auf
   der Karte setzen; gesetzte Punkte lassen sich verschieben
 - Beim Hinzufügen auf die lange Kante 1600 px gebracht und im Bildspeicher des
@@ -287,6 +290,7 @@ js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
 js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
 js/bilder.js          Lichtbilder aufnehmen, verkleinern, auf der Karte zeigen
+js/heic.js            HEIC entschlüsseln (lädt vendor/libheif bei Bedarf nach)
 js/bildspeicher.js    Bilddaten im Gerätespeicher (IndexedDB)
 js/exif.js            Ort, Aufnahmezeit und Blickrichtung aus dem Lichtbild
 js/bauauftrag.js      Druckdokumente: Bauauftrag und Lagekarte
@@ -297,7 +301,7 @@ js/version.js         Stand der Anwendung (beim Veröffentlichen gesetzt)
 bilder/               Bilder der statischen Seiten
 fonts/                Roboto Slab Bold, die Beschriftungsschrift der Zeichen
 scripts/              Zeichen holen und prüfen (siehe unten)
-vendor/               Leaflet 1.9.4, mgrs 2.1.0 (siehe LIZENZEN.md)
+vendor/               Leaflet 1.9.4, mgrs 2.1.0, libheif 1.19.8 (siehe LIZENZEN.md)
 LICENSE               EUPL-1.2
 ```
 

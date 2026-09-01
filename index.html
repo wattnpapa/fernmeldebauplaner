@@ -23,6 +23,7 @@
 <link rel="modulepreload" href="js/symbols.js">
 <link rel="modulepreload" href="js/zeichen.js">
 <link rel="modulepreload" href="js/bilder.js">
+<link rel="modulepreload" href="js/heic.js">
 <link rel="modulepreload" href="js/bildspeicher.js">
 <link rel="modulepreload" href="js/exif.js">
 <link rel="modulepreload" href="js/gitter.js">
@@ -240,8 +241,10 @@
 </div>
 
 <!-- „image/*“ öffnet auf dem iPhone unmittelbar die Fotoauswahl; von dort
-     kommen HEIC-Aufnahmen als JPEG mit erhaltenem EXIF-Block an. -->
-<input type="file" id="bild-import" hidden multiple accept="image/*">
+     kommen HEIC-Aufnahmen als JPEG mit erhaltenem EXIF-Block an. Die beiden
+     Endungen stehen zusätzlich da, weil manche Dateiauswahl am Rechner HEIC
+     nicht zu „image/*“ zählt und die Datei dann gar nicht erst anbietet. -->
+<input type="file" id="bild-import" hidden multiple accept="image/*,.heic,.heif">
 
 <input type="file" id="datei-import" hidden
        accept=".json,.geojson,.kml,.kmz,application/json,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz">

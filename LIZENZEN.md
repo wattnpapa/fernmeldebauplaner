@@ -5,16 +5,36 @@ auf, was zusätzlich mitgeliefert oder zur Laufzeit abgerufen wird.
 
 ## Verwendete Fremdbibliotheken
 
-Beide Bibliotheken liegen unverändert unter `vendor/` im Repository, damit die
+Alle drei Bibliotheken liegen unverändert unter `vendor/` im Repository, damit die
 Anwendung ohne Netzwerkzugriff auf fremde CDNs auskommt.
 
 | Bibliothek | Version | Lizenz | Herkunft |
 |---|---|---|---|
 | Leaflet | 1.9.4 | BSD-2-Clause | https://leafletjs.com |
 | mgrs (proj4 team) | 2.1.0 | MIT | https://github.com/proj4js/mgrs |
+| libheif (als WebAssembly, `libheif-js`) | 1.19.8 | LGPL-3.0-or-later | https://github.com/strukturag/libheif |
 
 Der vollständige Lizenztext von `mgrs` liegt in `vendor/mgrs.LICENSE.md`,
-der von Leaflet im Kopf von `vendor/leaflet/leaflet.js`.
+der von Leaflet im Kopf von `vendor/leaflet/leaflet.js`, der von libheif in
+`vendor/libheif/LICENSE`.
+
+**Zu libheif:** Es entschlüsselt HEIC-Aufnahmen, die vom iPhone kommen – kein
+Browser außer Safari kann das von sich aus. Mitgeliefert sind der Glue-Code
+`vendor/libheif/libheif.js` und das Binärstück `vendor/libheif/libheif.wasm`
+(zusammen gut 1 MB), beide unverändert aus dem Paket `libheif-js` 1.19.8.
+Geladen werden sie erst, wenn wirklich eine HEIC-Datei ankommt; wer nur JPEG
+verwendet, holt sie nie.
+
+Die LGPL verlangt, dass der Empfänger die Bibliothek austauschen kann. Das ist
+hier gegeben: beide Dateien liegen unverändert und unkomprimiert im Repository
+und in der veröffentlichten Seite, sie lassen sich durch eine andere Fassung
+ersetzen, und der Quelltext von libheif steht unter der oben genannten Adresse.
+FMBauplaner selbst bleibt unter der EUPL-1.2; die LGPL steht auf der
+Kompatibilitätsliste im Anhang der EUPL-1.2.
+
+libheif enthält den HEVC-Entschlüsseler `libde265`. Wer FMBauplaner selbst
+betreibt und verbreitet, prüft für sich, ob in seinem Land Patentansprüche auf
+HEVC bestehen.
 
 ## Taktische Zeichen
 

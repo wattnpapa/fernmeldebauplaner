@@ -1578,9 +1578,9 @@ export function zeichneBilderListe() {
        auf die Karte ziehen. Jedes Bild setzt sich an den Ort, den die Kamera beim
        Auslösen aufgezeichnet hat; auf der Karte steht dort ein Punkt, der beim
        Überfahren aufgeht.</p>
-       <p class="klein">Die Bilder bleiben wie die Planung auf diesem Gerät. Sie gehen
-       in die Sicherungsdatei ein, erscheinen aber nicht im Bauauftrag und nicht in
-       den Austauschformaten.</p>`));
+       <p class="klein">JPEG und HEIC vom iPhone. Die Bilder bleiben wie die Planung
+       auf diesem Gerät. Sie gehen in die Sicherungsdatei ein, erscheinen aber nicht
+       im Bauauftrag und nicht in den Austauschformaten.</p>`));
     return;
   }
 
@@ -2095,6 +2095,10 @@ export function hilfeDialog() {
           <li>Beschriftung und Bemerkung erklären, was zu sehen ist; Aufnahmezeit,
               Blickrichtung und Gitterangabe stehen darunter, soweit die Kamera sie
               aufgezeichnet hat.</li>
+          <li><b>HEIC</b> vom iPhone wird gelesen – auch die Rohdatei aus einem Ordner,
+              die sonst kein Browser außer Safari öffnet. Beim ersten HEIC-Bild lädt
+              die Anwendung dafür einmalig einen Entschlüsseler nach; das dauert einen
+              Augenblick und geschieht nur, wenn wirklich eine solche Datei kommt.</li>
           <li>Die Bilder werden auf handliche Größe gebracht und liegen im
               <b>Bildspeicher dieses Browsers</b>, nicht im Netz. In die
               <b>Sicherungsdatei</b> gehen sie mit ein – sie wird dadurch entsprechend groß.</li>

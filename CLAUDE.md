@@ -10,7 +10,8 @@ hier steht nur, was beim Arbeiten am Quelltext zu beachten ist.
 **Kein Build-Schritt, keine Abhängigkeiten.** Reines ES-Modul-JavaScript, von
 Hand geschrieben, ohne Framework, Bundler, Transpiler oder Paketmanager. Es gibt
 keine `package.json` und soll keine geben. Fremdcode liegt entpackt unter
-`vendor/` (Leaflet, mgrs) und ist in `LIZENZEN.md` verzeichnet. Wer eine
+`vendor/` (Leaflet, mgrs, libheif als WebAssembly) und ist in `LIZENZEN.md`
+verzeichnet. Wer eine
 Bibliothek ergänzen will, legt sie dort ab und trägt die Lizenz nach — er fügt
 keinen Installationsschritt ein.
 
@@ -73,6 +74,7 @@ Englisch sind nur Web-APIs und die wenigen eingebürgerten Begriffe (`escapeHtml
 | `sitemap.xml` | Neue Seite heißt: Adresse hier eintragen. `lastmod` nicht von Hand pflegen – das setzt der Workflow je Seite aus dem Git-Datum |
 | `CNAME`, `.nojekyll` | Gehören zu GitHub Pages, nicht anfassen |
 | `vendor/` | Fremdcode unverändert, Änderungen gehören nach oben ins Projekt |
+| `vendor/libheif/` | Ebenso. Wird nur nachgeladen, wenn eine HEIC-Datei ankommt – nie in den Startweg ziehen |
 
 ## Druck: der empfindlichste Teil
 

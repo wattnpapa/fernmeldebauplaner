@@ -2,7 +2,8 @@
 
 import { store, neuesBild, bildAufKarte } from './state.js';
 import { ablegen, bildUrl } from './bildspeicher.js';
-import { exifLesen } from './exif.js';
+import { exifLesen, istHeif } from './exif.js';
+import { heicEntschluesseln } from './heic.js';
 import { escapeHtml } from './strecken.js';
 
 /* Ein Lichtbild vom Telefon bringt 12 Megapixel und mehrere Megabyte mit. Für
@@ -45,42 +46,60 @@ export async function bilderAufnehmen(dateien) {
   const angenommen = [], abgewiesen = [];
   let ohneOrt = 0;
 
-  for (const datei of Array.from(dateien || [])) {
-    try {
-      const b = await eineDatei(datei);
-      if (b.lat === null) ohneOrt++;
-      angenommen.push(b);
-    } catch (e) {
-      abgewiesen.push({ name: datei.name || 'Bild', grund: e.message });
+  laufend++;
+  try {
+    for (const datei of Array.from(dateien || [])) {
+      try {
+        const b = await eineDatei(datei);
+        if (b.lat === null) ohneOrt++;
+        angenommen.push(b);
+      } catch (e) {
+        abgewiesen.push({ name: datei.name || 'Bild', grund: e.message });
+      }
     }
+    if (angenommen.length) store.aendern(p => { p.bilder.push(...angenommen); }, 'bild');
+  } finally {
+    laufend--;
   }
-
-  if (angenommen.length) store.aendern(p => { p.bilder.push(...angenommen); }, 'bild');
   return { angenommen, ohneOrt, abgewiesen };
 }
 
+/* Zwischen dem Ablegen der Bilddaten und dem Eintrag in der Planung liegt ein
+   Augenblick, in dem die Daten zu niemandem gehören. Das Aufräumen verwaister
+   Bilddaten muss ihn abwarten – bei einer HEIC-Aufnahme kann er lang sein, weil
+   der Entschlüsseler den Hauptfaden hält und den Zeitgeber des Aufräumlaufs
+   genau bis dorthin aufschiebt. */
+let laufend = 0;
+export const uebernahmeLaeuft = () => laufend > 0;
+
 async function eineDatei(datei) {
-  if (!/^image\//.test(datei.type || '')) throw new Error('keine Bilddatei');
-
   const kopf = await datei.slice(0, EXIF_FENSTER).arrayBuffer();
-  const exif = exifLesen(kopf);
+  /* Erkannt wird am Inhalt, nicht an Endung oder gemeldetem Typ: für eine aus
+     dem Ordner gezogene HEIC-Datei gibt Chrome oft gar keinen Typ an. */
+  const heic = istHeif(kopf);
+  if (!heic && !/^image\//.test(datei.type || '')) throw new Error('keine Bilddatei');
 
-  let quelle;
+  /* HEIC führt den EXIF-Block im Datenteil, oft weit hinter dem Dateianfang –
+     dort reicht das Fenster nicht, und die Datei wird ohnehin ganz gebraucht. */
+  const ganz = heic ? await datei.arrayBuffer() : null;
+  const exif = exifLesen(ganz || kopf);
+
+  let quelle, vomDecoder = false;
   try {
+    // Safari entschlüsselt HEIC selbst; dort bleibt der eigene Weg ungenutzt
     quelle = await createImageBitmap(datei);
   } catch (e) {
-    /* HEIC vom iPhone: über die Fotoauswahl des Telefons kommt ein JPEG an,
-       aus dem Dateisystem eines Rechners dagegen die Rohdatei, die kein
-       Browser entschlüsselt. */
-    throw new Error(/heic|heif/i.test(datei.type + datei.name)
-      ? 'Format nicht lesbar (HEIC) – auf dem Telefon als „Maximale Kompatibilität“ übertragen'
-      : 'Bild nicht lesbar');
+    if (!heic) throw new Error('Bild nicht lesbar');
+    quelle = await heicEntschluesseln(ganz);
+    vomDecoder = true;
   }
 
   try {
     /* Hat der Browser das Bild schon aufgerichtet, wäre eine zweite Drehung
-       eine zu viel – es läge dann quer statt hochkant. */
-    const lage = browserDreht(quelle, exif) ? 1 : exif.ausrichtung;
+       eine zu viel – es läge dann quer statt hochkant. Der eigene HEIC-Weg
+       richtet ebenfalls auf: libheif wendet die Drehung des Containers (`irot`)
+       beim Entschlüsseln an. */
+    const lage = (vomDecoder || browserDreht(quelle, exif)) ? 1 : exif.ausrichtung;
     const gross = await verkleinern(quelle, MAX_KANTE, GUETE, lage);
     const mini  = await verkleinern(quelle, MINI_KANTE, MINI_GUETE, lage);
     const b = neuesBild({

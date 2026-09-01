@@ -7,7 +7,7 @@ import {
 import { erstelleKarte, setzeBasiskarte, BASISKARTEN } from './map.js';
 import { StreckenLayer, escapeHtml } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
-import { BilderLayer } from './bilder.js';
+import { BilderLayer, uebernahmeLaeuft } from './bilder.js';
 import { aufraeumen as bilderAufraeumen } from './bildspeicher.js';
 import { GitterLayer } from './gitter.js';
 import { toMGRS, toDDM, alleFormate } from './geo.js';
@@ -525,7 +525,10 @@ document.addEventListener('drop', e => {
   abwurfTiefe = 0;
   abwurf.hidden = true;
   const dateien = Array.from(e.dataTransfer.files || []);
-  const bilder = dateien.filter(d => /^image\//.test(d.type));
+  /* Auch am Namen und nicht nur am gemeldeten Typ: für eine aus dem Ordner
+     gezogene HEIC-Datei gibt Chrome oft gar keinen Typ an. Was danach wirklich
+     kein Bild ist, meldet die Übernahme einzeln. */
+  const bilder = dateien.filter(d => /^image\//.test(d.type) || /\.hei[cf]$/i.test(d.name));
   if (bilder.length) return bilderHinzufuegen(bilder);
   if (dateien.length) {
     hinweis('Hier lassen sich nur Bilder ablegen – Planungen und KML kommen über ' +
@@ -821,15 +824,22 @@ window.addEventListener('beforeunload', e => {
    Rückgängig das Bild noch vorfinden. Beim Start ist der Undo-Stapel leer,
    dann ist das Wegräumen ohne Verlust. Verzögert, damit es dem ersten
    Kartenaufbau nicht in die Quere kommt. */
-setTimeout(() => {
+function bilderAufraeumenWennRuhig() {
+  // Während einer Übernahme liegen Bilddaten im Speicher, zu denen es noch
+  // keinen Eintrag gibt – die dürfen nicht als verwaist gelten.
+  if (uebernahmeLaeuft()) return setTimeout(bilderAufraeumenWennRuhig, 4000);
   const planungen = Object.values(ladeAlle());
   // Ohne lesbare Projektliste wird nichts weggeräumt – sonst nähme ein
   // Lesefehler alle Bilder mit.
   if (!planungen.length) return;
   const behalten = new Set();
   for (const pr of planungen) for (const b of pr.bilder || []) behalten.add(b.id);
+  // Die offene Planung zählt mit ihrem Stand im Arbeitsspeicher: der ist dem
+  // gespeicherten immer eine Sekunde voraus.
+  for (const b of store.projekt.bilder || []) behalten.add(b.id);
   bilderAufraeumen(behalten);
-}, 4000);
+}
+setTimeout(bilderAufraeumenWennRuhig, 4000);
 
 // Zugriff aus der Browser-Konsole (Fehlersuche, eigene Auswertungen)
 window.fbp = { store, karte, sl, zl, bl, gl };
