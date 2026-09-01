@@ -80,6 +80,17 @@ function zeichnenBeenden(abbrechen = false) {
   zeichneSeite();
 }
 
+/* Beim Zeichnen wird die Koordinate Trassenpunkt statt Sprungziel – der
+   einzige Weg, eine Strecke ganz ohne Zeigegerät zu erfassen. Die Kartensicht
+   folgt dem Punkt, damit der Fortschritt sichtbar bleibt. */
+function koordinatenSucheOeffnen() {
+  koordinatenSuche(sl.zeichenModus ? k => {
+    if (!sl.punktAnfuegen(k.lat, k.lng)) return false;
+    karte.setView([k.lat, k.lng], Math.max(karte.getZoom(), 15));
+    modusAnzeigen();
+  } : null);
+}
+
 function zeichenSetzenStarten() {
   symbolPalette(symbolId => zeichenSetzen(symbolId));
 }
@@ -266,7 +277,7 @@ $('#btn-lagekarte').onclick = () => oeffneLagekarte();
 
 $('#wz-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();
 $('#wz-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
-$('#wz-suche').onclick = koordinatenSuche;
+$('#wz-suche').onclick = () => koordinatenSucheOeffnen();
 $('#wz-standort').onclick = standortZeigen;
 
 let standortMarker = null;
@@ -301,6 +312,28 @@ basisSelect.onchange = () => {
   setzeBasiskarte(karte, basisSelect.value);
   store.still(p => { p.ansicht.basemap = basisSelect.value; });
 };
+
+/* Fünf Einmalschalter dürfen die Trasse nicht dauerhaft überstimmen: die
+   Tafel klappt zu und merkt sich das je Sitzung (nur auf diesem Gerät, wie
+   alles hier). Schmal beginnt sie geschlossen – dort ist die Kartenfläche
+   das Produkt; breit offen, damit die Schalter auffindbar bleiben. */
+const koTafel = $('#kartenoptionen'), koKopf = $('#ko-kopf');
+function kartenoptionenSetzen(zu) {
+  koTafel.classList.toggle('zu', zu);
+  koKopf.setAttribute('aria-expanded', String(!zu));
+}
+/* Gemerkt wird nur die ausdrückliche Wahl – schriebe schon der Start den
+   Vorgabezustand fest, bliebe er nach einem Größenwechsel fälschlich stehen. */
+koKopf.onclick = () => {
+  const zu = !koTafel.classList.contains('zu');
+  kartenoptionenSetzen(zu);
+  try { sessionStorage.setItem('fmbauplaner.kartenoptionen', zu ? 'zu' : 'auf'); }
+  catch { /* privater Modus ohne Speicher – dann eben ohne Gedächtnis */ }
+};
+let koGemerkt = null;
+try { koGemerkt = sessionStorage.getItem('fmbauplaner.kartenoptionen'); } catch { }
+kartenoptionenSetzen(koGemerkt ? koGemerkt === 'zu'
+  : window.matchMedia('(max-width: 900px)').matches);
 
 const optionsFelder = [
   ['#opt-gitter', 'gitter'],
@@ -350,6 +383,15 @@ function ansichtSetzen(karteVorn) {
 }
 awListe.onclick = () => ansichtSetzen(false);
 awKarte.onclick = () => ansichtSetzen(true);
+/* Wird das Fenster über die Schmalgrenze hinaus breit (iPad-Drehung), gibt es
+   den Umschalter unten nicht mehr – .seite-zu bliebe sonst gefangen und die
+   Streckenliste wäre unerreichbar. Am resize-Ereignis statt am change der
+   Media Query: Letzteres bleibt unter Geräte-Emulation stumm und wäre so
+   nicht prüfbar; die Bedingung selbst kommt weiter aus derselben Abfrage. */
+const schmalAbfrage = window.matchMedia('(max-width: 900px)');
+window.addEventListener('resize', () => {
+  if (!schmalAbfrage.matches && document.body.classList.contains('seite-zu')) ansichtSetzen(false);
+});
 
 const dateiKnopf = $('#btn-datei'), dateiMenu = $('#menu-datei');
 dateiKnopf.onclick = e => {
@@ -418,11 +460,27 @@ function reiterWechseln(name) {
     const an = b.dataset.reiter === name;
     b.classList.toggle('aktiv', an);
     b.setAttribute('aria-selected', String(an));
+    /* Wandernder tabindex: Tab betritt das Reiterwerk genau einmal, die
+       Pfeiltasten wechseln – erst damit hält role=tablist, was es ankündigt. */
+    b.tabIndex = an ? 0 : -1;
   });
   document.querySelectorAll('.reiter-inhalt').forEach(s =>
     s.classList.toggle('aktiv', s.dataset.inhalt === name));
   ansichtSetzen(false);
 }
+
+document.querySelector('.reiter').addEventListener('keydown', e => {
+  const schritt = { ArrowRight: 1, ArrowLeft: -1, Home: 0, End: 0 };
+  if (!(e.key in schritt)) return;
+  e.preventDefault();
+  const knoepfe = [...document.querySelectorAll('.reiter button')];
+  let i = knoepfe.findIndex(b => b.classList.contains('aktiv'));
+  if (e.key === 'Home') i = 0;
+  else if (e.key === 'End') i = knoepfe.length - 1;
+  else i = (i + schritt[e.key] + knoepfe.length) % knoepfe.length;
+  reiterWechseln(knoepfe[i].dataset.reiter);
+  knoepfe[i].focus();
+});
 
 // ---------------------------------------------------------------- Dialog schließen
 
@@ -438,6 +496,14 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (bauauftragOffen()) return schliesseBauauftrag();
     if (!$('#dialog').hidden) return schliesseDialog();
+    /* Das Datei-Menü schließt wie der Dialog auch per Esc – der Fokus kehrt
+       zum Knopf zurück, damit die Tastatur nicht ins Leere fällt. */
+    if (!dateiMenu.hidden) {
+      dateiMenu.hidden = true;
+      dateiKnopf.setAttribute('aria-expanded', 'false');
+      dateiKnopf.focus();
+      return;
+    }
     if (sl.zeichenModus) return zeichnenBeenden(true);
     if (zl.setzModus) { zl.beendeSetzen(); return modusAnzeigen(); }
     return;
@@ -465,7 +531,7 @@ document.addEventListener('keydown', e => {
   const taste = e.key.toLowerCase();
   if (taste === 's') { e.preventDefault(); sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten(); }
   if (taste === 't') { e.preventDefault(); zeichenSetzenStarten(); }
-  if (taste === 'k') { e.preventDefault(); koordinatenSuche(); }
+  if (taste === 'k') { e.preventDefault(); koordinatenSucheOeffnen(); }
 });
 
 karte.on('dblclick', () => { if (sl.zeichenModus) zeichnenBeenden(false); });

@@ -13,6 +13,12 @@
   --text-schwach: #5c6879;
   --gefahr: #c62828;
   --warnung: #b26a00;
+  /* Der Mahnton (ungesichert, Grenzwert überschritten) spricht in einer
+     Sprache: Fläche, Linie und Tiefton gehören zusammen und wandern gemeinsam –
+     vorher standen dieselben drei Werte an drei Stellen wörtlich im Text. */
+  --warnung-flaeche: #fdf3e0;
+  --warnung-linie: #e6c893;
+  --warnung-tief: #7a4b00;
   --gut: #1b7a3d;
   --radius: 8px;
   --radius-klein: 5px;
@@ -124,7 +130,9 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
   background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.22);
   border-radius: var(--radius-klein); color: #fff; padding: 6px 10px; font-weight: 550;
 }
-.projektname::placeholder { color: rgba(255,255,255,.6); }
+/* .75 statt .6: erst damit liegt der Platzhalter auf dem blauen Feld über
+   4,5:1 – gemessen ~5,2:1. Er bleibt sichtbar leiser als eingegebener Text. */
+.projektname::placeholder { color: rgba(255,255,255,.75); }
 .projektname:focus { background: rgba(255,255,255,.2); outline-color: #fff; }
 .speicherstatus {
   font-size: 12px; opacity: .78; white-space: nowrap;
@@ -209,6 +217,14 @@ body.seite-zu .seite { display: none; }
 }
 .reiter button:hover { color: var(--text); }
 .reiter button.aktiv { color: var(--thw); border-bottom-color: var(--thw); background: var(--flaeche); }
+/* Schmal trägt der mittlere Reiter das kurze Wort: „Taktische Zeichen“ bräche
+   zweizeilig um und machte die Reiterreihe ungleich hoch. „Zeichen“ ist
+   dasselbe Wort wie am Werkzeug und am Setzen-Knopf. */
+.reiter-kurz { display: none; }
+@media (max-width: 480px) {
+  .reiter-lang { display: none; }
+  .reiter-kurz { display: inline; }
+}
 
 .reiter-inhalt { display: none; flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
 .reiter-inhalt.aktiv { display: block; }
@@ -479,10 +495,10 @@ body.seite-zu .seite { display: none; }
    ungesicherten Speicherstand: Farbe UND Fettung, damit die Zeile auch auf
    einem blassen Schirm bei Tageslicht aus dem Kasten heraussticht. */
 .reichweite.warnung {
-  border-color: #e6c893; border-left-color: var(--warnung); background: #fdf3e0;
+  border-color: var(--warnung-linie); border-left-color: var(--warnung); background: var(--warnung-flaeche);
 }
 .reichweite.warnung .rw-satz { color: var(--warnung); font-weight: 600; }
-.reichweite.warnung .rw-fuss { color: #7a4b00; }
+.reichweite.warnung .rw-fuss { color: var(--warnung-tief); }
 
 .farbreihe { display: flex; flex-wrap: wrap; gap: 5px; }
 .farbe {
@@ -669,6 +685,19 @@ body.seite-zu .seite { display: none; }
   background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
   padding: 8px 10px; box-shadow: var(--schatten); display: flex; flex-direction: column; gap: 6px;
 }
+/* Kopfzeile der Tafel: dieselbe Grammatik wie die Abschnittszeilen der Liste –
+   Wort führt, der Pfeil dreht sich beim Zuklappen. Zu zeigt nur der Kopf. */
+.ko-kopf {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 0; background: none; padding: 0; cursor: pointer; text-align: left;
+  font: inherit; font-size: 12px; font-weight: 650; color: var(--text-schwach);
+}
+.ko-kopf:hover { color: var(--thw); }
+.ko-pfeil { font-size: 10px; transition: transform .12s; }
+.kartenoptionen.zu .ko-pfeil { transform: rotate(-90deg); }
+.ko-koerper { display: flex; flex-direction: column; gap: 6px; }
+.kartenoptionen.zu .ko-koerper { display: none; }
+.kartenoptionen.zu { width: auto; }
 .ko-zeile { display: flex; align-items: center; gap: 7px; font-size: 12px; }
 .ko-zeile > span:first-child { color: var(--text-schwach); white-space: nowrap; }
 .ko-zeile select { flex: 1; min-width: 0; padding: 3px 4px; border: 1px solid var(--linie); border-radius: 4px; background: var(--flaeche); font-size: 12px; }
@@ -950,9 +979,9 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
      statt als Punkt, den niemand deuten kann. */
   .speicherstatus { display: none; }
   .sb-stand { display: inline; flex-shrink: 0; }
-  .speicherband.mahnung { background: #fdf3e0; border-bottom-color: #e6c893; color: #7a4b00; }
+  .speicherband.mahnung { background: var(--warnung-flaeche); border-bottom-color: var(--warnung-linie); color: var(--warnung-tief); }
   .speicherband.mahnung .sb-stand { font-weight: 650; }
-  .speicherband.mahnung .knopf { border-color: #c99a3d; color: #7a4b00; }
+  .speicherband.mahnung .knopf { border-color: #c99a3d; color: var(--warnung-tief); }
 
   /* Seitenleiste und Karte teilen sich den Platz nicht, sie lösen einander ab.
      Ohne .seite-zu liegt die Seitenleiste über der Karte, mit .seite-zu die Karte frei. */
@@ -1047,6 +1076,9 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   .mini-select { padding: 10px 6px; font-size: 12.5px; }
   /* Die Querungsart wird mit dem Handschuh am Bauort umgestellt */
   .pz-querung select { padding: 9px 7px; min-height: 40px; }
+  /* Auch die Kartenoptionen werden dort umgestellt – die Zeilen wachsen auf
+     Trefferhöhe, die Tafel bleibt sichtbar kompakt. Vorher: 19 px. */
+  .ko-zeile, .ko-kopf { min-height: 36px; }
   .mini-input { padding: 10px 8px; font-size: 12.5px; }
   .koord-knopf { padding: 10px 6px; }
   .sl-kopie::after { content: ''; position: absolute; inset: -9px -4px; }

@@ -293,14 +293,23 @@ export class StreckenLayer {
     store.aendern(() => { s.punkte.pop(); this._artenAktualisieren(s); }, 'strecke');
   }
 
-  _kartenKlick(e) {
-    if (!this.zeichenModus) return;
+  /* Öffentlich, nicht nur Klickfolge: die Koordinatensuche fügt beim Zeichnen
+     exakt durchgegebene Angaben an – der Tastaturweg zum Punktesetzen. */
+  punktAnfuegen(lat, lng) {
+    if (!this.zeichenModus) return false;
     const s = store.strecke(this.zeichenModus);
-    if (!s) return this.beendeZeichnen();
+    if (!s) return false;
     store.aendern(() => {
-      s.punkte.push(neuerPunkt(e.latlng.lat, e.latlng.lng));
+      s.punkte.push(neuerPunkt(lat, lng));
       this._artenAktualisieren(s);
     }, 'strecke');
+    return true;
+  }
+
+  _kartenKlick(e) {
+    if (!this.zeichenModus) return;
+    if (!store.strecke(this.zeichenModus)) return this.beendeZeichnen();
+    this.punktAnfuegen(e.latlng.lat, e.latlng.lng);
   }
 
   _kartenMove(e) {

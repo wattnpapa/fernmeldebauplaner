@@ -11,6 +11,26 @@
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/print.css" media="all">
+<!-- Ohne diese Hinweise entdeckt der Browser die Modulkette Ebene für Ebene
+     (app → state → symbols → zeichen-daten); über Mobilfunk kostet jede Ebene
+     eine Rundreise. Die größte Datei – die Zeichensammlung – hängt ganz am
+     Ende der Kette und steht deshalb hier ganz vorn. -->
+<link rel="modulepreload" href="js/zeichen-daten.js">
+<link rel="modulepreload" href="js/bauauftrag.js">
+<link rel="modulepreload" href="js/ui.js">
+<link rel="modulepreload" href="js/state.js">
+<link rel="modulepreload" href="js/strecken.js">
+<link rel="modulepreload" href="js/symbols.js">
+<link rel="modulepreload" href="js/zeichen.js">
+<link rel="modulepreload" href="js/gitter.js">
+<link rel="modulepreload" href="js/io.js">
+<link rel="modulepreload" href="js/kml.js">
+<link rel="modulepreload" href="js/geo.js">
+<link rel="modulepreload" href="js/map.js">
+<link rel="modulepreload" href="js/strom.js">
+<link rel="modulepreload" href="js/vorschrift.js">
+<link rel="modulepreload" href="js/version.js">
+<link rel="modulepreload" href="vendor/mgrs.esm.js">
 </head>
 <body>
 
@@ -24,7 +44,9 @@
               fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
         <circle cx="12" cy="13" r="2.4" fill="#fff"/><circle cx="28" cy="13" r="2.4" fill="#fff"/>
       </svg>
-      <span class="marke-text">FM<span>Bauplaner</span></span>
+      <!-- h1: die einzige Überschrift der Anwendungsseite – Screenreader
+           springen so direkt zum Anfang, ohne dass sich das Schriftbild ändert. -->
+      <h1 class="marke-text">FM<span>Bauplaner</span></h1>
       <span class="marke-version" id="marke-version" title="Stand der Anwendung"></span>
     </div>
 
@@ -81,13 +103,22 @@
   <div class="hauptbereich">
 
     <aside class="seite" id="seite">
+      <!-- role=tablist verlangt den ganzen Vertrag: Pfeiltasten wechseln, Tab
+           betritt das Reiterwerk nur einmal (wandernder tabindex, siehe app.js),
+           und jedes Blatt kennt seinen Reiter. Der mittlere Reiter trägt schmal
+           das kurze Wort – „Taktische Zeichen“ bräche dort zweizeilig um. -->
       <nav class="reiter" role="tablist">
-        <button role="tab" class="aktiv" aria-selected="true" data-reiter="strecken">Strecken</button>
-        <button role="tab" aria-selected="false" data-reiter="zeichen">Taktische Zeichen</button>
-        <button role="tab" aria-selected="false" data-reiter="projekt">Planung</button>
+        <button role="tab" id="reiter-strecken" class="aktiv" aria-selected="true"
+                aria-controls="inhalt-strecken" data-reiter="strecken">Strecken</button>
+        <button role="tab" id="reiter-zeichen" aria-selected="false" tabindex="-1"
+                aria-controls="inhalt-zeichen" data-reiter="zeichen"><span
+                class="reiter-lang">Taktische Zeichen</span><span class="reiter-kurz">Zeichen</span></button>
+        <button role="tab" id="reiter-projekt" aria-selected="false" tabindex="-1"
+                aria-controls="inhalt-projekt" data-reiter="projekt">Planung</button>
       </nav>
 
-      <section class="reiter-inhalt aktiv" data-inhalt="strecken">
+      <section class="reiter-inhalt aktiv" role="tabpanel" id="inhalt-strecken"
+               aria-labelledby="reiter-strecken" data-inhalt="strecken">
         <div class="seite-kopf">
           <button class="knopf primaer breit" id="btn-neue-strecke">+ Neue Strecke zeichnen</button>
           <div class="seite-kopf-zeile">
@@ -102,7 +133,8 @@
         <div class="liste" id="strecken-liste"></div>
       </section>
 
-      <section class="reiter-inhalt" data-inhalt="zeichen">
+      <section class="reiter-inhalt" role="tabpanel" id="inhalt-zeichen"
+               aria-labelledby="reiter-zeichen" data-inhalt="zeichen">
         <div class="seite-kopf">
           <button class="knopf primaer breit" id="btn-neues-zeichen">+ Taktisches Zeichen setzen</button>
           <div class="seite-kopf-zeile">
@@ -115,7 +147,8 @@
         <div class="liste" id="zeichen-liste"></div>
       </section>
 
-      <section class="reiter-inhalt" data-inhalt="projekt">
+      <section class="reiter-inhalt" role="tabpanel" id="inhalt-projekt"
+               aria-labelledby="reiter-projekt" data-inhalt="projekt">
         <div class="feldgruppe" id="projekt-kopf"></div>
         <div class="feldgruppe" id="projekt-speicher"></div>
         <div class="feldgruppe" id="projekt-ueber"></div>
@@ -123,7 +156,11 @@
     </aside>
 
     <main class="kartenbereich">
-      <div id="karte" role="application" aria-label="Planungskarte"></div>
+      <!-- role=region statt application: application versetzt Screenreader in
+           den Formularmodus und verspricht ein Tastaturmodell, das eine reine
+           Zeigerkarte nicht hat. Der Tastaturweg zum Punktesetzen läuft über
+           die Koordinatensuche (K). -->
+      <div id="karte" role="region" aria-label="Planungskarte"></div>
 
       <div class="werkzeuge" role="toolbar" aria-label="Werkzeuge">
         <!-- Das Tastenkürzel steht sichtbar in der Beschriftung, nicht nur im
@@ -142,17 +179,25 @@
         <button class="knopf klein" data-akt="abbruch">Abbrechen (Esc)</button>
       </div>
 
-      <div class="kartenoptionen">
-        <label class="ko-zeile"><span>Karte</span>
-          <select id="basiskarte"></select>
-        </label>
-        <label class="ko-zeile ko-haken" title="UTM-Kilometergitter zum Ablesen von MGRS-Koordinaten"><input type="checkbox" id="opt-gitter"><span>Koordinatengitter</span></label>
-        <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-teillaengen"><span>Teillängen</span></label>
-        <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-gesamtlaenge"><span>Streckenname &amp; Summe</span></label>
-        <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-punktnummern"><span>Punktnummern</span></label>
-        <label class="ko-zeile"><span>Zeichengröße</span>
-          <input type="range" id="opt-symbolgroesse" min="0.6" max="1.8" step="0.1">
-        </label>
+      <!-- Fünf Schalter, die man einmal setzt, dürfen die Trasse nicht dauerhaft
+           überstimmen: die Tafel klappt zu und merkt sich das je Sitzung –
+           schmal beginnt sie geschlossen (siehe app.js). -->
+      <div class="kartenoptionen" id="kartenoptionen">
+        <button type="button" class="ko-kopf" id="ko-kopf" aria-expanded="true">
+          <span>Kartenoptionen</span><span class="ko-pfeil" aria-hidden="true">▾</span>
+        </button>
+        <div class="ko-koerper">
+          <label class="ko-zeile"><span>Karte</span>
+            <select id="basiskarte"></select>
+          </label>
+          <label class="ko-zeile ko-haken" title="UTM-Kilometergitter zum Ablesen von MGRS-Koordinaten"><input type="checkbox" id="opt-gitter"><span>Koordinatengitter (MGRS)</span></label>
+          <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-teillaengen"><span>Teillängen</span></label>
+          <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-gesamtlaenge"><span>Streckenname &amp; Summe</span></label>
+          <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-punktnummern"><span>Punktnummern</span></label>
+          <label class="ko-zeile"><span>Zeichengröße</span>
+            <input type="range" id="opt-symbolgroesse" min="0.6" max="1.8" step="0.1">
+          </label>
+        </div>
       </div>
 
       <div class="statusleiste">

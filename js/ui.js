@@ -39,8 +39,15 @@ export function hinweis(text, art = 'info') {
 
 // ---------------------------------------------------------------- Dialog
 
+/* Wer den Dialog geöffnet hat, bekommt den Fokus beim Schließen zurück. Bei
+   Dialogketten (ein Dialog öffnet den nächsten) bleibt der ursprüngliche
+   Auslöser gemerkt – der Zwischenknopf existiert nach dem Umbau nicht mehr. */
+let dialogOeffner = null;
+
 export function dialog({ titel, inhalt, fuss = [], breit = false }) {
   const huelle = document.getElementById('dialog');
+  const aktiv = document.activeElement;
+  if (aktiv instanceof HTMLElement && !huelle.contains(aktiv)) dialogOeffner = aktiv;
   huelle.querySelector('.dialog').classList.toggle('breit', breit);
   document.getElementById('dialog-titel').textContent = titel;
   const feld = document.getElementById('dialog-inhalt');
@@ -55,13 +62,29 @@ export function dialog({ titel, inhalt, fuss = [], breit = false }) {
     b.onclick = () => { if (f.tun ? f.tun() !== false : true) schliesseDialog(); };
     fussEl.appendChild(b);
   }
+  /* aria-modal verspricht Abschottung – inert löst sie ein: die Anwendung
+     dahinter ist für Tab und Screenreader nicht mehr erreichbar. Dialog und
+     Hinweisbox liegen außerhalb von #app und bleiben bedienbar. */
+  document.getElementById('app').inert = true;
   huelle.hidden = false;
-  const ersterFokus = feld.querySelector('input,select,textarea,button');
+  /* Reine Text-Dialoge haben im Inhalt nichts Fokussierbares – dann übernimmt
+     der erste Fußknopf, sonst der Schließen-Knopf, damit die Tastatur im
+     Dialog beginnt statt dahinter. */
+  const ersterFokus = feld.querySelector('input,select,textarea,button')
+    || fussEl.querySelector('button')
+    || huelle.querySelector('[data-akt="dialog-zu"]');
   if (ersterFokus) setTimeout(() => ersterFokus.focus(), 30);
   return feld;
 }
 
-export function schliesseDialog() { document.getElementById('dialog').hidden = true; }
+export function schliesseDialog() {
+  const huelle = document.getElementById('dialog');
+  if (huelle.hidden) return;
+  huelle.hidden = true;
+  document.getElementById('app').inert = false;
+  if (dialogOeffner && document.contains(dialogOeffner)) dialogOeffner.focus();
+  dialogOeffner = null;
+}
 
 // ---------------------------------------------------------------- Bausteine
 
@@ -1665,7 +1688,12 @@ function loeschDialog(pr) {
 
 // ---------------------------------------------------------------- Koordinatensuche
 
-export function koordinatenSuche() {
+/* `punktAnfuegen` kommt aus app.js, solange eine Strecke gezeichnet wird: die
+   Koordinate wird dann Trassenpunkt statt Sprungziel. Das ist der einzige Weg,
+   eine Strecke ganz ohne Zeigegerät zu erfassen – und der genaueste für eine
+   über Funk durchgegebene MGRS-Angabe. Der Dialog bleibt dabei offen, weil am
+   Funk selten nur eine Koordinate kommt. */
+export function koordinatenSuche(punktAnfuegen = null) {
   const box = el('div');
   box.innerHTML = `
     <label class="feld"><span class="feld-titel">Koordinate</span>
@@ -1674,24 +1702,41 @@ export function koordinatenSuche() {
     <p class="klein" id="ks-status">MGRS, Dezimalgrad, Grad/Dezimalminuten und Grad/Min./Sek. werden erkannt.</p>
     <label class="feld ks-haken"><input type="checkbox" id="ks-marke"><span class="feld-titel">Zusätzlich ein taktisches Zeichen dort setzen</span></label>`;
 
+  const lesen = () => {
+    const k = parseKoordinate(box.querySelector('#ks-eingabe').value);
+    if (!k) box.querySelector('#ks-status').innerHTML = '<b class="fehlertext">Koordinate nicht erkannt.</b>';
+    return k;
+  };
+  let angefuegt = 0;
+
+  const fuss = [
+    { text: punktAnfuegen ? 'Schließen' : 'Abbrechen' },
+    { text: 'Anspringen', primaer: !punktAnfuegen, tun: () => {
+        const k = lesen();
+        if (!k) return false;
+        ctx.karte.setView([k.lat, k.lng], Math.max(ctx.karte.getZoom(), 16));
+        if (box.querySelector('#ks-marke').checked) {
+          store.aendern(p => p.zeichen.push(neuesZeichen(k.lat, k.lng, 'fm-messstelle')), 'zeichen');
+        }
+        hinweis(`Angesprungen (${k.format}) – ${toMGRS(k.lat, k.lng, 5)}`);
+      } }
+  ];
+  if (punktAnfuegen) fuss.push({ text: 'Als Trassenpunkt anfügen', primaer: true, tun: () => {
+    const k = lesen();
+    if (!k) return false;
+    if (punktAnfuegen(k) === false) return true;   // Zeichnen wurde beendet – Dialog zu
+    angefuegt += 1;
+    box.querySelector('#ks-status').innerHTML =
+      `<b>${angefuegt === 1 ? 'Punkt angefügt' : angefuegt + ' Punkte angefügt'}</b> –
+       ${toMGRS(k.lat, k.lng, 5)}. Nächste Koordinate eingeben oder schließen.`;
+    const eingabe = box.querySelector('#ks-eingabe');
+    eingabe.value = ''; eingabe.focus();
+    return false;   // offen bleiben: die nächste Angabe kommt gleich
+  } });
+
   dialog({
-    titel: 'Koordinate anspringen', inhalt: box,
-    fuss: [
-      { text: 'Abbrechen' },
-      { text: 'Anspringen', primaer: true, tun: () => {
-          const wert = box.querySelector('#ks-eingabe').value;
-          const k = parseKoordinate(wert);
-          if (!k) {
-            box.querySelector('#ks-status').innerHTML = '<b class="fehlertext">Koordinate nicht erkannt.</b>';
-            return false;
-          }
-          ctx.karte.setView([k.lat, k.lng], Math.max(ctx.karte.getZoom(), 16));
-          if (box.querySelector('#ks-marke').checked) {
-            store.aendern(p => p.zeichen.push(neuesZeichen(k.lat, k.lng, 'fm-messstelle')), 'zeichen');
-          }
-          hinweis(`Angesprungen (${k.format}) – ${toMGRS(k.lat, k.lng, 5)}`);
-        } }
-    ]
+    titel: punktAnfuegen ? 'Koordinate als Trassenpunkt' : 'Koordinate anspringen',
+    inhalt: box, fuss
   });
 }
 
@@ -1708,6 +1753,8 @@ export function hilfeDialog() {
               vom Anfangs- zum Endpunkt.</li>
           <li>Mit <kbd>Enter</kbd> oder Doppelklick abschließen, <kbd>Rücktaste</kbd> nimmt
               den letzten Punkt zurück.</li>
+          <li>Beim Zeichnen fügt <b>Koordinate</b> (<kbd>K</kbd>) einen Punkt exakt an –
+              etwa eine über Funk durchgegebene MGRS-Angabe, ganz ohne Kartenklick.</li>
           <li>Punkte lassen sich später verschieben; die kleinen Griffe zwischen zwei Punkten
               fügen beim Ziehen einen Zwischenpunkt ein.</li>
           <li>Punktarten (Muffe, Querung, Mast …) in der Punkttabelle setzen – sie erscheinen
