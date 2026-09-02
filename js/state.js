@@ -21,7 +21,14 @@ export const KABELTYPEN = [
   { id: 'lan',    name: 'Netzwerkkabel (Cat.)',       kurz: 'LAN',     trommel: 100,  zuschlag: 15, leistung: 600 },
   { id: 'koax',   name: 'Koaxialkabel / Antennenzuleitung', kurz: 'Koax', trommel: 100, zuschlag: 15, leistung: 500 },
   { id: 'strom',  name: 'Stromleitung / Leitungsroller', kurz: 'Strom', trommel: 50,  zuschlag: 15, leistung: 600 },
-  { id: 'sonst',  name: 'Sonstige Leitung',           kurz: 'Sonst.',  trommel: 500,  zuschlag: 15, leistung: 700 }
+  { id: 'sonst',  name: 'Sonstige Leitung',           kurz: 'Sonst.',  trommel: 500,  zuschlag: 15, leistung: 700 },
+  /* Die Richtfunkstrecke ist eine Leitungsart ohne Leitung: sie führt wie ein
+     Kabel von Punkt zu Punkt, wird aber nicht verlegt – kein Bauzuschlag, keine
+     Trommel, keine Verlegeleistung. Als eigene Art statt eines eigenen
+     Objekts, damit Liste, Undo, Bauauftrag und Export sie ohne zweiten Weg
+     mitnehmen. Die Nullen sind die Vorgaben, die das Formular beim Wechsel der
+     Art mitzieht. */
+  { id: 'richtfunk', name: 'WLAN-Richtfunk (Funkstrecke)', kurz: 'Funk', funk: true, trommel: 0, zuschlag: 0, leistung: 0 }
 ];
 
 export const VERLEGEARTEN = [

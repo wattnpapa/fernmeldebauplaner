@@ -48,12 +48,16 @@ export function kennzahlen(strecke) {
      fallen die teuren Entfernungsrechnungen nur einmal an. */
   const kum = kumuliert(p);
   const trasse = kum[kum.length - 1];
-  const zuschlag = Math.max(0, Number(strecke.zuschlag) || 0);
+  const kabel = kabelById(strecke.kabeltyp);
+  /* Eine Funkstrecke wird nicht verlegt: ihr Bedarf ist die Luftlinie selbst,
+     alles Trommel- und Bauzeitrechnen fällt weg – sonst stünden im Bauauftrag
+     Trommeln für eine Strecke, auf der kein Meter Kabel liegt. */
+  const funk = !!kabel.funk;
+  const zuschlag = funk ? 0 : Math.max(0, Number(strecke.zuschlag) || 0);
   const bedarf = trasse * (1 + zuschlag / 100);
   const tl = Math.max(1, Number(strecke.trommellaenge) || 500);
   const leistung = Math.max(1, Number(strecke.verlegeleistung) || 800);
-  const kabel = kabelById(strecke.kabeltyp);
-  const trommeln = bedarf > 0 ? Math.ceil(bedarf / tl) : 0;
+  const trommeln = bedarf > 0 && !funk ? Math.ceil(bedarf / tl) : 0;
   const querungsliste = querungen(p, kum);
   let lv = null;
   return {
@@ -68,7 +72,7 @@ export function kennzahlen(strecke) {
     transportgewicht: kabel.gewicht ? trommeln * kabel.gewicht : null,
     punkte: p.length,
     abschnitte: Math.max(0, p.length - 1),
-    bauzeitStunden: bedarf / leistung,
+    bauzeitStunden: funk ? 0 : bedarf / leistung,
     muffen: p.filter(x => x.art === 'muffe').length,
     querungen: querungsliste.length,
     querungsliste,
@@ -79,10 +83,10 @@ export function kennzahlen(strecke) {
        werden die Stellen aber nur im Bauauftrag – deshalb erst beim Zugriff
        rechnen und dann merken. */
     get laengenverbindungen() {
-      if (!lv) lv = laengenverbindungen(p, kum, bedarf, tl, zuschlag);
+      if (!lv) lv = funk ? [] : laengenverbindungen(p, kum, bedarf, tl, zuschlag);
       return lv;
     },
-    abbinden: abbindeBedarf(bedarf),
+    abbinden: abbindeBedarf(funk ? 0 : bedarf),
     /* Maßgebend ist die tatsächlich liegende Kabellänge, also der Bedarf
        einschließlich Bauzuschlag – so wie es beim Spannungsfall der
        Stromleitung schon gehandhabt wird, nicht über die Trassenlänge. */
@@ -404,11 +408,16 @@ export class StreckenLayer {
   _stilRoh(s) {
     const betont = this.hervorheben ? s.id === this.hervorheben : true;
     const nebensache = this.hervorheben && !betont;
+    /* Die Funkstrecke ist gestrichelt, was auch die Verlegeart sagt: sie liegt
+       nirgends, die Strichlücken sollen das schon auf der Karte zeigen. Das
+       Muster liegt zwischen Erd- und Oberverlegung, damit alle drei
+       im S/W-Druck auseinanderzuhalten bleiben. */
+    const funk = !!kabelById(s.kabeltyp).funk;
     if (this.sw) {
       return {
         farbe: nebensache ? '#8a8a8a' : '#000000',
         breite: nebensache ? 2.4 : 5,
-        strich: nebensache ? '5 5' : (s.verlegeart === 'erd' ? '16 6' : (s.verlegeart === 'ober' ? '2 7' : null)),
+        strich: nebensache ? '5 5' : (funk ? '8 8' : (s.verlegeart === 'erd' ? '16 6' : (s.verlegeart === 'ober' ? '2 7' : null))),
         deckkraft: nebensache ? 0.85 : 1,
         fassung: nebensache ? 0 : 8.5
       };
@@ -416,7 +425,7 @@ export class StreckenLayer {
     return {
       farbe: s.farbe,
       breite: nebensache ? 2.6 : (betont && this.hervorheben ? 6 : (s.id === this.auswahl ? 6 : 4.5)),
-      strich: s.verlegeart === 'erd' ? '14 7' : (s.verlegeart === 'ober' ? '2 8' : null),
+      strich: funk ? '8 9' : (s.verlegeart === 'erd' ? '14 7' : (s.verlegeart === 'ober' ? '2 8' : null)),
       deckkraft: nebensache ? 0.45 : 1,
       fassung: nebensache ? 0 : (s.id === this.auswahl || betont && this.hervorheben ? 11 : 8)
     };

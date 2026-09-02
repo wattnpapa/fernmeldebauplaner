@@ -196,7 +196,8 @@ function kabelSummeHTML(ges) {
   const zeilen = ges.nachKabel.map(e =>
     `<i title="${escapeHtml(e.kabel.name)}">${escapeHtml(e.kabel.kurz)}</i>
      <b>${formatLaenge(e.bedarf)}</b>
-     <span><b>${e.trommeln}</b> ${e.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>`).join('');
+     ${e.kabel.funk ? '<span>Funkstrecke</span>'
+       : `<span><b>${e.trommeln}</b> ${e.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>`}`).join('');
   return `<div class="summe-kabel">${zeilen}</div>`;
 }
 
@@ -481,33 +482,40 @@ function streckenKarte(s) {
   // -- Technik
   const g2 = el('div', 'feldgruppe');
   g2.appendChild(el('h3', 'gruppen-titel', 'Leitung und Bauansatz'));
+  /* Sofort und nicht über die gesammelte Formulareingabe: die Leitungsart
+     entscheidet, welche Felder das Formular überhaupt zeigt (Bauansatz,
+     Stromversorgung). Ein verzögertes Schreiben baute die Liste noch mit der
+     alten Art auf. */
   g2.appendChild(feld('Leitungsart', s.kabeltyp, v => {
-    schreib(() => {
+    store.aendern(() => {
       const alt = kabelById(s.kabeltyp), neu = kabelById(v);
       s.kabeltyp = v;
       // Vorgabewerte mitziehen, solange sie nicht von Hand geändert wurden
       if (s.trommellaenge === alt.trommel) s.trommellaenge = neu.trommel;
       if (s.zuschlag === alt.zuschlag) s.zuschlag = neu.zuschlag;
       if (s.verlegeleistung === alt.leistung) s.verlegeleistung = neu.leistung;
-    });
-    zeichneStreckenListe();
+    }, 'strecke');
   }, { typ: 'select', werte: KABELTYPEN.map(k => [k.id, k.name]) }));
-  g2.appendChild(feld('Verlegeart', s.verlegeart, v => {
-    schreib(() => { s.verlegeart = v; });
-    frisch();          // Hoch- oder Tiefbau entscheidet über die Sprechreichweite
-    ctx.aufAenderung();
-  }, { typ: 'select', werte: VERLEGEARTEN.map(v => [v.id, v.name]) }));
+  /* Eine Funkstrecke wird nicht verlegt – Verlegeart und Bauansatz hätten
+     dort nichts zu sagen und blieben doch als Zahlen im Weg. */
+  if (!k.kabel.funk) {
+    g2.appendChild(feld('Verlegeart', s.verlegeart, v => {
+      schreib(() => { s.verlegeart = v; });
+      frisch();          // Hoch- oder Tiefbau entscheidet über die Sprechreichweite
+      ctx.aufAenderung();
+    }, { typ: 'select', werte: VERLEGEARTEN.map(v => [v.id, v.name]) }));
 
-  const zahlen = el('div', 'feld-dreier');
-  zahlen.append(
-    feld('Bauzuschlag', s.zuschlag, v => { schreib(() => { s.zuschlag = v; }); frisch(); ctx.aufAenderung(); },
-      { typ: 'number', min: 0, max: 100, step: 1, einheit: '%' }),
-    feld('Trommellänge', s.trommellaenge, v => { schreib(() => { s.trommellaenge = v; }); frisch(); },
-      { typ: 'number', min: 1, step: 10, einheit: 'm' }),
-    feld('Verlegeleistung', s.verlegeleistung, v => { schreib(() => { s.verlegeleistung = v; }); frisch(); },
-      { typ: 'number', min: 1, step: 50, einheit: 'm/h' })
-  );
-  g2.appendChild(zahlen);
+    const zahlen = el('div', 'feld-dreier');
+    zahlen.append(
+      feld('Bauzuschlag', s.zuschlag, v => { schreib(() => { s.zuschlag = v; }); frisch(); ctx.aufAenderung(); },
+        { typ: 'number', min: 0, max: 100, step: 1, einheit: '%' }),
+      feld('Trommellänge', s.trommellaenge, v => { schreib(() => { s.trommellaenge = v; }); frisch(); },
+        { typ: 'number', min: 1, step: 10, einheit: 'm' }),
+      feld('Verlegeleistung', s.verlegeleistung, v => { schreib(() => { s.verlegeleistung = v; }); frisch(); },
+        { typ: 'number', min: 1, step: 50, einheit: 'm/h' })
+    );
+    g2.appendChild(zahlen);
+  }
   g2.appendChild(feld('Auftrag an (Trupp)', s.trupp, v => schreib(() => { s.trupp = v; }),
     { platzhalter: 'z. B. FmBauTr 1' }));
   g2.appendChild(feld('Bemerkung zum Auftrag', s.bemerkung, v => schreib(() => { s.bemerkung = v; }),

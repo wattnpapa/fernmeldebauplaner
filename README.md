@@ -26,6 +26,7 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Punkte verschieben, Zwischenpunkte über Griffe einfügen, Richtung umkehren
 - Leitungsart (Feldkabel, Feldfernkabel, LWL, Netzwerk, Koax, Strom), Verlegeart,
   Bauzuschlag, Trommellänge und Verlegeleistung je Strecke
+- WLAN-Richtfunk als gestrichelte Funkstrecke – ohne Trommeln und Bauansatz
 
 **Einsatzabschnitte** (freiwillig)
 - Strecken und taktische Zeichen zu benannten Einsatzabschnitten mit Leitung und

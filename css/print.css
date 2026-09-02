@@ -308,6 +308,7 @@ body.druckansicht { overflow: hidden; }
 .lg-punkt.art-querung { border-radius: .6mm; transform: rotate(45deg); font-size: 0; }
 .lg-linie { display: inline-block; width: 9mm; height: 0; border-top: 1.2pt solid var(--farbe, #111); }
 .lg-linie.ander { border-top: 1pt dashed #8a8a8a; }
+.lg-linie.funk { border-top-style: dashed; }
 /* Musterstück der Kabelart: das Zeichen sitzt im Linienzug, genau wie auf
    der Karte – die Linie läuft als Hintergrund hinter Strichen und Ziffern. */
 .lg-kabel {

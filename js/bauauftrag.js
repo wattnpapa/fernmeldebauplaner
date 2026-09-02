@@ -1140,7 +1140,7 @@ function stammHTML(p, s, k) {
     ['Auftrag an', s.trupp || 'Fernmeldebautrupp'],
     ['Erstellt von', p.kopf.ersteller],
     ['Leitungsart', k.kabel.name],
-    ['Verlegeart', va ? va.name : '–']
+    ['Verlegeart', va && !k.kabel.funk ? va.name : '–']
   ]);
 }
 
@@ -1165,7 +1165,13 @@ function gewichtText(kg) {
 }
 
 function kennzahlenHTML(k, s) {
-  const kacheln = [
+  /* Eine Funkstrecke trägt nur, was für sie gilt: Länge, Muffen und
+     Querungen – Trommeln, Bauzuschlag und Bauzeit wären dort erfundene Nullen. */
+  const kacheln = k.kabel.funk ? [
+    ['Funkstrecke', formatLaenge(k.trasse), `${k.abschnitte} Abschnitte`],
+    ['Muffen', String(k.muffen), 'Verbindungen'],
+    ['Querungen', String(k.querungen), 'zu beachten']
+  ] : [
     ['Trassenlänge', formatLaenge(k.trasse), `${k.abschnitte} Abschnitte`],
     ['Bauzuschlag', `${k.zuschlag} %`, 'Gelände & Reserve'],
     ['Kabelbedarf', formatLaenge(k.bedarf), 'einzuplanen'],
@@ -1364,7 +1370,7 @@ function legendeHTML(s, sw, opt) {
     return `<span class="lg-eintrag"><i class="lg-punkt art-${a}" style="--farbe:${sw ? '#000' : s.farbe}">${pa.kurz === '·' ? '' : pa.kurz}</i>${pa.name}</span>`;
   }).join('');
   const linien =
-    `<span class="lg-eintrag"><i class="lg-linie voll" style="--farbe:${sw ? '#000' : s.farbe}"></i>Auftragsstrecke</span>` +
+    `<span class="lg-eintrag"><i class="lg-linie ${kabelById(s.kabeltyp).funk ? 'funk' : 'voll'}" style="--farbe:${sw ? '#000' : s.farbe}"></i>Auftragsstrecke</span>` +
     (opt.andereStrecken ? `<span class="lg-eintrag"><i class="lg-linie ander"></i>andere Strecken</span>` : '') +
     kabelzeichenEintrag(s.kabeltyp, sw ? '#000' : s.farbe);
   const hinweisText = opt.teillaengen === false ? ''
@@ -1495,7 +1501,14 @@ function laengenverbindungszeilenHTML(k) {
 
 function materialHTML(s, k) {
   const va = VERLEGEARTEN.find(v => v.id === s.verlegeart);
-  const zeilen = [
+  const zeilen = k.kabel.funk ? [
+    ['Leitungsart', k.kabel.name],
+    ['<b>Funkstrecke (Luftlinie)</b>', `<b>${formatLaenge(k.trasse)}</b>`],
+    ['Muffen / Verbindungsstellen', String(k.muffen)],
+    ['Verteiler / Endverzweiger', String(s.punkte.filter(p => p.art === 'verteiler').length)],
+    ['Querungen (alle Arten)', String(k.querungen)],
+    ['Masten / Hochführungen', String(s.punkte.filter(p => p.art === 'mast').length)]
+  ] : [
     ['Leitungsart', k.kabel.name],
     ['Verlegeart', va ? va.name : '–'],
     ['Trassenlänge (Summe Teilstrecken)', formatLaenge(k.trasse)],
