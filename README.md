@@ -59,6 +59,8 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   und Blickrichtung kommen aus dem EXIF-Block der Datei
 - Auf der Karte ein kleiner Punkt; beim Überfahren geht die Aufnahme auf, ein Klick
   zeigt sie groß
+- Das Auge am Bild nimmt es einzeln von der Karte; der Haken „Bildmarken“ in den
+  Kartenoptionen alle auf einmal, ohne die Augen zu verstellen
 - Auswählen über den Reiter „Bilder“ – am Telefon öffnet das unmittelbar die
   Fotoauswahl – oder aus einem Ordner auf die Karte ziehen
 - **HEIC** wird gelesen, auch aus dem Dateisystem eines Rechners: dafür liegt

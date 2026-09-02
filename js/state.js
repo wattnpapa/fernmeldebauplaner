@@ -82,7 +82,7 @@ export function neuesProjekt(name = 'Neue Planung') {
     ansicht: { lat: 51.1657, lng: 10.4515, zoom: 6, basemap: 'topplus' },
     optionen: {
       teillaengen: true, gesamtlaenge: true, punktnummern: true, gitter: false,
-      koordformat: 'mgrs', symbolgroesse: 1
+      bilder: true, koordformat: 'mgrs', symbolgroesse: 1
     },
     einsatzabschnitte: [],
     zeichengruppen: [],
@@ -244,6 +244,13 @@ export function neuesBild(o = {}) {
 
 /** Ein Bild erscheint auf der Karte, sobald es einen Ort hat und sein Auge offen steht. */
 export const bildAufKarte = b => b.sichtbar !== false && b.lat !== null && b.lng !== null;
+
+/* Der Schalter in den Kartenoptionen nimmt alle Bildmarken auf einmal von der
+   Karte, ohne die Augen der einzelnen Bilder anzurühren: wer vor dem Ausdruck
+   oder zum Zeichnen der Trasse freie Sicht will, soll danach nicht zwanzig
+   Augen einzeln wieder öffnen müssen. Ältere Stände kennen den Schlüssel
+   nicht – dort gilt „an“, sonst verschwänden ihre Bilder beim Laden. */
+export const bildmarkenAn = p => p.optionen.bilder !== false;
 
 /** Belegter Platz aller Bilder einer Planung in Bytes */
 export const bilderBelegung = p => (p.bilder || []).reduce((n, b) => n + (b.groesse || 0), 0);

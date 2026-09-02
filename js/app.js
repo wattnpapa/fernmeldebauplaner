@@ -375,7 +375,8 @@ const optionsFelder = [
   ['#opt-gitter', 'gitter'],
   ['#opt-teillaengen', 'teillaengen'],
   ['#opt-gesamtlaenge', 'gesamtlaenge'],
-  ['#opt-punktnummern', 'punktnummern']
+  ['#opt-punktnummern', 'punktnummern'],
+  ['#opt-bilder', 'bilder']
 ];
 for (const [sel, schluessel] of optionsFelder) {
   const cb = $(sel);

@@ -4,7 +4,7 @@ import {
   store, KABELTYPEN, VERLEGEARTEN, PUNKTARTEN, FARBEN,
   neuesZeichen, punktartById, kabelById, neueStrecke, neuerEinsatzabschnitt, abschnittById,
   neueZeichengruppe, zeichengruppeById, zeichenInGruppe,
-  streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar, bilderBelegung,
+  streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar, bilderBelegung, bildmarkenAn,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
@@ -1580,7 +1580,8 @@ export function zeichneBilderListe() {
   summe.innerHTML = bilder.length
     ? `<span><b>${bilder.length}</b> ${bilder.length === 1 ? 'Bild' : 'Bilder'}</span>
        <span>Belegt <b>${Math.round(bilderBelegung(p) / 1024)} kB</b></span>
-       ${ohneOrt ? `<span class="summe-mahnung"><b>${ohneOrt}</b> ohne Ort</span>` : ''}`
+       ${ohneOrt ? `<span class="summe-mahnung"><b>${ohneOrt}</b> ohne Ort</span>` : ''}
+       ${bildmarkenAn(p) ? '' : `<span class="summe-mahnung" title="Kartenoptionen → Bildmarken">Auf der Karte ausgeblendet</span>`}`
     : '';
 
   if (!bilder.length) {

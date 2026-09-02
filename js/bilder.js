@@ -1,6 +1,6 @@
 // bilder.js – Lichtbilder aufnehmen, verkleinern und auf der Karte zeigen
 
-import { store, neuesBild, bildAufKarte } from './state.js';
+import { store, neuesBild, bildAufKarte, bildmarkenAn } from './state.js';
 import { ablegen, bildUrl } from './bildspeicher.js';
 import { exifLesen, istHeif } from './exif.js';
 import { heicEntschluesseln } from './heic.js';
@@ -249,6 +249,7 @@ export class BilderLayer {
 
   zeichne() {
     this.gruppe.clearLayers();
+    if (!bildmarkenAn(store.projekt)) return;
     for (const b of store.projekt.bilder || []) {
       if (!bildAufKarte(b)) continue;
       this._punkt(b);
