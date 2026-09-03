@@ -274,6 +274,10 @@ function dopBuendel(karte, def) {
   }));
   const gruppe = L.layerGroup(ebenen, { attribution: def.attribution });
   const quelleNachziehen = () => {
+    /* Die Druckkarte hat keine Quellenzeile (attributionControl: false) –
+       ohne diese Schranke bliebe der Bauauftrag beim Länder-Luftbild für
+       immer bei „Karte wird geladen …“ stehen. */
+    if (!karte.attributionControl) return;
     const neu = dopQuellenangabe(karte.getBounds());
     if (neu === gruppe.options.attribution) return;
     karte.attributionControl.removeAttribution(gruppe.options.attribution);

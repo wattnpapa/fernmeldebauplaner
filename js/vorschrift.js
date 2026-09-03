@@ -151,6 +151,35 @@ export const QUERUNGSARTEN = [
 
 export const QUERUNG_STANDARD = 'sonstige';
 
+/* Bauweise am Hindernis. Die Vorschrift lässt eine Straße überbauen (Kabel
+   auf Baustangen, 4,50 m über der Fahrbahn), im Graben unterqueren oder an
+   Brücke und Durchlass entlangführen (8.1). Für die Trasse ist das ein Wechsel
+   der Bauart: ein Tiefbau-Trupp stellt für den Überbau Stangen, ein Hochbau-
+   Trupp gräbt für den Unterbau. Das kostet Zeit, die die Verlegeleistung nicht
+   kennt – deshalb trägt jede Bauweise einen Zeitansatz in Minuten. Die
+   Minuten sind Erfahrungswerte des Feldkabelbaus, keine Zahlen der
+   Vorschrift, und lassen sich am Punkt überschreiben. */
+export const QUERUNG_BAUWEISEN = [
+  { id: 'trasse',   name: 'Wie die Trasse',           kurz: '',  bauart: null,   minuten: 10 },
+  { id: 'ueberbau', name: 'Überbau (Hochbau)',        kurz: 'Ü', bauart: 'hoch', minuten: 45 },
+  { id: 'unterbau', name: 'Unterbau (Tiefbau)',       kurz: 'U', bauart: 'tief', minuten: 60 },
+  { id: 'bauwerk',  name: 'An Brücke / Unterführung', kurz: 'B', bauart: null,   minuten: 20 }
+];
+
+export const BAUWEISE_STANDARD = 'trasse';
+
+/** Bauweise zu einer Kennung; unbekannte Kennungen gelten als „wie die Trasse“. */
+export const bauweiseById = id =>
+  QUERUNG_BAUWEISEN.find(b => b.id === id) ||
+  QUERUNG_BAUWEISEN.find(b => b.id === BAUWEISE_STANDARD);
+
+/** Zeitansatz einer Querung in Minuten: der Wert am Punkt, sonst der der Bauweise. */
+export function querungsMinuten(pt) {
+  const eigen = Number(pt.querungszeit);
+  if (pt.querungszeit !== null && pt.querungszeit !== '' && isFinite(eigen) && eigen >= 0) return eigen;
+  return bauweiseById(pt.bauweise).minuten;
+}
+
 /** Querungsart zu einer Kennung; unbekannte Kennungen fallen auf „Sonstige“ zurück. */
 export const querungsartById = id =>
   QUERUNGSARTEN.find(q => q.id === id) ||
@@ -193,11 +222,15 @@ export const BAUART_JE_VERLEGEART = { boden: 'tief', erd: 'tief', ober: 'hoch', 
  * @param {number} laengeMeter  Kabellänge in Metern
  * @returns {object|null} null, wenn die Vorschrift für diesen Kabeltyp nichts hergibt
  */
-export function reichweite(kabeltypId, verlegeartId, laengeMeter) {
+export function reichweite(kabeltypId, verlegeartId, laengeMeter, unterbau = false) {
   const l = Number(laengeMeter);
   if (!REICHWEITE_KABEL.includes(kabeltypId) || !isFinite(l) || l <= 0) return null;
 
-  const r = SPRECHREICHWEITE[BAUART_JE_VERLEGEART[verlegeartId] || 'tief'];
+  /* Eine oberirdische Strecke mit einem Unterbau an der Querung liegt dort im
+     Boden – für die Reichweite ist sie damit gemischter Bau, und der zählt als
+     Tiefbau. Ein Überbau in einer Tiefbaustrecke ändert dagegen nichts. */
+  const gemischt = verlegeartId === 'gem' || (unterbau && BAUART_JE_VERLEGEART[verlegeartId] === 'hoch');
+  const r = SPRECHREICHWEITE[gemischt ? 'tief' : (BAUART_JE_VERLEGEART[verlegeartId] || 'tief')];
   return {
     bauart: r.bauart,
     min: r.min,
@@ -205,7 +238,7 @@ export function reichweite(kabeltypId, verlegeartId, laengeMeter) {
     laenge: l,
     stufe: l <= r.min ? 'ok' : (l <= r.max ? 'grenze' : 'darueber'),
     fundstelle: r.fundstelle,
-    gemischt: verlegeartId === 'gem'
+    gemischt
   };
 }
 

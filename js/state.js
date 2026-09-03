@@ -2,10 +2,10 @@
 
 import { neueStromangabe } from './strom.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
-import { QUERUNG_STANDARD } from './vorschrift.js';
+import { QUERUNG_STANDARD, BAUWEISE_STANDARD } from './vorschrift.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
 
-export const SCHEMA = 5;
+export const SCHEMA = 6;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -227,11 +227,15 @@ export function neueStrecke(projekt) {
   };
 }
 
-/* Die Querungsart ist nur bei der Punktart 'querung' von Bedeutung, wird aber an
-   jedem Punkt mitgeführt: ein späterer Wechsel der Punktart soll die einmal
-   getroffene Wahl nicht verlieren. */
+/* Querungsart und Bauweise sind nur bei der Punktart 'querung' von Bedeutung,
+   werden aber an jedem Punkt mitgeführt: ein späterer Wechsel der Punktart soll
+   die einmal getroffene Wahl nicht verlieren. `querungszeit` null heißt: der
+   Richtwert der Bauweise gilt (Schema 6). */
 export function neuerPunkt(lat, lng, art = 'punkt') {
-  return { id: id(), lat, lng, art, name: '', bemerkung: '', querungsart: QUERUNG_STANDARD };
+  return {
+    id: id(), lat, lng, art, name: '', bemerkung: '',
+    querungsart: QUERUNG_STANDARD, bauweise: BAUWEISE_STANDARD, querungszeit: null
+  };
 }
 
 export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {

@@ -16,7 +16,7 @@ import {
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText, MAX_QUERSCHNITT
 } from './strom.js';
 import {
-  massText, BAUREGELN, SCHUTZABSTAENDE,
+  massText, bauweiseById, BAUREGELN, SCHUTZABSTAENDE,
   SCHUTZABSTAND_ERWEITERT_MIN, SCHUTZABSTAND_ERWEITERT_STURM
 } from './vorschrift.js';
 import { hinweis } from './ui.js';
@@ -1196,6 +1196,15 @@ function gewichtText(kg) {
   return `${String(gerundet).replace('.', ',')} kg`;
 }
 
+/* Die Bauzeit setzt sich aus Verlegen und Querungen zusammen; im Untertitel
+   steht, was von beidem drinsteckt – sonst passt die Zahl nicht mehr zu
+   „Bedarf durch Verlegeleistung“, die der Trupp im Kopf nachrechnet. */
+function bauzeitUnterHTML(k, s) {
+  const grund = `bei ${s.verlegeleistung} m/h`;
+  if (!(k.querungszeitStunden > 0)) return grund;
+  return `${grund} + ${stundenText(k.querungszeitStunden)} für ${k.querungen} Querung${k.querungen === 1 ? '' : 'en'}`;
+}
+
 function kennzahlenHTML(k, s) {
   /* Muffen und Querungen stehen bewusst nicht mehr als Kachel: die bloße
      Anzahl hilft dem Trupp nicht, die Details liefern Punkt- und
@@ -1210,7 +1219,7 @@ function kennzahlenHTML(k, s) {
     ['Trommeln', String(k.trommeln), k.transportgewicht
       ? `à ${meter(k.trommellaenge)} · ${gewichtText(k.transportgewicht)}`
       : `à ${meter(k.trommellaenge)}`],
-    ['Richtwert Bauzeit', stundenText(k.bauzeitStunden), `bei ${s.verlegeleistung} m/h`]
+    ['Richtwert Bauzeit', stundenText(k.bauzeitStunden), bauzeitUnterHTML(k, s)]
   ];
   // Bei Stromleitungen ist der Querschnitt die Zahl, die der Trupp mitnehmen muss
   if (k.strom && k.strom.querschnitt) {
@@ -1250,13 +1259,13 @@ function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '',
  * deshalb mit dem Blatt.
  */
 function lageLegendeHTML(auftrag, opt, sw, mass) {
-  const arten = [...new Set(auftrag.strecken.flatMap(s => s.punkte.map(x => x.art)))]
-    .filter(a => a !== 'punkt');
+  const alle = auftrag.strecken.flatMap(s => s.punkte);
+  const arten = [...new Set(alle.map(x => x.art))].filter(a => a !== 'punkt');
   const punkte = arten.map(a => {
     const pa = punktartById(a);
     return `<span class="lg-eintrag"><i class="lg-punkt art-${a}" style="--farbe:#111">${
       pa.kurz === '·' ? '' : pa.kurz}</i>${escapeHtml(pa.name)}</span>`;
-  }).join('');
+  }).join('') + bauweisenLegendeHTML(alle, '#111');
   /* Ohne Beschriftung auf der Karte verweist der Hinweis ins Leere – dann
      trägt allein die Farbe in dieser Liste die Zuordnung, und genau das
      muss dort stehen. */
@@ -1396,7 +1405,7 @@ function legendeHTML(s, sw, opt) {
   const punkte = arten.map(a => {
     const pa = punktartById(a);
     return `<span class="lg-eintrag"><i class="lg-punkt art-${a}" style="--farbe:${sw ? '#000' : s.farbe}">${pa.kurz === '·' ? '' : pa.kurz}</i>${pa.name}</span>`;
-  }).join('');
+  }).join('') + bauweisenLegendeHTML(s.punkte, sw ? '#000' : s.farbe);
   const linien =
     `<span class="lg-eintrag"><i class="lg-linie ${kabelById(s.kabeltyp).funk ? 'funk' : 'voll'}" style="--farbe:${sw ? '#000' : s.farbe}"></i>Auftragsstrecke</span>` +
     (opt.andereStrecken ? `<span class="lg-eintrag"><i class="lg-linie ander"></i>andere Strecken</span>` : '') +
@@ -1405,6 +1414,15 @@ function legendeHTML(s, sw, opt) {
     : '<span class="lg-eintrag lg-hinweis">Zahlen an der Trasse = Teilstrecken in Metern</span>';
   return `<div class="bl-legende"><span class="lg-titel">Zeichenerklärung</span>${linien}${punkte}
     ${hinweisText}</div>`;
+}
+
+/* Die Raute allein sagt „Querung“; der Buchstabe darin, ob dort Stangen
+   stehen oder gegraben wird. Erklärt werden nur Bauweisen, die vorkommen. */
+function bauweisenLegendeHTML(punkte, farbe) {
+  const ids = [...new Set(punkte.filter(p => p.art === 'querung').map(p => bauweiseById(p.bauweise).id))];
+  return ids.map(bauweiseById).filter(b => b.kurz).map(b =>
+    `<span class="lg-eintrag"><i class="lg-punkt art-querung bw-${b.id}" style="--farbe:${farbe}"></i>${escapeHtml(b.name)}</span>`
+  ).join('');
 }
 
 function punkttabelleRahmenHTML(fortsetzung) {
@@ -1467,7 +1485,7 @@ function querungenRahmenHTML(k) {
     <table class="tab-punkte tab-querungen">
       <thead><tr>
         <th>Nr.</th><th>Punkt</th><th>Bezeichnung</th><th>Art der Querung</th>
-        <th>Mindestmaß</th><th>MGRS</th><th>ab Anfang</th><th>Auflage</th>
+        <th>Bauweise</th><th>Mindestmaß</th><th>MGRS</th><th>ab Anfang</th><th>Auflage</th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -1483,6 +1501,7 @@ function querungszeilenHTML(k) {
       <td class="nr">${q.punktNr}</td>
       <td>${escapeHtml(q.name)}</td>
       <td>${escapeHtml(a.name)}</td>
+      <td>${escapeHtml(q.bauweise.name)}<span class="q-zeit">${q.minuten} min</span></td>
       <td>${escapeHtml(massText(a))}</td>
       <td class="mono">${escapeHtml(toMGRS(q.lat, q.lng, 5))}</td>
       <td class="zahl">${meter(q.abAnfang)}</td>
@@ -1553,6 +1572,8 @@ function materialHTML(s, k) {
     ...(k.querungenGenehmigung
       ? [['davon nur mit Freigabe (Genehmigung oder Bauwerk)', String(k.querungenGenehmigung)]]
       : []),
+    ...(k.ueberbauten ? [['davon Überbauten (Baustangen stellen)', String(k.ueberbauten)]] : []),
+    ...(k.unterbauten ? [['davon Unterbauten (Graben / Durchlass)', String(k.unterbauten)]] : []),
     ['Längenverbindungen (geplant / rechnerisch)',
       `${k.laengenverbindungen.filter(v => v.quelle === 'geplant').length} / ` +
       `${k.laengenverbindungen.filter(v => v.quelle === 'rechnerisch').length}`],
@@ -1561,7 +1582,9 @@ function materialHTML(s, k) {
     ['Kabelreserve Anfangs-/Endstelle', 'je 20 bis 30 m (6.5.1)'],
     ...(k.reichweite ? [reichweiteZeile(k.reichweite)] : []),
     ['Masten / Hochführungen', String(s.punkte.filter(p => p.art === 'mast').length)],
-    ['Richtwert Bauzeit', `${stundenText(k.bauzeitStunden)} bei ${s.verlegeleistung} m/h`]
+    ['Richtwert Bauzeit', k.querungszeitStunden > 0
+      ? `${stundenText(k.bauzeitStunden)}  (${stundenText(k.verlegezeitStunden)} Verlegen bei ${s.verlegeleistung} m/h + ${stundenText(k.querungszeitStunden)} Querungen)`
+      : `${stundenText(k.bauzeitStunden)} bei ${s.verlegeleistung} m/h`]
   ];
   const a = k.strom;
   if (a) {

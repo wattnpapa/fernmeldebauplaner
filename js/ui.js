@@ -15,7 +15,7 @@ import {
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText
 } from './strom.js';
 import {
-  QUERUNGSARTEN, VS_GRADE, querungsartById, massText, dtg
+  QUERUNGSARTEN, QUERUNG_BAUWEISEN, VS_GRADE, querungsartById, bauweiseById, massText, dtg
 } from './vorschrift.js';
 import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
 import {
@@ -832,6 +832,7 @@ function punktTabelle(s, frisch) {
         v => store.aendern(() => { pt.querungsart = v; }, 'strecke'),
         { typ: 'select', werte: QUERUNGSARTEN.map(a => [a.id, a.name]), klasse: 'pz-querung' }));
       zeile.appendChild(auflagenZeile(art));
+      zeile.appendChild(bauweiseZeile(pt));
     }
 
     const name = document.createElement('input');
@@ -907,6 +908,24 @@ function auflagenZeile(art) {
   const p = el('p', 'pz-auflage' + (art.verbot ? ' warnung' : ''), stuecke.join(' · '));
   p.title = art.regel;
   return p;
+}
+
+/* Die Bauweise am Hindernis und ihr Zeitansatz stehen nebeneinander: der
+   Zeitansatz ist die Folge der Bauweise, und wer sie umstellt, sieht sofort,
+   was das die Bauzeit kostet. Ein leeres Zeitfeld heißt „Richtwert der
+   Bauweise“ – der steht als Platzhalter darin. Der Grund „strecke“ baut die
+   Liste neu auf, damit der Platzhalter der neuen Bauweise folgt. */
+function bauweiseZeile(pt) {
+  const zeile = el('div', 'pz-bauweise');
+  zeile.appendChild(feld('Bauweise am Hindernis', bauweiseById(pt.bauweise).id,
+    v => store.aendern(() => { pt.bauweise = v; }, 'strecke'),
+    { typ: 'select', werte: QUERUNG_BAUWEISEN.map(b => [b.id, b.name]), klasse: 'pz-querung' }));
+  const zeit = feld('Zeitansatz', pt.querungszeit ?? '',
+    v => schreib(() => { pt.querungszeit = v === '' ? null : Math.max(0, v); }),
+    { typ: 'number', min: 0, step: 5, einheit: 'min', klasse: 'pz-querung pz-zeit',
+      platzhalter: String(bauweiseById(pt.bauweise).minuten) });
+  zeile.appendChild(zeit);
+  return zeile;
 }
 
 function koordText(pt) {
@@ -2276,6 +2295,10 @@ export function hilfeDialog() {
               fügen beim Ziehen einen Zwischenpunkt ein.</li>
           <li>Punktarten (Muffe, Querung, Mast …) in der Punkttabelle setzen – sie erscheinen
               in Karte und Bauauftrag.</li>
+          <li>An einer <b>Querung</b> die Bauweise am Hindernis wählen: Überbau (Ü, Stangen
+              über die Straße), Unterbau (U, Graben oder Durchlass) oder an einem Bauwerk
+              entlang. Jede Querung bringt einen Zeitansatz in Minuten mit, der in die
+              Bauzeit einfließt und sich je Punkt anpassen lässt.</li>
         </ol>
         <h3>Längen</h3>
         <p>Teillängen stehen an jedem Abschnitt, Name und Summe an der Strecke. Gerechnet wird

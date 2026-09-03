@@ -23,6 +23,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Beliebig viele benannte Strecken, jede mit eigener Farbe
 - Teillängen an jedem Abschnitt und Name samt Gesamtlänge an der Strecke – dauerhaft sichtbar
 - Punktarten: Anfangspunkt, Trassenpunkt, Muffe, Verteiler, Querung, Mast, Kabelreserve, Endpunkt
+- Querungen mit Art (Straße, Bahn, Gewässer, Freileitung …) und Bauweise am Hindernis:
+  Überbau (Ü), Unterbau (U) oder an einem Bauwerk entlang – auf der Karte als Buchstabe
+  in der Raute, mit Zeitansatz je Querung
 - Punkte verschieben, Zwischenpunkte über Griffe einfügen, Richtung umkehren
 - Leitungsart (Feldkabel, Feldfernkabel, LWL, Netzwerk, Koax, Strom), Verlegeart,
   Bauzuschlag, Trommellänge und Verlegeleistung je Strecke
@@ -42,7 +45,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 **Rechengrößen**
 - Trassenlänge als geodätische Direktstrecke (Vincenty auf WGS84) zwischen den Punkten
 - Kabelbedarf = Trassenlänge + Bauzuschlag
-- Anzahl benötigter Trommeln, Muffen, Querungen und ein Richtwert für die Bauzeit
+- Anzahl benötigter Trommeln, Muffen, Querungen und ein Richtwert für die Bauzeit:
+  Kabelbedarf durch Verlegeleistung plus Zeitansatz der Querungen (Überbau 45 min,
+  Unterbau 60 min, Bauwerk 20 min, sonst 10 min – je Punkt anpassbar)
 - Bei Stromleitungen: Leiterquerschnitt aus angeschlossener Last (kW oder A), Netzform
   (230 V 1~, 400 V 3~, 24 V, 12 V), Leistungsfaktor und zulässigem Spannungsfall
 

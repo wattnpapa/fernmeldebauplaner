@@ -306,6 +306,12 @@ body.druckansicht { overflow: hidden; }
 .lg-punkt.art-start, .lg-punkt.art-ziel { background: var(--farbe, #111); color: #fff; }
 .lg-punkt.art-muffe, .lg-punkt.art-verteiler { border-radius: .6mm; }
 .lg-punkt.art-querung { border-radius: .6mm; transform: rotate(45deg); font-size: 0; }
+/* Der Buchstabe der Bauweise wird gegen die Raute zurückgedreht – wie auf
+   der Karte, damit Zeichenerklärung und Karte dasselbe Bild zeigen. */
+.lg-punkt.art-querung::after { display: block; transform: rotate(-45deg); font-size: 2mm; }
+.lg-punkt.bw-ueberbau::after { content: 'Ü'; }
+.lg-punkt.bw-unterbau::after { content: 'U'; }
+.lg-punkt.bw-bauwerk::after { content: 'B'; }
 .lg-linie { display: inline-block; width: 9mm; height: 0; border-top: 1.2pt solid var(--farbe, #111); }
 .lg-linie.ander { border-top: 1pt dashed #8a8a8a; }
 .lg-linie.funk { border-top-style: dashed; }
@@ -370,17 +376,21 @@ body.druckansicht { overflow: hidden; }
 
 /* -- Querungen
 
-   Acht Spalten, von denen eine den vollen Wortlaut der Auflage trägt. Die
+   Neun Spalten, von denen eine den vollen Wortlaut der Auflage trägt. Die
    Breiten stehen an den Kopfzellen, weil die automatische Tabellenbreite sonst
    dem langen Auflagentext folgt und die übrigen Spalten auf ihre Wortbreite
    zusammenzieht. Es sind Vorgaben, keine feste Aufteilung (kein
    table-layout: fixed): MGRS und Maße behalten so ihre Mindestbreite, und die
    Tabelle kann nicht über das Blatt hinauslaufen. */
 .tab-querungen { font-size: .82em; }
-.tab-querungen th:nth-child(3) { width: 12%; }   /* Bezeichnung */
-.tab-querungen th:nth-child(4) { width: 13%; }   /* Art der Querung */
-.tab-querungen th:nth-child(5) { width: 14%; }   /* Mindestmaß */
-.tab-querungen th:nth-child(8) { width: 32%; }   /* Auflage */
+.tab-querungen th:nth-child(3) { width: 11%; }   /* Bezeichnung */
+.tab-querungen th:nth-child(4) { width: 12%; }   /* Art der Querung */
+.tab-querungen th:nth-child(5) { width: 12%; }   /* Bauweise */
+.tab-querungen th:nth-child(6) { width: 12%; }   /* Mindestmaß */
+.tab-querungen th:nth-child(9) { width: 28%; }   /* Auflage */
+/* Der Zeitansatz steht unter der Bauweise, nicht in einer eigenen Spalte:
+   er ist ihre Folge, und eine zehnte Spalte drückte die Auflage zusammen. */
+.q-zeit { display: block; margin-top: .4mm; color: #555; }
 
 /* Der Wortlaut der Vorschrift bricht um, statt die Tabelle aufzureißen.
    Trennung nach deutschen Regeln – das Dokument trägt lang="de". */

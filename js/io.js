@@ -8,7 +8,7 @@ import {
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
 import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
-import { querungsartById } from './vorschrift.js';
+import { querungsartById, bauweiseById, querungsMinuten } from './vorschrift.js';
 import { kmlLesen, kmlSchreiben, kmlAusKMZ, istKMZ, alsText } from './kml.js';
 import { alsDatenUrls, ausDatei as bilderAusDatei } from './bildspeicher.js';
 import { flaechenEcken, flaechenTitel, flaechenartById, masseText } from './flaechen.js';
@@ -16,6 +16,10 @@ import { flaechenEcken, flaechenTitel, flaechenartById, masseText } from './flae
 /* Klartext der Querungsart. An allen anderen Punktarten bleibt die Angabe leer –
    der mitgeführte Wert gehört dort nicht in die Ausgabe. */
 const querungsartText = pt => pt.art === 'querung' ? querungsartById(pt.querungsart).name : '';
+/* Bauweise und Zeitansatz gehören zur Querung wie ihre Art: ohne sie wüsste
+   der Empfänger der Datei nicht, wo Stangen zu stellen sind. */
+const bauweiseText = pt => pt.art === 'querung' ? bauweiseById(pt.bauweise).name : '';
+const querungszeitText = pt => pt.art === 'querung' ? `${querungsMinuten(pt)} min` : '';
 
 function dateiname(teile, endung) {
   return teile.filter(Boolean).join('_')
@@ -269,6 +273,7 @@ export function geoJSON(nurStrecke = null) {
       geometry: { type: 'Point', coordinates: [pt.lng, pt.lat] },
       properties: {
         strecke: s.name, nummer: i + 1, art: pt.art, querungsart: querungsartText(pt),
+        bauweise: bauweiseText(pt), querungszeit: querungszeitText(pt),
         name: pt.name, bemerkung: pt.bemerkung, mgrs: toMGRS(pt.lat, pt.lng, 5)
       }
     }));
@@ -347,7 +352,8 @@ function punktEintraege(s) {
       farbe: s.farbe,
       lat: pt.lat, lng: pt.lng,
       beschreibung: [
-        `${punktartById(pt.art).name}${querungsartText(pt) ? ` · ${querungsartText(pt)}` : ''}`,
+        `${punktartById(pt.art).name}${querungsartText(pt) ? ` · ${querungsartText(pt)}` : ''}${
+          bauweiseText(pt) ? ` · ${bauweiseText(pt)} (${querungszeitText(pt)})` : ''}`,
         `MGRS ${toMGRS(pt.lat, pt.lng, 5)}`,
         toDDM(pt.lat, pt.lng),
         i === 0 ? null : `${Math.round(kum[i])} m ab Anfang der Strecke`,
@@ -512,11 +518,11 @@ export function csvExportieren(sid) {
   if (!s) return;
   const seg = segmentLaengen(s), kum = kumuliert(s.punkte);
   const zeilen = [[
-    'Nr', 'Art', 'Querungsart', 'Bezeichnung', 'MGRS', 'GPS Grad/Dez.-Min.', 'Breite', 'Länge',
+    'Nr', 'Art', 'Querungsart', 'Bauweise', 'Zeitansatz', 'Bezeichnung', 'MGRS', 'GPS Grad/Dez.-Min.', 'Breite', 'Länge',
     'Teilstrecke_m', 'ab_Anfang_m', 'Richtung_Grad', 'Bemerkung'
   ]];
   s.punkte.forEach((pt, i) => zeilen.push([
-    i + 1, pt.art, querungsartText(pt), pt.name || '',
+    i + 1, pt.art, querungsartText(pt), bauweiseText(pt), querungszeitText(pt), pt.name || '',
     toMGRS(pt.lat, pt.lng, 5), toDDM(pt.lat, pt.lng),
     pt.lat.toFixed(6).replace('.', ','), pt.lng.toFixed(6).replace('.', ','),
     i === 0 ? '' : Math.round(seg[i - 1]),

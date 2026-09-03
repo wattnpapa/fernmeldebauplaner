@@ -3,7 +3,7 @@
 import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText } from './geo.js';
 import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar } from './state.js';
 import { auslegung, querschnittText } from './strom.js';
-import { querungsartById, reichweite, abbindeBedarf } from './vorschrift.js';
+import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf } from './vorschrift.js';
 
 /* Eine rechnerische Trommelstelle so dicht an einer geplanten Muffe ist
    dieselbe Verbindung und wird nicht zusätzlich aufgeführt. */
@@ -59,6 +59,13 @@ export function kennzahlen(strecke) {
   const leistung = Math.max(1, Number(strecke.verlegeleistung) || 800);
   const trommeln = bedarf > 0 && !funk ? Math.ceil(bedarf / tl) : 0;
   const querungsliste = querungen(p, kum);
+  /* Die Verlegeleistung kennt nur laufende Meter. Was an einer Querung
+     dazukommt – Stangen stellen für den Überbau, Graben ziehen für den
+     Unterbau, Warnposten –, steht als Zeitansatz am Punkt und wird der
+     Bauzeit aufgeschlagen. */
+  const querungszeitStunden = funk ? 0 : querungsliste.reduce((sum, q) => sum + q.minuten, 0) / 60;
+  const verlegezeitStunden = funk ? 0 : bedarf / leistung;
+  const unterbau = querungsliste.some(q => q.bauweise.id === 'unterbau');
   let lv = null;
   return {
     trasse,
@@ -72,10 +79,16 @@ export function kennzahlen(strecke) {
     transportgewicht: kabel.gewicht ? trommeln * kabel.gewicht : null,
     punkte: p.length,
     abschnitte: Math.max(0, p.length - 1),
-    bauzeitStunden: funk ? 0 : bedarf / leistung,
+    verlegezeitStunden,
+    querungszeitStunden,
+    bauzeitStunden: verlegezeitStunden + querungszeitStunden,
     muffen: p.filter(x => x.art === 'muffe').length,
     querungen: querungsliste.length,
     querungsliste,
+    /* Wechsel der Bauart am Hindernis: der Trupp braucht dafür anderes Gerät
+       als für die übrige Trasse – Baustangen oder Grabwerkzeug. */
+    ueberbauten: querungsliste.filter(q => q.bauweise.id === 'ueberbau').length,
+    unterbauten: querungsliste.filter(q => q.bauweise.id === 'unterbau').length,
     /* Genehmigungspflichtig ist auch, was die Vorschrift nur an Bauwerken
        zulässt – der Trupp braucht dafür ebenso eine Freigabe. */
     querungenGenehmigung: querungsliste.filter(q => q.art.genehmigung || q.art.verbot).length,
@@ -90,7 +103,7 @@ export function kennzahlen(strecke) {
     /* Maßgebend ist die tatsächlich liegende Kabellänge, also der Bedarf
        einschließlich Bauzuschlag – so wie es beim Spannungsfall der
        Stromleitung schon gehandhabt wird, nicht über die Trassenlänge. */
-    reichweite: reichweite(strecke.kabeltyp, strecke.verlegeart, bedarf),
+    reichweite: reichweite(strecke.kabeltyp, strecke.verlegeart, bedarf, unterbau),
     kabel,
     /* Der Querschnitt wird über die tatsächlich liegende Leitung gerechnet,
        also über den Bedarf einschließlich Bauzuschlag – nicht über die Trasse. */
@@ -108,6 +121,8 @@ function querungen(punkte, kum) {
       punktNr: i + 1,
       name: pt.name || '',
       art: querungsartById(pt.querungsart),
+      bauweise: bauweiseById(pt.bauweise),
+      minuten: querungsMinuten(pt),
       lat: pt.lat,
       lng: pt.lng,
       abAnfang: kum[i]
@@ -598,7 +613,11 @@ export class StreckenLayer {
     const art = punktartById(pt.art);
     const nr = i + 1;
     const aktiv = gewaehlt && pt.id === this.aktiverPunkt;
-    const klassen = ['fbp-punkt', `art-${pt.art}`, gewaehlt ? 'gewaehlt' : '', aktiv ? 'aktiv' : ''].join(' ');
+    /* Die Raute der Querung trägt ihre Bauweise als Buchstaben: ob der Trupp
+       dort Stangen stellt oder gräbt, muss auf der Karte ablesbar sein. */
+    const bauweise = pt.art === 'querung' ? bauweiseById(pt.bauweise) : null;
+    const klassen = ['fbp-punkt', `art-${pt.art}`, bauweise && bauweise.kurz ? `bw-${bauweise.id}` : '',
+      gewaehlt ? 'gewaehlt' : '', aktiv ? 'aktiv' : ''].join(' ');
     const beschriftung = o.punktnummern === false ? '' : (art.kurz === '·' ? nr : `${nr}${art.kurz}`);
 
     const m = L.marker([pt.lat, pt.lng], {
@@ -630,8 +649,9 @@ export class StreckenLayer {
       store.aendern(() => { pt.lat = ll.lat; pt.lng = ll.lng; }, 'strecke', { undo: false });
       this.aufAenderung();
     });
+    const zusatz = bauweise && bauweise.kurz ? ` · ${escapeHtml(bauweise.name)}` : '';
     m.bindTooltip(
-      `<b>Punkt ${nr}</b> – ${art.name}${pt.name ? '<br>' + escapeHtml(pt.name) : ''}`,
+      `<b>Punkt ${nr}</b> – ${art.name}${zusatz}${pt.name ? '<br>' + escapeHtml(pt.name) : ''}`,
       { direction: 'top', className: 'fbp-tooltip', offset: [0, -10] }
     );
   }
