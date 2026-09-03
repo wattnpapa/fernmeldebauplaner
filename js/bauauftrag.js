@@ -8,7 +8,7 @@ import {
 } from './strecken.js';
 import { ZeichenLayer, gezeichneteZeichen } from './zeichen.js';
 import { GitterLayer } from './gitter.js';
-import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById } from './map.js';
+import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById, MAX_ZOOM } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
 import { HOEHEN_QUELLE } from './hoehe.js';
 import {
@@ -762,7 +762,7 @@ function neueDruckkarte(buehne, mass, zusatz = {}) {
   const karte = L.map(inner, {
     zoomControl: false, attributionControl: false, dragging: false, keyboard: false,
     scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, touchZoom: false,
-    fadeAnimation: false, zoomAnimation: false, maxZoom: 19, ...zusatz
+    fadeAnimation: false, zoomAnimation: false, maxZoom: MAX_ZOOM, ...zusatz
   });
   karte.createPane('fbp-strecken').style.zIndex = 420;
   karte.createPane('fbp-griffe').style.zIndex = 470;

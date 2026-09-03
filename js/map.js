@@ -69,6 +69,13 @@ export const BASISKARTEN = [
 ];
 
 
+/** Obergrenze fürs Hineinzoomen. Liegt bewusst über der feinsten Kachelstufe
+ *  (17–19 je Quelle): beim Planen einer Muffe oder eines Endverzweigers reicht
+ *  die Kartenauflösung oft nicht, um die Punkte auseinanderzuhalten. Ab
+ *  maxNativeZoom streckt Leaflet die letzte scharfe Kachel – unscharf, aber
+ *  brauchbar. */
+export const MAX_ZOOM = 22;
+
 export const basiskarteById = id => BASISKARTEN.find(b => b.id === id) || BASISKARTEN[0];
 
 /** Graustufen-Pendant zu einer Basiskarte (für den S/W-Druck).
@@ -86,7 +93,7 @@ export function erstelleKarte(el, ansicht = {}) {
     zoomControl: false,
     attributionControl: true,
     doubleClickZoom: false,
-    maxZoom: 19,
+    maxZoom: MAX_ZOOM,
     preferCanvas: false
   });
 
@@ -116,7 +123,7 @@ export function setzeBasiskarte(karte, id) {
   }
   karte._fbpBasis = L.tileLayer(def.url, {
     attribution: def.attribution,
-    maxZoom: 19,
+    maxZoom: MAX_ZOOM,
     maxNativeZoom: def.maxZoom,
     subdomains: def.url.includes('{s}') ? 'abc' : [],
     crossOrigin: 'anonymous',
