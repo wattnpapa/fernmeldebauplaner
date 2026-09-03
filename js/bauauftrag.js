@@ -54,6 +54,7 @@ const STANDARD_AUFTRAG = {
   /* Gespeicherte Optionen werden über den Standard gelegt; neue Haken erben so
      ihren Standard, statt bei bisherigen Nutzern als „aus“ zu erscheinen. */
   querungen: true, laengenverbindungen: true,
+  material: true, hinweise: true, bemerkungen: true,
   /* Beides gehört auf den Bauauftrag und ist deshalb an. Abschalten lohnt
      erst, wenn die Trasse eng geführt ist: dann liegen Zahl an Zahl und
      verdecken den Verlauf, den der Trupp auf dem Blatt sucht. */
@@ -259,8 +260,9 @@ function oeffneDruckansicht(auftrag) {
   /* Neun gleichrangige Bedienelemente in einer Reihe waren nicht zu überblicken.
      Sie stehen jetzt in benannten Gruppen, die sich am Ergebnis orientieren:
      im Sammeldruck zuerst, welche Blätter überhaupt entstehen, dann das Papier,
-     was auf dem Kartenblatt liegt, und was das Datenblatt füllt – Punkttabelle
-     und Unterschriften sind es auch, die das zweite Blatt erzeugen. */
+     was auf dem Kartenblatt liegt, und was das Datenblatt füllt – jeder seiner
+     Abschnitte einzeln, und jeder von ihnen erzeugt für sich das zweite
+     Blatt. */
   const felder = wurzel.querySelector('.ds-felder');
   if (sammel) {
     felder.appendChild(gruppe('Blätter', [
@@ -324,6 +326,9 @@ function oeffneDruckansicht(auftrag) {
           haken('Punkttabelle', 'punkttabelle', opt, neuAufbau),
           haken('Querungstabelle', 'querungen', opt, neuAufbau),
           haken('Längenverbindungen', 'laengenverbindungen', opt, neuAufbau),
+          haken('Materialbedarf', 'material', opt, neuAufbau),
+          haken('Hinweise', 'hinweise', opt, neuAufbau),
+          haken('Bemerkungen', 'bemerkungen', opt, neuAufbau),
           haken('Unterschriften', 'unterschrift', opt, neuAufbau)
         ])
   );
@@ -1064,10 +1069,11 @@ function tabelleFliessen(fluss, rahmen, zeilenHTML) {
   });
 }
 
-/* Materialbedarf, Hinweise und Bemerkungen hängen an den Datenblättern. Ist
-   keine ihrer Tabellen gewählt, entsteht auch kein Datenblatt. */
+/* Jeder Abschnitt des Datenblatts hängt an seinem eigenen Haken. Ist keiner
+   gewählt, entsteht auch kein Datenblatt – dann bleibt nur das Kartenblatt. */
 function datenblattNoetig(opt) {
-  return !!(opt.punkttabelle || opt.querungen || opt.laengenverbindungen || opt.unterschrift);
+  return !!(opt.punkttabelle || opt.querungen || opt.laengenverbindungen
+    || opt.material || opt.hinweise || opt.bemerkungen || opt.unterschrift);
 }
 
 function datenblaetter(ziel, p, strecke, k, opt) {
@@ -1081,9 +1087,9 @@ function datenblaetter(ziel, p, strecke, k, opt) {
     tabelleFliessen(fluss, laengenverbindungenRahmenHTML(k), laengenverbindungszeilenHTML(k));
   }
 
-  fluss.setze(elementAus(materialHTML(strecke, k)));
-  fluss.setze(elementAus(regelnHTML(k)));
-  fluss.setze(elementAus(bemerkungHTML(p, strecke)));
+  if (opt.material) fluss.setze(elementAus(materialHTML(strecke, k)));
+  if (opt.hinweise) fluss.setze(elementAus(regelnHTML(k)));
+  if (opt.bemerkungen) fluss.setze(elementAus(bemerkungHTML(p, strecke)));
   if (opt.unterschrift) fluss.setze(elementAus(unterschriftHTML(p)));
 }
 
