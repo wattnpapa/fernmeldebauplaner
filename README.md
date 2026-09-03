@@ -150,7 +150,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - GeoJSON (auch je Strecke), GPX für Hand-GPS-Geräte, CSV-Punktliste für Excel
 
 **Kartengrundlagen**
-TopPlusOpen des BKG (farbig, grau, hell), OpenStreetMap, OpenTopoMap, Luftbild.
+TopPlusOpen des BKG (farbig, grau, hell), basemap.de (farbig, grau), OpenStreetMap
+(Standard und Humanitär), OpenTopoMap, Esri topografisch, Luftbild von Esri und die
+Orthophotos der Landesvermessungen (DOP 20 cm, alle 16 Länder).
 
 ---
 
@@ -160,9 +162,9 @@ TopPlusOpen des BKG (farbig, grau, hell), OpenStreetMap, OpenTopoMap, Luftbild.
 |---|---|
 | `S` | Neue Strecke zeichnen |
 | `T` | Taktisches Zeichen setzen |
+| `F` | Fläche einzeichnen |
 | `K` | Koordinate anspringen |
 | `Enter` | Zeichnen abschließen |
-| `F` | Fläche einzeichnen |
 | `Rücktaste` | Letzten Punkt zurücknehmen |
 | `Esc` | Abbrechen / Dialog schließen |
 | `Strg`+`Z` | Rückgängig |
@@ -308,10 +310,10 @@ js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
 js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
 js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
-js/bilder.js          Lichtbilder aufnehmen, verkleinern, auf der Karte zeigen
-js/heic.js            HEIC entschlüsseln (lädt vendor/libheif bei Bedarf nach)
 js/flaechen.js        Flächen mit festen Maßen: Fahrzeuge, Zelt, Aufbauplatz
 js/flaechen-vorlagen.js  Maße der Flächenvorlagen und Aufstellungen der Führungsstelle
+js/bilder.js          Lichtbilder aufnehmen, verkleinern, auf der Karte zeigen
+js/heic.js            HEIC entschlüsseln (lädt vendor/libheif bei Bedarf nach)
 js/bildspeicher.js    Bilddaten im Gerätespeicher (IndexedDB)
 js/exif.js            Ort, Aufnahmezeit und Blickrichtung aus dem Lichtbild
 js/bauauftrag.js      Druckdokumente: Bauauftrag und Lagekarte
@@ -390,9 +392,10 @@ Cookies.
 Zwei Verbindungen gehen trotzdem nach außen, beide ohne Planungsinhalte:
 
 - **Kartenkacheln** holt der Browser unmittelbar bei den Anbietern (BKG, OpenStreetMap,
-  OpenTopoMap, Esri). Sie sehen dabei IP-Adresse und angeforderten Kartenausschnitt –
-  also die Gegend, in der geplant wird. Voreingestellt sind die Ebenen des BKG; das
-  Luftbild von Esri (USA) wird nur auf ausdrückliche Auswahl geladen.
+  OpenTopoMap, Esri, Landesvermessungen). Sie sehen dabei IP-Adresse und angeforderten
+  Kartenausschnitt – also die Gegend, in der geplant wird. Voreingestellt sind die Ebenen
+  des BKG; die Ebenen von Esri (USA) und die Orthophotos der Länder werden nur auf
+  ausdrückliche Auswahl geladen.
 - **Reichweitenmessung** mit [GoatCounter](https://www.goatcounter.com/): ein anonymer
   Zählimpuls beim Aufruf der Anwendung, ohne Cookie und ohne geräteübergreifende
   Kennung. Widerspruch über *Nicht mitzählen* auf `datenschutz.html`; das setzt

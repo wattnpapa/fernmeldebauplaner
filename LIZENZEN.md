@@ -75,11 +75,25 @@ Es gelten deren Nutzungsbedingungen:
   Datenlizenz Deutschland – Namensnennung 2.0 (`dl-de/by-2-0`)
 - **OpenStreetMap** – © OpenStreetMap-Mitwirkende, ODbL
 - **OpenTopoMap** – CC-BY-SA, Daten aus OpenStreetMap
-- **DWD Topo** – Deutscher Wetterdienst (DWD), Nutzungsbedingungen des DWD-GeoPortals
-  (maps.dwd.de) beachten
-- **basemap.de Web Raster** (GeoPortal DE) – Bundesamt für Kartographie und Geodäsie (BKG),
+- **basemap.de Web Raster** (farbig, grau) – Bundesamt für Kartographie und Geodäsie (BKG),
   Datenlizenz Deutschland – Namensnennung 2.0 (`dl-de/by-2-0`)
-- **Esri World Imagery** – nur für Sichtprüfung, Nutzungsbedingungen von Esri beachten
+- **OpenStreetMap Humanitär** – Kacheln des Humanitarian OpenStreetMap Team,
+  gehostet von OpenStreetMap France; Daten © OpenStreetMap-Mitwirkende, ODbL
+- **Esri World Topographic Map** und **Esri World Imagery** – nur für Sichtprüfung,
+  Nutzungsbedingungen von Esri beachten
+- **Digitale Orthophotos der Länder** (DOP 20 cm, `DOP_LAENDER` in `js/map.js`) –
+  offene WMS-Dienste der Landesvermessungen. Namensnennung nach Landeslizenz, je Land:
+  Baden-Württemberg (LGL, `dl-de/by-2-0`), Bayern (Bayerische Vermessungsverwaltung,
+  CC BY 4.0), Berlin (GeoBasis-DE/Berlin, `dl-de/zero-2-0`), Brandenburg (GeoBasis-DE/LGB,
+  `dl-de/by-2-0`), Bremen (Landesamt GeoInformation Bremen, CC BY 4.0), Hamburg (Freie und
+  Hansestadt Hamburg, LGV, `dl-de/by-2-0`), Hessen (HVBG, `dl-de/zero-2-0`),
+  Mecklenburg-Vorpommern (GeoBasis-DE/M-V, `dl-de/by-2-0`), Niedersachsen (LGLN, CC BY 4.0),
+  Nordrhein-Westfalen (GeoBasis NRW, `dl-de/zero-2-0`), Rheinland-Pfalz
+  (GeoBasis-DE/LVermGeoRP, `dl-de/by-2-0`), Saarland (GeoBasis-DE/LVGL, `dl-de/by-2-0`),
+  Sachsen (GeoSN, `dl-de/by-2-0`), Sachsen-Anhalt (GeoBasis-DE/LVermGeo ST, `dl-de/by-2-0`),
+  Schleswig-Holstein (GeoBasis-DE/LVermGeo SH, CC BY 4.0), Thüringen (GDI-Th, `dl-de/by-2-0`).
+  Der Quellenvermerk auf Karte und Bauauftrag nennt genau die Länder, deren Bilder zu
+  sehen sind.
 - **Terrain Tiles** (Höhenkacheln, `js/hoehe.js`) – AWS Open Data, Terrarium-Format;
   in Deutschland aus dem EU-DEM des Copernicus-Programms (© Europäische Union),
   Quellenangabe der Höhendaten: https://github.com/tilezen/joerd/blob/master/docs/attribution.md

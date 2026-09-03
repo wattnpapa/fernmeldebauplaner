@@ -9,7 +9,7 @@ import {
 import { ZeichenLayer, gezeichneteZeichen } from './zeichen.js';
 import { FlaechenLayer, flaechenEcken } from './flaechen.js';
 import { GitterLayer } from './gitter.js';
-import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById, MAX_ZOOM } from './map.js';
+import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById, dopQuellenangabe, MAX_ZOOM } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
 import { HOEHEN_QUELLE } from './hoehe.js';
 import {
@@ -1670,7 +1670,17 @@ function ohneMarken(html) {
 function kartenquelle(p, opt) {
   const bk = basiskarteById(p.ansicht.basemap);
   const quelle = opt.farbe === 'sw' ? basiskarteById(grauVariante(p.ansicht.basemap)) : bk;
-  return `Kartengrundlage: ${ohneMarken(quelle.attribution)} · ${escapeHtml(HOEHEN_QUELLE)}`;
+  /* Beim Länder-Luftbild richtet sich der Vermerk nach dem Ort der Planung:
+     genannt werden die Landesvermessungen, deren Bilder auf den Blättern
+     liegen können – jeder Punkt der Planung zählt, nicht nur die Kartenmitte. */
+  const text = quelle.dop
+    ? dopQuellenangabe([
+        ...p.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng])),
+        ...p.zeichen.map(z => [z.lat, z.lng]),
+        [p.ansicht.lat, p.ansicht.lng]
+      ])
+    : quelle.attribution;
+  return `Kartengrundlage: ${ohneMarken(text)} · ${escapeHtml(HOEHEN_QUELLE)}`;
 }
 
 function fussHTML(p, opt) {

@@ -59,6 +59,12 @@ export const FARBEN = [
    Beides ist dasselbe Kabel, der alte Schlüssel bleibt nur als Verweis erhalten. */
 export const KABEL_ALIAS = { fk4: 'ffk' };
 
+/* Kartenkennungen, die es kurz gab und die in gespeicherten Planungen liegen
+   können: „GeoPortal DE" hieß die basemap.de-Ebene zwei Tage lang, „DWD Topo"
+   war nie lieferfähig und ist wieder draußen. Ein unbekannter Wert würde das
+   Auswahlfeld leer lassen. */
+const BASISKARTE_ALIAS = { geoportal_de: 'basemapde', dwd_topo: 'topplus' };
+
 const kabelById = id => {
   const schluessel = KABEL_ALIAS[id] || id;
   return KABELTYPEN.find(k => k.id === schluessel) || KABELTYPEN[0];
@@ -96,13 +102,13 @@ export function neuesProjekt(name = 'Neue Planung') {
     zeichengruppen: [],
     strecken: [],
     zeichen: [],
+    flaechen: [],
     bilder: []
   };
 }
 
 /* Einsatzabschnitte gliedern eine große Planung in Zuständigkeiten. Sie sind
    freiwillig: eine Planung ohne Abschnitte verhält sich wie bisher, jede
-    flaechen: [],
    Strecke steht dann für sich. */
 export function neuerEinsatzabschnitt(projekt) {
   const n = (projekt.einsatzabschnitte || []).length;
@@ -153,14 +159,20 @@ export function streckenIm(p, aid) { return p.strecken.filter(s => gehoertZu(s, 
 /** Ebenso für die taktischen Zeichen */
 export function zeichenIm(p, aid) { return p.zeichen.filter(z => gehoertZu(z, aid)); }
 
+/** Und für die Flächen */
+export function flaechenIm(p, aid) { return (p.flaechen || []).filter(f => gehoertZu(f, aid)); }
+
 /** Nicht zugeteilt heißt: gehört allen. Ein Abschnitt bekommt seine eigenen
  *  Zeichen und dazu die des gemeinsamen Lagebildes – ohne Abschnitt alle. */
 export function zeichenFuer(p, aid) {
   return aid ? p.zeichen.filter(z => !z.abschnitt || z.abschnitt === aid) : p.zeichen;
 }
 
-/** Und für die Flächen */
-export function flaechenIm(p, aid) { return (p.flaechen || []).filter(f => gehoertZu(f, aid)); }
+/** Dieselbe Regel für die Flächen: nicht zugeteilt heißt, sie gehören allen. */
+export function flaechenFuer(p, aid) {
+  const alle = p.flaechen || [];
+  return aid ? alle.filter(f => !f.abschnitt || f.abschnitt === aid) : alle;
+}
 
 /* Der Abschnitt schaltet seine Strecken und Zeichen gemeinsam ab, ohne ihren
    eigenen Schalter zu überschreiben – wird er wieder eingeblendet, steht jedes
@@ -168,12 +180,6 @@ export function flaechenIm(p, aid) { return (p.flaechen || []).filter(f => gehoe
 const abschnittZeigt = (p, x) => {
   const ea = abschnittById(p, x.abschnitt);
   return !ea || ea.sichtbar !== false;
-/** Dieselbe Regel für die Flächen: nicht zugeteilt heißt, sie gehören allen. */
-export function flaechenFuer(p, aid) {
-  const alle = p.flaechen || [];
-  return aid ? alle.filter(f => !f.abschnitt || f.abschnitt === aid) : alle;
-}
-
 };
 
 export function streckeSichtbar(p, s) {
@@ -194,17 +200,17 @@ export function zeichenSichtbar(p, z) {
   return z.sichtbar !== false && abschnittZeigt(p, z) && zeichengruppeZeigt(p, z);
 }
 
+/** Eine Fläche verbergen ihr eigenes Auge und das ihres Abschnitts. */
+export function flaecheSichtbar(p, f) {
+  return f.sichtbar !== false && abschnittZeigt(p, f);
+}
+
 export function neueStrecke(projekt) {
   const n = projekt.strecken.length;
   const k = KABELTYPEN[0];
   return {
     id: id(),
     name: `Strecke ${n + 1}`,
-/** Eine Fläche verbergen ihr eigenes Auge und das ihres Abschnitts. */
-export function flaecheSichtbar(p, f) {
-  return f.sichtbar !== false && abschnittZeigt(p, f);
-}
-
     von: '', nach: '',
     farbe: FARBEN[n % FARBEN.length],
     kabeltyp: k.id,
@@ -235,12 +241,6 @@ export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
   };
 }
 
-/* Ein Lichtbild vom Bauort. Hier steht nur, was das Bild zeigt und wo es
-   aufgenommen wurde – die Bilddaten selbst liegen im Bildspeicher des Geräts
-   (`js/bildspeicher.js`) und nicht im Projekt: sonst spränge jeder
-   Undo-Abzug um das Vielfache an.
-
-   `lat`/`lng` dürfen `null` sein: ein Bild ohne Ortsangabe der Kamera wird
 /* Eine Fläche mit festen Maßen: Fahrzeug, Anhänger, Zelt oder ein freier
    Bereich. `lat`/`lng` ist die Mitte, `breite` und `laenge` stehen in Metern,
    `drehung` in Grad im Uhrzeigersinn. Die Maße kommen aus der Vorlage und
@@ -256,6 +256,12 @@ export function neueFlaeche(lat, lng, art = 'frei') {
   };
 }
 
+/* Ein Lichtbild vom Bauort. Hier steht nur, was das Bild zeigt und wo es
+   aufgenommen wurde – die Bilddaten selbst liegen im Bildspeicher des Geräts
+   (`js/bildspeicher.js`) und nicht im Projekt: sonst spränge jeder
+   Undo-Abzug um das Vielfache an.
+
+   `lat`/`lng` dürfen `null` sein: ein Bild ohne Ortsangabe der Kamera wird
    nicht verworfen, sondern wartet in der Liste darauf, auf der Karte gesetzt
    zu werden. */
 export function neuesBild(o = {}) {
@@ -359,13 +365,13 @@ class Store {
 
   strecke(sid) { return this.projekt.strecken.find(s => s.id === sid); }
   zeichen(zid) { return this.projekt.zeichen.find(z => z.id === zid); }
+  flaeche(fid) { return (this.projekt.flaechen || []).find(f => f.id === fid); }
 
   // -------------------------------------------------------------- Speicher
 
   speichernVerzoegert() {
     clearTimeout(this._speicherTimer);
     this._speicherTimer = setTimeout(() => this.speichern(), 400);
-  flaeche(fid) { return (this.projekt.flaechen || []).find(f => f.id === fid); }
   }
 
   speichern() {
@@ -508,11 +514,13 @@ export function istGehaltvoll(p) {
 /** Ältere/fremde Projektdateien auf das aktuelle Schema heben */
 export function migrieren(p) {
   const v = neuesProjekt(p.name || 'Import');
+  const ansicht = { ...v.ansicht, ...(p.ansicht || {}) };
+  ansicht.basemap = BASISKARTE_ALIAS[ansicht.basemap] || ansicht.basemap;
   const out = {
     ...v, ...p,
     version: SCHEMA,
     kopf: { ...v.kopf, ...(p.kopf || {}) },
-    ansicht: { ...v.ansicht, ...(p.ansicht || {}) },
+    ansicht,
     optionen: { ...v.optionen, ...(p.optionen || {}) },
     einsatzabschnitte: (p.einsatzabschnitte || []).map((a, i) => ({
       id: a.id || id(),
@@ -552,14 +560,6 @@ export function migrieren(p) {
         symbol: symbolBekannt(z.symbol) ? z.symbol : STANDARD_SYMBOL
       };
     }),
-    /* Schema 3 hat die Lichtbilder eingeführt, Schema 4 den Vermerk, woher ihr
-       Ort stammt – für ältere Stände setzt ihn `neuesBild` aus den vorhandenen
-       Koordinaten. `daten` und `mini` tragen sie
-       nur in der Sicherungsdatei; im Browserspeicher haben sie nichts zu
-       suchen – dort liegen die Bilddaten im Bildspeicher, und der localStorage
-       wäre mit dem ersten Bild voll. */
-    bilder: (p.bilder || []).map(b => {
-      const { daten, mini, ...rest } = b;
     /* Schema 5 hat die Flächen eingeführt. Ältere Stände bringen das Feld
        nicht mit und öffnen ohne Flächen; was da ist, wird auf die Vorgaben
        gelegt, damit kein Eintrag ohne Maß auf die Karte kommt. */
@@ -568,6 +568,14 @@ export function migrieren(p) {
       breite: Number(f.breite) > 0 ? Number(f.breite) : neueFlaeche(0, 0, f.art).breite,
       laenge: Number(f.laenge) > 0 ? Number(f.laenge) : neueFlaeche(0, 0, f.art).laenge
     })),
+    /* Schema 3 hat die Lichtbilder eingeführt, Schema 4 den Vermerk, woher ihr
+       Ort stammt – für ältere Stände setzt ihn `neuesBild` aus den vorhandenen
+       Koordinaten. `daten` und `mini` tragen sie
+       nur in der Sicherungsdatei; im Browserspeicher haben sie nichts zu
+       suchen – dort liegen die Bilddaten im Bildspeicher, und der localStorage
+       wäre mit dem ersten Bild voll. */
+    bilder: (p.bilder || []).map(b => {
+      const { daten, mini, ...rest } = b;
       return { ...neuesBild(rest), ...rest, id: b.id || id(),
         lat: Number.isFinite(b.lat) ? b.lat : null,
         lng: Number.isFinite(b.lng) ? b.lng : null };
@@ -580,6 +588,7 @@ export function migrieren(p) {
   const bekannt = new Set(out.einsatzabschnitte.map(a => a.id));
   out.strecken.forEach(s => { if (!bekannt.has(s.abschnitt)) s.abschnitt = null; });
   out.zeichen.forEach(z => { if (!bekannt.has(z.abschnitt)) z.abschnitt = null; });
+  out.flaechen.forEach(f => { if (!bekannt.has(f.abschnitt)) f.abschnitt = null; });
   // Ebenso für die Gruppen: ein Verweis ins Leere wäre ein Zeichen, das kein
   // Auge mehr erreicht.
   const gruppen = new Set(out.zeichengruppen.map(g => g.id));
@@ -588,4 +597,3 @@ export function migrieren(p) {
 }
 
 export const store = new Store();
-  out.flaechen.forEach(f => { if (!bekannt.has(f.abschnitt)) f.abschnitt = null; });
