@@ -329,12 +329,13 @@ body.druckansicht { overflow: hidden; }
 
 /* -- Kennzahlen */
 
+/* Spaltenzahl folgt der Kachelzahl: Kabel-, Funk- und Stromstrecken sowie der
+   Sammeldruck bringen unterschiedlich viele Kacheln mit, und eine feste Zahl
+   ließe am Blattrand Lücken. */
 .bl-kennzahlen {
-  display: grid; grid-template-columns: repeat(7, 1fr); gap: 1.4mm;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1.4mm;
   margin-top: 1.6mm;
 }
-/* Stromleitungen bringen den Querschnitt als achte Kachel mit */
-.bl-kennzahlen.mit-strom { grid-template-columns: repeat(8, 1fr); }
 .bl-kennzahlen .kz {
   border: .5pt solid #999; border-top: 1.6pt solid #003399; border-radius: .8mm;
   padding: 1.2mm 1.6mm; display: flex; flex-direction: column; min-width: 0;
@@ -713,3 +714,12 @@ body.druckansicht { overflow: hidden; }
   src: local('Roboto Slab Bold'), local('RobotoSlab-Bold'),
        url('../fonts/roboto-slab-bold.woff') format('woff');
 }
+
+/* Flächen: keine Schatten (Filter, siehe oben), Strich im Druck stärker über
+   --strich aus der Ebene selbst. Die Beschriftung wächst wie die der Zeichen. */
+#druck .fl-wrap.gewaehlt .fl-dreh { outline: none; box-shadow: none; }
+.karten-inner .fl-label {
+  font-size: calc(8.5px * var(--karten-schrift)); padding: 0 calc(3px * var(--karten-schrift));
+}
+.druck-doku.sw .fl-svg .fl-voll { fill-opacity: .3; }
+.druck-doku.sw .fl-label { color: #000; }

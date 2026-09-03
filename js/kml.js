@@ -254,6 +254,7 @@ async function auspacken(puffer, sicht, eintrag) {
  * Ordner: {name, beschreibung, sichtbar, ordner, eintraege}
  * Eintrag: {art: 'linie', name, beschreibung, farbe, sichtbar, koordinaten}
  *          {art: 'punkt', name, beschreibung, farbe, sichtbar, lat, lng}
+ *          {art: 'flaeche', name, beschreibung, farbe, sichtbar, koordinaten}
  */
 
 const esc = t => String(t ?? '').replace(/[&<>"']/g,
@@ -306,6 +307,13 @@ function stilKennung(stile, art, farbe) {
   </Style>`
     // Ohne <Icon> bleibt es beim Standardsymbol von Google Earth, nur eingefärbt.
     // Ein Verweis auf ein Bild wäre eine Fremdadresse in der Datei des Nutzers.
+    : art === 'flaeche'
+    /* Halb durchscheinend gefüllt (Deckkraft 66 von ff), damit das Luftbild
+       unter dem Grundriss zu erkennen bleibt – wie auf der Karte hier. */
+    ? `  <Style id="${kennung}">
+    <LineStyle><color>${f}</color><width>2</width></LineStyle>
+    <PolyStyle><color>66${f.slice(2)}</color></PolyStyle>
+  </Style>`
     : `  <Style id="${kennung}">
     <IconStyle><color>${f}</color><scale>0.9</scale></IconStyle>
     <LabelStyle><color>${f}</color><scale>0.8</scale></LabelStyle>
@@ -320,7 +328,7 @@ function eintragMarkup(e, stile, tiefe) {
     ...(e.name ? [`${ein}  <name>${esc(e.name)}</name>`] : []),
     ...sichtFeld(e, ein + '  '),
     ...beschreibungsFeld(e.beschreibung, ein + '  '),
-    ein + stilKennung(stile, e.art === 'linie' ? 'linie' : 'punkt', e.farbe)
+    ein + stilKennung(stile, e.art === 'linie' || e.art === 'flaeche' ? e.art : 'punkt', e.farbe)
   ];
 
   if (e.art === 'linie') kopf.push(
@@ -332,6 +340,13 @@ function eintragMarkup(e, stile, tiefe) {
     `${ein}    <coordinates>${e.koordinaten.map(([lat, lng]) =>
       `${lng.toFixed(7)},${lat.toFixed(7)},0`).join(' ')}</coordinates>`,
     `${ein}  </LineString>`);
+  else if (e.art === 'flaeche') kopf.push(
+    `${ein}  <Polygon>`,
+    `${ein}    <tessellate>1</tessellate>`,
+    `${ein}    <altitudeMode>clampToGround</altitudeMode>`,
+    `${ein}    <outerBoundaryIs><LinearRing><coordinates>${[...e.koordinaten, e.koordinaten[0]]
+      .map(([lat, lng]) => `${lng.toFixed(7)},${lat.toFixed(7)},0`).join(' ')}</coordinates></LinearRing></outerBoundaryIs>`,
+    `${ein}  </Polygon>`);
   else kopf.push(
     `${ein}  <Point>`,
     `${ein}    <coordinates>${e.lng.toFixed(7)},${e.lat.toFixed(7)},0</coordinates>`,

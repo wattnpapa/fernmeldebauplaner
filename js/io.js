@@ -2,7 +2,8 @@
 
 import {
   store, migrieren, neueStrecke, neuerPunkt, neuesZeichen, id, ladeAlle, dateisicherungVermerken,
-  abschnittById, zeichengruppeById, streckenIm, zeichenIm, zeichenFuer, punktartById, VERLEGEARTEN
+  abschnittById, zeichengruppeById, streckenIm, zeichenIm, zeichenFuer, flaechenIm, flaechenFuer,
+  punktartById, VERLEGEARTEN
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
@@ -10,6 +11,7 @@ import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
 import { querungsartById } from './vorschrift.js';
 import { kmlLesen, kmlSchreiben, kmlAusKMZ, istKMZ, alsText } from './kml.js';
 import { alsDatenUrls, ausDatei as bilderAusDatei } from './bildspeicher.js';
+import { flaechenEcken, flaechenTitel, flaechenartById, masseText } from './flaechen.js';
 
 /* Klartext der Querungsart. An allen anderen Punktarten bleibt die Angabe leer –
    der mitgeführte Wert gehört dort nicht in die Ausgabe. */
@@ -77,7 +79,7 @@ export async function abschnittExportieren(aid) {
   const p = store.projekt;
   const ea = abschnittById(p, aid);
   const strecken = streckenIm(p, aid);
-  if (!strecken.length && !zeichenIm(p, aid).length) return false;
+  if (!strecken.length && !zeichenIm(p, aid).length && !flaechenIm(p, aid).length) return false;
   const bezeichnung = ea ? ea.name : 'Ohne Einsatzabschnitt';
   const jetzt = new Date().toISOString();
   const zeichen = aid ? zeichenFuer(p, aid) : zeichenIm(p, aid);
@@ -95,6 +97,8 @@ export async function abschnittExportieren(aid) {
     zeichengruppen: (p.zeichengruppen || []).filter(g => benutzt.has(g.id)),
     strecken,
     zeichen,
+    // Die Flächen folgen derselben Regel wie die Zeichen.
+    flaechen: aid ? flaechenFuer(p, aid) : flaechenIm(p, aid),
     /* Die Lichtbilder sind keinem Abschnitt zugeteilt und gehören deshalb –
        wie die nicht zugeteilten Zeichen – zu jedem Ausschnitt. Ein Ausschnitt
        wird dadurch so schwer wie die ganze Planung; das ist der Preis dafür,
@@ -134,7 +138,7 @@ export async function projektImportieren(datei) {
 async function jsonUebernehmen(inhalt, dateiname) {
   const roh = JSON.parse(inhalt);
   if (roh.type === 'FeatureCollection') return geoJSONUebernehmen(roh);
-  if (!roh.strecken && !roh.zeichen) throw new Error('Keine Planungsdaten in der Datei gefunden.');
+  if (!roh.strecken && !roh.zeichen && !roh.flaechen) throw new Error('Keine Planungsdaten in der Datei gefunden.');
   /* Erst die Bilddaten in den Bildspeicher, dann die Planung öffnen: sonst
      stünden für einen Augenblick Bildpunkte auf der Karte, hinter denen nichts
      liegt. Bilder, die der Speicher nicht annimmt, fehlen – der Eintrag bleibt
@@ -279,6 +283,22 @@ export function geoJSON(nurStrecke = null) {
         bemerkung: z.bemerkung, mgrs: toMGRS(z.lat, z.lng, 5)
       }
     });
+    /* Eine Fläche wird zum Polygon aus ihren vier Ecken – so sieht sie in
+       jedem GIS so aus wie hier; Maße und Drehung stehen dazu in den
+       Eigenschaften, damit sich der Grundriss auch nachrechnen lässt. */
+    for (const f of p.flaechen || []) {
+      const ecken = flaechenEcken(f).map(([lat, lng]) => [lng, lat]);
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [[...ecken, ecken[0]]] },
+        properties: {
+          name: flaechenTitel(f), art: flaechenartById(f.art).name,
+          breite_m: f.breite, laenge_m: f.laenge, drehung_grad: f.drehung || 0,
+          bemerkung: f.bemerkung, mgrs: toMGRS(f.lat, f.lng, 5),
+          stroke: f.farbe, fill: f.farbe, 'fill-opacity': 0.25
+        }
+      });
+    }
   }
   return { type: 'FeatureCollection', name: p.name, features };
 }
@@ -382,6 +402,22 @@ function zeichenOrdner(zeichen, farbe) {
   };
 }
 
+/* Die Flächen als Polygone in einem eigenen Ordner – Google Earth zeigt sie
+   als eingefärbte Grundrisse, dieselbe Fläche wie auf der Karte hier. */
+function flaechenOrdner(flaechen) {
+  return {
+    name: 'Flächen', offen: false,
+    eintraege: flaechen.map(f => ({
+      art: 'flaeche',
+      name: flaechenTitel(f),
+      farbe: f.farbe,
+      sichtbar: f.sichtbar,
+      koordinaten: flaechenEcken(f),
+      beschreibung: [flaechenartById(f.art).name, masseText(f), `MGRS ${toMGRS(f.lat, f.lng, 5)}`, f.bemerkung]
+    }))
+  };
+}
+
 /* Kopf der Planung als Beschreibung des Dokuments – wer die Datei weitergibt,
    soll in Google Earth sehen, zu welchem Einsatz und welchem Stand sie gehört. */
 function planungsAngaben(p) {
@@ -403,19 +439,21 @@ function planungsAngaben(p) {
 function planungsOrdner(p) {
   const abschnitte = p.einsatzabschnitte || [];
   if (!abschnitte.length)
-    return [...p.strecken.map(streckenOrdner), zeichenOrdner(p.zeichen)];
+    return [...p.strecken.map(streckenOrdner), zeichenOrdner(p.zeichen), flaechenOrdner(p.flaechen || [])];
 
   const ordner = abschnitte.map(ea => ({
     name: ea.name,
     sichtbar: ea.sichtbar,
     beschreibung: [ea.leiter && `Abschnittsleiter: ${ea.leiter}`, ea.bemerkung],
-    ordner: [...streckenIm(p, ea.id).map(streckenOrdner), zeichenOrdner(zeichenIm(p, ea.id), ea.farbe)]
+    ordner: [...streckenIm(p, ea.id).map(streckenOrdner), zeichenOrdner(zeichenIm(p, ea.id), ea.farbe),
+      flaechenOrdner(flaechenIm(p, ea.id))]
   }));
   /* Was keinem Abschnitt zugeteilt ist, gehört allen – und darf deshalb nicht
      unter den Tisch fallen, wenn die Planung gegliedert ist. */
   ordner.push({
     name: 'Ohne Einsatzabschnitt',
-    ordner: [...streckenIm(p, null).map(streckenOrdner), zeichenOrdner(zeichenIm(p, null))]
+    ordner: [...streckenIm(p, null).map(streckenOrdner), zeichenOrdner(zeichenIm(p, null)),
+      flaechenOrdner(flaechenIm(p, null))]
   });
   return ordner;
 }

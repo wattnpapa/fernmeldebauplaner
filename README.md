@@ -55,6 +55,16 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - SVG: scharf in jeder Zoomstufe; für den Schwarz-Weiß-Druck bringt die Sammlung
   eine eigene Druckfassung mit
 
+**Flächen und Aufbauplatz**
+- Grundrisse maßstäblich auf der Karte: FüKomKW und Anhänger FüLa jeweils aufgebaut,
+  Zelt SG 300, der Aufbauplatz der Führungsstelle (ca. 25 × 15 m) und freie Flächen
+  mit eigenen Maßen – die Maße nach dem Erkundungsblatt „Aufbauplatz THW-FüSt“
+- Die beiden Aufstellungen des Blatts (Fahrzeug, ein oder zwei Anhänger, Zelt) mit
+  einem Klick Kante an Kante; sie bleiben beim Verschieben und Drehen zusammen
+- Stilisierte Draufsicht je Art, Drehen am Griff auf der Karte, Maße und Farbe je Fläche
+- Herausgezoomt bleibt eine kleine Marke – gezeichnet wird nie größer als wirklich
+- Erscheinen im Bauauftrag, auf der Lagekarte und als Polygon in GeoJSON und KML
+
 **Bilder vom Bauort**
 - Lichtbilder vom Telefon setzen sich an ihren Aufnahmeort: Ortsangabe, Aufnahmezeit
   und Blickrichtung kommen aus dem EXIF-Block der Datei
@@ -152,6 +162,7 @@ TopPlusOpen des BKG (farbig, grau, hell), OpenStreetMap, OpenTopoMap, Luftbild.
 | `T` | Taktisches Zeichen setzen |
 | `K` | Koordinate anspringen |
 | `Enter` | Zeichnen abschließen |
+| `F` | Fläche einzeichnen |
 | `Rücktaste` | Letzten Punkt zurücknehmen |
 | `Esc` | Abbrechen / Dialog schließen |
 | `Strg`+`Z` | Rückgängig |
@@ -299,6 +310,8 @@ js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
 js/bilder.js          Lichtbilder aufnehmen, verkleinern, auf der Karte zeigen
 js/heic.js            HEIC entschlüsseln (lädt vendor/libheif bei Bedarf nach)
+js/flaechen.js        Flächen mit festen Maßen: Fahrzeuge, Zelt, Aufbauplatz
+js/flaechen-vorlagen.js  Maße der Flächenvorlagen und Aufstellungen der Führungsstelle
 js/bildspeicher.js    Bilddaten im Gerätespeicher (IndexedDB)
 js/exif.js            Ort, Aufnahmezeit und Blickrichtung aus dem Lichtbild
 js/bauauftrag.js      Druckdokumente: Bauauftrag und Lagekarte

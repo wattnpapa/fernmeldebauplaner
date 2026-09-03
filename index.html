@@ -22,6 +22,8 @@
 <link rel="modulepreload" href="js/strecken.js">
 <link rel="modulepreload" href="js/symbols.js">
 <link rel="modulepreload" href="js/zeichen.js">
+<link rel="modulepreload" href="js/flaechen.js">
+<link rel="modulepreload" href="js/flaechen-vorlagen.js">
 <link rel="modulepreload" href="js/bilder.js">
 <link rel="modulepreload" href="js/heic.js">
 <link rel="modulepreload" href="js/bildspeicher.js">
@@ -113,13 +115,18 @@
            noch ein Wort – „Taktische Zeichen“ bräche zweizeilig um und machte
            die Reiterreihe ungleich hoch. „Zeichen“ ist dasselbe Wort wie am
            Werkzeug und am Setzen-Knopf; der volle Begriff bleibt für die
-           Sprachausgabe im aria-label. -->
+           Sprachausgabe im aria-label. Zu fünft gilt das erst recht – die
+           Flächen stehen zwischen Zeichen und Bildern, weil sie wie die
+           Zeichen zum Lagebild gehören. -->
       <nav class="reiter" role="tablist">
         <button role="tab" id="reiter-strecken" class="aktiv" aria-selected="true"
                 aria-controls="inhalt-strecken" data-reiter="strecken">Strecken</button>
         <button role="tab" id="reiter-zeichen" aria-selected="false" tabindex="-1"
                 aria-controls="inhalt-zeichen" data-reiter="zeichen"
                 aria-label="Taktische Zeichen">Zeichen</button>
+        <button role="tab" id="reiter-flaechen" aria-selected="false" tabindex="-1"
+                aria-controls="inhalt-flaechen" data-reiter="flaechen"
+                aria-label="Flächen und Aufbauplätze">Flächen</button>
         <button role="tab" id="reiter-bilder" aria-selected="false" tabindex="-1"
                 aria-controls="inhalt-bilder" data-reiter="bilder">Bilder</button>
         <button role="tab" id="reiter-projekt" aria-selected="false" tabindex="-1"
@@ -156,6 +163,15 @@
         <div class="liste" id="zeichen-liste"></div>
       </section>
 
+      <section class="reiter-inhalt" role="tabpanel" id="inhalt-flaechen"
+               aria-labelledby="reiter-flaechen" data-inhalt="flaechen">
+        <div class="seite-kopf">
+          <button class="knopf primaer breit" id="btn-neue-flaeche">+ Fläche einzeichnen</button>
+        </div>
+        <div class="summe" id="flaechen-summe"></div>
+        <div class="liste" id="flaechen-liste"></div>
+      </section>
+
       <section class="reiter-inhalt" role="tabpanel" id="inhalt-bilder"
                aria-labelledby="reiter-bilder" data-inhalt="bilder">
         <div class="seite-kopf">
@@ -186,6 +202,7 @@
              lernt es nur, wenn es dasteht. -->
         <button class="wz" id="wz-strecke" title="Strecke zeichnen (S)"><span class="wz-icon">╱</span><span>Strecke<i class="wz-taste">S</i></span></button>
         <button class="wz" id="wz-zeichen" title="Taktisches Zeichen setzen (T)"><span class="wz-icon">◈</span><span>Zeichen<i class="wz-taste">T</i></span></button>
+        <button class="wz" id="wz-flaeche" title="Fläche einzeichnen – Fahrzeug, Anhänger, Zelt, Aufbauplatz (F)"><span class="wz-icon">▭</span><span>Fläche<i class="wz-taste">F</i></span></button>
         <button class="wz" id="wz-suche" title="Koordinate anspringen (K)"><span class="wz-icon">⌖</span><span>Koordinate<i class="wz-taste">K</i></span></button>
         <button class="wz" id="wz-standort" title="Eigenen Standort anzeigen"><span class="wz-icon">◎</span><span>Standort</span></button>
       </div>

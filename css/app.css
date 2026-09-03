@@ -1240,3 +1240,71 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   src: local('Roboto Slab Bold'), local('RobotoSlab-Bold'),
        url('../fonts/roboto-slab-bold.woff') format('woff');
 }
+
+/* ---------------------------------------------------------------- Flächen */
+
+/* Maßstäbliche Grundrisse: die Figur rechnet in Metern, der Strich in
+   Bildpunkten – `vector-effect` hält ihn beim Zoomen gleich stark. Die
+   Farbe kommt je Fläche als Variable mit, der Strichfaktor vom Druck. */
+#karte.modus-flaeche { cursor: copy; }
+.fbp-flaeche-icon { background: none; border: 0; }
+.fl-wrap { position: relative; display: flex; align-items: center; justify-content: center; }
+.fl-dreh { flex: none; transform-origin: center; }
+.fl-svg { display: block; overflow: visible; }
+.fl-svg .fl-feld {
+  fill: var(--farbe); fill-opacity: .10; stroke: var(--farbe);
+  stroke-width: calc(1.2px * var(--strich, 1)); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke;
+}
+/* Umrissflächen (Aufbauplatz, freie Fläche) sind nur ihr Rand – gestrichelt
+   wie das rote Feld auf dem Erkundungsblatt, damit sie nicht wie ein Fahrzeug
+   wirken. */
+.fl-svg.fl-umriss .fl-feld { fill-opacity: .06; stroke-width: calc(2px * var(--strich, 1)); stroke-dasharray: 8 5; }
+.fl-svg .fl-teil { stroke: var(--farbe); stroke-width: calc(1.4px * var(--strich, 1)); vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.fl-svg .fl-voll { fill: var(--farbe); fill-opacity: .45; }
+.fl-svg .fl-leicht { fill: var(--farbe); fill-opacity: .18; }
+.fl-svg .fl-linie { fill: none; stroke: var(--farbe); stroke-width: calc(1.2px * var(--strich, 1)); vector-effect: non-scaling-stroke; stroke-linecap: round; }
+.fl-wrap.gewaehlt .fl-dreh { outline: 2px solid var(--thw); outline-offset: 1px; box-shadow: 0 0 0 5px rgba(0,51,153,.25); }
+/* Der Name liegt ungedreht über der Mitte, wie die Beschriftung der Zeichen –
+   ein gedrehter Text wäre auf dem Blatt nicht zu lesen. */
+.fl-label {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  background: rgba(255,255,255,.92); border-radius: 3px; padding: 0 4px;
+  font-size: 11px; font-weight: 650; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  pointer-events: none;
+}
+/* Herausgezoomt bleibt eine kleine Marke in der Farbe der Fläche – eckig, wie
+   der Grundriss, und nicht rund wie ein Trassenpunkt. */
+.fl-marke {
+  display: block; width: 10px; height: 10px; margin: 1px;
+  background: var(--farbe); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+.fl-marke.gewaehlt { box-shadow: 0 0 0 3px rgba(0,51,153,.45), 0 1px 4px rgba(0,0,0,.4); }
+.leaflet-marker-draggable .fl-wrap, .leaflet-marker-draggable .fl-marke { cursor: grab; }
+/* Der Drehgriff: ein Ring an der oberen Kante, der sich beim Ziehen um die
+   Mitte bewegt. Groß genug für den Finger, deutlich kein Trassenpunkt. */
+.fbp-flaeche-griff { background: none; border: 0; }
+.fbp-flaeche-griff span {
+  display: block; width: 14px; height: 14px; margin: 2px; border-radius: 50%;
+  background: #fff; border: 3px solid var(--thw); box-shadow: 0 1px 4px rgba(0,0,0,.4);
+  cursor: grab;
+}
+.fbp-flaeche-griff span:active { cursor: grabbing; }
+
+/* Vorschau und Auswahl der Vorlagen */
+.mini-flaeche { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; }
+.mini-flaeche svg { display: block; max-width: 28px; max-height: 28px; }
+.fl-palette { display: flex; flex-direction: column; gap: 14px; }
+.fl-palette h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-schwach); }
+.fl-palette .fl-reihe { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+.fl-palette .fl-knopf {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; text-align: left;
+  border: 1px solid var(--linie); border-radius: var(--radius-klein); background: var(--flaeche); cursor: pointer;
+}
+.fl-palette .fl-knopf:hover { border-color: var(--thw); background: var(--thw-blass); }
+.fl-palette .fl-knopf .fl-bild { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; }
+.fl-palette .fl-knopf .fl-bild svg { max-width: 44px; max-height: 44px; }
+.fl-palette .fl-knopf b { display: block; font-size: 12.5px; }
+.fl-palette .fl-knopf small { display: block; color: var(--text-schwach); font-size: 11.5px; }
+/* Eine Aufstellung zeigt ihre Teile nebeneinander, in ihrem Maßverhältnis */
+.fl-palette .fl-bild.fl-reihe-bild { width: 88px; gap: 1px; }
+.fl-palette .fl-bild.fl-reihe-bild svg { max-height: 40px; }

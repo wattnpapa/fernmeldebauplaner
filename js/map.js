@@ -149,3 +149,6 @@ export function warteAufKacheln(karte, timeoutMs = 8000) {
     setTimeout(ende, timeoutMs);
   });
 }
+  /* Die Flächen liegen unter den Strecken: sie sind Grundriss, die Trasse
+     läuft darüber – ein Kabel, das in den Anhänger führt, endet auf ihm. */
+  karte.createPane('fbp-flaechen').style.zIndex = 410;

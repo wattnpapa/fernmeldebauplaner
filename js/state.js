@@ -3,8 +3,9 @@
 import { neueStromangabe } from './strom.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 import { QUERUNG_STANDARD } from './vorschrift.js';
+import { flaechenartById } from './flaechen-vorlagen.js';
 
-export const SCHEMA = 4;
+export const SCHEMA = 5;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -101,6 +102,7 @@ export function neuesProjekt(name = 'Neue Planung') {
 
 /* Einsatzabschnitte gliedern eine große Planung in Zuständigkeiten. Sie sind
    freiwillig: eine Planung ohne Abschnitte verhält sich wie bisher, jede
+    flaechen: [],
    Strecke steht dann für sich. */
 export function neuerEinsatzabschnitt(projekt) {
   const n = (projekt.einsatzabschnitte || []).length;
@@ -157,12 +159,21 @@ export function zeichenFuer(p, aid) {
   return aid ? p.zeichen.filter(z => !z.abschnitt || z.abschnitt === aid) : p.zeichen;
 }
 
+/** Und für die Flächen */
+export function flaechenIm(p, aid) { return (p.flaechen || []).filter(f => gehoertZu(f, aid)); }
+
 /* Der Abschnitt schaltet seine Strecken und Zeichen gemeinsam ab, ohne ihren
    eigenen Schalter zu überschreiben – wird er wieder eingeblendet, steht jedes
    Element so da, wie es der Nutzer verlassen hat. */
 const abschnittZeigt = (p, x) => {
   const ea = abschnittById(p, x.abschnitt);
   return !ea || ea.sichtbar !== false;
+/** Dieselbe Regel für die Flächen: nicht zugeteilt heißt, sie gehören allen. */
+export function flaechenFuer(p, aid) {
+  const alle = p.flaechen || [];
+  return aid ? alle.filter(f => !f.abschnitt || f.abschnitt === aid) : alle;
+}
+
 };
 
 export function streckeSichtbar(p, s) {
@@ -189,6 +200,11 @@ export function neueStrecke(projekt) {
   return {
     id: id(),
     name: `Strecke ${n + 1}`,
+/** Eine Fläche verbergen ihr eigenes Auge und das ihres Abschnitts. */
+export function flaecheSichtbar(p, f) {
+  return f.sichtbar !== false && abschnittZeigt(p, f);
+}
+
     von: '', nach: '',
     farbe: FARBEN[n % FARBEN.length],
     kabeltyp: k.id,
@@ -225,6 +241,21 @@ export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
    Undo-Abzug um das Vielfache an.
 
    `lat`/`lng` dürfen `null` sein: ein Bild ohne Ortsangabe der Kamera wird
+/* Eine Fläche mit festen Maßen: Fahrzeug, Anhänger, Zelt oder ein freier
+   Bereich. `lat`/`lng` ist die Mitte, `breite` und `laenge` stehen in Metern,
+   `drehung` in Grad im Uhrzeigersinn. Die Maße kommen aus der Vorlage und
+   bleiben am Eintrag: wer sie ändert, ändert nur diese Fläche. `verbund`
+   fasst die Teile einer gemeinsam gesetzten Aufstellung zusammen – sie
+   werden zusammen verschoben und gedreht (siehe `js/flaechen.js`). */
+export function neueFlaeche(lat, lng, art = 'frei') {
+  const vorlage = flaechenartById(art);
+  return {
+    id: id(), art: vorlage.id, name: '', lat, lng, drehung: 0,
+    breite: vorlage.breite, laenge: vorlage.laenge, farbe: '#003399',
+    abschnitt: null, verbund: null, bemerkung: '', sichtbar: true
+  };
+}
+
    nicht verworfen, sondern wartet in der Liste darauf, auf der Karte gesetzt
    zu werden. */
 export function neuesBild(o = {}) {
@@ -334,6 +365,7 @@ class Store {
   speichernVerzoegert() {
     clearTimeout(this._speicherTimer);
     this._speicherTimer = setTimeout(() => this.speichern(), 400);
+  flaeche(fid) { return (this.projekt.flaechen || []).find(f => f.id === fid); }
   }
 
   speichern() {
@@ -469,7 +501,8 @@ export function istGehaltvoll(p) {
   /* Auch aufgenommene Lichtbilder sind geleistete Arbeit: sie sind vom Bauort
      mitgebracht und in keiner Kamerarolle wiederzufinden, wenn der
      Browserspeicher fällt. */
-  return punkte >= 4 || (p.zeichen || []).length >= 3 || (p.bilder || []).length >= 2;
+  return punkte >= 4 || (p.zeichen || []).length >= 3 || (p.bilder || []).length >= 2 ||
+    (p.flaechen || []).length >= 2;
 }
 
 /** Ältere/fremde Projektdateien auf das aktuelle Schema heben */
@@ -527,6 +560,14 @@ export function migrieren(p) {
        wäre mit dem ersten Bild voll. */
     bilder: (p.bilder || []).map(b => {
       const { daten, mini, ...rest } = b;
+    /* Schema 5 hat die Flächen eingeführt. Ältere Stände bringen das Feld
+       nicht mit und öffnen ohne Flächen; was da ist, wird auf die Vorgaben
+       gelegt, damit kein Eintrag ohne Maß auf die Karte kommt. */
+    flaechen: (p.flaechen || []).map(f => ({
+      ...neueFlaeche(f.lat, f.lng, f.art), ...f, id: f.id || id(),
+      breite: Number(f.breite) > 0 ? Number(f.breite) : neueFlaeche(0, 0, f.art).breite,
+      laenge: Number(f.laenge) > 0 ? Number(f.laenge) : neueFlaeche(0, 0, f.art).laenge
+    })),
       return { ...neuesBild(rest), ...rest, id: b.id || id(),
         lat: Number.isFinite(b.lat) ? b.lat : null,
         lng: Number.isFinite(b.lng) ? b.lng : null };
@@ -547,3 +588,4 @@ export function migrieren(p) {
 }
 
 export const store = new Store();
+  out.flaechen.forEach(f => { if (!bekannt.has(f.abschnitt)) f.abschnitt = null; });

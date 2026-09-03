@@ -7,6 +7,7 @@ import {
   StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen
 } from './strecken.js';
 import { ZeichenLayer, gezeichneteZeichen } from './zeichen.js';
+import { FlaechenLayer, flaechenEcken } from './flaechen.js';
 import { GitterLayer } from './gitter.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById, MAX_ZOOM } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
@@ -60,7 +61,7 @@ const STANDARD_AUFTRAG = {
   /* Das Gitter ist im Ausdruck von vornherein an: auf dem Bauplatz ist es
      neben der Punkttabelle der einzige Weg, eine beliebige Stelle der Karte
      als MGRS-Angabe durchzugeben. */
-  andereStrecken: true, zeichen: true, gitter: true, zoomVersatz: 0,
+  andereStrecken: true, zeichen: true, flaechen: true, gitter: true, zoomVersatz: 0,
   // nur im Sammeldruck von Belang
   deckblatt: true, verzeichnis: true, einzelblaetter: true
 };
@@ -71,7 +72,7 @@ const STANDARD_AUFTRAG = {
 const STANDARD_LAGE = {
   format: 'a1', ausrichtung: 'quer', farbe: 'farbe',
   freiBreite: 900, freiHoehe: 600,
-  zeichen: true, beschriftung: true, gitter: true, punktnummern: false, zoomVersatz: 0,
+  zeichen: true, flaechen: true, beschriftung: true, gitter: true, punktnummern: false, zoomVersatz: 0,
   /* Jeder Streifen um die Karte lässt sich einzeln abräumen – alle fünf aus
      ergibt das nackte Kartenblatt, auf dem nur noch die Lage steht. */
   kopf: true, stammdaten: true, legende: true, kennzahlen: true, fuss: true
@@ -167,8 +168,8 @@ export function oeffneLagekarte(aid) {
   /* Anders als der Bauauftrag darf die Lagekarte aus Zeichen allein bestehen:
      zu Beginn einer Lage steht dort oft nur, wo die Führungsstelle und die
      Abschnitte liegen – die Trassen kommen erst. */
-  if (!strecken.length && !lageZeichen(auftrag).length) {
-    hinweis('Für die Lagekarte wird mindestens eine Strecke oder ein taktisches Zeichen gebraucht.', 'warnung');
+  if (!strecken.length && !lageZeichen(auftrag).length && !lageFlaechen(auftrag).length) {
+    hinweis('Für die Lagekarte wird mindestens eine Strecke, ein taktisches Zeichen oder eine Fläche gebraucht.', 'warnung');
     return;
   }
   oeffneDruckansicht(auftrag);
@@ -181,6 +182,15 @@ function lageZeichen(auftrag) {
     nurAbschnitt: auftrag.abschnitt ? auftrag.abschnitt.id : undefined,
     abschnittSchaltet: false
   });
+}
+
+/** Ebenso die Flächen – geprüft wird über eine Ebene ohne Karte, denn die
+ *  Auswahlregel steht nur dort; gezeichnet wird damit nichts. */
+function lageFlaechen(auftrag) {
+  const p = store.projekt;
+  const aid = auftrag.abschnitt ? auftrag.abschnitt.id : undefined;
+  return (p.flaechen || []).filter(f =>
+    f.sichtbar !== false && !(aid && f.abschnitt && f.abschnitt !== aid));
 }
 
 /** Reihenfolge des Sammeldrucks: nach Einsatzabschnitten in der Reihenfolge
@@ -277,6 +287,7 @@ function oeffneDruckansicht(auftrag) {
     lage
       ? gruppe('Karte', [
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
+          haken('Flächen', 'flaechen', opt, neuAufbau),
           /* Nimmt Name und Trassenlänge zusammen von der Karte – beide stehen
              in einem Schild, und wer die Namen loswerden will, will kein
              Schild mit einer nackten Zahl darin behalten. */
@@ -295,6 +306,7 @@ function oeffneDruckansicht(auftrag) {
           haken('Zwischenpunkte', 'zwischenpunkte', opt, neuAufbau),
           haken('Teillängen', 'teillaengen', opt, neuAufbau),
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
+          haken('Flächen', 'flaechen', opt, neuAufbau),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
           zoomFeld(opt, neuAufbau)
         ]),
@@ -764,6 +776,7 @@ function neueDruckkarte(buehne, mass, zusatz = {}) {
     scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, touchZoom: false,
     fadeAnimation: false, zoomAnimation: false, maxZoom: MAX_ZOOM, ...zusatz
   });
+  karte.createPane('fbp-flaechen').style.zIndex = 410;
   karte.createPane('fbp-strecken').style.zIndex = 420;
   karte.createPane('fbp-griffe').style.zIndex = 470;
   const lbl = karte.createPane('fbp-labels');
@@ -800,6 +813,7 @@ function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
     });
     zl.zeichne(zeichenOptionen(p, mass));
   }
+  if (opt.flaechen) flaechenEbene(karte, mass, sw, strecke.abschnitt || undefined);
 
   const grenzen = L.latLngBounds(strecke.punkte.map(x => [x.lat, x.lng]));
   const rand = kartenrand(mass);
@@ -889,6 +903,7 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
     });
     zl.zeichne(zeichenOptionen(p, mass));
   }
+  if (opt.flaechen) flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined);
 
   const alle = auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng]));
   const rand = kartenrand(mass, 55);
@@ -931,10 +946,15 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
     });
     zl.zeichne(zeichenOptionen(p, mass));
   }
+  const flaechen = opt.flaechen ? lageFlaechen(auftrag) : [];
+  if (opt.flaechen) flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined);
 
+  /* Die Flächen zählen mit ihren Ecken, nicht nur mit der Mitte: ein
+     Aufbauplatz von 25 m am Blattrand darf nicht halb abgeschnitten sein. */
   const ecken = [
     ...auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng])),
-    ...zeichen.map(z => [z.lat, z.lng])
+    ...zeichen.map(z => [z.lat, z.lng]),
+    ...flaechen.flatMap(flaechenEcken)
   ];
   if (ecken.length) {
     const rand = kartenrand(mass, 55);
@@ -950,6 +970,18 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   }
   karten.push(karte);
   return karte;
+}
+
+/* Die Flächen erscheinen auf jeder Druckkarte nach derselben Abschnittsregel
+   wie die Zeichen. Die Ebene hört selbst auf den Zoom – sie zeichnet nach dem
+   fitBounds neu, ohne dass die Karte sie eigens anstoßen muss. */
+function flaechenEbene(karte, mass, sw, nurAbschnitt) {
+  const ebene = new FlaechenLayer(karte, {
+    interaktiv: false, sw, abschnittSchaltet: false, nurAbschnitt,
+    strichFaktor: strichFaktor(mass)
+  });
+  ebene.zeichne();
+  return ebene;
 }
 
 function baueUebersichtskarte(buehne, strecke, mass, sw, karten, sammlung) {
@@ -1165,12 +1197,12 @@ function gewichtText(kg) {
 }
 
 function kennzahlenHTML(k, s) {
-  /* Eine Funkstrecke trägt nur, was für sie gilt: Länge, Muffen und
-     Querungen – Trommeln, Bauzuschlag und Bauzeit wären dort erfundene Nullen. */
+  /* Muffen und Querungen stehen bewusst nicht mehr als Kachel: die bloße
+     Anzahl hilft dem Trupp nicht, die Details liefern Punkt- und
+     Querungstabelle. Eine Funkstrecke trägt nur, was für sie gilt – Trommeln,
+     Bauzuschlag und Bauzeit wären dort erfundene Nullen. */
   const kacheln = k.kabel.funk ? [
-    ['Funkstrecke', formatLaenge(k.trasse), `${k.abschnitte} Abschnitte`],
-    ['Muffen', String(k.muffen), 'Verbindungen'],
-    ['Querungen', String(k.querungen), 'zu beachten']
+    ['Funkstrecke', formatLaenge(k.trasse), `${k.abschnitte} Abschnitte`]
   ] : [
     ['Trassenlänge', formatLaenge(k.trasse), `${k.abschnitte} Abschnitte`],
     ['Bauzuschlag', `${k.zuschlag} %`, 'Gelände & Reserve'],
@@ -1178,8 +1210,6 @@ function kennzahlenHTML(k, s) {
     ['Trommeln', String(k.trommeln), k.transportgewicht
       ? `à ${meter(k.trommellaenge)} · ${gewichtText(k.transportgewicht)}`
       : `à ${meter(k.trommellaenge)}`],
-    ['Muffen', String(k.muffen), 'Verbindungen'],
-    ['Querungen', String(k.querungen), 'zu sichern'],
     ['Richtwert Bauzeit', stundenText(k.bauzeitStunden), `bei ${s.verlegeleistung} m/h`]
   ];
   // Bei Stromleitungen ist der Querschnitt die Zahl, die der Trupp mitnehmen muss
@@ -1187,7 +1217,7 @@ function kennzahlenHTML(k, s) {
     kacheln.push(['Querschnitt', querschnittText(k.strom.querschnitt),
       `${stromText(k.strom.strom)} · ${k.strom.netz.kurz}`]);
   }
-  return `<div class="bl-kennzahlen${kacheln.length > 7 ? ' mit-strom' : ''}">${kacheln.map(([t, w, u]) =>
+  return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>
     `<div class="kz"><span class="kz-titel">${t}</span><span class="kz-wert">${escapeHtml(w)}</span><span class="kz-unter">${escapeHtml(u)}</span></div>`
   ).join('')}</div>`;
 }
@@ -1244,8 +1274,6 @@ function sammelKennzahlenHTML(ges) {
     ['Trommeln', String(ges.trommeln), ges.gewicht
       ? gewichtText(ges.gewicht) + (ges.gewichtVollstaendig ? '' : ' (soweit bekannt)')
       : 'je Strecke aufgerundet'],
-    ['Muffen', String(ges.muffen), 'Verbindungen'],
-    ['Querungen', String(ges.querungen), 'zu sichern'],
     ['Richtwert Bauzeit', stundenText(ges.bauzeitStunden), 'Summe, ohne Parallelbau']
   ];
   return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>

@@ -7,6 +7,7 @@ import {
 import { erstelleKarte, setzeBasiskarte, BASISKARTEN } from './map.js';
 import { StreckenLayer, escapeHtml } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
+import { FlaechenLayer } from './flaechen.js';
 import { BilderLayer, uebernahmeLaeuft } from './bilder.js';
 import { aufraeumen as bilderAufraeumen } from './bildspeicher.js';
 import { GitterLayer } from './gitter.js';
@@ -15,6 +16,7 @@ import { hoeheAn } from './hoehe.js';
 import * as io from './io.js';
 import {
   initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter, zeichneBilderListe,
+  zeichneFlaechenListe, flaechenPalette,
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis,
   abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen
 } from './ui.js';
@@ -32,24 +34,39 @@ store.starten();
 const karte = erstelleKarte($('#karte'), store.projekt.ansicht);
 
 const sl = new StreckenLayer(karte, {
-  aufAuswahl: () => { zl.auswahl = null; zeichneSeite(); },
+  aufAuswahl: () => { zl.auswahl = null; fl.auswahl = null; fl.zeichne(); zeichneSeite(); },
   aufAenderung: () => aktualisiereKennzahlen()
 });
 
 const zl = new ZeichenLayer(karte, {
-  aufAuswahl: zid => { if (zid) { sl.auswahl = null; reiterWechseln('zeichen'); } zeichneSeite(); },
+  aufAuswahl: zid => {
+    if (zid) { sl.auswahl = null; fl.auswahl = null; fl.zeichne(); reiterWechseln('zeichen'); }
+    zeichneSeite();
+  },
+  aufAenderung: () => {}
+});
+
+const fl = new FlaechenLayer(karte, {
+  aufAuswahl: fid => {
+    if (fid) { sl.auswahl = null; zl.auswahl = null; zl.zeichne(); reiterWechseln('flaechen'); }
+    modusAnzeigen();
+    zeichneSeite();
+  },
   aufAenderung: () => {}
 });
 
 const bl = new BilderLayer(karte, {
-  aufAuswahl: bid => { if (bid) { sl.auswahl = null; zl.auswahl = null; reiterWechseln('bilder'); } zeichneSeite(); },
+  aufAuswahl: bid => {
+    if (bid) { sl.auswahl = null; zl.auswahl = null; fl.auswahl = null; fl.zeichne(); reiterWechseln('bilder'); }
+    zeichneSeite();
+  },
   aufAenderung: () => {}
 });
 
 const gl = new GitterLayer(karte);
 
 initUI({
-  karte, sl, zl, bl, weiterzeichnen, zeichenSetzen, zurKarte,
+  karte, sl, zl, bl, fl, weiterzeichnen, zeichenSetzen, flaecheSetzen, zurKarte,
   bildOrtSetzen, aufAenderung: () => {}
 });
 
@@ -69,6 +86,7 @@ function neueStreckeStarten() {
 
 function weiterzeichnen(sid) {
   zl.beendeSetzen();
+  fl.beendeSetzen();
   bl.beendeSetzen();
   sl.starteZeichnen(sid);
   zurKarte();
@@ -113,16 +131,36 @@ function zeichenSetzenStarten() {
 function zeichenSetzen(symbolId, zuteilung = {}) {
   zeichnenBeenden(true);
   bl.beendeSetzen();
+  fl.beendeSetzen();
   zl.starteSetzen(symbolId, zuteilung);
   zurKarte();
   modusAnzeigen();
   hinweis('Auf die Karte klicken, um das Zeichen zu setzen.');
 }
 
+function flaecheSetzenStarten() {
+  flaechenPalette(vorlage => flaecheSetzen(vorlage));
+}
+
+/** Setzmodus für eine Fläche oder eine ganze Aufstellung – der nächste Klick
+ *  auf die Karte ist ihre Mitte. */
+function flaecheSetzen(vorlage, zuteilung = {}) {
+  zeichnenBeenden(true);
+  bl.beendeSetzen();
+  zl.beendeSetzen();
+  fl.starteSetzen(vorlage, zuteilung);
+  zurKarte();
+  modusAnzeigen();
+  hinweis(vorlage.teile
+    ? 'Auf die Karte klicken – dort steht die Mitte der Aufstellung. Danach am Griff drehen.'
+    : 'Auf die Karte klicken – dort steht die Mitte der Fläche. Danach am Griff drehen.');
+}
+
 /** Ort eines Bildes auf der Karte nachtragen – der nächste Klick setzt ihn */
 function bildOrtSetzen(bid) {
   zeichnenBeenden(true);
   zl.beendeSetzen();
+  fl.beendeSetzen();
   bl.starteSetzen(bid);
   zurKarte();
   modusAnzeigen();
@@ -132,10 +170,12 @@ function bildOrtSetzen(bid) {
 function modusAnzeigen() {
   const zeichnet = !!sl.zeichenModus;
   const setzt = !!zl.setzModus;
+  const flaecht = !!fl.setzModus;
   $('#wz-strecke').classList.toggle('aktiv', zeichnet);
   $('#wz-zeichen').classList.toggle('aktiv', setzt);
+  $('#wz-flaeche').classList.toggle('aktiv', flaecht);
   // schmal weicht die Werkzeugleiste der Modusleiste – beide sitzen unten
-  document.body.classList.toggle('modus-aktiv', zeichnet || setzt);
+  document.body.classList.toggle('modus-aktiv', zeichnet || setzt || flaecht);
 
   const box = $('#zeichen-hinweis');
   box.hidden = !zeichnet;
@@ -163,9 +203,10 @@ $('#zeichen-hinweis').addEventListener('click', e => {
 // ---------------------------------------------------------------- Karten-Klick ohne Modus
 
 karte.on('click', e => {
-  if (sl.zeichenModus || zl.setzModus || bl.setzModus) return;
-  if (sl.auswahl || zl.auswahl || bl.auswahl) {
-    sl.auswahl = null; zl.auswahl = null; bl.auswahl = null;
+  if (e.originalEvent?._fbpVerbraucht) return;
+  if (sl.zeichenModus || zl.setzModus || bl.setzModus || fl.setzModus) return;
+  if (sl.auswahl || zl.auswahl || bl.auswahl || fl.auswahl) {
+    sl.auswahl = null; zl.auswahl = null; bl.auswahl = null; fl.auswahl = null;
     zeichneAlles(); return;
   }
   koordinatenPopup(e.latlng);
@@ -306,6 +347,7 @@ karte.on('moveend zoomend', () => {
 
 $('#btn-neue-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();
 $('#btn-neues-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
+$('#btn-neue-flaeche').onclick = () => fl.setzModus ? (fl.beendeSetzen(), modusAnzeigen()) : flaecheSetzenStarten();
 $('#btn-neuer-abschnitt').onclick = () => abschnittAnlegen();
 $('#btn-neue-zeichengruppe').onclick = () => zeichengruppeAnlegen();
 $('#btn-sammel-pdf').onclick = () => oeffneSammeldruck();
@@ -313,6 +355,7 @@ $('#btn-lagekarte').onclick = () => oeffneLagekarte();
 
 $('#wz-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();
 $('#wz-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
+$('#wz-flaeche').onclick = () => fl.setzModus ? (fl.beendeSetzen(), modusAnzeigen()) : flaecheSetzenStarten();
 $('#wz-suche').onclick = () => koordinatenSucheOeffnen();
 $('#wz-standort').onclick = standortZeigen;
 
@@ -618,6 +661,7 @@ document.addEventListener('keydown', e => {
     }
     if (sl.zeichenModus) return zeichnenBeenden(true);
     if (zl.setzModus) { zl.beendeSetzen(); return modusAnzeigen(); }
+    if (fl.setzModus) { fl.beendeSetzen(); return modusAnzeigen(); }
     if (bl.setzModus) { bl.beendeSetzen(); return hinweis('Ort setzen abgebrochen.'); }
     return;
   }
@@ -644,6 +688,7 @@ document.addEventListener('keydown', e => {
   const taste = e.key.toLowerCase();
   if (taste === 's') { e.preventDefault(); sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten(); }
   if (taste === 't') { e.preventDefault(); zeichenSetzenStarten(); }
+  if (taste === 'f') { e.preventDefault(); flaecheSetzenStarten(); }
   if (taste === 'k') { e.preventDefault(); koordinatenSucheOeffnen(); }
 });
 
@@ -727,6 +772,7 @@ window.addEventListener('afterprint', hinweisblattEntfernen);
 function zeichneAlles() {
   sl.zeichne();
   zl.zeichne();
+  fl.zeichne();
   bl.zeichne();
   gl.zeichne();
   zeichneSeite();
@@ -735,6 +781,7 @@ function zeichneAlles() {
 function zeichneSeite() {
   zeichneStreckenListe();
   zeichneZeichenListe();
+  zeichneFlaechenListe();
   zeichneBilderListe();
   zeichneProjektReiter();
 }
@@ -795,6 +842,7 @@ store.on((p, grund) => {
 
   sl.zeichne();
   zl.zeichne();
+  fl.zeichne();
   bl.zeichne();
   gl.zeichne();
   modusAnzeigen();
@@ -813,7 +861,8 @@ store.on((p, grund) => {
     if (grund === 'geladen' || grund === 'import') {
       karte.setView([p.ansicht.lat, p.ansicht.lng], p.ansicht.zoom);
       const alle = p.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng]))
-        .concat(p.zeichen.map(z => [z.lat, z.lng]));
+        .concat(p.zeichen.map(z => [z.lat, z.lng]))
+        .concat((p.flaechen || []).map(f => [f.lat, f.lng]));
       if (alle.length > 1) karte.fitBounds(L.latLngBounds(alle), { padding: [60, 60] });
     }
   }
@@ -854,7 +903,7 @@ function bilderAufraeumenWennRuhig() {
 setTimeout(bilderAufraeumenWennRuhig, 4000);
 
 // Zugriff aus der Browser-Konsole (Fehlersuche, eigene Auswertungen)
-window.fbp = { store, karte, sl, zl, bl, gl };
+window.fbp = { store, karte, sl, zl, fl, bl, gl };
 
 zeichneAlles();
 modusAnzeigen();

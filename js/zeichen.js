@@ -70,6 +70,10 @@ export class ZeichenLayer {
 
   _kartenKlick(e) {
     if (!this.setzModus) return;
+    /* Der Klick ist verbraucht: der allgemeine Klickhorcher der Karte kommt
+       nach dieser Ebene an die Reihe und nähme dem eben gesetzten Zeichen
+       sonst die Auswahl gleich wieder ab. */
+    if (e.originalEvent) e.originalEvent._fbpVerbraucht = true;
     const sym = this.setzModus;
     const zut = this.setzZuteilung || {};
     let neu;

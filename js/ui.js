@@ -5,6 +5,7 @@ import {
   neuesZeichen, punktartById, kabelById, neueStrecke, neuerEinsatzabschnitt, abschnittById,
   neueZeichengruppe, zeichengruppeById, zeichenInGruppe,
   streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar, bilderBelegung, bildmarkenAn,
+  flaechenIm, flaecheSichtbar,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
@@ -17,6 +18,9 @@ import {
   QUERUNGSARTEN, VS_GRADE, querungsartById, massText, dtg
 } from './vorschrift.js';
 import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
+import {
+  FLAECHENARTEN, AUFSTELLUNGEN, flaechenartById, flaechenVorschau, flaechenTitel, masseText
+} from './flaechen.js';
 import { bilderAufnehmen } from './bilder.js';
 import { bildUrl, miniUrl } from './bildspeicher.js';
 import * as io from './io.js';
@@ -322,23 +326,27 @@ function klammerBox(o) {
 function abschnittGruppe(ea, art) {
   const p = store.projekt;
   const zeichenliste = art === 'zeichen';
+  const flaechenliste = art === 'flaechen';
   const aid = ea ? ea.id : null;
-  const eintraege = zeichenliste ? zeichenIm(p, aid) : streckenIm(p, aid);
+  const eintraege = zeichenliste ? zeichenIm(p, aid)
+    : flaechenliste ? flaechenIm(p, aid) : streckenIm(p, aid);
 
   const box = klammerBox({
     hat: ea, art, ohneName: 'Ohne Einsatzabschnitt',
-    wert: zeichenliste
-      ? `${eintraege.length} Zeichen`
+    wert: zeichenliste ? `${eintraege.length} Zeichen`
+      : flaechenliste ? `${eintraege.length} ${eintraege.length === 1 ? 'Fläche' : 'Flächen'}`
       : `${eintraege.length} · ${formatLaenge(gesamtKennzahlen(eintraege).trasse)}`,
     oeffnenTitel: 'Einsatzabschnitt öffnen',
     oeffnen: () => einsatzabschnittDialog(aid),
     grund: 'strecke',
-    neu: () => zeichenliste ? zeichneZeichenListe() : zeichneStreckenListe(),
+    neu: () => zeichenliste ? zeichneZeichenListe() : flaechenliste ? zeichneFlaechenListe() : zeichneStreckenListe(),
     eintraege,
     leer: zeichenliste
       ? 'Kein Zeichen zugeteilt. Nicht zugeteilte Zeichen gehören ohnehin zu jedem Abschnitt.'
+      : flaechenliste
+      ? 'Keine Fläche zugeteilt. Nicht zugeteilte Flächen gehören ohnehin zu jedem Abschnitt.'
       : 'Keine Strecke zugeteilt. Die Zuteilung steht in der geöffneten Strecke oder unter „⋯“.',
-    karte: x => zeichenliste ? zeichenKarte(x) : streckenKarte(x),
+    karte: x => zeichenliste ? zeichenKarte(x) : flaechenliste ? flaecheKarte(x) : streckenKarte(x),
     neuKnopf: ea ? () => neuKnopf(ea, art) : null
   });
   if (ea) box.dataset.aid = ea.id;
@@ -371,6 +379,11 @@ function neuKnopf(ea, art) {
   if (art === 'zeichen') {
     return knopf('+ Zeichen in diesem Abschnitt', () => {
       symbolPalette(sym => ctx.zeichenSetzen(sym, { abschnitt: ea.id }));
+    }, 'klein ea-neu');
+  }
+  if (art === 'flaechen') {
+    return knopf('+ Fläche in diesem Abschnitt', () => {
+      flaechenPalette(vorlage => ctx.flaecheSetzen(vorlage, { abschnitt: ea.id }));
     }, 'klein ea-neu');
   }
   return knopf('+ Strecke in diesem Abschnitt', () => {
@@ -1026,11 +1039,12 @@ export function einsatzabschnittDialog(aid) {
   const ausgabeAuffrischen = () => {
     const strecken = streckenIm(store.projekt, aid);
     const zeichen = zeichenIm(store.projekt, aid);
+    const flaechen = flaechenIm(store.projekt, aid);
     pdf.disabled = !strecken.filter(s => s.punkte.length >= 2).length;
-    // Ein Abschnitt darf auch aus Zeichen allein bestehen – etwa als Lagebild
-    // eines Abschnitts, dessen Strecken erst noch geplant werden. Die
-    // Lagekarte gibt genau das aus, der Sammelauftrag braucht Trassen.
-    lage.disabled = datei.disabled = !strecken.length && !zeichen.length;
+    // Ein Abschnitt darf auch aus Zeichen oder Flächen allein bestehen – etwa
+    // als Lagebild eines Abschnitts, dessen Strecken erst noch geplant werden.
+    // Die Lagekarte gibt genau das aus, der Sammelauftrag braucht Trassen.
+    lage.disabled = datei.disabled = !strecken.length && !zeichen.length && !flaechen.length;
   };
 
   const zut = el('div', 'feldgruppe');
@@ -1047,6 +1061,15 @@ export function einsatzabschnittDialog(aid) {
     zz.appendChild(zuteilungsliste('zeichen', aid, zstand, ausgabeAuffrischen));
     zz.appendChild(zstand);
     box.appendChild(zz);
+  }
+
+  if ((p.flaechen || []).length) {
+    const ff = el('div', 'feldgruppe');
+    ff.appendChild(el('h3', 'gruppen-titel', 'Flächen zuteilen'));
+    const fstand = el('p', 'klein ea-stand');
+    ff.appendChild(zuteilungsliste('flaechen', aid, fstand, ausgabeAuffrischen));
+    ff.appendChild(fstand);
+    box.appendChild(ff);
   }
 
   const aus = el('div', 'feldgruppe');
@@ -1083,9 +1106,10 @@ export function einsatzabschnittDialog(aid) {
  *  'zeichengruppe' einer Zeichengruppe. */
 function zuteilungsliste(art, ziel, stand, danach = () => {}) {
   const p = store.projekt;
-  const zeichenliste = art !== 'strecken';
+  const flaechenliste = art === 'flaechen';
+  const zeichenliste = art !== 'strecken' && !flaechenliste;
   const nachGruppe = art === 'zeichengruppe';
-  const alle = zeichenliste ? p.zeichen : p.strecken;
+  const alle = zeichenliste ? p.zeichen : flaechenliste ? (p.flaechen || []) : p.strecken;
   const feldname = nachGruppe ? 'gruppe' : 'abschnitt';
   const klammern = nachGruppe ? (p.zeichengruppen || []) : (p.einsatzabschnitte || []);
   const bezeichner = nachGruppe ? 'Zeichengruppe' : 'Einsatzabschnitt';
@@ -1093,6 +1117,7 @@ function zuteilungsliste(art, ziel, stand, danach = () => {}) {
 
   const eigene = () => {
     if (nachGruppe) return zeichenInGruppe(store.projekt, ziel);
+    if (flaechenliste) return flaechenIm(store.projekt, ziel);
     return zeichenliste ? zeichenIm(store.projekt, ziel) : streckenIm(store.projekt, ziel);
   };
 
@@ -1105,11 +1130,12 @@ function zuteilungsliste(art, ziel, stand, danach = () => {}) {
         : 'Noch kein Zeichen in dieser Gruppe.';
       return;
     }
-    if (zeichenliste) {
+    if (zeichenliste || flaechenliste) {
+      const was = flaechenliste ? 'Flächen' : 'Zeichen';
       stand.innerHTML = eigen.length
-        ? `<b>${eigen.length}</b> zugeteilt. Nicht zugeteilte Zeichen erscheinen ohnehin
+        ? `<b>${eigen.length}</b> zugeteilt. Nicht zugeteilte ${was} erscheinen ohnehin
            in jedem Abschnitt.`
-        : 'Kein Zeichen zugeteilt – die nicht zugeteilten gelten für jeden Abschnitt.';
+        : `Keine ${was} zugeteilt – die nicht zugeteilten gelten für jeden Abschnitt.`;
       return;
     }
     const ges = gesamtKennzahlen(eigen);
@@ -1123,17 +1149,23 @@ function zuteilungsliste(art, ziel, stand, danach = () => {}) {
   if (!alle.length) {
     box.appendChild(el('p', 'klein',
       zeichenliste ? 'Diese Planung enthält noch kein taktisches Zeichen.'
-                   : 'Diese Planung enthält noch keine Strecke.'));
+        : flaechenliste ? 'Diese Planung enthält noch keine Fläche.'
+        : 'Diese Planung enthält noch keine Strecke.'));
     standSchreiben();
     return box;
   }
 
   for (const x of alle) {
-    const bezeichnung = zeichenliste ? (x.label || symbolById(x.symbol).name) : x.name;
+    const bezeichnung = zeichenliste ? (x.label || symbolById(x.symbol).name)
+      : flaechenliste ? flaechenTitel(x) : x.name;
     const zeile = el('div', 'ez-zeile');
     zeile.innerHTML = zeichenliste
       ? `<span class="mini-symbol">${symbolSVG({ symbol: x.symbol, breite: 24 })}</span>
          <span class="ez-name">${escapeHtml(bezeichnung)}</span>`
+      : flaechenliste
+      ? `<span class="mini-flaeche">${flaechenVorschau(x.art, 24)}</span>
+         <span class="ez-name">${escapeHtml(bezeichnung)}</span>
+         <span class="ez-wert">${masseText(x)}</span>`
       : `<span class="farbpunkt" style="--farbe:${x.farbe}"></span>
          <span class="ez-name">${escapeHtml(bezeichnung)}</span>
          <span class="ez-wert">${formatLaenge(kennzahlen(x).trasse)}</span>`;
@@ -1147,7 +1179,8 @@ function zuteilungsliste(art, ziel, stand, danach = () => {}) {
       wahl.appendChild(o);
     }
     wahl.onchange = () => {
-      store.aendern(() => { x[feldname] = wahl.value || null; }, zeichenliste ? 'zeichen' : 'strecke');
+      store.aendern(() => { x[feldname] = wahl.value || null; },
+        zeichenliste ? 'zeichen' : flaechenliste ? 'flaeche' : 'strecke');
       zeile.classList.toggle('eigen', (x[feldname] || null) === (ziel || null));
       standSchreiben();
       danach();
@@ -1193,15 +1226,17 @@ function klammerFarbwahl(hat, titel, merkmal) {
 function abschnittAufloesen(ea) {
   const strecken = streckenIm(store.projekt, ea.id).length;
   const zeichen = zeichenIm(store.projekt, ea.id).length;
-  const anzahl = strecken + zeichen;
+  const flaechen = flaechenIm(store.projekt, ea.id).length;
+  const anzahl = strecken + zeichen + flaechen;
   const teile = [];
   if (strecken) teile.push(`${strecken} ${strecken === 1 ? 'Strecke' : 'Strecken'}`);
   if (zeichen) teile.push(`${zeichen} Zeichen`);
+  if (flaechen) teile.push(`${flaechen} ${flaechen === 1 ? 'Fläche' : 'Flächen'}`);
   dialog({
     titel: 'Einsatzabschnitt auflösen',
     inhalt: `<p>Soll <b>${escapeHtml(ea.name)}</b> aufgelöst werden?</p>
       <p class="klein">${anzahl
-        ? `${teile.join(' und ')} ${anzahl === 1 ? 'bleibt' : 'bleiben'} erhalten und
+        ? `${teile.join(', ')} ${anzahl === 1 ? 'bleibt' : 'bleiben'} erhalten und
            ${anzahl === 1 ? 'gilt' : 'gelten'} danach als nicht zugeteilt.`
         : 'Diesem Abschnitt ist nichts zugeteilt.'}
         Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
@@ -1211,6 +1246,7 @@ function abschnittAufloesen(ea) {
           store.aendern(p => {
             p.strecken.forEach(s => { if (s.abschnitt === ea.id) s.abschnitt = null; });
             p.zeichen.forEach(z => { if (z.abschnitt === ea.id) z.abschnitt = null; });
+            (p.flaechen || []).forEach(f => { if (f.abschnitt === ea.id) f.abschnitt = null; });
             p.einsatzabschnitte = p.einsatzabschnitte.filter(a => a.id !== ea.id);
           }, 'strecke');
           hinweis('Einsatzabschnitt aufgelöst');
@@ -1563,6 +1599,215 @@ export function symbolPalette(beiWahl) {
   bauen();
 
   dialog({ titel: 'Taktisches Zeichen wählen', inhalt: box, breit: true, fuss: [{ text: 'Abbrechen' }] });
+}
+
+// ---------------------------------------------------------------- Flächen
+
+/* Eine Fläche sagt, wie viel Platz etwas braucht: der FüKomKW mit Ausschub,
+   der Anhänger mit Mast und Deichsel, das Zelt, der ganze Aufbauplatz. Sie
+   ist kein taktisches Zeichen – das sagt, *was* dort steht, die Fläche, wie
+   groß es ist – und wird deshalb maßstäblich gezeichnet. Zugeteilt wird sie
+   wie ein Zeichen dem Einsatzabschnitt; Zeichengruppen kennt sie nicht. */
+
+export function zeichneFlaechenListe() {
+  const p = store.projekt;
+  const liste = document.getElementById('flaechen-liste');
+  const summe = document.getElementById('flaechen-summe');
+  if (!liste) return;
+  liste.innerHTML = '';
+  const flaechen = p.flaechen || [];
+  const abschnitte = p.einsatzabschnitte || [];
+
+  const qm = flaechen.reduce((n, f) => n + f.breite * f.laenge, 0);
+  summe.innerHTML = flaechen.length
+    ? `<span><b>${flaechen.length}</b> ${flaechen.length === 1 ? 'Fläche' : 'Flächen'}</span>
+       <span>zusammen <b>${Math.round(qm).toLocaleString('de-DE')} m²</b></span>`
+    : '';
+
+  if (!flaechen.length) {
+    liste.appendChild(el('div', 'leer',
+      `<p><b>Noch keine Fläche eingezeichnet.</b></p>
+       <p>„Fläche einzeichnen“ wählen – FüKomKW, Anhänger FüLa, Zelt SG 300, den
+       Aufbauplatz der Führungsstelle oder eine freie Fläche mit eigenen Maßen –
+       und auf der Karte die Mitte anklicken. Die Fläche steht dann maßstäblich
+       da; am Griff über der Fläche lässt sie sich drehen, am Eintrag die Maße
+       anpassen.</p>
+       <p class="klein">Die Maße stammen aus dem Erkundungsblatt „Aufbauplatz
+       THW-FüSt“: jeweils aufgebaut, mit Ausschub, Mast und Deichsel.</p>`));
+    if (!abschnitte.length) return;
+  }
+
+  if (!abschnitte.length) {
+    for (const f of flaechen) liste.appendChild(flaecheKarte(f));
+    return;
+  }
+  for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea, 'flaechen'));
+  if (flaechenIm(p, null).length) liste.appendChild(abschnittGruppe(null, 'flaechen'));
+}
+
+function flaecheKarte(f) {
+  const gewaehlt = ctx.fl.auswahl === f.id;
+  const zustand = f.sichtbar === false ? ' verborgen'
+    : (flaecheSichtbar(store.projekt, f) ? '' : ' entzogen');
+  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') + zustand);
+
+  const kopf = el('header', 'eintrag-kopf');
+  kopf.innerHTML =
+    `<span class="mini-flaeche">${flaechenVorschau(f.art, 26)}</span>
+     <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(flaechenTitel(f))}</button>
+     <span class="eintrag-wert">${masseText(f)}</span>
+     ${augenKnopf(f.sichtbar !== false)}`;
+  kopf.onclick = () => ctx.fl.waehle(gewaehlt ? null : f.id);
+  kopf.querySelector('[data-akt="sichtbar"]').onclick = e => {
+    e.stopPropagation();
+    store.aendern(() => { f.sichtbar = f.sichtbar === false; }, 'flaeche');
+  };
+  karte.appendChild(kopf);
+
+  if (gewaehlt) karte.appendChild(flaecheFormular(f));
+  return karte;
+}
+
+function flaecheFormular(f) {
+  const koerper = el('div', 'eintrag-koerper');
+  const art = flaechenartById(f.art);
+  const g = el('div', 'feldgruppe');
+
+  g.appendChild(feld('Beschriftung auf der Karte', f.name, v => {
+    schreib(() => { f.name = v; });
+    ctx.fl.zeichne();
+  }, { platzhalter: art.kurz }));
+
+  /* Der Wechsel der Vorlage setzt die Maße auf ihre Werte – wer vom Zelt zum
+     Anhänger wechselt, will den Anhänger und nicht ein Zelt mit anderem Bild. */
+  g.appendChild(feld('Vorlage', f.art, v => {
+    const neu = flaechenartById(v);
+    store.aendern(() => { f.art = neu.id; f.breite = neu.breite; f.laenge = neu.laenge; }, 'flaeche');
+  }, { typ: 'select', werte: FLAECHENARTEN.map(a => [a.id, a.name]) }));
+
+  const masse = el('div', 'feld-paar');
+  masse.append(
+    feld('Breite', f.breite, v => {
+      if (!(v > 0)) return;
+      schreib(() => { f.breite = v; });
+      ctx.fl.zeichne();
+    }, { typ: 'number', min: 0.5, max: 500, step: 0.1, einheit: 'm' }),
+    feld('Länge', f.laenge, v => {
+      if (!(v > 0)) return;
+      schreib(() => { f.laenge = v; });
+      ctx.fl.zeichne();
+    }, { typ: 'number', min: 0.5, max: 500, step: 0.1, einheit: 'm' })
+  );
+  g.appendChild(masse);
+
+  g.appendChild(feld('Drehung', Math.round(f.drehung || 0), v => {
+    schreib(() => { f.drehung = ((Number(v) || 0) % 360 + 360) % 360; });
+    ctx.fl.zeichne();
+  }, { typ: 'number', min: 0, max: 359, step: 5, einheit: '°' }));
+
+  const farbe = el('div', 'feld');
+  farbe.appendChild(el('span', 'feld-titel', 'Farbe auf der Karte'));
+  const reihe = el('div', 'farbreihe');
+  for (const c of ['#003399', ...FARBEN]) {
+    const b = el('button', 'farbe' + (c === f.farbe ? ' aktiv' : ''));
+    b.style.setProperty('--farbe', c);
+    b.style.background = c;
+    b.title = c;
+    b.onclick = () => store.aendern(() => { f.farbe = c; }, 'flaeche');
+    reihe.appendChild(b);
+  }
+  farbe.appendChild(reihe);
+  g.appendChild(farbe);
+
+  if ((store.projekt.einsatzabschnitte || []).length) {
+    g.appendChild(feld('Einsatzabschnitt', f.abschnitt || '', v => {
+      store.aendern(() => { f.abschnitt = v || null; }, 'flaeche');
+    }, {
+      typ: 'select',
+      werte: [['', '— keinem zugeteilt (gilt für alle) —'],
+        ...store.projekt.einsatzabschnitte.map(a => [a.id, a.name])]
+    }));
+  }
+
+  g.appendChild(feld('Bemerkung', f.bemerkung, v => schreib(() => { f.bemerkung = v; }),
+    { typ: 'textarea', zeilen: 2 }));
+  koerper.appendChild(g);
+
+  const qm = Math.round(f.breite * f.laenge * 10) / 10;
+  koerper.appendChild(el('p', 'klein',
+    `${escapeHtml(art.name)} · ${qm.toLocaleString('de-DE')} m²` +
+    (f.verbund ? ' · Teil einer Aufstellung: wird mit den anderen Teilen verschoben und gedreht.' : '')));
+  koerper.appendChild(el('p', 'klein mono koord-hinweis',
+    `${toMGRS(f.lat, f.lng, 5)}<br>${toDDM(f.lat, f.lng)}`));
+
+  const tasten = el('div', 'tastenreihe');
+  tasten.append(
+    knopf('Auf Karte zeigen', () => {
+      ctx.karte.setView([f.lat, f.lng], Math.max(ctx.karte.getZoom(), 18));
+      ctx.zurKarte?.();
+    }),
+    knopf('Duplizieren', () => {
+      store.aendern(p => {
+        /* Die Kopie steht neben dem Original und gehört zu keinem Verbund –
+           sonst zöge sie beim nächsten Griff die Aufstellung mit. */
+        const k = { ...f, id: id(), verbund: null, lat: f.lat, lng: f.lng + 0.00006 * f.breite };
+        p.flaechen.push(k);
+        ctx.fl.auswahl = k.id;
+      }, 'flaeche');
+    })
+  );
+  if (f.verbund) {
+    tasten.append(knopf('Aus der Aufstellung lösen', () => {
+      store.aendern(() => { f.verbund = null; }, 'flaeche');
+      hinweis('Die Fläche steht jetzt für sich.');
+    }));
+  }
+  tasten.append(knopf('Löschen', () => {
+    store.aendern(p => { p.flaechen = p.flaechen.filter(x => x.id !== f.id); }, 'flaeche');
+    ctx.fl.auswahl = null;
+    hinweis('Fläche gelöscht');
+  }, 'gefahr'));
+  koerper.appendChild(tasten);
+  return koerper;
+}
+
+/**
+ * Auswahl der Vorlage: erst die beiden Aufstellungen des Erkundungsblatts,
+ * dann die einzelnen Flächen. `beiWahl` bekommt die gewählte Vorlage –
+ * eine Art (`{id, …}`) oder eine Aufstellung (`{teile, …}`).
+ */
+export function flaechenPalette(beiWahl) {
+  const box = el('div', 'fl-palette');
+  const gruppe = (titel, eintraege) => {
+    const teil = el('div');
+    teil.appendChild(el('h4', '', escapeHtml(titel)));
+    const reihe = el('div', 'fl-reihe');
+    for (const e of eintraege) {
+      const b = el('button', 'fl-knopf');
+      b.type = 'button';
+      b.innerHTML = `${e.bild}<span><b>${escapeHtml(e.name)}</b><small>${escapeHtml(e.masse)}</small></span>`;
+      b.onclick = () => { beiWahl(e.vorlage); schliesseDialog(); };
+      reihe.appendChild(b);
+    }
+    teil.appendChild(reihe);
+    box.appendChild(teil);
+  };
+
+  gruppe('Führungsstelle nach Erkundungsblatt', AUFSTELLUNGEN.map(a => ({
+    name: a.name, masse: a.masse, vorlage: a,
+    bild: `<span class="fl-bild fl-reihe-bild">${a.teile.map(t => flaechenVorschau(t.art, 40)).join('')}</span>`
+  })));
+  gruppe('Einzelne Flächen', FLAECHENARTEN.map(a => ({
+    name: a.name, masse: masseText(a), vorlage: a,
+    bild: `<span class="fl-bild">${flaechenVorschau(a.id, 44)}</span>`
+  })));
+  box.appendChild(el('p', 'klein',
+    `Die Fläche steht nach dem Klick auf die Karte maßstäblich dort; am Griff
+     über der Fläche lässt sie sich drehen, im Eintrag die Maße ändern. Eine
+     Aufstellung setzt ihre Teile Kante an Kante und hält sie beim Verschieben
+     und Drehen zusammen.`));
+
+  dialog({ titel: 'Fläche einzeichnen', inhalt: box, breit: true, fuss: [{ text: 'Abbrechen' }] });
 }
 
 // ---------------------------------------------------------------- Lichtbilder
@@ -2113,6 +2358,23 @@ export function hilfeDialog() {
            kein Druckdialog von sich aus: dort ein eigenes Papierformat mit den
            Kantenlängen anlegen, die der Hinweis am Druckknopf nennt. In der Regel wird
            die Lagekarte als PDF gespeichert und beim Plotter ausgegeben.</p>
+        <h3>Flächen und Aufbauplatz</h3>
+        <p>Im Reiter <b>Flächen</b> (<kbd>F</kbd>) lassen sich Grundrisse maßstäblich
+           einzeichnen: der <b>FüKomKW</b> und der <b>Anhänger FüLa</b> jeweils
+           aufgebaut, das <b>Zelt SG 300</b>, der <b>Aufbauplatz</b> der Führungsstelle
+           von etwa 25 × 15 m oder eine <b>freie Fläche</b> mit eigenen Maßen. Die
+           beiden Aufstellungen des Erkundungsblatts – Fahrzeug, ein oder zwei
+           Anhänger und Zelt – kommen mit einem Klick Kante an Kante auf die Karte.</p>
+        <ul class="tasten-liste">
+          <li>Der Klick auf die Karte setzt die <b>Mitte</b>; der Ring über der Fläche
+              <b>dreht</b> sie, im Eintrag stehen Drehung und Maße auch als Zahl.</li>
+          <li>Eine Aufstellung bleibt beim Verschieben und Drehen zusammen. <b>Aus der
+              Aufstellung lösen</b> gibt ein Teil frei, wenn der Platz es verlangt.</li>
+          <li>Herausgezoomt schrumpft die Fläche bis zu einer kleinen eckigen Marke –
+              sie bleibt findbar, wird aber nie größer gezeichnet, als sie ist.</li>
+          <li>Flächen erscheinen im Bauauftrag, auf der Lagekarte und in GeoJSON und
+              KML als Grundriss; wie Zeichen lassen sie sich Einsatzabschnitten zuteilen.</li>
+        </ul>
         <h3>Bilder vom Bauort</h3>
         <p>Lichtbilder, die ein Telefon aufgenommen hat, tragen ihren Aufnahmeort in sich.
            Im Reiter <b>Bilder</b> über <b>Bilder vom Gerät hinzufügen</b> auswählen – am
@@ -2161,7 +2423,7 @@ export function hilfeDialog() {
            <b>Datei → Planung als Datei sichern</b> verwenden – die Bilder gehen mit ein.</p>
         <h3>Tastatur</h3>
         <ul class="tasten-liste">
-          <li><kbd>S</kbd> neue Strecke · <kbd>T</kbd> taktisches Zeichen · <kbd>K</kbd> Koordinate</li>
+          <li><kbd>S</kbd> neue Strecke · <kbd>T</kbd> taktisches Zeichen · <kbd>F</kbd> Fläche · <kbd>K</kbd> Koordinate</li>
           <li><kbd>Strg</kbd>+<kbd>Z</kbd> rückgängig · <kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>Z</kbd> wiederholen</li>
           <li><kbd>Enter</kbd> Zeichnen beenden · <kbd>Esc</kbd> abbrechen</li>
           <li><kbd>Strg</kbd>+<kbd>P</kbd> Bauauftrag der gewählten Strecke öffnen</li>
