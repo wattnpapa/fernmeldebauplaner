@@ -31,6 +31,7 @@ import {
   leistungText as eirpLeistungText, massgebendText as eirpMassgebendText, abstandText
 } from './frequenzen.js';
 import { gelaendeurteil, meterText, urteilMerken, urteilLesen } from './funkrechnung.js';
+import { profilSVG, profilLegendeHTML, profilVorbehalt } from './hoehenprofil.js';
 import { peilungText, nordbezugText } from './missweisung.js';
 import { bilderAufnehmen } from './bilder.js';
 import { bildUrl, miniUrl } from './bildspeicher.js';
@@ -899,7 +900,14 @@ function richtfunkGruppe(s, frisch) {
     if (taste) { taste.disabled = true; taste.textContent = 'Höhen werden geholt …'; }
     profil(f.a, f.b, 25).then(punkte => {
       const mitte = f.hoehen.map(h => h.grund + (h.antenne || 0));
-      urteilMerken(s, gelaendeurteil(punkte, mitte[0], mitte[1], f.mhz));
+      /* Mitgespeichert werden auch die Stützpunkte selbst: das Blatt zeichnet
+         später dasselbe Profil, und es darf dafür nicht nachladen – der Druck
+         würde sonst auf einen Netzabruf warten und ein Bild ausgeben, das nie
+         jemand gesehen hat. */
+      urteilMerken(s, {
+        ...gelaendeurteil(punkte, mitte[0], mitte[1], f.mhz),
+        profil: punkte, mitten: mitte, mhz: f.mhz
+      });
       aktualisieren();
     }).catch(() => hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'))
       .finally(() => {
@@ -1107,7 +1115,21 @@ function gelaendeHTML(s) {
   const u = urteilLesen(s);
   if (u === undefined) return '';
   if (u === null) return '<p class="rf-gelaende">Das Gelände ließ sich nicht beurteilen.</p>';
-  return `<p class="rf-gelaende rf-${escapeHtml(u.urteil)}">${escapeHtml(u.satz)}</p>`;
+  return `${profilBildHTML(u)}
+    <p class="rf-gelaende rf-${escapeHtml(u.urteil)}">${escapeHtml(u.satz)}</p>`;
+}
+
+/* Das Bild steht über dem Satz, nicht darunter: es zeigt, worauf der Satz
+   beruht, und wer das Urteil liest, hat den Schnitt dann schon gesehen. Die
+   Engstelle wird nur eingezeichnet, wenn sie auch gemeldet wird – sonst stünde
+   eine Marke an der knappsten Stelle einer Strecke, die frei ist. */
+function profilBildHTML(u) {
+  if (!u.profil) return '';
+  const svg = profilSVG(u.profil, u.mitten[0], u.mitten[1], u.mhz,
+    { engste: u.urteil === 'verdeckt' ? u.engste : null });
+  if (!svg) return '';
+  return `<figure class="hp-bild">${svg}${profilLegendeHTML()}
+    <figcaption>${escapeHtml(profilVorbehalt(u.profil))}</figcaption></figure>`;
 }
 
 /* Die Vorschrift nennt für die Sprechreichweite eine Erfahrungsspanne, keinen

@@ -533,6 +533,40 @@ body.seite-zu .seite { display: none; }
   display: block; margin-top: 2px; font-size: 11px; color: var(--text-schwach);
 }
 
+/* -- Geländeschnitt. Vier Linienarten, die sich auch dann noch unterscheiden
+   müssen, wenn das Blatt schwarz-weiß aus dem Drucker kommt: durchgezogen die
+   Sichtlinie, gestrichelt die Fresnelzone, Strichpunkt das Freihaltemaß, kräftig
+   durchgezogen die Geländekante. Die Farben tragen auf dem Bildschirm zusätzlich,
+   im Druck tragen die Muster allein. */
+.hp-bild { margin: 8px 0 0; }
+.hp-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.hp-gitter { stroke: var(--linie); stroke-width: .12; }
+.hp-achse { font-size: 2.6px; fill: var(--text-schwach); }
+.hp-einheit { font-size: 2.4px; }
+.hp-fuss { font-size: 2.4px; fill: var(--text-schwach); }
+/* Deckende Füllungen mit `fill-opacity` – kein Verlauf. Ein
+   `repeating-linear-gradient` kam aus dem Druck schon einmal invertiert
+   heraus, ein Alphawert dagegen kommt sauber durch. */
+.hp-gelaende { fill: #4a3f35; fill-opacity: .18; stroke: none; }
+.hp-kante { fill: none; stroke: #6b5844; stroke-width: .6; }
+.hp-bauch { fill: var(--thw); fill-opacity: .10; stroke: none; }
+.hp-fresnel { fill: none; stroke: var(--thw); stroke-width: .3; stroke-dasharray: 2 1.4; }
+.hp-grenze { fill: none; stroke: var(--warnung); stroke-width: .45; stroke-dasharray: 4 1.4 1 1.4; }
+.hp-sicht { stroke: var(--thw); stroke-width: .5; }
+.hp-engstelle { stroke: var(--warnung); stroke-width: .4; stroke-dasharray: 1.4 1.2; }
+.hp-marke { font-size: 2.8px; font-weight: 700; fill: var(--warnung); }
+
+.hp-legende {
+  display: flex; flex-wrap: wrap; gap: 3px 12px; margin: 5px 0 0; padding: 0;
+  list-style: none; font-size: 11px; color: var(--text-schwach);
+}
+.hp-legende li { display: flex; align-items: center; gap: 5px; }
+.hp-probe { width: 24px; height: 4px; flex: none; overflow: visible; }
+.hp-probe line { stroke-width: 1.4; }
+.hp-bild figcaption {
+  margin-top: 5px; font-size: 11px; line-height: 1.45; color: var(--text-schwach);
+}
+
 /* -- Geländeurteil. Es spricht nur in eine Richtung, und die Farbe sagt das
    mit: „verdeckt“ ist ein Befund und trägt die Warnfarbe, „unauffällig“ bleibt
    grau. Ein grüner Haken stünde hier für eine Freigabe, die diese Höhendaten

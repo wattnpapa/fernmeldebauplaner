@@ -514,6 +514,70 @@ body.druckansicht { overflow: hidden; }
   font-weight: 700; padding-left: 1.6mm; border-left: 1pt solid #000;
 }
 
+/* -- Geländeschnitt
+
+   Die Höhe steht fest in Millimetern, die Breite folgt dem Satzspiegel: nur so
+   ist die Überhöhung eine gesetzte Zahl und kein Nebenprodukt des Formats. Sie
+   steht auch im Bild, weil man aus einem stark überhöhten Schnitt sonst eine
+   Steilwand liest, wo eine Kuppe ist.
+
+   Alle Zeichenmittel sind im Firefox-Druck geprüft: volle Füllung,
+   `fill-opacity`, `stroke-dasharray`, `<text>`. Kein Verlauf – der kam aus dem
+   macOS-Druckweg schon einmal invertiert heraus (siehe `.bl-freitext`). Und
+   kein CSS-`filter`: den lässt Firefox beim Drucken ganz weg. Die
+   Schwarz-Weiß-Fassung braucht deshalb keinen Filter, sondern eigene Regeln. */
+.bl-profil .hp-rahmen {
+  border: .5pt solid #999; border-radius: .8mm; padding: 1.6mm 1mm .6mm;
+}
+.bl-profil .hp-svg { width: 100%; height: 62mm; }
+.hp-gitter { stroke: #d8d8d8; stroke-width: .12; }
+.hp-achse, .hp-fuss { font-size: 2.6px; fill: #555; }
+.hp-fuss { font-size: 2.4px; }
+.hp-gelaende { fill: #4a3f35; fill-opacity: .18; stroke: none; }
+.hp-kante { fill: none; stroke: #6b5844; stroke-width: .6; }
+.hp-bauch { fill: #003399; fill-opacity: .10; stroke: none; }
+.hp-fresnel { fill: none; stroke: #003399; stroke-width: .3; stroke-dasharray: 2 1.4; }
+.hp-grenze { fill: none; stroke: #b26a00; stroke-width: .45; stroke-dasharray: 4 1.4 1 1.4; }
+.hp-sicht { stroke: #003399; stroke-width: .5; }
+.hp-engstelle { stroke: #b26a00; stroke-width: .4; stroke-dasharray: 1.4 1.2; }
+.hp-marke { font-size: 2.8px; font-weight: 700; fill: #b26a00; }
+
+/* Im Schwarz-Weiß-Druck unterscheiden die Strichmuster, nicht die Farben. Die
+   Fresnelfläche entfällt ganz: gegen die Geländefläche wäre eine zweite, noch
+   blassere Fläche nicht zu trennen. Das Freihaltemaß wird dafür kräftiger –
+   es ist die Linie, an der entschieden wird. */
+.hp-svg.hp-sw .hp-gelaende { fill: #000; fill-opacity: .13; }
+.hp-svg.hp-sw .hp-kante { stroke: #000; stroke-width: .7; }
+.hp-svg.hp-sw .hp-fresnel { stroke: #000; stroke-width: .28; stroke-dasharray: 2 1.6; }
+.hp-svg.hp-sw .hp-grenze { stroke: #000; stroke-width: .5; stroke-dasharray: 4 1.4 1 1.4; }
+.hp-svg.hp-sw .hp-sicht { stroke: #000; stroke-width: .55; }
+.hp-svg.hp-sw .hp-engstelle { stroke: #000; }
+.hp-svg.hp-sw .hp-marke { fill: #000; }
+.hp-svg.hp-sw .hp-achse, .hp-svg.hp-sw .hp-fuss { fill: #333; }
+
+.bl-profil .hp-legende {
+  display: flex; flex-wrap: wrap; gap: .8mm 5mm; margin: 1.6mm 0 0; padding: 0;
+  list-style: none; font-size: .78em; color: #444;
+}
+.bl-profil .hp-legende li { display: flex; align-items: center; gap: 1.4mm; }
+.bl-profil .hp-probe { width: 7mm; height: 1.4mm; flex: none; overflow: visible; }
+.bl-profil .hp-probe line { stroke-width: 1.2; }
+/* Im Schwarz-Weiß-Blatt trägt auch die Zeichenerklärung keine Farbe mehr –
+   dieselben Regeln wie für das Bild, damit Probe und Linie zusammenpassen. */
+.druck-doku.sw .hp-probe .hp-sicht { stroke: #000; }
+.druck-doku.sw .hp-probe .hp-fresnel { stroke: #000; }
+.druck-doku.sw .hp-probe .hp-grenze { stroke: #000; }
+.druck-doku.sw .hp-probe .hp-kante { stroke: #000; }
+.bl-profil .hp-vorbehalt {
+  margin: 1.4mm 0 0; font-size: .78em; line-height: 1.4; color: #555;
+}
+/* Das Urteil steht unter dem Bild und trägt links eine Kante, wenn es einen
+   Befund meldet – eine Farbfläche trüge im Schwarz-Weiß-Druck nichts. */
+.bl-profil .hp-urteil { margin: 1.2mm 0 0; font-size: .82em; line-height: 1.4; }
+.bl-profil .hp-verdeckt {
+  font-weight: 700; padding-left: 1.6mm; border-left: 1pt solid #000;
+}
+
 /* -- Prüfanweisung: die vier Handgriffe am Mast, in ihrer Reihenfolge.
 
    Nummeriert und nicht als Fließtext, weil am Aufbauplatz abgearbeitet und

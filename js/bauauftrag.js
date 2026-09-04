@@ -25,6 +25,7 @@ import {
 } from './richtfunk.js';
 import { peilungText, nordbezugText, MISSWEISUNG_QUELLE } from './missweisung.js';
 import { urteilLesen, meterText } from './funkrechnung.js';
+import { profilSVG, profilLegendeHTML, profilVorbehalt } from './hoehenprofil.js';
 import { hinweis } from './ui.js';
 import { VERSION } from './version.js';
 
@@ -68,6 +69,10 @@ const STANDARD_AUFTRAG = {
      der Teil des Auftrags, der am Mast abgearbeitet wird. Bei jeder anderen
      Leitungsart bleibt der Haken ohne Wirkung und ohne Anzeige. */
   pruefanweisung: true,
+  /* Der Geländeschnitt steht an, sobald er geholt wurde – er ist das eine
+     Bild, das die Freigabeentscheidung trägt. Ohne geholte Höhen erscheint er
+     nicht und der Haken bleibt ohne Wirkung. */
+  profil: true,
   material: true, hinweise: true, bemerkungen: true,
   /* Beides gehört auf den Bauauftrag und ist deshalb an. Abschalten lohnt
      erst, wenn die Trasse eng geführt ist: dann liegen Zahl an Zahl und
@@ -344,6 +349,7 @@ function oeffneDruckansicht(auftrag) {
       : gruppe('Datenblatt', [
           ...(auftrag.strecken.some(st => kabelById(st.kabeltyp).funk)
             ? [haken('Einzelauftrag Richtfunk', 'richtfunk', opt, neuAufbau),
+               haken('Geländeschnitt', 'profil', opt, neuAufbau),
                haken('Prüfanweisung Aufbau', 'pruefanweisung', opt, neuAufbau)] : []),
           haken('Punkttabelle', 'punkttabelle', opt, neuAufbau),
           haken('Querungstabelle', 'querungen', opt, neuAufbau),
@@ -1114,7 +1120,7 @@ function tabelleFliessen(fluss, rahmen, zeilenHTML) {
 /* Jeder Abschnitt des Datenblatts hängt an seinem eigenen Haken. Ist keiner
    gewählt, entsteht auch kein Datenblatt – dann bleibt nur das Kartenblatt. */
 function datenblattNoetig(opt, funk = false) {
-  return !!((funk && opt.richtfunk) || (funk && opt.pruefanweisung)
+  return !!((funk && opt.richtfunk) || (funk && opt.pruefanweisung) || (funk && opt.profil)
     || opt.punkttabelle || opt.querungen || opt.laengenverbindungen
     || opt.material || opt.hinweise || opt.bemerkungen || opt.unterschrift);
 }
@@ -1131,6 +1137,11 @@ function datenblaetter(ziel, p, strecke, k, opt) {
     tabelleFliessen(fluss, richtfunkRahmenHTML(p, strecke), richtfunkZeilenHTML(p, strecke));
     // Nur wenn noch etwas folgt – sonst bliebe ein leeres Blatt stehen.
     if (datenblattNoetig(opt)) fluss.neuBlatt();
+  }
+
+  if (opt.profil && k.kabel.funk) {
+    const bild = profilAbschnittHTML(strecke, opt);
+    if (bild) fluss.setze(elementAus(bild));
   }
 
   if (opt.punkttabelle) tabelleFliessen(fluss, punkttabelleRahmenHTML, punktzeilenHTML(strecke));
@@ -1685,6 +1696,32 @@ const PRUEFSCHRITTE = [
     'Streckendämpfung gegenprüfen. Betriebsbereitschaft mit Datum-Zeit-Gruppe an die ' +
     'Führungsstelle melden.']
 ];
+
+/* Der Geländeschnitt als eigener Abschnitt und nicht als Zeile im Vordruck:
+   ein Bild in einer Formularzeile wäre entweder briefmarkengroß oder spränge
+   die Spaltenbreite. Er steht gleich hinter dem Einzelauftrag, weil er dieselbe
+   Frage beantwortet wie dessen Zeile „Gelände zwischen den Plätzen“ – dort der
+   Satz, hier das Bild dazu.
+
+   Gedruckt wird nur, was der Planer auch geholt hat. Hier nachzuladen wäre
+   falsch: der Druck wartete auf einen Netzabruf, und auf dem Auftrag stünde
+   ein Bild, das nie jemand gesehen hat. */
+function profilAbschnittHTML(s, opt) {
+  const u = urteilLesen(s);
+  if (!u || !u.profil) return '';
+  const svg = profilSVG(u.profil, u.mitten[0], u.mitten[1], u.mhz, {
+    sw: opt.farbe === 'sw',
+    engste: u.urteil === 'verdeckt' ? u.engste : null
+  });
+  if (!svg) return '';
+  return `<section class="bl-abschnitt bl-profil">
+    <h2>Geländeschnitt zwischen den Aufbauplätzen</h2>
+    <div class="hp-rahmen">${svg}</div>
+    ${profilLegendeHTML()}
+    <p class="hp-vorbehalt">${escapeHtml(profilVorbehalt(u.profil))}</p>
+    <p class="hp-urteil hp-${escapeHtml(u.urteil)}">${escapeHtml(u.satz)}</p>
+  </section>`;
+}
 
 function pruefanweisungHTML() {
   return `<section class="bl-abschnitt bl-pruefanweisung">
