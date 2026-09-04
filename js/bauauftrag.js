@@ -73,7 +73,8 @@ const STANDARD_AUFTRAG = {
 const STANDARD_LAGE = {
   format: 'a1', ausrichtung: 'quer', farbe: 'farbe',
   freiBreite: 900, freiHoehe: 600,
-  zeichen: true, flaechen: true, beschriftung: true, gitter: true, punktnummern: false, zoomVersatz: 0,
+  strecken: true, zeichen: true, flaechen: true, beschriftung: true, gitter: true,
+  punktnummern: false, zoomVersatz: 0,
   /* Jeder Streifen um die Karte lässt sich einzeln abräumen – alle fünf aus
      ergibt das nackte Kartenblatt, auf dem nur noch die Lage steht. */
   kopf: true, stammdaten: true, legende: true, kennzahlen: true, fuss: true
@@ -288,14 +289,18 @@ function oeffneDruckansicht(auftrag) {
     ]),
     lage
       ? gruppe('Karte', [
+          /* Ohne die Strecken bestimmen Zeichen und Flächen den Ausschnitt
+             allein – so entsteht das Kartenblatt eines Platzes, ohne dass die
+             Trassen den Ausschnitt aufziehen. */
+          haken('Strecken', 'strecken', opt, neuAufbau),
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
           haken('Flächen', 'flaechen', opt, neuAufbau),
           /* Nimmt Name und Trassenlänge zusammen von der Karte – beide stehen
              in einem Schild, und wer die Namen loswerden will, will kein
              Schild mit einer nackten Zahl darin behalten. */
-          haken('Streckenbeschriftung', 'beschriftung', opt, neuAufbau),
+          haken('Streckenbeschriftung', 'beschriftung', opt, neuAufbau, () => !opt.strecken),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
-          haken('Trassenpunkte', 'punktnummern', opt, neuAufbau),
+          haken('Trassenpunkte', 'punktnummern', opt, neuAufbau, () => !opt.strecken),
           zoomFeld(opt, neuAufbau)
         ])
       : gruppe('Kartenblatt', [
@@ -318,7 +323,7 @@ function oeffneDruckansicht(auftrag) {
       ? gruppe('Blattrand', [
           haken('Titelzeile', 'kopf', opt, neuAufbau),
           haken('Kopfdaten', 'stammdaten', opt, neuAufbau),
-          haken('Zeichenerklärung', 'legende', opt, neuAufbau),
+          haken('Zeichenerklärung', 'legende', opt, neuAufbau, () => !opt.strecken),
           haken('Kennzahlen', 'kennzahlen', opt, neuAufbau),
           haken('Fußzeile', 'fuss', opt, neuAufbau)
         ])
@@ -365,6 +370,7 @@ function oeffneDruckansicht(auftrag) {
 
   function neuAufbau() {
     speicherOptionen(profil, opt);
+    felder.querySelectorAll('.ds-haken').forEach(h => h.aktualisieren && h.aktualisieren());
     formatHinweis.textContent = druckHinweisText(opt);
     if (masseFeld) {
       masseFeld.hidden = opt.format !== 'frei';
@@ -417,13 +423,26 @@ function auswahl(titel, schluessel, werte, opt, aendern) {
   return el;
 }
 
-function haken(titel, schluessel, opt, aendern) {
+/* `sperre` für Haken, die von einem anderen abhängen: die Beschriftung einer
+   Strecke ist nicht zu haben, wenn die Strecke selbst nicht auf dem Blatt
+   steht. Die Bedingung kommt als Funktion, weil die Leiste nur einmal gebaut
+   wird und der Zustand sich bei jedem Umschalten ändert – `aktualisieren`
+   holt ihn nach. Der gespeicherte Wert bleibt dabei stehen und gilt wieder,
+   sobald der Oberhaken zurückkommt. */
+function haken(titel, schluessel, opt, aendern, sperre = null) {
   const el = document.createElement('label');
   el.className = 'ds-feld ds-haken';
   const cb = document.createElement('input');
-  cb.type = 'checkbox'; cb.checked = !!opt[schluessel];
+  cb.type = 'checkbox';
   cb.onchange = () => { opt[schluessel] = cb.checked; aendern(); };
   el.append(cb, Object.assign(document.createElement('span'), { textContent: titel }));
+  el.aktualisieren = () => {
+    const gesperrt = !!(sperre && sperre());
+    el.classList.toggle('gesperrt', gesperrt);
+    cb.disabled = gesperrt;
+    cb.checked = !!opt[schluessel] && !gesperrt;
+  };
+  el.aktualisieren();
   return el;
 }
 
@@ -934,14 +953,17 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.25 });
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
 
-  const sl = new StreckenLayer(karte, {
-    interaktiv: false, sw, strichFaktor: strichFaktor(mass),
-    nurStrecken: auftrag.strecken.map(s => s.id)
-  });
-  sl.zeichne({
-    ...p.optionen, teillaengen: false,
-    gesamtlaenge: !!opt.beschriftung, punktnummern: !!opt.punktnummern
-  });
+  const zeigeStrecken = opt.strecken !== false;
+  if (zeigeStrecken) {
+    const sl = new StreckenLayer(karte, {
+      interaktiv: false, sw, strichFaktor: strichFaktor(mass),
+      nurStrecken: auftrag.strecken.map(s => s.id)
+    });
+    sl.zeichne({
+      ...p.optionen, teillaengen: false,
+      gesamtlaenge: !!opt.beschriftung, punktnummern: !!opt.punktnummern
+    });
+  }
 
   const zeichen = opt.zeichen ? lageZeichen(auftrag) : [];
   if (opt.zeichen) {
@@ -957,7 +979,7 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   /* Die Flächen zählen mit ihren Ecken, nicht nur mit der Mitte: ein
      Aufbauplatz von 25 m am Blattrand darf nicht halb abgeschnitten sein. */
   const ecken = [
-    ...auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng])),
+    ...(zeigeStrecken ? auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng])) : []),
     ...zeichen.map(z => [z.lat, z.lng]),
     ...flaechen.flatMap(flaechenEcken)
   ];
@@ -1265,6 +1287,9 @@ function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '',
  * deshalb mit dem Blatt.
  */
 function lageLegendeHTML(auftrag, opt, sw, mass) {
+  /* Erklärt wird, was auf dem Blatt steht: ohne Strecken bliebe eine Liste
+     von Farben und Punktarten übrig, die auf der Karte nicht vorkommen. */
+  if (opt.strecken === false) return '';
   const alle = auftrag.strecken.flatMap(s => s.punkte);
   const arten = [...new Set(alle.map(x => x.art))].filter(a => a !== 'punkt');
   const punkte = arten.map(a => {

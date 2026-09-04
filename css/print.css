@@ -51,6 +51,9 @@ body.druckansicht { overflow: hidden; }
 .ds-feld[hidden] { display: none; }
 .ds-haken { cursor: pointer; }
 .ds-haken input { accent-color: var(--thw); }
+/* Abhängiger Haken – bleibt sichtbar, damit die Leiste nicht springt, sagt
+   aber durch Blässe, dass er erst mit seinem Oberhaken wieder greift. */
+.ds-haken.gesperrt { cursor: default; opacity: .45; }
 .ds-zoomtasten { display: flex; align-items: center; gap: 4px; }
 
 /* Freies Blattmaß: zwei Zahlen mit dem Malzeichen dazwischen, wie ein
