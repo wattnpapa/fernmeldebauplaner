@@ -114,6 +114,81 @@ async function kachelnFuer(punkte) {
   return daten;
 }
 
+// ---------------------------------------------------------------- Rasterblock
+
+/* Kantenlänge einer Kachelzelle in Metern. Web-Mercator staucht mit der Breite,
+   deshalb hängt der Wert am Ort: auf 48° sind es rund 25,8 m, auf 54° rund 22,2 m.
+   Genau diese Zahl ist der Maßstab, in dem eine Sichtprüfung rechnet – sie steht
+   deshalb hier und wird nicht beim Aufrufer noch einmal hergeleitet. */
+export function meterJePixel(lat) {
+  return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, ZOOM);
+}
+
+/* Umkehrung von weltPixel – der Rasterblock muss als Bild auf die Karte gelegt
+   werden, und Leaflet will dafür geografische Ecken, keine Pixel. */
+function weltPixelZurueck(x, y) {
+  const n = Math.pow(2, ZOOM) * KANTE;
+  const lng = x / n * 360 - 180;
+  const k = Math.PI - 2 * Math.PI * y / n;
+  const lat = 180 / Math.PI * Math.atan(0.5 * (Math.exp(k) - Math.exp(-k)));
+  return { lat, lng };
+}
+
+/**
+ * Zusammenhängendes Höhenraster um einen Punkt, Kantenlänge `meterJePixel(lat)`.
+ * Liefert `{ werte, spalten, zeilen, mitteX, mitteY, meterJeZelle, ecken, fehlend }`
+ * mit `werte` als Float32Array in Zeilenordnung; fehlende Höhen stehen als NaN.
+ * `ecken` sind Süd-West und Nord-Ost des Blocks für die Kartenüberlagerung.
+ *
+ * Anders als profil() wird hier nicht interpoliert, sondern die Kachelzelle
+ * genommen, wie sie ist: eine Sichtprüfung liest jede Zelle einmal, und eine
+ * bilineare Glättung würde Kuppen abtragen – gerade die entscheiden.
+ */
+export async function raster(mitte, radiusM) {
+  const mjp = meterJePixel(mitte.lat);
+  const r = Math.ceil(radiusM / mjp);
+  const { x: mx, y: my } = weltPixel(mitte.lat, mitte.lng);
+  const x0 = Math.round(mx) - r, y0 = Math.round(my) - r;
+  const spalten = 2 * r + 1, zeilen = 2 * r + 1;
+
+  const noetig = new Map();
+  for (let ky = Math.floor(y0 / KANTE); ky <= Math.floor((y0 + zeilen - 1) / KANTE); ky++) {
+    for (let kx = Math.floor(x0 / KANTE); kx <= Math.floor((x0 + spalten - 1) / KANTE); kx++) {
+      noetig.set(kachelSchluessel(kx, ky), [kx, ky]);
+    }
+  }
+  const daten = new Map();
+  await Promise.all([...noetig].map(async ([schluessel, [kx, ky]]) => {
+    daten.set(schluessel, await kachelHolen(kx, ky));
+  }));
+
+  const werte = new Float32Array(spalten * zeilen);
+  let fehlend = 0;
+  for (let j = 0; j < zeilen; j++) {
+    for (let i = 0; i < spalten; i++) {
+      const h = pixelWert(daten, x0 + i, y0 + j);
+      if (h === null) fehlend++;
+      werte[j * spalten + i] = h === null ? NaN : h;
+    }
+  }
+  return {
+    werte, spalten, zeilen,
+    mitteX: r, mitteY: r,
+    meterJeZelle: mjp,
+    fehlend,
+    ecken: [weltPixelZurueck(x0, y0 + zeilen), weltPixelZurueck(x0 + spalten, y0)]
+  };
+}
+
+/* Wie viele Kacheln ein Umkreis kostet – der Aufrufer soll vor dem Abruf sagen
+   können, was er anstößt, statt den Nutzer in eine unbestimmte Wartezeit zu
+   schicken. Der Cache oben hält 64 Kacheln; darüber verdrängt sich der Block
+   selbst und ein zweiter Abruf lädt neu. */
+export function kachelbedarf(lat, radiusM) {
+  const r = Math.ceil(radiusM / meterJePixel(lat));
+  return Math.pow(Math.ceil((2 * r + 1) / KANTE) + 1, 2);
+}
+
 // ---------------------------------------------------------------- Öffentlich
 
 /** Geländehöhe in Metern über NN, `null` wenn keine Kachel zu bekommen ist. */

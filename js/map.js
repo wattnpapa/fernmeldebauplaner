@@ -212,6 +212,11 @@ export function erstelleKarte(el, ansicht = {}) {
     preferCanvas: false
   });
 
+  /* Der Geländeschatten liegt unter allem, was geplant wird: er ist
+     Kartengrundlage, kein Planungsinhalt. Läge er darüber, verdeckte er
+     ausgerechnet die Strecken, deren Machbarkeit er beurteilen soll. */
+  karte.createPane('fbp-schatten').style.zIndex = 405;
+  karte.getPane('fbp-schatten').style.pointerEvents = 'none';
   /* Die Flächen liegen unter den Strecken: sie sind Grundriss, die Trasse
      läuft darüber – ein Kabel, das in den Anhänger führt, endet auf ihm. */
   karte.createPane('fbp-flaechen').style.zIndex = 410;
@@ -305,4 +310,46 @@ export function warteAufKacheln(karte, timeoutMs = 8000) {
     layer.on('load', beiLoad);
     setTimeout(ende, timeoutMs);
   }))).then(() => undefined);
+}
+
+// ---------------------------------------------------------------- Geländeschatten
+
+/* Der Schatten kommt als Bild auf die Karte, nicht als Polygonzug: das Raster
+   hat je nach Umkreis über hunderttausend Zellen, und eine Konturverfolgung
+   daraus wären Zehntausende Pfadpunkte, die Leaflet bei jedem Verschieben neu
+   zeichnen müsste. Ein Bild wird einmal erzeugt und danach nur noch skaliert.
+
+   Gezeichnet wird ohne Glättung (`imageRendering: pixelated`): die harte
+   Rasterkante ist ehrlich – sie zeigt, in welcher Körnung gerechnet wurde.
+   Eine weiche Kante täuschte eine Genauigkeit vor, die 25 m Zellenmaß nicht
+   haben.
+
+   Die Farbe ist ein neutrales Grau und kein Rot: Rot ist in diesem Werkzeug
+   die Farbe der Warnung, und der Geländeschatten warnt nicht, er verschattet.
+   Die Deckung liegt bei gut vier Zehnteln: genug, um die Fläche auf einen
+   Blick zu sehen, wenig genug, um über dem Luftbild noch Waldrand und
+   Bebauung zu erkennen – und die muss man erkennen, weil sie in der Rechnung
+   gerade fehlen. Die Durchsicht steckt im Bild selbst und nicht in einem
+   CSS-Filter: Firefox gibt Seitenbereiche mit `filter` beim Drucken gar nicht
+   aus (siehe `grauVariante`), ein Bild mit Alphakanal dagegen schon. */
+export function zeichneSchatten(karte, e) {
+  const c = document.createElement('canvas');
+  c.width = e.spalten; c.height = e.zeilen;
+  const ctx = c.getContext('2d');
+  const bild = ctx.createImageData(e.spalten, e.zeilen);
+  for (let i = 0; i < e.schatten.length; i++) {
+    const j = i * 4;
+    if (e.schatten[i]) {
+      bild.data[j] = 40; bild.data[j + 1] = 44; bild.data[j + 2] = 52; bild.data[j + 3] = 105;
+    }
+  }
+  ctx.putImageData(bild, 0, 0);
+  const [sw, no] = e.ecken;
+  const ebene = L.imageOverlay(c.toDataURL('image/png'),
+    [[sw.lat, sw.lng], [no.lat, no.lng]],
+    { pane: 'fbp-schatten', interactive: false, alt: 'Geländeschatten' });
+  ebene.addTo(karte);
+  const el = ebene.getElement();
+  if (el) el.style.imageRendering = 'pixelated';
+  return ebene;
 }
