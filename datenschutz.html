@@ -44,8 +44,9 @@
   <div class="kasten">
     <p>
       <b>Das Wesentliche vorweg:</b> Deine Planungen verlassen dein Gerät nicht – es gibt
-      keinen Server, auf den sie hochgeladen würden. Nach außen gehen nur zwei Dinge: die
-      <b>Kartenkacheln</b>, die dein Browser bei den Kartenanbietern abruft (Abschnitt 4),
+      keinen Server, auf den sie hochgeladen würden. Nach außen gehen nur drei Dinge: die
+      <b>Kartenkacheln</b>, die dein Browser bei den Kartenanbietern abruft, die
+      <b>Höhenkacheln</b> für Geländehöhe und Geländeprüfung (beides Abschnitt 4),
       und ein <b>Zählimpuls</b> beim Aufruf der Anwendung (Abschnitt 6), dem du unten
       widersprechen kannst.
     </p>
@@ -150,7 +151,8 @@
             www.geoproxy.geoportal-th.de</td>
         </tr>
         <tr>
-          <td>Höhenkacheln (Höhe in der Statusleiste)</td>
+          <td>Höhenkacheln (Höhenanzeige, Geländehöhe der Aufbauplätze,
+              Höhenprofil und Geländeschatten einer Funkstrecke)</td>
           <td>Amazon Web Services, Terrain Tiles auf AWS Open Data (USA)</td>
           <td class="mono">s3.amazonaws.com</td>
         </tr>
@@ -164,8 +166,11 @@
     US-Anbieter. Wer das vermeiden will, arbeitet mit den Ebenen des BKG – sie sind
     voreingestellt, das Luftbild wird nur auf ausdrückliche Auswahl geladen. Die
     Höhenkacheln kommen ebenfalls von einem US-Anbieter und werden bei jeder Kartenebene
-    geladen, sobald die Statusleiste eine Höhe anzeigt; sie verraten wie die Kartenkacheln
-    nur den Ausschnitt, nicht die genaue Position. Es gelten die
+    geladen: fortlaufend, sobald die Statusleiste eine Höhe anzeigt, und auf ausdrücklichen
+    Knopfdruck für die Geländehöhe der Aufbauplätze, das Höhenprofil und den Geländeschatten
+    einer Funkstrecke. Sie verraten wie die Kartenkacheln nur den Ausschnitt, nicht die
+    genaue Position – eine Kachel deckt auf unserer Breite rund 6 km ab und ist damit
+    gröber als jede Kartenkachel, die im selben Ausschnitt ohnehin geladen wird. Es gelten die
     Nutzungs- und Datenschutzbedingungen des jeweiligen Anbieters.
   </p>
 

@@ -406,13 +406,18 @@ Lichtbilder in der IndexedDB-Datenbank `fbp.bilder`. Nichts davon wird übertrag
 auch nicht der Aufnahmeort in den Bildern. Es gibt keinen Server, kein Konto und keine
 Cookies.
 
-Zwei Verbindungen gehen trotzdem nach außen, beide ohne Planungsinhalte:
+Drei Verbindungen gehen trotzdem nach außen, alle ohne Planungsinhalte:
 
 - **Kartenkacheln** holt der Browser unmittelbar bei den Anbietern (BKG, OpenStreetMap,
   OpenTopoMap, Esri, Landesvermessungen). Sie sehen dabei IP-Adresse und angeforderten
   Kartenausschnitt – also die Gegend, in der geplant wird. Voreingestellt sind die Ebenen
   des BKG; die Ebenen von Esri (USA) und die Orthophotos der Länder werden nur auf
   ausdrückliche Auswahl geladen.
+- **Höhenkacheln** für die Geländehöhe, das Höhenprofil einer Funkstrecke und den
+  Geländeschatten holt der Browser bei AWS Open Data (USA). Eine Kachel deckt auf
+  unserer Breite rund 6 km ab – der Anbieter sieht damit einen gröberen Ausschnitt,
+  als die Karte darüber ohnehin verrät, nicht die abgefragte Stelle.
+
 - **Reichweitenmessung** mit [GoatCounter](https://www.goatcounter.com/): ein anonymer
   Zählimpuls beim Aufruf der Anwendung, ohne Cookie und ohne geräteübergreifende
   Kennung. Widerspruch über *Nicht mitzählen* auf `datenschutz.html`; das setzt

@@ -20,7 +20,7 @@ keinen Installationsschritt ein.
 in `href`, `src` oder `import`.
 
 **Die Daten bleiben auf dem Gerät.** Kein Server, kein Konto, keine Cookies.
-Nach außen gehen ausschließlich Kartenkacheln und der GoatCounter-Zählimpuls.
+Nach außen gehen ausschließlich Karten- und Höhenkacheln sowie der GoatCounter-Zählimpuls.
 Eine Änderung, die etwas anderes überträgt, ist ein Bruch mit der Zusage in
 `datenschutz.html` und braucht eine ausdrückliche Entscheidung.
 
