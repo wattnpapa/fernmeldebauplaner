@@ -98,4 +98,12 @@ Es gelten deren Nutzungsbedingungen:
   in Deutschland aus dem EU-DEM des Copernicus-Programms (© Europäische Union),
   Quellenangabe der Höhendaten: https://github.com/tilezen/joerd/blob/master/docs/attribution.md
 
+- **World Magnetic Model 2025** (Missweisung, `js/missweisung.js`) – Modellkoeffizienten
+  von NOAA/NCEI und dem British Geological Survey, erstellt im Auftrag der US-amerikanischen
+  NGA und des britischen Defence Geographic Centre. NOAA/NCEI stellt Modell und Software
+  gemeinfrei zur Verfügung („in the public domain and not licensed or under copyright“).
+  Die Koeffizienten liegen als Zahlentabelle im Modul und nicht unter `vendor/`: es ist
+  kein Fremdcode, sondern der Datenteil einer Formel. Gültig 2025,0 bis 2030,0 – danach
+  ist der Satz auszutauschen. https://www.ncei.noaa.gov/products/world-magnetic-model
+
 Die Quellenangabe wird auf jedem Bauauftrag im Blattfuß mitgedruckt.

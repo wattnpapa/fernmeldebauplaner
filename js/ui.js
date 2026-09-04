@@ -23,13 +23,21 @@ import {
 } from './flaechen.js';
 import {
   FREQUENZBAENDER, MIMO_ARTEN, POLARISATIONEN, MODULATIONEN,
-  bandById, gueltigeBandbreite, datenrateText, funkstrecke, azimutText
+  bandById, mimoById, gueltigeBandbreite, datenrateText, funkstrecke, azimutText
 } from './richtfunk.js';
-import { hoeheAn } from './hoehe.js';
+import { hoeheAn, profil } from './hoehe.js';
+import {
+  eirpPruefung, bandById as regelBandById,
+  leistungText as eirpLeistungText, massgebendText as eirpMassgebendText, abstandText
+} from './frequenzen.js';
+import { gelaendeurteil, meterText, urteilMerken, urteilLesen } from './funkrechnung.js';
+import { peilungText, nordbezugText } from './missweisung.js';
 import { bilderAufnehmen } from './bilder.js';
 import { bildUrl, miniUrl } from './bildspeicher.js';
 import * as io from './io.js';
 import { oeffneBauauftrag, oeffneSammeldruck, oeffneLagekarte } from './bauauftrag.js';
+import { gelaendeschatten, schattenText, UMKREIS_STANDARD } from './gelaendeschatten.js';
+import { zeichneSchatten } from './map.js';
 import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
@@ -143,18 +151,29 @@ function feld(titel, wert, beiAenderung, o = {}) {
 /** Änderung aus einem Formular: kein Neuaufbau der Seitenleiste */
 let _debounceTimer = null;
 let _debounceQueue = [];
-function debounceAendern(fn) {
+let _debounceDanach = [];
+/* Die Eingabe wird gesammelt und erst nach 100 ms geschrieben – sonst liefe je
+   Tastendruck ein Undo-Schritt auf. Was aus ihr gerechnet wird, darf deshalb
+   nicht sofort nachziehen: zum Zeitpunkt des Tastendrucks steht der neue Wert
+   noch nirgends, und die Anzeige zeigte den vorherigen. Genau daran hinkten
+   die abgeleiteten Felder bisher um eine Eingabe hinterher. `danach` läuft
+   deshalb erst, wenn geschrieben ist. */
+function debounceAendern(fn, danach) {
   _debounceQueue.push(fn);
+  if (danach) _debounceDanach.push(danach);
   if (_debounceTimer) clearTimeout(_debounceTimer);
   _debounceTimer = setTimeout(() => {
     const combined = () => { _debounceQueue.forEach(f => f()); };
     store.aendern(combined, 'formular');
+    const nachlauf = _debounceDanach;
     _debounceQueue = [];
+    _debounceDanach = [];
     _debounceTimer = null;
+    nachlauf.forEach(f => f());
   }, 100);
 }
-function schreib(fn) {
-  debounceAendern(fn);
+function schreib(fn, danach) {
+  debounceAendern(fn, danach);
 }
 
 /* Eine Sicherungsdatei wird erst zusammengestellt und dann heruntergeladen –
@@ -763,15 +782,33 @@ function stromErgebnisHTML(a) {
    Geländehöhe ist der Zwitter – sie käme aus derselben Quelle wie das
    Höhenprofil, muss aber im Auftrag festgeschrieben stehen. Sie wird deshalb
    auf Knopfdruck geholt und dann als Zahl gehalten. */
+/* Es gibt immer höchstens einen Geländeschatten auf der Karte. Zwei
+   übereinander wären nicht mehr auseinanderzuhalten – beide sind dasselbe
+   Grau –, und der Satz daneben könnte nur für einen von beiden gelten. Der
+   Zustand steht deshalb hier und nicht in der Gruppe: er muss auch dann noch
+   erreichbar sein, wenn die Gruppe für eine andere Strecke neu gebaut wird. */
+let schattenEbene = null, schattenBefund = null;
+
+function schattenWeg() {
+  if (schattenEbene && ctx && ctx.karte) ctx.karte.removeLayer(schattenEbene);
+  schattenEbene = null; schattenBefund = null;
+}
+
+function schattenHTML() {
+  if (!schattenBefund) return '';
+  return `<p class="rf-gelaende">${escapeHtml(schattenText(schattenBefund))}</p>`;
+}
+
 function richtfunkGruppe(s, frisch) {
   const gruppe = el('div', 'feldgruppe');
+  schattenWeg();   // beim Öffnen einer anderen Strecke bleibt kein alter stehen
   gruppe.appendChild(el('h3', 'gruppen-titel', 'Richtfunkstrecke (WLAN)'));
 
   const v = s.richtfunk;
   const ergebnis = el('div', 'rf-ergebnis');
   const spalten = el('div', 'rf-spalten');
   const bandbreiteFeld = () => feld('Bandbreite', v.bandbreite,
-    w => { schreib(() => { v.bandbreite = Number(w); }); aktualisieren(); },
+    w => schreib(() => { v.bandbreite = Number(w); }, aktualisieren),
     { typ: 'select', werte: bandById(v.band).bandbreiten.map(b => [b, `${b} MHz`]) });
 
   const aktualisieren = () => {
@@ -804,13 +841,27 @@ function richtfunkGruppe(s, frisch) {
     const masse = el('div', 'feld-paar');
     masse.append(
       feld('Höhe über NN', ort.hoehe ?? '',
-        w => { schreib(() => { ort.hoehe = w === '' ? null : Number(w); }); aktualisieren(); },
+        w => schreib(() => { ort.hoehe = w === '' ? null : Number(w); }, aktualisieren),
         { typ: 'number', step: 1, einheit: 'm' }),
       feld('Antennenhöhe', ort.antennenhoehe,
-        w => { schreib(() => { ort.antennenhoehe = w === '' ? null : Number(w); }); aktualisieren(); },
+        w => schreib(() => { ort.antennenhoehe = w === '' ? null : Number(w); }, aktualisieren),
         { typ: 'number', min: 0, step: 0.5, einheit: 'm' })
     );
     spalte.appendChild(masse);
+    /* Gewinn und Zuleitungsdämpfung stehen neben der Antennenhöhe, weil sie
+       dieselbe Frage beantworten: was oben am Mast hängt. Beide gehen in die
+       EIRP-Prüfung ein, beide bleiben leer, solange niemand das Datenblatt
+       aufgeschlagen hat. */
+    const leistung = el('div', 'feld-paar');
+    leistung.append(
+      feld('Antennengewinn', ort.antennengewinn ?? '',
+        w => schreib(() => { ort.antennengewinn = w === '' ? null : Number(w); }, aktualisieren),
+        { typ: 'number', step: 0.5, einheit: 'dBi', platzhalter: 'lt. Datenblatt' }),
+      feld('Zuleitungsdämpfung', ort.kabeldaempfung ?? '',
+        w => schreib(() => { ort.kabeldaempfung = w === '' ? null : Number(w); }, aktualisieren),
+        { typ: 'number', min: 0, step: 0.5, einheit: 'dB' })
+    );
+    spalte.appendChild(leistung);
     spalte.appendChild(feld('Neigung (Elevation)', ort.neigung,
       w => schreib(() => { ort.neigung = w; })));
 
@@ -834,6 +885,55 @@ function richtfunkGruppe(s, frisch) {
       }, 'strecke');
     }, () => hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'));
   }, 'klein'));
+
+  /* Das Gelände wird auf Ausdruck geprüft, nicht laufend: der Abruf holt
+     Kacheln entlang der ganzen Strecke, und ein Urteil, das bei jedem
+     Tastendruck neu erschiene, würde beim Tippen flackern. */
+  hoehenTaste.appendChild(knopf('Gelände zwischen den Plätzen prüfen', ev => {
+    const f = funkstrecke(s);
+    if (!f) return hinweis('Erst beide Aufbauplätze auf der Karte setzen.');
+    if (f.hoehen.some(h => h.grund === null)) {
+      return hinweis('Erst die Geländehöhen beider Aufbauplätze holen.');
+    }
+    const taste = ev && ev.currentTarget;
+    if (taste) { taste.disabled = true; taste.textContent = 'Höhen werden geholt …'; }
+    profil(f.a, f.b, 25).then(punkte => {
+      const mitte = f.hoehen.map(h => h.grund + (h.antenne || 0));
+      urteilMerken(s, gelaendeurteil(punkte, mitte[0], mitte[1], f.mhz));
+      aktualisieren();
+    }).catch(() => hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'))
+      .finally(() => {
+        if (taste) { taste.disabled = false; taste.textContent = 'Gelände zwischen den Plätzen prüfen'; }
+      });
+  }, 'klein'));
+
+  /* Der Geländeschatten ist ein Blick, kein Planungsinhalt: er wird angestoßen,
+     angesehen und wieder weggenommen. Deshalb kein Dialog, keine Farbwahl und
+     keine Liste – der Umkreis steht fest, Standort und Antennenhöhe stehen
+     ohnehin schon in der Spalte darüber. Gespeichert wird nichts: ein Schatten,
+     der eine Planung überdauert, wäre irgendwann für eine andere Masthöhe
+     gerechnet als die, die danebensteht. */
+  hoehenTaste.appendChild(knopf('Geländeschatten von Platz A', ev => {
+    const f = funkstrecke(s);
+    if (!f) return hinweis('Erst beide Aufbauplätze auf der Karte setzen.');
+    if (schattenEbene) { schattenWeg(); return aktualisieren(); }
+    const taste = ev && ev.currentTarget;
+    if (taste) { taste.disabled = true; taste.textContent = 'Höhen werden geholt …'; }
+    const hoch = Number(s.richtfunk.standorte[0].antennenhoehe) || 3;
+    gelaendeschatten(f.a, hoch, f.mhz, UMKREIS_STANDARD, hoch).then(e => {
+      if (!e) return hinweis('Für diesen Umkreis liegen keine Höhen vor.', 'fehler');
+      schattenEbene = zeichneSchatten(ctx.karte, e);
+      schattenBefund = e;
+      aktualisieren();
+    }).catch(() => hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'))
+      .finally(() => {
+        if (taste) {
+          taste.disabled = false;
+          taste.textContent = schattenEbene
+            ? 'Geländeschatten ausblenden' : 'Geländeschatten von Platz A';
+        }
+      });
+  }, 'klein'));
   gruppe.appendChild(hoehenTaste);
 
   // -- Was für die Strecke als Ganzes gilt
@@ -855,6 +955,21 @@ function richtfunkGruppe(s, frisch) {
   );
   gruppe.appendChild(geraet);
 
+  /* Sendeleistung und TPC gelten für die Strecke: beide Enden werden gleich
+     eingestellt. Ohne TPC verlangt die Zuteilung 3 dB weniger – das ist keine
+     Feinheit, sondern die Hälfte der Leistung, und es steht deshalb als
+     eigenes Feld da statt in einer Fußnote. */
+  const leistungStrecke = el('div', 'feld-paar');
+  leistungStrecke.append(
+    feld('Sendeleistung am Gerät', v.sendeleistung ?? '',
+      w => schreib(() => { v.sendeleistung = w === '' ? null : Number(w); }, aktualisieren),
+      { typ: 'number', step: 1, einheit: 'dBm', platzhalter: 'z. B. 20' }),
+    feld('Leistungsregelung (TPC)', v.tpc ? 'ja' : 'nein',
+      w => schreib(() => { v.tpc = w === 'ja'; }, aktualisieren),
+      { typ: 'select', werte: [['ja', 'vorhanden'], ['nein', 'nicht vorhanden']] })
+  );
+  gruppe.appendChild(leistungStrecke);
+
   /* Nicht jedes Band kennt jede Bandbreite. Der Bandwechsel baut das
      Bandbreitenfeld deshalb neu und rückt den Wert mit – sonst stünde nach
      dem Wechsel auf 2,4 GHz dort eine Bandbreite, die es dort nicht gibt. */
@@ -874,11 +989,11 @@ function richtfunkGruppe(s, frisch) {
 
   const funkB = el('div', 'feld-dreier');
   funkB.append(
-    feld('MIMO', v.mimo, w => { schreib(() => { v.mimo = w; }); aktualisieren(); },
+    feld('MIMO', v.mimo, w => schreib(() => { v.mimo = w; }, aktualisieren),
       { typ: 'select', werte: MIMO_ARTEN.map(m => [m.id, m.name]) }),
     feld('Polarisation', v.polarisation, w => schreib(() => { v.polarisation = w; }),
       { typ: 'select', werte: POLARISATIONEN.map(pl => [pl.id, pl.name]) }),
-    feld('Modulation', v.modulation, w => { schreib(() => { v.modulation = w; }); aktualisieren(); },
+    feld('Modulation', v.modulation, w => schreib(() => { v.modulation = w; }, aktualisieren),
       { typ: 'select', werte: MODULATIONEN.map(m => [m.id, m.name]) })
   );
   gruppe.appendChild(funkB);
@@ -899,7 +1014,12 @@ function standortAbgeleitetHTML(s, i) {
   const pt = i === 0 ? f.a : f.b;
   const zeilen = [
     ['Koordinate', toMGRS(pt.lat, pt.lng, 5)],
-    ['Abstrahlrichtung', azimutText(f.azimut[i], f.richtung[i])]
+    ['Abstrahlrichtung', azimutText(f.azimut[i], f.richtung[i])],
+    /* Am Aufbauplatz liegt eine Bussole, keine Nordreferenz: ohne die
+       missweisende Peilung ist die rechtweisende dort nicht zu gebrauchen.
+       Beide stehen mit Kürzel da, weil eine nackte Gradzahl in einem Werkzeug,
+       das drei Norde kennt, eine Falle wäre. */
+    ['Peilung', peilungText(f.peilungen[i])]
   ];
   if (f.hoehen[i].grund !== null) {
     zeilen.push(['Antenne über NN', meter(f.hoehen[i].grund + (f.hoehen[i].antenne || 0))]);
@@ -918,18 +1038,76 @@ function richtfunkErgebnisHTML(s) {
   const zeilen = [
     ['Distanz (Luftlinie)', formatLaenge(f.distanz)],
     ['Frequenz / Bandbreite', `${bandById(v.band).kurz} · ${v.bandbreite} MHz`],
+    /* Die Mindesthöhe ist die eine Zahl, die ohne jede Höhenkachel belastbar
+       ist: sie entscheidet am Kartentisch zwischen Dreibein und Teleskopmast. */
+    ['Antennenhöhe mindestens', meterText(f.mindesthoehe.hoehe)],
     ['Höhenunterschied', f.hoehenunterschied === null
       ? 'Geländehöhen fehlen' : meter(Math.abs(f.hoehenunterschied))]
   ];
+  if (f.neigung) zeilen.push(['Neigung rechnerisch', f.neigung.satz.split('.')[0] + '.']);
+
   return `<div class="se-kopf">
       <span class="se-titel">Datenrate der Funkschnittstelle</span>
       <b class="se-wert">${escapeHtml(datenrateText(v))}</b>
     </div>
     <div class="se-zeilen">${zeilen.map(([t, w]) =>
       `<span><i>${t}</i><b>${escapeHtml(w)}</b></span>`).join('')}</div>
+    ${bandHinweisHTML(v)}
+    ${eirpHTML(s, f)}
+    ${gelaendeHTML(s)}
+    ${schattenHTML()}
     <p class="se-fuss">Bruttorate der Funkschnittstelle bei höchstem Modulationsschema –
-       nicht der Durchsatz über die Strecke. Ob die Strecke trägt, entscheidet die
-       freie Sichtlinie zwischen den Antennen.</p>`;
+       nicht der Durchsatz über die Strecke. Die Mindesthöhe gilt über ebenem, freiem
+       Gelände; sie ist eine untere Schranke, keine Zusage.</p>`;
+}
+
+/* Ein Band, das eine ortsfeste Strecke im Freien nicht trägt, ist kein
+   Randfall, sondern der häufigste Planungsfehler: 6 GHz und 5250–5350 MHz
+   stehen im Gerät zur Wahl und sind draußen unzulässig. Der Hinweis steht
+   deshalb über der Leistungsrechnung – wer erst die Leistung einstellt und
+   dann das Band verwirft, hat zweimal gerechnet. */
+function bandHinweisHTML(v) {
+  const b = regelBandById(v.band);
+  if (!b || b.ortsfestDraussen) return '';
+  return `<p class="rf-auflage"><b>Im Freien nicht zulässig.</b>
+    ${escapeHtml(b.ausschluss || b.auflagen[0] || '')}
+    <span class="rf-fundstelle">${escapeHtml(b.fundstelle)}</span></p>`;
+}
+
+/* Die EIRP-Grenze bindet schärfer, als sie aussieht: sie gilt einschließlich
+   Antennengewinn, und bei MIMO zählt die Summe über alle Ketten. Ausgegeben
+   wird deshalb nicht nur „passt/passt nicht“, sondern die Zahl, die am Gerät
+   eingestellt wird – alles andere müsste der Planer selbst zurückrechnen. */
+function eirpHTML(s, f) {
+  const v = s.richtfunk;
+  const o = v.standorte;
+  const gewinn = o.map(x => x.antennengewinn).find(x => x !== null && x !== '');
+  const p = eirpPruefung({
+    band: v.band, sendeleistung: v.sendeleistung,
+    antennengewinn: gewinn, kabeldaempfung: o[0].kabeldaempfung,
+    bandbreite: v.bandbreite, ketten: mimoById(v.mimo).streams, tpc: v.tpc
+  });
+  if (!p) return '';
+  const kopf = p.passt
+    ? `<b>${escapeHtml(eirpLeistungText(p.eirp))} EIRP</b> – innerhalb der Grenze
+       von ${escapeHtml(eirpLeistungText(p.grenze))}.`
+    : `<b>${escapeHtml(eirpLeistungText(p.eirp))} EIRP – ${escapeHtml(abstandText(p.ueber))}
+       über der Grenze</b> von
+       ${escapeHtml(eirpLeistungText(p.grenze))}. Sendeleistung höchstens
+       ${escapeHtml(eirpLeistungText(p.hoechstSendeleistung))}.`;
+  return `<p class="rf-auflage${p.passt ? '' : ' rf-ueber'}">${kopf}
+    <span class="rf-fundstelle">${escapeHtml(eirpMassgebendText(p))} · ${escapeHtml(p.fundstelle)}</span></p>`;
+}
+
+/* Das Geländeurteil erscheint erst, wenn es geholt wurde – und es spricht nur
+   in eine Richtung. „Kein Hindernis“ ist keine Freigabe: Bewuchs und Bebauung
+   stehen in diesen Höhen nicht. Der Vorbehalt steht deshalb im Satz selbst
+   (funkrechnung.js), nicht als Fußnote darunter. */
+function gelaendeHTML(s) {
+  const u = urteilLesen(s);
+  if (u === undefined) return '';
+  if (u === null) return '<p class="rf-gelaende">Das Gelände ließ sich nicht beurteilen.</p>';
+  return `<p class="rf-gelaende rf-${escapeHtml(u.urteil)}">${escapeHtml(u.satz)}</p>`;
 }
 
 /* Die Vorschrift nennt für die Sprechreichweite eine Erfahrungsspanne, keinen

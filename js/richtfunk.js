@@ -8,12 +8,45 @@
    Gerät entschieden wird. */
 
 import { distanz, peilung, himmelsrichtung } from './geo.js';
+import { BAENDER, bandById as regelBandById } from './frequenzen.js';
+import { peilungen } from './missweisung.js';
+import { mindestantennenhoehe, neigung } from './funkrechnung.js';
 
-export const FREQUENZBAENDER = [
-  { id: '2400', name: '2,4 GHz', kurz: '2,4 GHz', norm: 'ht',  bandbreiten: [20, 40] },
-  { id: '5000', name: '5 GHz',   kurz: '5 GHz',   norm: 'vht', bandbreiten: [20, 40, 80, 160] },
-  { id: '6000', name: '6 GHz',   kurz: '6 GHz',   norm: 'he',  bandbreiten: [20, 40, 80, 160] }
-];
+/* Das Band ist kein Anzeigename, sondern ein Rechtsraum. „5 GHz“ als ein Eintrag
+   war sachlich falsch: 5250–5350 MHz ist im Freien gar nicht zulässig, 5470–5725
+   dagegen mit 1 W – aus einer Bandauswahl muss deshalb eine Teilbandauswahl
+   werden. Die Grenzen und Auflagen stehen mit Fundstelle in frequenzen.js; hier
+   steht nur, was die Funkschnittstelle daraus macht: WLAN-Norm und die
+   Kanalbreiten, die sie dort kennt. Die BOS-Zuteilungen bleiben draußen – sie
+   tragen kein WLAN. */
+const WLAN_BAENDER = {
+  '2400': { norm: 'ht',  bandbreiten: [20, 40] },
+  '5150': { norm: 'vht', bandbreiten: [20, 40, 80, 160] },
+  '5250': { norm: 'vht', bandbreiten: [20, 40, 80, 160] },
+  '5470': { norm: 'vht', bandbreiten: [20, 40, 80, 160] },
+  '5755': { norm: 'vht', bandbreiten: [20, 40, 80] },
+  '5945': { norm: 'he',  bandbreiten: [20, 40, 80, 160] }
+};
+
+export const FREQUENZBAENDER = BAENDER
+  .filter(b => WLAN_BAENDER[b.id])
+  .map(b => ({
+    id: b.id, name: b.name, kurz: b.kurz, von: b.von, bis: b.bis,
+    /* Die Mitte des Bandes vertritt die Kanalmitte: die Wellenlänge geht nur
+       unter der Wurzel in den Fresnelradius ein, über ein Teilband hinweg macht
+       das keinen Millimeter aus. */
+    mhz: (b.von + b.bis) / 2,
+    ortsfestDraussen: b.ortsfestDraussen,
+    ...WLAN_BAENDER[b.id]
+  }));
+
+/* Kennungen, die es vor Schema 8 gab: ein Sammeleintrag „5 GHz“ und ein
+   „6 GHz“, das im Freien nie zulässig war. Wer so einen Stand öffnet, landet
+   im nächstliegenden echten Teilband – bei 5 GHz in dem einzigen, das eine
+   ortsfeste Strecke im Freien trägt, bei 6 GHz in demselben Frequenzbereich
+   wie zuvor, damit die Auflage dort sichtbar wird statt stillschweigend
+   zu verschwinden. */
+export const BAND_ALIAS = { '5000': '5470', '6000': '5945' };
 
 export const MIMO_ARTEN = [
   { id: 'kein', name: 'kein', streams: 1 },
@@ -46,7 +79,11 @@ const RATEN = {
   he:  { 20: 143.4, 40: 286.8, 80: 600.4, 160: 1201 }
 };
 
-export const bandById = id => FREQUENZBAENDER.find(b => b.id === id) || FREQUENZBAENDER[1];
+export const bandById = id => {
+  const schluessel = BAND_ALIAS[id] || id;
+  return FREQUENZBAENDER.find(b => b.id === schluessel)
+    || FREQUENZBAENDER.find(b => b.id === '5470');
+};
 export const mimoById = id => MIMO_ARTEN.find(m => m.id === id) || MIMO_ARTEN[1];
 export const polarisationById = id => POLARISATIONEN.find(p => p.id === id) || POLARISATIONEN[2];
 export const modulationById = id => MODULATIONEN.find(m => m.id === id) || MODULATIONEN[0];
@@ -60,7 +97,13 @@ export const NEIGUNG_STANDARD = 'nach bestem RX-Pegel';
 export function neuerFunkstandort() {
   return {
     einheit: '', ansprechpartner: '', erreichbarkeit: '', rufname: '',
-    platz: '', hoehe: null, antennenhoehe: 3, neigung: NEIGUNG_STANDARD
+    platz: '', hoehe: null, antennenhoehe: 3, neigung: NEIGUNG_STANDARD,
+    /* Antennengewinn und Zuleitungsdämpfung stehen je Aufbauplatz, weil die
+       beiden Enden verschieden bestückt sein dürfen – eine Schüssel dort, ein
+       Sektor hier. Beide bleiben leer, bis jemand das Datenblatt zur Hand hat:
+       eine geratene Zahl ginge in die EIRP-Prüfung ein und käme als Zusage
+       wieder heraus. */
+    antennengewinn: null, kabeldaempfung: null
   };
 }
 
@@ -69,7 +112,13 @@ export function neueRichtfunkangabe() {
   return {
     betriebsbereit: '', betriebszeit: '',
     accesspoint: '', antenne: '',
-    band: '5000', bandbreite: 80, kanal: '',
+    /* Die Sendeleistung gilt für die Strecke, nicht für den Platz: beide Enden
+       einer WLAN-Strecke werden auf denselben Wert eingestellt. TPC steht auf
+       „vorhanden“, weil jedes Gerät, das die 5-GHz-Bänder überhaupt benutzen
+       darf, es mitbringt – wer es abschaltet, verliert 3 dB der zulässigen
+       Leistung, und genau das soll die Prüfung dann auch sagen. */
+    sendeleistung: null, tpc: true,
+    band: '5470', bandbreite: 80, kanal: '',
     mimo: '2x2', polarisation: 'hv', modulation: 'auto',
     kommentar: '',
     standorte: [neuerFunkstandort(), neuerFunkstandort()]
@@ -126,11 +175,25 @@ export function funkstrecke(strecke) {
     antenne: zahlOderNull(s.antennenhoehe)
   }));
   const antennenhoehe = hoehen.map(h => h.grund === null ? null : h.grund + (h.antenne || 0));
+  const laenge = distanz(a, b);
+  const mhz = bandById(v.band).mhz;
+  /* Die Peilung wird für jedes Ende an seinem eigenen Ort gerechnet, nicht
+     einmal für die Strecke: über 10 km ändert sich die Missweisung zwar kaum,
+     die Meridiankonvergenz am Zonenrand aber sehr wohl – und beide Trupps lesen
+     ihre Zahl an verschiedenen Punkten ab. */
+  const peil = [peilungen(azimut[0], a), peilungen(azimut[1], b)];
   return {
     a, b,
-    distanz: distanz(a, b),
+    distanz: laenge,
+    mhz,
     azimut,
     richtung: azimut.map(himmelsrichtung),
+    peilungen: peil,
+    /* Was die Strecke über ebenem, freiem Gelände mindestens braucht – eine
+       untere Schranke ohne jede Höhenkachel: wer sie unterschreitet, kommt
+       sicher nicht durch. */
+    mindesthoehe: mindestantennenhoehe(mhz, laenge),
+    neigung: neigung(antennenhoehe[0], antennenhoehe[1], laenge),
     hoehen,
     /* Der Höhenunterschied der Antennenmitten – nur brauchbar, wenn an beiden
        Enden eine Geländehöhe eingetragen ist. */

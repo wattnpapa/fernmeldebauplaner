@@ -514,6 +514,40 @@ body.seite-zu .seite { display: none; }
   border-radius: var(--radius-klein); background: var(--flaeche-2); padding: 8px 10px;
 }
 
+/* -- Auflage und Grenzwert. Eine Zuteilung ist kein Warnhinweis, sondern eine
+   Bedingung: der Kasten steht deshalb ruhig da und wird erst rot, wenn die
+   Grenze wirklich überschritten ist. Die Fundstelle steht klein darunter, weil
+   am Bauort nach der Verfügungsnummer gesucht wird – wie sonst nach der
+   Gliederungsnummer der Dv 861. */
+.rf-auflage {
+  margin: 8px 0 0; padding: 6px 8px; font-size: 12px; line-height: 1.45;
+  border-radius: var(--radius-klein); background: var(--flaeche-2);
+  border-left: 3px solid var(--linie);
+}
+.rf-auflage.rf-ueber {
+  border-left-color: var(--warnung); background: var(--warnung-flaeche);
+  color: var(--warnung-tief);
+}
+.rf-auflage b { font-weight: 700; }
+.rf-fundstelle {
+  display: block; margin-top: 2px; font-size: 11px; color: var(--text-schwach);
+}
+
+/* -- Geländeurteil. Es spricht nur in eine Richtung, und die Farbe sagt das
+   mit: „verdeckt“ ist ein Befund und trägt die Warnfarbe, „unauffällig“ bleibt
+   grau. Ein grüner Haken stünde hier für eine Freigabe, die diese Höhendaten
+   nicht hergeben – deshalb gibt es keinen. */
+.rf-gelaende {
+  margin: 8px 0 0; padding: 6px 8px; font-size: 12px; line-height: 1.45;
+  border-radius: var(--radius-klein); background: var(--flaeche-2);
+  border-left: 3px solid var(--linie);
+}
+.rf-gelaende.rf-verdeckt {
+  border-left-color: var(--warnung); background: var(--warnung-flaeche);
+  color: var(--warnung-tief); font-weight: 600;
+}
+.rf-gelaende.rf-unbeurteilbar { color: var(--text-schwach); }
+
 /* -- Sprechreichweite: ein Befund, keine Bestellmenge. Die Vorschrift nennt
    eine Erfahrungsspanne, deshalb drei Tonlagen statt einer Zahl. Aufbau wie
    beim Querschnitt darüber – Kasten mit tragender Kante links –, nur ohne

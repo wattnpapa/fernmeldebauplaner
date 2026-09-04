@@ -23,6 +23,8 @@ import {
   bandById, polarisationById, modulationById, MIMO_ARTEN,
   datenrateText, funkstrecke, azimutText
 } from './richtfunk.js';
+import { peilungText, nordbezugText, MISSWEISUNG_QUELLE } from './missweisung.js';
+import { urteilLesen, meterText } from './funkrechnung.js';
 import { hinweis } from './ui.js';
 import { VERSION } from './version.js';
 
@@ -62,6 +64,10 @@ const STANDARD_AUFTRAG = {
      er steht deshalb an und gleich hinter dem Kartenblatt. Bei jeder anderen
      Leitungsart bleibt der Haken ohne Wirkung und ohne Anzeige. */
   richtfunk: true,
+  /* Die Prüfanweisung gilt nur der Funkstrecke und steht bei ihr an: sie ist
+     der Teil des Auftrags, der am Mast abgearbeitet wird. Bei jeder anderen
+     Leitungsart bleibt der Haken ohne Wirkung und ohne Anzeige. */
+  pruefanweisung: true,
   material: true, hinweise: true, bemerkungen: true,
   /* Beides gehört auf den Bauauftrag und ist deshalb an. Abschalten lohnt
      erst, wenn die Trasse eng geführt ist: dann liegen Zahl an Zahl und
@@ -337,7 +343,8 @@ function oeffneDruckansicht(auftrag) {
         ])
       : gruppe('Datenblatt', [
           ...(auftrag.strecken.some(st => kabelById(st.kabeltyp).funk)
-            ? [haken('Einzelauftrag Richtfunk', 'richtfunk', opt, neuAufbau)] : []),
+            ? [haken('Einzelauftrag Richtfunk', 'richtfunk', opt, neuAufbau),
+               haken('Prüfanweisung Aufbau', 'pruefanweisung', opt, neuAufbau)] : []),
           haken('Punkttabelle', 'punkttabelle', opt, neuAufbau),
           haken('Querungstabelle', 'querungen', opt, neuAufbau),
           haken('Längenverbindungen', 'laengenverbindungen', opt, neuAufbau),
@@ -1107,7 +1114,8 @@ function tabelleFliessen(fluss, rahmen, zeilenHTML) {
 /* Jeder Abschnitt des Datenblatts hängt an seinem eigenen Haken. Ist keiner
    gewählt, entsteht auch kein Datenblatt – dann bleibt nur das Kartenblatt. */
 function datenblattNoetig(opt, funk = false) {
-  return !!((funk && opt.richtfunk) || opt.punkttabelle || opt.querungen || opt.laengenverbindungen
+  return !!((funk && opt.richtfunk) || (funk && opt.pruefanweisung)
+    || opt.punkttabelle || opt.querungen || opt.laengenverbindungen
     || opt.material || opt.hinweise || opt.bemerkungen || opt.unterschrift);
 }
 
@@ -1135,6 +1143,7 @@ function datenblaetter(ziel, p, strecke, k, opt) {
 
   if (opt.material) fluss.setze(elementAus(materialHTML(strecke, k)));
   if (opt.hinweise) fluss.setze(elementAus(regelnHTML(k)));
+  if (opt.pruefanweisung && k.kabel.funk) fluss.setze(elementAus(pruefanweisungHTML()));
   if (opt.bemerkungen) fluss.setze(elementAus(bemerkungHTML(p, strecke)));
   if (opt.unterschrift) fluss.setze(elementAus(unterschriftHTML(p)));
 }
@@ -1640,6 +1649,51 @@ function richtfunkRahmenHTML(p, s) {
   </section>`;
 }
 
+/* Das Geländeurteil steht nur auf dem Blatt, wenn es der Planer vorher geholt
+   hat. Es hier nachzuladen wäre falsch: der Druck würde auf einen Netzabruf
+   warten, und auf dem Auftrag stünde ein Urteil, das nie jemand gesehen hat.
+   Fehlt es, bleibt die Zeile weg – ein leeres Feld „Gelände: –“ läse sich wie
+   ein Befund. */
+function gelaendeZeile(s, ganz) {
+  const u = urteilLesen(s);
+  if (!u) return '';
+  return ganz('Gelände zwischen den Plätzen',
+    `<span class="rf-urteil rf-${u.urteil}">${escapeHtml(u.satz)}</span>`,
+    `Höhen aus dem Geländemodell, Schwelle ${u.schwelle} m`);
+}
+
+/* Die Prüfanweisung ist das Stück, das am Mast wirklich gebraucht wird: vier
+   Handgriffe in der Reihenfolge, in der sie zu tun sind. Sie steht als fester
+   Text da und nicht als Freifeld, weil sie für jede Funkstrecke dieselbe ist –
+   wie NEIGUNG_STANDARD, das aus demselben Grund schon im leeren Auftrag steht.
+   Der Wortlaut folgt der Arbeitsweise des THW: Standort nach UTMREF, weil über
+   Funk MGRS durchgegeben wird, und Rückmeldung an die Führungsstelle mit
+   Datum-Zeit-Gruppe. */
+const PRUEFSCHRITTE = [
+  ['Standort prüfen', 'Aufbauplatz nach UTMREF gegen die Koordinate dieses Auftrags ' +
+    'prüfen. Weicht er ab, vor dem Aufbau Rücksprache – Peilung und Distanz gelten ' +
+    'für die eingetragene Stelle.'],
+  ['Richtung grob einstellen', 'Antenne nach der missweisenden Peilung (mw) mit der ' +
+    'Bussole ausrichten. Eisen, Fahrzeug und Mast verstellen die Nadel: mit Abstand ' +
+    'peilen, nicht am Mastfuß. Wird am gedruckten Kilometergitter angelegt, gilt die ' +
+    'Gitterpeilung (gt).'],
+  ['Auf die Strahlmitte eindrehen', 'Antennen wechselseitig nachführen und dabei den ' +
+    'Empfangspegel beobachten, bis er sein Höchstmaß erreicht. Ein Nebenmaximum ' +
+    'trägt die Strecke nicht: liegt der Pegel deutlich unter dem erwarteten, weiter ' +
+    'suchen statt festsetzen.'],
+  ['Betrieb prüfen und melden', 'Eine Stunde nach Inbetriebnahme Empfangspegel und ' +
+    'Streckendämpfung gegenprüfen. Betriebsbereitschaft mit Datum-Zeit-Gruppe an die ' +
+    'Führungsstelle melden.']
+];
+
+function pruefanweisungHTML() {
+  return `<section class="bl-abschnitt bl-pruefanweisung">
+    <h2>Prüfanweisung Aufbau und Inbetriebnahme</h2>
+    <ol class="pa-liste">${PRUEFSCHRITTE.map(([t, w]) =>
+      `<li><b>${escapeHtml(t)}</b> ${escapeHtml(w)}</li>`).join('')}</ol>
+  </section>`;
+}
+
 function richtfunkZeilenHTML(p, s) {
   const v = s.richtfunk;
   const f = funkstrecke(s);
@@ -1684,9 +1738,17 @@ function richtfunkZeilenHTML(p, s) {
         ${paar('Höhe über NN', '', escapeHtml(hoeheNN(0)), escapeHtml(hoeheNN(1)))}
         ${ganz('Distanz', f ? escapeHtml(formatLaenge(f.distanz)) : '–', 'Luftlinie')}
         ${paar('Antennenhöhe', 'Masthöhe', escapeHtml(antenne(0)), escapeHtml(antenne(1)))}
-        ${paar('Abstrahlrichtung', 'Azimut',
+        ${f ? ganz('Antennenhöhe mindestens',
+               `${escapeHtml(meterText(f.mindesthoehe.hoehe))} <small>über ebenem, freiem Gelände –
+                untere Schranke, keine Zusage</small>`) : ''}
+        ${paar('Abstrahlrichtung', 'rechtweisend (rw)',
                f ? escapeHtml(azimutText(f.azimut[0], f.richtung[0])) : '–',
                f ? escapeHtml(azimutText(f.azimut[1], f.richtung[1])) : '–')}
+        ${paar('Peilung am Platz', 'Bussole (mw) · Gitter (gt)',
+               f ? escapeHtml(peilungText(f.peilungen[0])) : '–',
+               f ? escapeHtml(peilungText(f.peilungen[1])) : '–')}
+        ${f ? ganz('Nordbezug', `<small class="rf-nordbezug">${
+               escapeHtml(nordbezugText(f.peilungen[0]))}</small>`) : ''}
         ${paar('Neigung', 'Elevation', escapeHtml(wert(o[0].neigung)), escapeHtml(wert(o[1].neigung)))}
         ${ganz('Typ Access Point', escapeHtml(wert(v.accesspoint)))}
         ${ganz('Typ Antenne', escapeHtml(wert(v.antenne)))}
@@ -1697,6 +1759,7 @@ function richtfunkZeilenHTML(p, s) {
         ${ganz('Kanal Strecke', escapeHtml(wert(v.kanal)))}
         ${ganz('Datenrate', escapeHtml(datenrateText(v)))}
         ${ganz('Modulation', escapeHtml(modulationById(v.modulation).name))}
+        ${gelaendeZeile(s, ganz)}
         <tr class="rf-frei"><th>Kommentar</th><td colspan="2">${
           v.kommentar ? escapeHtml(v.kommentar).replace(/\n/g, '<br>') : ''}</td></tr>
         <tr class="rf-fusszeile"><th>Stand / FdR</th><td colspan="2"><span class="mono">${
@@ -1865,7 +1928,13 @@ function kartenquelle(p, opt) {
         [p.ansicht.lat, p.ansicht.lng]
       ])
     : quelle.attribution;
-  return `Kartengrundlage: ${ohneMarken(text)} · ${escapeHtml(HOEHEN_QUELLE)}`;
+  /* Die Missweisung steht nur dort, wo sie auch benutzt wird: der Bauauftrag
+     einer Funkstrecke trägt eine Bussolenpeilung, die Lagekarte nicht. Ein
+     Modell mit Gültigkeitszeitraum gehört zur Quellenangabe wie die Kachel –
+     wer das Blatt in zwei Jahren wiederfindet, soll sehen, worauf es beruht. */
+  const funk = (p.strecken || []).some(st => kabelById(st.kabeltyp).funk);
+  return `Kartengrundlage: ${ohneMarken(text)} · ${escapeHtml(HOEHEN_QUELLE)}` +
+    (funk ? ` · ${escapeHtml(MISSWEISUNG_QUELLE)}` : '');
 }
 
 function fussHTML(p, opt) {

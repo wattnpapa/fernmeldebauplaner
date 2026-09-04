@@ -498,6 +498,35 @@ body.druckansicht { overflow: hidden; }
 /* Die Spaltenköpfe nennen die beiden Enden. Die leere Ecke links bleibt ohne
    Rahmen: ein Kasten ohne Inhalt läse sich als auszufüllendes Feld. */
 .rf-spaltenkopf th { text-align: center; background: #e6e9ee; }
+
+/* Der Nordbezug läuft über beide Spalten: Missweisung und Meridiankonvergenz
+   gelten für die Strecke, nicht für einen Platz. Klein gesetzt, weil er die
+   Peilungen darüber erklärt und nicht mit ihnen um Aufmerksamkeit ringt. */
+.rf-nordbezug { font-size: .9em; color: #444; }
+
+/* Das Geländeurteil ist ein Satz, kein Wert – es läuft über beide Spalten und
+   bekommt links eine Kante statt einer Farbfläche: im Schwarz-Weiß-Druck
+   trüge eine Fläche nichts, eine kräftige Kante schon. Es gibt bewusst kein
+   Gegenstück für „unauffällig“: eine grüne Markierung läse sich als Freigabe,
+   und die geben diese Höhendaten nicht her. */
+.rf-urteil { display: block; }
+.rf-urteil.rf-verdeckt {
+  font-weight: 700; padding-left: 1.6mm; border-left: 1pt solid #000;
+}
+
+/* -- Prüfanweisung: die vier Handgriffe am Mast, in ihrer Reihenfolge.
+
+   Nummeriert und nicht als Fließtext, weil am Aufbauplatz abgearbeitet und
+   abgehakt wird – mit Handschuh, bei Tageslicht, in der Hand. Die Nummer steht
+   deshalb außerhalb des Satzspiegels und die Zeilen stehen locker: eine
+   gedrängte Liste verliert man beim Aufblicken. */
+.bl-pruefanweisung .pa-liste {
+  margin: 0; padding-left: 6mm; font-size: .88em; line-height: 1.45;
+}
+.bl-pruefanweisung .pa-liste li { margin-bottom: 1.6mm; }
+.bl-pruefanweisung .pa-liste li:last-child { margin-bottom: 0; }
+.bl-pruefanweisung .pa-liste b { font-weight: 700; }
+.bl-pruefanweisung .pa-liste b::after { content: ' – '; font-weight: 400; }
 .rf-spaltenkopf th:first-child { border: none; background: none; }
 .rf-kontakt { list-style: none; margin: .6mm 0 0; padding: 0; font-size: .92em; }
 .rf-kontakt i { font-style: normal; color: #555; }

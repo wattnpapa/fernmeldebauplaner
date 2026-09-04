@@ -1,12 +1,12 @@
 // state.js – Datenmodell, Projektverwaltung, LocalStorage, Undo
 
 import { neueStromangabe } from './strom.js';
-import { neueRichtfunkangabe } from './richtfunk.js';
+import { neueRichtfunkangabe, BAND_ALIAS } from './richtfunk.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 import { QUERUNG_STANDARD, BAUWEISE_STANDARD } from './vorschrift.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
 
-export const SCHEMA = 7;
+export const SCHEMA = 8;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -553,15 +553,24 @@ export function migrieren(p) {
         id: s.id || id(),
         kabeltyp: KABEL_ALIAS[s.kabeltyp] || s.kabeltyp || v.kabeltyp,
         strom: { ...v.strom, ...(s.strom || {}) },
-        /* Schema 7 hat die Angaben der Richtfunkstrecke eingeführt. Ältere
-           Stände bringen sie nicht mit und öffnen mit dem leeren Formular –
-           die beiden Aufbauplätze müssen dabei einzeln aufgefüllt werden,
-           sonst stünde dort ein Feld ohne Standorte. */
-        richtfunk: {
-          ...v.richtfunk, ...(s.richtfunk || {}),
-          standorte: v.richtfunk.standorte.map((leer, i) =>
-            ({ ...leer, ...(((s.richtfunk || {}).standorte || [])[i] || {}) }))
-        },
+        /* Schema 7 hat die Angaben der Richtfunkstrecke eingeführt, Schema 8
+           die Leistungsangaben für die EIRP-Prüfung. Ältere Stände bringen sie
+           nicht mit und öffnen mit dem leeren Formular – die beiden
+           Aufbauplätze müssen dabei einzeln aufgefüllt werden, sonst stünde
+           dort ein Feld ohne Standorte. Neue Felder brauchen hier nichts: sie
+           kommen über die Vorgabewerte oben mit. */
+        richtfunk: (() => {
+          const rf = { ...v.richtfunk, ...(s.richtfunk || {}) };
+          /* Das Band wird beim Öffnen umgeschrieben, nicht nur beim Anzeigen
+             übersetzt: die Prüfung gegen die Allgemeinzuteilung schlägt in
+             js/frequenzen.js auf die Kennung an, und eine alte Sammelkennung
+             fiele dort auf ein Ersatzband zurück – der Grenzwert stünde dann
+             für ein Band, das gar nicht gewählt ist. */
+          rf.band = BAND_ALIAS[rf.band] || rf.band;
+          rf.standorte = v.richtfunk.standorte.map((leer, i) =>
+            ({ ...leer, ...(((s.richtfunk || {}).standorte || [])[i] || {}) }));
+          return rf;
+        })(),
         punkte: (s.punkte || []).map(pt => ({ ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id() }))
       };
     }),
