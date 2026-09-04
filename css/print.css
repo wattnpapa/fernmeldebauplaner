@@ -469,6 +469,56 @@ body.druckansicht { overflow: hidden; }
 .mf-linien { display: flex; flex-direction: column; gap: 3.6mm; margin-top: 3mm; }
 .mf-linien span { display: block; border-bottom: .4pt solid #aaa; }
 
+/* -- Einzelauftrag Richtfunkstrecke WLAN
+
+   Der Vordruck ist ein Formular, kein Bericht: er wird am Aufbauplatz Zeile
+   für Zeile abgearbeitet, und leere Felder werden dort mit dem Stift gefüllt.
+   Deshalb hat hier – anders als bei den übrigen Tabellen – jede Zelle einen
+   Rahmen: der Kasten sagt, wohin geschrieben wird. Beschriftungsspalte links,
+   dann die beiden Aufbauplätze; was für die ganze Strecke gilt, läuft mit
+   `colspan` über beide durch. Feste Aufteilung, damit die Adressen beider
+   Plätze gleich breit stehen und nicht die längere Anschrift die Spalten
+   verschiebt.
+
+   Eng gesetzt, damit die 22 Zeilen auch im Querformat auf ein Blatt gehen –
+   dort ist das Blatt gut 8 cm niedriger. Fällt doch etwas hinaus, fließt die
+   Tabelle weiter (siehe `richtfunkRahmenHTML`); der enge Satz erspart nur den
+   Regelfall, in dem zwei Zeilen ein eigenes Blatt bekämen. */
+.tab-richtfunk { font-size: .82em; table-layout: fixed; }
+.tab-richtfunk th, .tab-richtfunk td {
+  border: .5pt solid #666; padding: .55mm 1.4mm; vertical-align: top; text-align: left;
+}
+.tab-richtfunk th { width: 32%; font-weight: 600; background: #f1f3f6; }
+.tab-richtfunk th small {
+  display: block; font-weight: 400; font-size: .84em; color: #555;
+}
+.tab-richtfunk .mono { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+/* Der Streckenname trägt das Blatt – er steht so groß wie eine Zwischenzeile. */
+.rf-kopfzeile td { font-weight: 700; font-size: 1.1em; }
+/* Die Spaltenköpfe nennen die beiden Enden. Die leere Ecke links bleibt ohne
+   Rahmen: ein Kasten ohne Inhalt läse sich als auszufüllendes Feld. */
+.rf-spaltenkopf th { text-align: center; background: #e6e9ee; }
+.rf-spaltenkopf th:first-child { border: none; background: none; }
+.rf-kontakt { list-style: none; margin: .6mm 0 0; padding: 0; font-size: .92em; }
+.rf-kontakt i { font-style: normal; color: #555; }
+/* MIMO steht im Vordruck als Ankreuzfeld – das bleibt so: die Planung nennt
+   damit auch die Werte, die sie gerade nicht gewählt hat, und am Gerät wird
+   umgekreuzt, statt einen Wert durchzustreichen. */
+.rf-kaesten { display: flex; flex-wrap: wrap; gap: 1mm 4mm; }
+.rf-kasten { white-space: nowrap; }
+.rf-kasten::before {
+  content: ''; display: inline-block; width: 2.6mm; height: 2.6mm;
+  margin-right: 1.2mm; vertical-align: -.3mm; border: .5pt solid #333;
+}
+/* Das Kreuz ist ein gezeichnetes Zeichen, kein Hintergrundbild: Firefox gibt
+   Hintergründe im Druck nur mit eingeschalteter Hintergrundgrafik aus, ein
+   Zeichen kommt immer heraus. */
+.rf-kasten.an { font-weight: 700; }
+.rf-kasten.an::before { content: '×'; line-height: 2.4mm; text-align: center; font-size: 1.1em; }
+/* Kommentarfeld: leer bleibt es zum Beschreiben, deshalb eine Mindesthöhe. */
+.rf-frei td { min-height: 9mm; height: 9mm; }
+.rf-fusszeile th, .rf-fusszeile td { background: #f1f3f6; }
+
 /* -- Hinweise nach der Vorschrift
 
    Sieben Merksätze. Einspaltig liefe jeder über die ganze Blattbreite und der

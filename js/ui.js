@@ -21,6 +21,11 @@ import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
 import {
   FLAECHENARTEN, AUFSTELLUNGEN, flaechenartById, flaechenVorschau, flaechenTitel, masseText
 } from './flaechen.js';
+import {
+  FREQUENZBAENDER, MIMO_ARTEN, POLARISATIONEN, MODULATIONEN,
+  bandById, gueltigeBandbreite, datenrateText, funkstrecke, azimutText
+} from './richtfunk.js';
+import { hoeheAn } from './hoehe.js';
 import { bilderAufnehmen } from './bilder.js';
 import { bildUrl, miniUrl } from './bildspeicher.js';
 import * as io from './io.js';
@@ -431,14 +436,14 @@ function streckenKarte(s) {
       `<span>${escapeHtml(k.kabel.kurz)}${k.strom && k.strom.querschnitt
           ? ' ' + escapeHtml(querschnittText(k.strom.querschnitt)) : ''}</span>
        <span>${k.punkte} ${k.punkte === 1 ? 'Punkt' : 'Punkte'}</span>
-       <span>Bedarf ${formatLaenge(k.bedarf)}</span>`));
+       <span>${k.kabel.funk ? 'Funkstrecke' : `Bedarf ${formatLaenge(k.bedarf)}`}</span>`));
     return karte;
   }
 
   const koerper = el('div', 'eintrag-koerper');
 
   // -- Kennzahlen
-  const kz = el('div', 'kennzahlen');
+  const kz = el('div', 'kennzahlen' + (k.kabel.funk ? ' zweispaltig' : ''));
   kz.id = 'kz-' + s.id;
   kz.innerHTML = kennzahlenHTML(k);
   koerper.appendChild(kz);
@@ -457,12 +462,16 @@ function streckenKarte(s) {
   /* Der Bauzuschlag verlängert die Leitung und damit den Spannungsfall –
      die Querschnittsanzeige hängt an denselben Feldern und wird mit erneuert. */
   let stromFrisch = () => {};
+  /* Distanz und Azimut der Funkstrecke hängen an den gezeichneten Punkten –
+     sie werden mit denselben Anlässen erneuert wie die Kennzahlen. */
+  let funkFrisch = () => {};
   const frisch = () => {
     const neu = kennzahlen(s);
     kz.innerHTML = kennzahlenHTML(neu);
     const kopfWert = karte.querySelector('.eintrag-wert');
     if (kopfWert) kopfWert.textContent = formatLaenge(neu.trasse);
     stromFrisch();
+    funkFrisch();
     reichweiteFrisch(neu);
   };
 
@@ -543,6 +552,15 @@ function streckenKarte(s) {
     const g3 = stromGruppe(s);
     stromFrisch = g3.aktualisieren;
     koerper.appendChild(g3.gruppe);
+  }
+
+  /* -- Richtfunk (nur bei der Funkstrecke). Die Angaben füllen den
+     „Einzelauftrag Richtfunkstrecke WLAN“ des Bauauftrags – zwei Aufbauplätze
+     und darunter, was für die Strecke als Ganzes gilt. */
+  if (k.kabel.funk) {
+    const g4 = richtfunkGruppe(s, frisch);
+    funkFrisch = g4.aktualisieren;
+    koerper.appendChild(g4.gruppe);
   }
 
   // -- Punkte
@@ -626,13 +644,22 @@ function streckenKarte(s) {
   return karte;
 }
 
+/* Eine Funkstrecke wird nicht verlegt: Bedarf, Trommeln und Bauzeit wären
+   dort dieselben erfundenen Nullen, die der Bauauftrag schon weglässt
+   (siehe `kennzahlenHTML` in `bauauftrag.js`). Sie trägt zwei Kacheln – die
+   Luftlinie und die Zahl ihrer Abschnitte. */
 function kennzahlenHTML(k) {
-  return [
+  const kacheln = k.kabel.funk ? [
+    ['Luftlinie', formatLaenge(k.trasse)],
+    ['Abschnitte', String(k.abschnitte)]
+  ] : [
     ['Trasse', formatLaenge(k.trasse)],
     ['Bedarf', formatLaenge(k.bedarf)],
     ['Trommeln', String(k.trommeln)],
     ['Bauzeit', stundenKurz(k.bauzeitStunden)]
-  ].map(([t, w]) => `<div class="kz"><span>${t}</span><b>${escapeHtml(w)}</b></div>`).join('');
+  ];
+  return kacheln.map(([t, w]) =>
+    `<div class="kz"><span>${t}</span><b>${escapeHtml(w)}</b></div>`).join('');
 }
 
 function stundenKurz(h) {
@@ -724,6 +751,185 @@ function stromErgebnisHTML(a) {
     <p class="se-fuss">Richtwert für Kupferleitung, drei belastete Adern, frei in Luft.
        Aufgerollte Leitungsroller tragen deutlich weniger. Die verbindliche Auslegung
        trifft eine Elektrofachkraft.</p>`;
+}
+
+/* ---------------------------------------------------------------- Richtfunk
+   Die Angaben des „Einzelauftrags Richtfunkstrecke WLAN“. Sie stehen in der
+   Ordnung des Formulars: erst beide Aufbauplätze nebeneinander, dann die
+   Funkparameter, die für die ganze Strecke gelten.
+
+   Was die Planung schon weiß, wird nicht abgefragt: Koordinate, Distanz und
+   Abstrahlrichtung stehen als gerechnete Werte an der jeweiligen Spalte. Die
+   Geländehöhe ist der Zwitter – sie käme aus derselben Quelle wie das
+   Höhenprofil, muss aber im Auftrag festgeschrieben stehen. Sie wird deshalb
+   auf Knopfdruck geholt und dann als Zahl gehalten. */
+function richtfunkGruppe(s, frisch) {
+  const gruppe = el('div', 'feldgruppe');
+  gruppe.appendChild(el('h3', 'gruppen-titel', 'Richtfunkstrecke (WLAN)'));
+
+  const v = s.richtfunk;
+  const ergebnis = el('div', 'rf-ergebnis');
+  const spalten = el('div', 'rf-spalten');
+  const bandbreiteFeld = () => feld('Bandbreite', v.bandbreite,
+    w => { schreib(() => { v.bandbreite = Number(w); }); aktualisieren(); },
+    { typ: 'select', werte: bandById(v.band).bandbreiten.map(b => [b, `${b} MHz`]) });
+
+  const aktualisieren = () => {
+    ergebnis.innerHTML = richtfunkErgebnisHTML(s);
+    spalten.querySelectorAll('.rf-abgeleitet').forEach((el2, i) => {
+      el2.innerHTML = standortAbgeleitetHTML(s, i);
+    });
+  };
+
+  // -- Die beiden Aufbauplätze, in der Spaltenordnung des Formulars
+  for (const [i, ort] of v.standorte.entries()) {
+    const spalte = el('div', 'rf-spalte');
+    const titel = (i === 0 ? s.von : s.nach) || `Aufbauplatz ${i === 0 ? 'A' : 'B'}`;
+    spalte.appendChild(el('h4', 'rf-spalten-titel', escapeHtml(titel)));
+
+    spalte.appendChild(feld('Einheit', ort.einheit, w => schreib(() => { ort.einheit = w; }),
+      { platzhalter: 'z. B. OV Musterstadt' }));
+    const kontakt = el('div', 'feld-paar');
+    kontakt.append(
+      feld('Ansprechpartner', ort.ansprechpartner, w => schreib(() => { ort.ansprechpartner = w; })),
+      feld('Erreichbarkeit', ort.erreichbarkeit, w => schreib(() => { ort.erreichbarkeit = w; }),
+        { platzhalter: 'Rufnummer' })
+    );
+    spalte.appendChild(kontakt);
+    spalte.appendChild(feld('Rufname', ort.rufname, w => schreib(() => { ort.rufname = w; }),
+      { platzhalter: 'z. B. Heros Musterstadt 21' }));
+    spalte.appendChild(feld('Aufbauplatz / Adresse', ort.platz,
+      w => schreib(() => { ort.platz = w; }), { typ: 'textarea', zeilen: 2 }));
+
+    const masse = el('div', 'feld-paar');
+    masse.append(
+      feld('Höhe über NN', ort.hoehe ?? '',
+        w => { schreib(() => { ort.hoehe = w === '' ? null : Number(w); }); aktualisieren(); },
+        { typ: 'number', step: 1, einheit: 'm' }),
+      feld('Antennenhöhe', ort.antennenhoehe,
+        w => { schreib(() => { ort.antennenhoehe = w === '' ? null : Number(w); }); aktualisieren(); },
+        { typ: 'number', min: 0, step: 0.5, einheit: 'm' })
+    );
+    spalte.appendChild(masse);
+    spalte.appendChild(feld('Neigung (Elevation)', ort.neigung,
+      w => schreib(() => { ort.neigung = w; })));
+
+    const abgeleitet = el('div', 'rf-abgeleitet');
+    spalte.appendChild(abgeleitet);
+    spalten.appendChild(spalte);
+  }
+  gruppe.appendChild(spalten);
+
+  /* Ein Knopf für beide Enden: einzeln geholt wäre es zweimal derselbe
+     Handgriff, und die Kacheln kommen ohnehin aus einer Anfrage. */
+  const hoehenTaste = el('div', 'tastenreihe');
+  hoehenTaste.appendChild(knopf('Geländehöhen aus der Karte holen', () => {
+    const p = s.punkte;
+    if (p.length < 2) return hinweis('Erst beide Aufbauplätze auf der Karte setzen.');
+    const enden = [p[0], p[p.length - 1]];
+    Promise.all(enden.map(pt => hoeheAn(pt.lat, pt.lng))).then(hoehen => {
+      if (hoehen.every(h => h === null)) return hinweis('Für diese Stelle liegt keine Höhe vor.', 'fehler');
+      store.aendern(() => {
+        hoehen.forEach((h, i) => { if (h !== null) v.standorte[i].hoehe = Math.round(h); });
+      }, 'strecke');
+    }, () => hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'));
+  }, 'klein'));
+  gruppe.appendChild(hoehenTaste);
+
+  // -- Was für die Strecke als Ganzes gilt
+  const betrieb = el('div', 'feld-paar');
+  betrieb.append(
+    feld('Betriebsbereit bis', v.betriebsbereit, w => schreib(() => { v.betriebsbereit = w; }),
+      { platzhalter: 'z. B. 200800jun24' }),
+    feld('Betriebszeit', v.betriebszeit, w => schreib(() => { v.betriebszeit = w; }),
+      { platzhalter: 'z. B. rund um die Uhr' })
+  );
+  gruppe.appendChild(betrieb);
+
+  const geraet = el('div', 'feld-paar');
+  geraet.append(
+    feld('Typ Access Point', v.accesspoint, w => schreib(() => { v.accesspoint = w; }),
+      { platzhalter: 'z. B. LANCOM OAP 1702B' }),
+    feld('Typ Antenne', v.antenne, w => schreib(() => { v.antenne = w; }),
+      { platzhalter: 'z. B. 9° Sektor' })
+  );
+  gruppe.appendChild(geraet);
+
+  /* Nicht jedes Band kennt jede Bandbreite. Der Bandwechsel baut das
+     Bandbreitenfeld deshalb neu und rückt den Wert mit – sonst stünde nach
+     dem Wechsel auf 2,4 GHz dort eine Bandbreite, die es dort nicht gibt. */
+  const funkA = el('div', 'feld-dreier');
+  const bandbreite = bandbreiteFeld();
+  funkA.append(
+    feld('Frequenzband', v.band, w => {
+      store.aendern(() => {
+        v.band = w;
+        v.bandbreite = gueltigeBandbreite(w, v.bandbreite);
+      }, 'strecke');
+    }, { typ: 'select', werte: FREQUENZBAENDER.map(b => [b.id, b.name]) }),
+    bandbreite,
+    feld('Kanal Strecke', v.kanal, w => schreib(() => { v.kanal = w; }), { platzhalter: 'z. B. 44' })
+  );
+  gruppe.appendChild(funkA);
+
+  const funkB = el('div', 'feld-dreier');
+  funkB.append(
+    feld('MIMO', v.mimo, w => { schreib(() => { v.mimo = w; }); aktualisieren(); },
+      { typ: 'select', werte: MIMO_ARTEN.map(m => [m.id, m.name]) }),
+    feld('Polarisation', v.polarisation, w => schreib(() => { v.polarisation = w; }),
+      { typ: 'select', werte: POLARISATIONEN.map(pl => [pl.id, pl.name]) }),
+    feld('Modulation', v.modulation, w => { schreib(() => { v.modulation = w; }); aktualisieren(); },
+      { typ: 'select', werte: MODULATIONEN.map(m => [m.id, m.name]) })
+  );
+  gruppe.appendChild(funkB);
+
+  gruppe.appendChild(feld('Kommentar', v.kommentar, w => schreib(() => { v.kommentar = w; }),
+    { typ: 'textarea', zeilen: 2 }));
+
+  aktualisieren();
+  gruppe.appendChild(ergebnis);
+  return { gruppe, aktualisieren };
+}
+
+/** Koordinate, Abstrahlrichtung und Antennenmitte eines Aufbauplatzes –
+ *  alles gerechnet, nichts davon einzutragen. */
+function standortAbgeleitetHTML(s, i) {
+  const f = funkstrecke(s);
+  if (!f) return '<p class="rf-leer">Noch nicht auf der Karte gesetzt.</p>';
+  const pt = i === 0 ? f.a : f.b;
+  const zeilen = [
+    ['Koordinate', toMGRS(pt.lat, pt.lng, 5)],
+    ['Abstrahlrichtung', azimutText(f.azimut[i], f.richtung[i])]
+  ];
+  if (f.hoehen[i].grund !== null) {
+    zeilen.push(['Antenne über NN', meter(f.hoehen[i].grund + (f.hoehen[i].antenne || 0))]);
+  }
+  return zeilen.map(([t, w]) =>
+    `<span><i>${t}</i><b>${escapeHtml(w)}</b></span>`).join('');
+}
+
+function richtfunkErgebnisHTML(s) {
+  const f = funkstrecke(s);
+  const v = s.richtfunk;
+  if (!f) {
+    return `<p class="se-leer">Beide Aufbauplätze auf der Karte setzen – daraus ergeben
+            sich Distanz und Abstrahlrichtung der Strecke.</p>`;
+  }
+  const zeilen = [
+    ['Distanz (Luftlinie)', formatLaenge(f.distanz)],
+    ['Frequenz / Bandbreite', `${bandById(v.band).kurz} · ${v.bandbreite} MHz`],
+    ['Höhenunterschied', f.hoehenunterschied === null
+      ? 'Geländehöhen fehlen' : meter(Math.abs(f.hoehenunterschied))]
+  ];
+  return `<div class="se-kopf">
+      <span class="se-titel">Datenrate der Funkschnittstelle</span>
+      <b class="se-wert">${escapeHtml(datenrateText(v))}</b>
+    </div>
+    <div class="se-zeilen">${zeilen.map(([t, w]) =>
+      `<span><i>${t}</i><b>${escapeHtml(w)}</b></span>`).join('')}</div>
+    <p class="se-fuss">Bruttorate der Funkschnittstelle bei höchstem Modulationsschema –
+       nicht der Durchsatz über die Strecke. Ob die Strecke trägt, entscheidet die
+       freie Sichtlinie zwischen den Antennen.</p>`;
 }
 
 /* Die Vorschrift nennt für die Sprechreichweite eine Erfahrungsspanne, keinen

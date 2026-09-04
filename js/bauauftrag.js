@@ -19,6 +19,10 @@ import {
   massText, bauweiseById, BAUREGELN, SCHUTZABSTAENDE,
   SCHUTZABSTAND_ERWEITERT_MIN, SCHUTZABSTAND_ERWEITERT_STURM
 } from './vorschrift.js';
+import {
+  bandById, polarisationById, modulationById, MIMO_ARTEN,
+  datenrateText, funkstrecke, azimutText
+} from './richtfunk.js';
 import { hinweis } from './ui.js';
 import { VERSION } from './version.js';
 
@@ -54,6 +58,10 @@ const STANDARD_AUFTRAG = {
   /* Gespeicherte Optionen werden über den Standard gelegt; neue Haken erben so
      ihren Standard, statt bei bisherigen Nutzern als „aus“ zu erscheinen. */
   querungen: true, laengenverbindungen: true,
+  /* Der Einzelauftrag der Funkstrecke ist bei ihr das eigentliche Datenblatt –
+     er steht deshalb an und gleich hinter dem Kartenblatt. Bei jeder anderen
+     Leitungsart bleibt der Haken ohne Wirkung und ohne Anzeige. */
+  richtfunk: true,
   material: true, hinweise: true, bemerkungen: true,
   /* Beides gehört auf den Bauauftrag und ist deshalb an. Abschalten lohnt
      erst, wenn die Trasse eng geführt ist: dann liegen Zahl an Zahl und
@@ -328,6 +336,8 @@ function oeffneDruckansicht(auftrag) {
           haken('Fußzeile', 'fuss', opt, neuAufbau)
         ])
       : gruppe('Datenblatt', [
+          ...(auftrag.strecken.some(st => kabelById(st.kabeltyp).funk)
+            ? [haken('Einzelauftrag Richtfunk', 'richtfunk', opt, neuAufbau)] : []),
           haken('Punkttabelle', 'punkttabelle', opt, neuAufbau),
           haken('Querungstabelle', 'querungen', opt, neuAufbau),
           haken('Längenverbindungen', 'laengenverbindungen', opt, neuAufbau),
@@ -668,7 +678,7 @@ function streckenblaetter(ziel, strecke, auftrag, opt, mass, sw, sammlung, karte
     kennzahlenHTML(k, strecke) +
     fussHTML(p, opt);
 
-  if (datenblattNoetig(opt)) datenblaetter(ziel, p, strecke, k, opt);
+  if (datenblattNoetig(opt, k.kabel.funk)) datenblaetter(ziel, p, strecke, k, opt);
 
   kartenbau.push(() => {
     const karte = baueDruckkarte(b1.querySelector('.karten-buehne'), strecke, opt, mass, sw, karten, sammlung);
@@ -1096,13 +1106,24 @@ function tabelleFliessen(fluss, rahmen, zeilenHTML) {
 
 /* Jeder Abschnitt des Datenblatts hängt an seinem eigenen Haken. Ist keiner
    gewählt, entsteht auch kein Datenblatt – dann bleibt nur das Kartenblatt. */
-function datenblattNoetig(opt) {
-  return !!(opt.punkttabelle || opt.querungen || opt.laengenverbindungen
+function datenblattNoetig(opt, funk = false) {
+  return !!((funk && opt.richtfunk) || opt.punkttabelle || opt.querungen || opt.laengenverbindungen
     || opt.material || opt.hinweise || opt.bemerkungen || opt.unterschrift);
 }
 
 function datenblaetter(ziel, p, strecke, k, opt) {
   const fluss = blattfluss(ziel, opt, streckenKopfHTML(p, strecke), fussHTML(p, opt));
+
+  /* Der Einzelauftrag steht vor allem anderen: bei der Funkstrecke ist er das
+     Blatt, nach dem am Aufbauplatz gegriffen wird – die Punkttabelle sagt dort
+     nur noch, wo die beiden Masten stehen. Danach beginnt ein neues Blatt: der
+     Vordruck ist ein Formular und wird nicht mit einer Tabelle geteilt, an die
+     er nicht anschließt. */
+  if (opt.richtfunk && k.kabel.funk) {
+    tabelleFliessen(fluss, richtfunkRahmenHTML(p, strecke), richtfunkZeilenHTML(p, strecke));
+    // Nur wenn noch etwas folgt – sonst bliebe ein leeres Blatt stehen.
+    if (datenblattNoetig(opt)) fluss.neuBlatt();
+  }
 
   if (opt.punkttabelle) tabelleFliessen(fluss, punkttabelleRahmenHTML, punktzeilenHTML(strecke));
   if (opt.querungen && k.querungsliste.length) {
@@ -1576,6 +1597,110 @@ function laengenverbindungszeilenHTML(k) {
     <td class="mono">${escapeHtml(toMGRS(v.lat, v.lng, 5))}</td>
     <td>${escapeHtml(v.name ? `${v.name} (${v.lage})` : v.lage)}</td>
   </tr>`).join('');
+}
+
+// ---------------------------------------------------------------- Richtfunk
+
+/* Der „Einzelauftrag Richtfunkstrecke WLAN“ (Vordruck FmFü) als Blatt des
+   Bauauftrags. Er behält die Ordnung des Papiers, weil damit gearbeitet wird:
+   oben die beiden Aufbauplätze nebeneinander, unten die Parameter, die für
+   die Strecke als Ganzes gelten.
+
+   Zwei Sorten Zeilen: `paar` trägt in beiden Spalten einen eigenen Wert,
+   `ganz` läuft über beide durch. Was die Planung selbst weiß – Koordinate,
+   Distanz, Azimut – steht als gerechneter Wert da; alles andere kommt aus dem
+   Formular der Seitenleiste. Leere Felder werden nicht unterschlagen, sondern
+   bleiben als Strich stehen: am Aufbauplatz wird von Hand nachgetragen.
+
+   Rahmen und Zeilen sind getrennt, weil das Formular fließen können muss. Ein
+   Abschnitt, der nicht auf das Blatt passt, wird am Blattrand abgeschnitten,
+   ohne dass es auffällt – im Querformat fehlten so „Stand / FdR“ und die
+   Fußnote. Der enge Satz in `print.css` hält es heute auf einem Blatt, aber
+   eine lange Anschrift oder ein langer Streckenname reißen es wieder auf.
+   Auf dem Folgeblatt wiederholt sich der Spaltenkopf, aber nicht der
+   Streckenname: dass die Spalten weiterhin die beiden Aufbauplätze sind, muss
+   dort stehen, der Name steht schon im Blattkopf. */
+function richtfunkRahmenHTML(p, s) {
+  return fortsetzung => `<section class="bl-abschnitt bl-richtfunk">
+    <h2>Einzelauftrag Richtfunkstrecke WLAN${fortsetzung ? ' (Fortsetzung)' : ''}</h2>
+    <table class="tab-richtfunk">
+      <thead>
+        ${fortsetzung ? '' : `<tr class="rf-kopfzeile"><th>Richtfunkstrecke</th>
+          <td colspan="2">${escapeHtml(s.name)}</td></tr>`}
+        <tr class="rf-spaltenkopf"><th></th>
+          <th scope="col">${escapeHtml(s.von || 'Aufbauplatz A')}</th>
+          <th scope="col">${escapeHtml(s.nach || 'Aufbauplatz B')}</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p class="tab-fussnote">Die Datenrate ist die Bruttorate der Funkschnittstelle bei
+      höchstem Modulationsschema, nicht der Durchsatz über die Strecke. Abstrahlrichtung
+      und Distanz gelten zwischen den eingetragenen Aufbauplätzen; die Neigung wird am
+      Aufbauplatz auf den besten Empfangspegel eingedreht.</p>
+  </section>`;
+}
+
+function richtfunkZeilenHTML(p, s) {
+  const v = s.richtfunk;
+  const f = funkstrecke(s);
+  const o = v.standorte;
+  const wert = x => (x === '' || x === null || x === undefined) ? '–' : String(x);
+  const koord = i => f ? toMGRS((i ? f.b : f.a).lat, (i ? f.b : f.a).lng, 5) : '–';
+  const hoeheNN = i => o[i].hoehe === null || o[i].hoehe === '' ? '–' : meter(Number(o[i].hoehe));
+  const antenne = i => o[i].antennenhoehe ? meter(Number(o[i].antennenhoehe)) : '–';
+  const mimo = MIMO_ARTEN.map(m =>
+    `<span class="rf-kasten${m.id === v.mimo ? ' an' : ''}">${escapeHtml(m.name)}</span>`).join('');
+
+  const paar = (titel, unter, links, rechts) =>
+    `<tr><th>${escapeHtml(titel)}${unter ? `<small>${escapeHtml(unter)}</small>` : ''}</th>
+       <td>${links}</td><td>${rechts}</td></tr>`;
+  const ganz = (titel, inhalt, unter = '') =>
+    `<tr><th>${escapeHtml(titel)}${unter ? `<small>${escapeHtml(unter)}</small>` : ''}</th>
+       <td colspan="2">${inhalt}</td></tr>`;
+
+  /* Der Kontaktblock steht im Vordruck als Aufzählung unter „Einheit“ – das
+     bleibt so, statt drei zusätzliche Zeilen aufzumachen: am Bauplatz wird er
+     als ein Block gelesen. */
+  const einheitZelle = i => {
+    const zeilen = [
+      ['Ansprechpartner', o[i].ansprechpartner],
+      ['Erreichbarkeit', o[i].erreichbarkeit],
+      ['Rufname', o[i].rufname]
+    ];
+    return `<b>${escapeHtml(o[i].einheit || '–')}</b>
+      <ul class="rf-kontakt">${zeilen.map(([t, w]) =>
+        `<li><i>${t}</i> ${escapeHtml(w || '–')}</li>`).join('')}</ul>`;
+  };
+
+  const adresse = i => o[i].platz
+    ? escapeHtml(o[i].platz).replace(/\n/g, '<br>') : '–';
+
+  return `${paar('Einheit', '', einheitZelle(0), einheitZelle(1))}
+        ${ganz('Betriebsbereit bis', escapeHtml(wert(v.betriebsbereit)))}
+        ${ganz('Betriebszeit', escapeHtml(wert(v.betriebszeit)))}
+        ${paar('Aufbauplatz', 'Adresse', adresse(0), adresse(1))}
+        ${paar('Koordinate', 'UTM REF', `<span class="mono">${escapeHtml(koord(0))}</span>`,
+               `<span class="mono">${escapeHtml(koord(1))}</span>`)}
+        ${paar('Höhe über NN', '', escapeHtml(hoeheNN(0)), escapeHtml(hoeheNN(1)))}
+        ${ganz('Distanz', f ? escapeHtml(formatLaenge(f.distanz)) : '–', 'Luftlinie')}
+        ${paar('Antennenhöhe', 'Masthöhe', escapeHtml(antenne(0)), escapeHtml(antenne(1)))}
+        ${paar('Abstrahlrichtung', 'Azimut',
+               f ? escapeHtml(azimutText(f.azimut[0], f.richtung[0])) : '–',
+               f ? escapeHtml(azimutText(f.azimut[1], f.richtung[1])) : '–')}
+        ${paar('Neigung', 'Elevation', escapeHtml(wert(o[0].neigung)), escapeHtml(wert(o[1].neigung)))}
+        ${ganz('Typ Access Point', escapeHtml(wert(v.accesspoint)))}
+        ${ganz('Typ Antenne', escapeHtml(wert(v.antenne)))}
+        ${ganz('Polarisation', escapeHtml(polarisationById(v.polarisation).name))}
+        ${ganz('MIMO', `<div class="rf-kaesten">${mimo}</div>`)}
+        ${ganz('Frequenzband', escapeHtml(bandById(v.band).kurz))}
+        ${ganz('Bandbreite', escapeHtml(`${v.bandbreite} MHz`))}
+        ${ganz('Kanal Strecke', escapeHtml(wert(v.kanal)))}
+        ${ganz('Datenrate', escapeHtml(datenrateText(v)))}
+        ${ganz('Modulation', escapeHtml(modulationById(v.modulation).name))}
+        <tr class="rf-frei"><th>Kommentar</th><td colspan="2">${
+          v.kommentar ? escapeHtml(v.kommentar).replace(/\n/g, '<br>') : ''}</td></tr>
+        <tr class="rf-fusszeile"><th>Stand / FdR</th><td colspan="2"><span class="mono">${
+          escapeHtml(p.kopf.stand || '–')}</span> / ${escapeHtml(p.kopf.fdr || '–')}</td></tr>`;
 }
 
 // ---------------------------------------------------------------- Material

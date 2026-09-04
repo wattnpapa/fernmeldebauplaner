@@ -1,11 +1,12 @@
 // state.js – Datenmodell, Projektverwaltung, LocalStorage, Undo
 
 import { neueStromangabe } from './strom.js';
+import { neueRichtfunkangabe } from './richtfunk.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 import { QUERUNG_STANDARD, BAUWEISE_STANDARD } from './vorschrift.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
 
-export const SCHEMA = 6;
+export const SCHEMA = 7;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -219,6 +220,7 @@ export function neueStrecke(projekt) {
     trommellaenge: k.trommel,
     verlegeleistung: k.leistung,
     strom: neueStromangabe(),
+    richtfunk: neueRichtfunkangabe(),
     abschnitt: null,
     trupp: '',
     bemerkung: '',
@@ -551,6 +553,15 @@ export function migrieren(p) {
         id: s.id || id(),
         kabeltyp: KABEL_ALIAS[s.kabeltyp] || s.kabeltyp || v.kabeltyp,
         strom: { ...v.strom, ...(s.strom || {}) },
+        /* Schema 7 hat die Angaben der Richtfunkstrecke eingeführt. Ältere
+           Stände bringen sie nicht mit und öffnen mit dem leeren Formular –
+           die beiden Aufbauplätze müssen dabei einzeln aufgefüllt werden,
+           sonst stünde dort ein Feld ohne Standorte. */
+        richtfunk: {
+          ...v.richtfunk, ...(s.richtfunk || {}),
+          standorte: v.richtfunk.standorte.map((leer, i) =>
+            ({ ...leer, ...(((s.richtfunk || {}).standorte || [])[i] || {}) }))
+        },
         punkte: (s.punkte || []).map(pt => ({ ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id() }))
       };
     }),

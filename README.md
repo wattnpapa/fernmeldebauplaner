@@ -30,6 +30,12 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Leitungsart (Feldkabel, Feldfernkabel, LWL, Netzwerk, Koax, Strom), Verlegeart,
   Bauzuschlag, Trommellänge und Verlegeleistung je Strecke
 - WLAN-Richtfunk als gestrichelte Funkstrecke – ohne Trommeln und Bauansatz
+- Für die Funkstrecke die Angaben des Vordrucks „Einzelauftrag Richtfunkstrecke WLAN“:
+  je Aufbauplatz Einheit mit Ansprechpartner, Erreichbarkeit und Rufname, Adresse,
+  Geländehöhe (auf Knopfdruck aus der Karte) und Antennenhöhe; für die Strecke
+  Access Point, Antenne, Frequenzband, Bandbreite, Kanal, MIMO, Polarisation und
+  Modulation. Koordinate, Distanz, Abstrahlrichtung und die Bruttodatenrate der
+  Funkschnittstelle rechnet das Programm
 
 **Einsatzabschnitte** (freiwillig)
 - Strecken und taktische Zeichen zu benannten Einsatzabschnitten mit Leitung und
@@ -118,6 +124,8 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Maßstabsleiste mit Maßstabsangabe, Übersichtskarte, Zeichenerklärung, Kennzahlenband
 - Blatt 2: Punkttabelle mit MGRS, GPS, Teilstrecke, Summe und Richtung;
   Materialbedarf; Auftragstext; Unterschriftenfelder
+- Bei einer Funkstrecke steht davor der ausgefüllte Vordruck „Einzelauftrag
+  Richtfunkstrecke WLAN“ – ein eigenes Blatt gleich hinter der Karte
 - A4/A3, hoch/quer, Farbe oder Schwarz-Weiß; im S/W-Druck unterscheiden Strichmuster
   statt Farben, die Karte wird auf die amtliche Graustufenkarte umgestellt
 - Die Druckkarte wird in doppelter Auflösung gerendert (≈ 190 dpi statt 96 dpi)
