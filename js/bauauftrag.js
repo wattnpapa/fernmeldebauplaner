@@ -1684,7 +1684,10 @@ function bemerkungHTML(p, s) {
   const text = [s.bemerkung, p.kopf.bemerkung].filter(Boolean).join('\n');
   return `<section class="bl-abschnitt">
     <h2>Auftrag und Bemerkungen</h2>
-    <div class="bl-freitext">${text ? escapeHtml(text).replace(/\n/g, '<br>') : ''}</div>
+    <div class="bl-freitext">
+      <div class="bl-linien" aria-hidden="true">${'<i></i>'.repeat(40)}</div>
+      <div class="bl-text">${text ? escapeHtml(text).replace(/\n/g, '<br>') : ''}</div>
+    </div>
   </section>`;
 }
 

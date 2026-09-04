@@ -494,10 +494,22 @@ body.druckansicht { overflow: hidden; }
 .rg-fundstelle { margin-left: 1.6mm; color: #555; white-space: nowrap; }
 .rg-fundstelle::before { content: 'Nr. '; }
 
+/* Die Schreiblinien sind einzelne Elemente mit Unterkante, kein
+   `repeating-linear-gradient`: der Verlauf kam aus dem Druck nicht heil
+   heraus – Firefox' eigener PDF-Schreiber ließ ihn ganz weg, über die
+   Druckvorschau von macOS wurden aus den `transparent`-Streifen schwarze
+   Balken quer über das Feld. Gezogene Kanten geben beide Wege verlässlich
+   aus. Reichlich Linien, die Lage schneidet ab, was nicht ins Feld passt –
+   so bleibt das Feld auch beschriftet und mitgewachsen durchgehend liniert. */
 .bl-freitext {
+  position: relative; overflow: hidden;
   border: .5pt solid #999; border-radius: .8mm; padding: 2mm; min-height: 16mm;
-  background: repeating-linear-gradient(to bottom, transparent 0, transparent 5.4mm, #e3e3e3 5.4mm, #e3e3e3 5.6mm);
 }
+.bl-linien { position: absolute; left: 2mm; right: 2mm; top: 2mm; bottom: 0; }
+.bl-linien i { display: block; height: 5.6mm; border-bottom: .4pt solid #d0d0d0; }
+/* Gleiche Zeilenhöhe wie die Linien darunter: sonst schneidet eine getippte
+   Bemerkung die Linien wie ein Durchstrich. */
+.bl-text { position: relative; line-height: 5.6mm; }
 
 .us-gitter { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.4mm; }
 .us-feld { border: .5pt solid #999; border-radius: .8mm; padding: 1.6mm 2mm 2.4mm; }
