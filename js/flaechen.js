@@ -53,7 +53,8 @@ export const flaechenTitel = f => f.name || flaechenartById(f.art).kurz;
    auf einen Blick zu unterscheiden ist: der Koffer mit Ausschub und Kabine
    ist der FüKomKW, der breite Kasten mit Mast und Deichsel der Anhänger, das
    Rechteck mit Firstlinie das Zelt. Die Lage entspricht dem Erkundungsblatt –
-   Fahrerhaus und Deichsel unten, Ausschub vom Anhänger weg. Die Zeichnung ist
+   Fahrerhaus unten, Ausschub vom Anhänger weg; beim Anhänger Deichsel und
+   Mast oben, die Treppe unten. Die Zeichnung ist
    über die Vorlagenmaße hinaus dehnbar – wer eine Kante ändert, bekommt
    dieselbe Figur gestreckt. */
 const FIGUREN = {
@@ -72,12 +73,21 @@ const FIGUREN = {
     const sx = b / 5.21, sy = l / 8.37;
     const r = (x, y, w, h, k) =>
       `<rect x="${x * sx}" y="${y * sy}" width="${w * sx}" height="${h * sy}" class="fl-teil ${k}"/>`;
-    return `<line x1="${2.6 * sx}" y1="0" x2="${2.6 * sx}" y2="${1.7 * sy}" class="fl-linie"/>` +
-      `<circle cx="${2.6 * sx}" cy="${0.35 * sy}" r="${0.22 * sx}" class="fl-linie"/>` +   // Mast
+    const P = (x, y) => `${x * sx},${y * sy}`;
+    /* Vorn (oben) die Deichsel als V mit Kupplungsring und dem Mast in ihrer
+       Mitte, hinten die Treppe mit Stufen: die beiden Enden müssen sich auf
+       der Karte unterscheiden, sonst ist nicht zu erkennen, wo eingestiegen
+       wird und wo das Zugfahrzeug steht. */
+    return `<polyline points="${P(1.9, 1.7)} ${P(2.6, 0.35)} ${P(3.3, 1.7)}" class="fl-linie"/>` +   // Deichsel
+      `<circle cx="${2.6 * sx}" cy="${0.3 * sy}" r="${0.2 * sx}" class="fl-linie"/>` +      // Kupplung
+      `<circle cx="${2.6 * sx}" cy="${1.15 * sy}" r="${0.22 * sx}" class="fl-teil fl-voll"/>` +  // Mast
       r(0, 1.9, 1.35, 4.6, 'fl-leicht') +        // Ausschub links
       r(3.85, 1.9, 1.36, 4.6, 'fl-leicht') +     // Ausschub rechts
       r(1.35, 1.7, 2.5, 5.0, 'fl-voll') +        // Koffer
-      `<polygon points="${2.2 * sx},${6.7 * sy} ${3.0 * sx},${6.7 * sy} ${2.75 * sx},${8.37 * sy} ${2.45 * sx},${8.37 * sy}" class="fl-teil fl-leicht"/>`;   // Deichsel
+      r(2.05, 6.7, 1.1, 0.7, 'fl-leicht') +      // Podest
+      r(2.2, 7.4, 0.8, 0.97, 'fl-leicht') +      // Treppe
+      [7.65, 7.9, 8.15].map(y =>
+        `<line x1="${2.2 * sx}" y1="${y * sy}" x2="${3.0 * sx}" y2="${y * sy}" class="fl-linie"/>`).join('');
   },
   zelt_sg300: (b, l) =>
     `<rect x="0" y="0" width="${b}" height="${l}" class="fl-teil fl-voll"/>` +
