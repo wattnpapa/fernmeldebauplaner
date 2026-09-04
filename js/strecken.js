@@ -47,12 +47,19 @@ export function kennzahlen(strecke) {
   /* Die kumulierten Längen tragen die Trassenlänge in ihrem letzten Wert; so
      fallen die teuren Entfernungsrechnungen nur einmal an. */
   const kum = kumuliert(p);
-  const trasse = kum[kum.length - 1];
   const kabel = kabelById(strecke.kabeltyp);
   /* Eine Funkstrecke wird nicht verlegt: ihr Bedarf ist die Luftlinie selbst,
      alles Trommel- und Bauzeitrechnen fällt weg – sonst stünden im Bauauftrag
      Trommeln für eine Strecke, auf der kein Meter Kabel liegt. */
   const funk = !!kabel.funk;
+  /* Und ihre Länge ist die Luftlinie zwischen Anfang und Ende, nicht die Summe
+     der Teilstrecken: die Verbindung geht durch die Luft, auch wenn die Linie
+     auf der Karte über einen Knick gezeichnet wurde. Ohne diese Unterscheidung
+     nennt dasselbe Blatt zwei Zahlen für dieselbe Größe – das Kennzahlenfeld
+     die Summe der Abschnitte, der Einzelauftrag die Luftlinie. */
+  const trasse = funk && p.length >= 2
+    ? distanz(p[0], p[p.length - 1])
+    : kum[kum.length - 1];
   const zuschlag = funk ? 0 : Math.max(0, Number(strecke.zuschlag) || 0);
   const bedarf = trasse * (1 + zuschlag / 100);
   const tl = Math.max(1, Number(strecke.trommellaenge) || 500);
@@ -480,7 +487,22 @@ export class StreckenLayer {
     }
 
     // Teillängen
-    if (o.teillaengen && pfad.length >= 2 && !nebensache) {
+    /* Bei der Funkstrecke sagt die Teillänge nichts: die Verbindung geht durch
+       die Luft von Anfang zu Ende, auch wenn die Linie auf der Karte über einen
+       Knick gezeichnet wurde. Statt Abschnittsmaßen, die niemand abschreitet,
+       steht dort einmal die Luftlinie – dieselbe Zahl, mit der Formular und
+       Bauauftrag rechnen. */
+    if (o.teillaengen && pfad.length >= 2 && !nebensache && kabelById(s.kabeltyp).funk) {
+      const a = s.punkte[0], b = s.punkte[s.punkte.length - 1];
+      L.marker(mitte(a, b), {
+        pane: 'fbp-labels', interactive: false,
+        icon: L.divIcon({
+          className: 'fbp-label',
+          html: `<span class="seg-mass" style="--farbe:${st.farbe}">${meter(distanz(a, b))}</span>`,
+          iconSize: null
+        })
+      }).addTo(this.gruppe);
+    } else if (o.teillaengen && pfad.length >= 2 && !nebensache) {
       const laengen = segmentLaengen(s);
       for (let i = 1; i < s.punkte.length; i++) {
         const a = s.punkte[i - 1], b = s.punkte[i];

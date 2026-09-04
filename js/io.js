@@ -3,10 +3,11 @@
 import {
   store, migrieren, neueStrecke, neuerPunkt, neuesZeichen, id, ladeAlle, dateisicherungVermerken,
   abschnittById, zeichengruppeById, streckenIm, zeichenIm, zeichenFuer, flaechenIm, flaechenFuer,
-  punktartById, VERLEGEARTEN
+  punktartById, VERLEGEARTEN, KABELTYPEN
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
+import { bandById, funkstrecke, azimutText } from './richtfunk.js';
 import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
 import { querungsartById, bauweiseById, querungsMinuten } from './vorschrift.js';
 import { kmlLesen, kmlSchreiben, kmlAusKMZ, istKMZ, alsText } from './kml.js';
@@ -20,6 +21,54 @@ const querungsartText = pt => pt.art === 'querung' ? querungsartById(pt.querungs
    der Empfänger der Datei nicht, wo Stangen zu stellen sind. */
 const bauweiseText = pt => pt.art === 'querung' ? bauweiseById(pt.bauweise).name : '';
 const querungszeitText = pt => pt.art === 'querung' ? `${querungsMinuten(pt)} min` : '';
+
+/* Was eine Funkstrecke in einer Austauschdatei ausmacht. Sie führt wie ein Kabel
+   von Punkt zu Punkt, aber ohne Trasse: maßgebend ist die Luftlinie zwischen
+   Anfangs- und Endpunkt, nicht die Summe der Teilstrecken. Der Azimut steht dabei
+   als rechtweisend gekennzeichnet – in einer Datei, die auch in einem Hand-GPS
+   landet, wäre eine nackte Gradzahl neben der Missweisung eine Falle. */
+function funkAngaben(s, k) {
+  const f = funkstrecke(s);
+  const v = s.richtfunk || {};
+  return {
+    luftlinie_m: f ? Math.round(f.distanz) : Math.round(k.trasse),
+    band: bandById(v.band).kurz,
+    bandbreite_mhz: v.bandbreite,
+    kanal: v.kanal || '',
+    mimo: v.mimo,
+    polarisation: v.polarisation,
+    ...(f ? { azimut_grad_rechtweisend: Math.round(f.azimut[0]) } : {})
+  };
+}
+
+function funkZeilen(s) {
+  const f = funkstrecke(s);
+  const v = s.richtfunk || {};
+  return [
+    f && `Luftlinie ${Math.round(f.distanz)} m · ${azimutText(f.azimut[0], f.richtung[0])} rw`,
+    `${bandById(v.band).kurz} · ${v.bandbreite} MHz${v.kanal ? ` · Kanal ${v.kanal}` : ''}`
+  ].filter(Boolean);
+}
+
+/* Der eigene Export soll wieder hereinkommen, sonst ist der Umweg über Google
+   Earth eine Einbahnstraße: eine Funkstrecke käme als Kabelstrecke zurück und
+   bekäme Trommeln und Bauzuschlag angehängt. Erkannt wird über den ausgegebenen
+   Klartextnamen, weil der auch in einer von Hand bearbeiteten Datei stehen bleibt;
+   die Kennung selbst steht dort nicht. */
+function kabeltypAusText(text) {
+  if (!text) return null;
+  const gesucht = String(text).trim().toLowerCase();
+  const treffer = KABELTYPEN.find(k =>
+    k.name.toLowerCase() === gesucht || k.kurz.toLowerCase() === gesucht || k.id === gesucht);
+  return treffer ? treffer.id : null;
+}
+
+function gpxStreckenText(s) {
+  const k = kennzahlen(s);
+  if (!k.kabel.funk) return `${k.kabel.name} · Trasse ${Math.round(k.trasse)} m`;
+  const f = funkstrecke(s);
+  return `${k.kabel.name} · Luftlinie ${Math.round(f ? f.distanz : k.trasse)} m`;
+}
 
 function dateiname(teile, endung) {
   return teile.filter(Boolean).join('_')
@@ -185,6 +234,13 @@ function geoJSONUebernehmen(fc) {
         const s = neueStrecke(p);
         s.name = eig.name || eig.Name || s.name;
         if (eig.farbe) s.farbe = eig.farbe;
+        if (eig.von) s.von = eig.von;
+        if (eig.nach) s.nach = eig.nach;
+        const art = kabeltypAusText(eig.kabeltyp);
+        if (art) s.kabeltyp = art;
+        if (eig.verlegeart && VERLEGEARTEN.some(v => v.id === eig.verlegeart)) {
+          s.verlegeart = eig.verlegeart;
+        }
         s.punkte = g.coordinates.map(([lng, lat]) => neuerPunkt(lat, lng));
         if (s.punkte.length) { s.punkte[0].art = 'start'; s.punkte[s.punkte.length - 1].art = 'ziel'; }
         p.strecken.push(s);
@@ -257,9 +313,15 @@ export function geoJSON(nurStrecke = null) {
       geometry: { type: 'LineString', coordinates: s.punkte.map(x => [x.lng, x.lat]) },
       properties: {
         name: s.name, von: s.von, nach: s.nach, farbe: s.farbe,
-        kabeltyp: k.kabel.name, verlegeart: s.verlegeart,
-        trassenlaenge_m: Math.round(k.trasse), zuschlag_prozent: k.zuschlag,
-        kabelbedarf_m: Math.round(k.bedarf), trommeln: k.trommeln,
+        kabeltyp: k.kabel.name,
+        /* Die Funkstrecke wird nicht verlegt: Verlegeart, Bauzuschlag, Bedarf und
+           Trommeln wären dort erfundene Werte – der Empfänger der Datei läse sie
+           als Materialansatz. An ihrer Stelle steht, was die Strecke ausmacht. */
+        ...(k.kabel.funk ? funkAngaben(s, k) : {
+          verlegeart: s.verlegeart,
+          trassenlaenge_m: Math.round(k.trasse), zuschlag_prozent: k.zuschlag,
+          kabelbedarf_m: Math.round(k.bedarf), trommeln: k.trommeln
+        }),
         ...(k.strom ? {
           netzform: k.strom.netz.name,
           betriebsstrom_a: Math.round(k.strom.strom * 10) / 10,
@@ -324,9 +386,12 @@ function streckenAngaben(s) {
   const ea = abschnittById(store.projekt, s.abschnitt);
   return [
     s.von && s.nach ? `${s.von} → ${s.nach}` : (s.von || s.nach),
-    `${k.kabel.name} · ${(VERLEGEARTEN.find(v => v.id === s.verlegeart) || {}).name || ''}`,
-    `Trasse ${Math.round(k.trasse)} m · Bedarf ${Math.round(k.bedarf)} m (${k.zuschlag} % Zuschlag)`,
-    `${k.trommeln} ${k.trommeln === 1 ? 'Trommel' : 'Trommeln'} à ${k.trommellaenge} m`,
+    k.kabel.funk ? k.kabel.name
+      : `${k.kabel.name} · ${(VERLEGEARTEN.find(v => v.id === s.verlegeart) || {}).name || ''}`,
+    ...(k.kabel.funk ? funkZeilen(s) : [
+      `Trasse ${Math.round(k.trasse)} m · Bedarf ${Math.round(k.bedarf)} m (${k.zuschlag} % Zuschlag)`,
+      `${k.trommeln} ${k.trommeln === 1 ? 'Trommel' : 'Trommeln'} à ${k.trommellaenge} m`
+    ]),
     k.strom && `${k.strom.netz.name} · ${Math.round(k.strom.strom * 10) / 10} A · ${k.strom.querschnitt} mm²`,
     ea && `Einsatzabschnitt: ${ea.name}`,
     s.trupp && `Trupp: ${s.trupp}`,
@@ -494,7 +559,7 @@ export function gpxExportieren(sid = null) {
 
   const trks = strecken.map(s => `  <trk>
     <name>${esc(s.name)}</name>
-    <desc>${esc(`${kennzahlen(s).kabel.name} · Trasse ${Math.round(kennzahlen(s).trasse)} m`)}</desc>
+    <desc>${esc(gpxStreckenText(s))}</desc>
     <trkseg>
 ${s.punkte.map(pt => `      <trkpt lat="${pt.lat.toFixed(7)}" lon="${pt.lng.toFixed(7)}"/>`).join('\n')}
     </trkseg>
@@ -519,7 +584,7 @@ export function csvExportieren(sid) {
   const seg = segmentLaengen(s), kum = kumuliert(s.punkte);
   const zeilen = [[
     'Nr', 'Art', 'Querungsart', 'Bauweise', 'Zeitansatz', 'Bezeichnung', 'MGRS', 'GPS Grad/Dez.-Min.', 'Breite', 'Länge',
-    'Teilstrecke_m', 'ab_Anfang_m', 'Richtung_Grad', 'Bemerkung'
+    'Teilstrecke_m', 'ab_Anfang_m', 'Richtung_Grad_rechtweisend', 'Bemerkung'
   ]];
   s.punkte.forEach((pt, i) => zeilen.push([
     i + 1, pt.art, querungsartText(pt), bauweiseText(pt), querungszeitText(pt), pt.name || '',
