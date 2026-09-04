@@ -212,9 +212,9 @@ export function erstelleKarte(el, ansicht = {}) {
     preferCanvas: false
   });
 
-  /* Der Geländeschatten liegt unter allem, was geplant wird: er ist
-     Kartengrundlage, kein Planungsinhalt. Läge er darüber, verdeckte er
-     ausgerechnet die Strecken, deren Machbarkeit er beurteilen soll. */
+  /* Die Funksichtfläche liegt unter allem, was geplant wird: sie ist
+     Kartengrundlage, kein Planungsinhalt. Läge sie darüber, verdeckte sie
+     ausgerechnet die Strecken, deren Machbarkeit sie beurteilen soll. */
   karte.createPane('fbp-schatten').style.zIndex = 405;
   karte.getPane('fbp-schatten').style.pointerEvents = 'none';
   /* Die Flächen liegen unter den Strecken: sie sind Grundriss, die Trasse
@@ -312,42 +312,45 @@ export function warteAufKacheln(karte, timeoutMs = 8000) {
   }))).then(() => undefined);
 }
 
-// ---------------------------------------------------------------- Geländeschatten
+// ---------------------------------------------------------------- Funksicht
 
-/* Der Schatten kommt als Bild auf die Karte, nicht als Polygonzug: das Raster
-   hat je nach Umkreis über hunderttausend Zellen, und eine Konturverfolgung
-   daraus wären Zehntausende Pfadpunkte, die Leaflet bei jedem Verschieben neu
-   zeichnen müsste. Ein Bild wird einmal erzeugt und danach nur noch skaliert.
+/* Die Fläche kommt als Bild auf die Karte, nicht als Polygonzug: das Raster hat
+   je nach Umkreis über hunderttausend Zellen, und eine Konturverfolgung daraus
+   wären Zehntausende Pfadpunkte, die Leaflet bei jedem Verschieben neu zeichnen
+   müsste. Ein Bild wird einmal erzeugt und danach nur noch skaliert.
 
    Gezeichnet wird ohne Glättung (`imageRendering: pixelated`): die harte
-   Rasterkante ist ehrlich – sie zeigt, in welcher Körnung gerechnet wurde.
-   Eine weiche Kante täuschte eine Genauigkeit vor, die 25 m Zellenmaß nicht
-   haben.
+   Rasterkante ist ehrlich – sie zeigt, in welcher Körnung gerechnet wurde. Eine
+   weiche Kante täuschte eine Genauigkeit vor, die 25 m Zellenmaß nicht haben.
 
-   Die Farbe ist ein neutrales Grau und kein Rot: Rot ist in diesem Werkzeug
-   die Farbe der Warnung, und der Geländeschatten warnt nicht, er verschattet.
-   Die Deckung liegt bei gut vier Zehnteln: genug, um die Fläche auf einen
-   Blick zu sehen, wenig genug, um über dem Luftbild noch Waldrand und
-   Bebauung zu erkennen – und die muss man erkennen, weil sie in der Rechnung
-   gerade fehlen. Die Durchsicht steckt im Bild selbst und nicht in einem
-   CSS-Filter: Firefox gibt Seitenbereiche mit `filter` beim Drucken gar nicht
-   aus (siehe `grauVariante`), ein Bild mit Alphakanal dagegen schon. */
-export function zeichneSchatten(karte, e) {
+   Die Farbe ist Violett, und das aus zwei Gründen. Erstens führt eine
+   topografische Karte selbst kein Violett: Grün ginge in den Waldflächen der
+   TopPlusOpen unter, Blau im Gewässer, Orange in den Straßen – die Fläche wäre
+   dort, wo man sie am nötigsten braucht, nicht zu sehen. Zweitens ist Grün die
+   Farbe der Freigabe, und eine Freigabe ist diese Fläche gerade nicht: sie ist
+   die günstigste Annahme über nacktem Gelände. Die Deckung liegt bei gut vier
+   Zehnteln –
+   genug, um die Fläche auf einen Blick zu sehen, wenig genug, um über dem
+   Luftbild noch Waldrand und Bebauung zu erkennen. Die muss man erkennen: sie
+   fehlen in der Rechnung. Die Durchsicht steckt im Bild selbst und nicht in
+   einem CSS-Filter – Firefox gibt Seitenbereiche mit `filter` beim Drucken gar
+   nicht aus (siehe `grauVariante`), ein Bild mit Alphakanal dagegen schon. */
+export function zeichneFunksicht(karte, e) {
   const c = document.createElement('canvas');
   c.width = e.spalten; c.height = e.zeilen;
   const ctx = c.getContext('2d');
   const bild = ctx.createImageData(e.spalten, e.zeilen);
-  for (let i = 0; i < e.schatten.length; i++) {
+  for (let i = 0; i < e.sicht.length; i++) {
     const j = i * 4;
-    if (e.schatten[i]) {
-      bild.data[j] = 40; bild.data[j + 1] = 44; bild.data[j + 2] = 52; bild.data[j + 3] = 105;
+    if (e.sicht[i]) {
+      bild.data[j] = 124; bild.data[j + 1] = 46; bild.data[j + 2] = 158; bild.data[j + 3] = 112;
     }
   }
   ctx.putImageData(bild, 0, 0);
   const [sw, no] = e.ecken;
   const ebene = L.imageOverlay(c.toDataURL('image/png'),
     [[sw.lat, sw.lng], [no.lat, no.lng]],
-    { pane: 'fbp-schatten', interactive: false, alt: 'Geländeschatten' });
+    { pane: 'fbp-schatten', interactive: false, alt: 'Funksicht über das Gelände' });
   ebene.addTo(karte);
   const el = ebene.getElement();
   if (el) el.style.imageRendering = 'pixelated';

@@ -413,8 +413,8 @@ Drei Verbindungen gehen trotzdem nach außen, alle ohne Planungsinhalte:
   Kartenausschnitt – also die Gegend, in der geplant wird. Voreingestellt sind die Ebenen
   des BKG; die Ebenen von Esri (USA) und die Orthophotos der Länder werden nur auf
   ausdrückliche Auswahl geladen.
-- **Höhenkacheln** für die Geländehöhe, das Höhenprofil einer Funkstrecke und den
-  Geländeschatten holt der Browser bei AWS Open Data (USA). Eine Kachel deckt auf
+- **Höhenkacheln** für die Geländehöhe, das Höhenprofil einer Funkstrecke und die
+  Funksichtfläche holt der Browser bei AWS Open Data (USA). Eine Kachel deckt auf
   unserer Breite rund 6 km ab – der Anbieter sieht damit einen gröberen Ausschnitt,
   als die Karte darüber ohnehin verrät, nicht die abgefragte Stelle.
 

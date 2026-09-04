@@ -37,8 +37,8 @@ import { bilderAufnehmen } from './bilder.js';
 import { bildUrl, miniUrl } from './bildspeicher.js';
 import * as io from './io.js';
 import { oeffneBauauftrag, oeffneSammeldruck, oeffneLagekarte } from './bauauftrag.js';
-import { gelaendeschatten, schattenText, UMKREIS_STANDARD } from './gelaendeschatten.js';
-import { zeichneSchatten } from './map.js';
+import { funksicht, sichtText, UMKREIS_STANDARD } from './funksicht.js';
+import { zeichneFunksicht } from './map.js';
 import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
@@ -783,11 +783,11 @@ function stromErgebnisHTML(a) {
    Geländehöhe ist der Zwitter – sie käme aus derselben Quelle wie das
    Höhenprofil, muss aber im Auftrag festgeschrieben stehen. Sie wird deshalb
    auf Knopfdruck geholt und dann als Zahl gehalten. */
-/* Es gibt immer höchstens einen Geländeschatten auf der Karte. Zwei
-   übereinander wären nicht mehr auseinanderzuhalten – beide sind dasselbe
-   Grau –, und der Satz daneben könnte nur für einen von beiden gelten. Der
-   Zustand steht deshalb hier und nicht in der Gruppe: er muss auch dann noch
-   erreichbar sein, wenn die Gruppe für eine andere Strecke neu gebaut wird. */
+/* Es gibt immer höchstens eine Funksichtfläche auf der Karte. Zwei übereinander
+   wären nicht mehr auseinanderzuhalten – beide sind dasselbe Violett –, und der
+   Satz daneben könnte nur für eine von beiden gelten. Der Zustand steht deshalb
+   hier und nicht in der Gruppe: er muss auch dann noch erreichbar sein, wenn die
+   Gruppe für eine andere Strecke neu gebaut wird. */
 let schattenEbene = null, schattenBefund = null;
 
 function schattenWeg() {
@@ -797,7 +797,82 @@ function schattenWeg() {
 
 function schattenHTML() {
   if (!schattenBefund) return '';
-  return `<p class="rf-gelaende">${escapeHtml(schattenText(schattenBefund))}</p>`;
+  return `<p class="rf-gelaende">${escapeHtml(sichtText(schattenBefund))}</p>`;
+}
+
+/* Höhen und Geländeurteil führen sich selbst nach. Das hing vorher an zwei
+   Knöpfen, und das war die falsche Frage an den Nutzer: er hat die
+   Aufbauplätze gesetzt, damit er weiß, ob die Strecke trägt – nicht, damit er
+   danach noch zweimal auslöst.
+
+   Angestoßen wird trotzdem nicht bei jedem Tastendruck. Der Abruf holt Kacheln
+   entlang der ganzen Strecke, und beim Ziehen eines Endpunkts liefe er sonst
+   je Mausbewegung erneut. Deshalb eine Wartezeit nach der letzten Änderung und
+   eine Sperre je Strecke: was schon läuft, wird nicht zweimal angestoßen.
+
+   Der Ablauf ist zweistufig und läuft von selbst aus. Erst fehlen die
+   Geländehöhen, sie werden geholt und geschrieben – das baut die Gruppe neu
+   auf und stößt einen zweiten Lauf an. Der findet die Höhen vor, holt das
+   Profil und legt das Urteil ab, ohne den Zustand anzufassen. Ein dritter Lauf
+   findet das Urteil im Zwischenspeicher und tut nichts mehr. */
+const HOEHEN_WARTEZEIT = 500;
+const gelaendeLaeuft = new Set();
+const hoehenStand = new Map();
+let gelaendeTimer = null;
+
+const ortSignatur = f =>
+  `${f.a.lat.toFixed(5)},${f.a.lng.toFixed(5)}|${f.b.lat.toFixed(5)},${f.b.lng.toFixed(5)}`;
+
+function gelaendePlanen(s, aktualisieren) {
+  if (gelaendeTimer) clearTimeout(gelaendeTimer);
+  gelaendeTimer = setTimeout(() => gelaendeNachfuehren(s, aktualisieren), HOEHEN_WARTEZEIT);
+}
+
+function gelaendeNachfuehren(s, aktualisieren) {
+  const f = funkstrecke(s);
+  if (!f || gelaendeLaeuft.has(s.id)) return;
+  const ort = ortSignatur(f);
+
+  /* Die Geländehöhe gehört zum Ort, nicht zum Formular: zieht jemand einen
+     Aufbauplatz um, ist die alte Höhe falsch und wird ersetzt. Geschrieben
+     wird über das übergebene Projekt und nicht über den mitgeschleppten
+     Schnappschuss – zwischen Anstoß und Antwort kann die Strecke gelöscht
+     worden sein. */
+  if (hoehenStand.get(s.id) !== ort || f.hoehen.some(h => h.grund === null)) {
+    gelaendeLaeuft.add(s.id);
+    aktualisieren();
+    Promise.all([f.a, f.b].map(pt => hoeheAn(pt.lat, pt.lng)))
+      .then(hoehen => {
+        hoehenStand.set(s.id, ort);
+        if (hoehen.every(h => h === null)) return;
+        store.aendern(p => {
+          const st = p.strecken.find(x => x.id === s.id);
+          if (!st) return;
+          hoehen.forEach((h, i) => {
+            if (h !== null) st.richtfunk.standorte[i].hoehe = Math.round(h);
+          });
+        }, 'strecke');
+      })
+      .catch(() => {})
+      .finally(() => { gelaendeLaeuft.delete(s.id); aktualisieren(); });
+    return;
+  }
+
+  if (urteilLesen(s) !== undefined) return;
+  gelaendeLaeuft.add(s.id);
+  aktualisieren();
+  profil(f.a, f.b, 25)
+    .then(punkte => {
+      const mitte = f.hoehen.map(h => h.grund + (h.antenne || 0));
+      /* Mitgespeichert werden auch die Stützpunkte: das Blatt zeichnet später
+         dasselbe Profil und darf dafür nicht nachladen. */
+      urteilMerken(s, {
+        ...gelaendeurteil(punkte, mitte[0], mitte[1], f.mhz),
+        profil: punkte, mitten: mitte, mhz: f.mhz
+      });
+    })
+    .catch(() => {})
+    .finally(() => { gelaendeLaeuft.delete(s.id); aktualisieren(); });
 }
 
 function richtfunkGruppe(s, frisch) {
@@ -872,65 +947,29 @@ function richtfunkGruppe(s, frisch) {
   }
   gruppe.appendChild(spalten);
 
-  /* Ein Knopf für beide Enden: einzeln geholt wäre es zweimal derselbe
-     Handgriff, und die Kacheln kommen ohnehin aus einer Anfrage. */
-  const hoehenTaste = el('div', 'tastenreihe');
-  hoehenTaste.appendChild(knopf('Geländehöhen aus der Karte holen', () => {
-    const p = s.punkte;
-    if (p.length < 2) return hinweis('Erst beide Aufbauplätze auf der Karte setzen.');
-    const enden = [p[0], p[p.length - 1]];
-    Promise.all(enden.map(pt => hoeheAn(pt.lat, pt.lng))).then(hoehen => {
-      if (hoehen.every(h => h === null)) return hinweis('Für diese Stelle liegt keine Höhe vor.', 'fehler');
-      store.aendern(() => {
-        hoehen.forEach((h, i) => { if (h !== null) v.standorte[i].hoehe = Math.round(h); });
-      }, 'strecke');
-    }, () => hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'));
-  }, 'klein'));
+  /* Höhen und Geländeurteil laufen von selbst, sobald beide Aufbauplätze
+     stehen: es war ein Formular mit zwei Knöpfen, die man drücken musste, um
+     die Angaben zu bekommen, die man ohnehin wollte. Nicht bei jedem
+     Tastendruck – die Nachführung hängt an der Geometrie und wird abgewartet
+     (siehe gelaendePlanen). */
+  const tastenreihe = el('div', 'tastenreihe');
 
-  /* Das Gelände wird auf Ausdruck geprüft, nicht laufend: der Abruf holt
-     Kacheln entlang der ganzen Strecke, und ein Urteil, das bei jedem
-     Tastendruck neu erschiene, würde beim Tippen flackern. */
-  hoehenTaste.appendChild(knopf('Gelände zwischen den Plätzen prüfen', ev => {
-    const f = funkstrecke(s);
-    if (!f) return hinweis('Erst beide Aufbauplätze auf der Karte setzen.');
-    if (f.hoehen.some(h => h.grund === null)) {
-      return hinweis('Erst die Geländehöhen beider Aufbauplätze holen.');
-    }
-    const taste = ev && ev.currentTarget;
-    if (taste) { taste.disabled = true; taste.textContent = 'Höhen werden geholt …'; }
-    profil(f.a, f.b, 25).then(punkte => {
-      const mitte = f.hoehen.map(h => h.grund + (h.antenne || 0));
-      /* Mitgespeichert werden auch die Stützpunkte selbst: das Blatt zeichnet
-         später dasselbe Profil, und es darf dafür nicht nachladen – der Druck
-         würde sonst auf einen Netzabruf warten und ein Bild ausgeben, das nie
-         jemand gesehen hat. */
-      urteilMerken(s, {
-        ...gelaendeurteil(punkte, mitte[0], mitte[1], f.mhz),
-        profil: punkte, mitten: mitte, mhz: f.mhz
-      });
-      aktualisieren();
-    }).catch(() => hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'))
-      .finally(() => {
-        if (taste) { taste.disabled = false; taste.textContent = 'Gelände zwischen den Plätzen prüfen'; }
-      });
-  }, 'klein'));
-
-  /* Der Geländeschatten ist ein Blick, kein Planungsinhalt: er wird angestoßen,
+  /* Die Funksichtfläche ist ein Blick, kein Planungsinhalt: sie wird angestoßen,
      angesehen und wieder weggenommen. Deshalb kein Dialog, keine Farbwahl und
      keine Liste – der Umkreis steht fest, Standort und Antennenhöhe stehen
-     ohnehin schon in der Spalte darüber. Gespeichert wird nichts: ein Schatten,
-     der eine Planung überdauert, wäre irgendwann für eine andere Masthöhe
+     ohnehin schon in der Spalte darüber. Gespeichert wird nichts: eine Fläche,
+     die eine Planung überdauert, wäre irgendwann für eine andere Masthöhe
      gerechnet als die, die danebensteht. */
-  hoehenTaste.appendChild(knopf('Geländeschatten von Platz A', ev => {
+  tastenreihe.appendChild(knopf('Funksicht von Platz A', ev => {
     const f = funkstrecke(s);
     if (!f) return hinweis('Erst beide Aufbauplätze auf der Karte setzen.');
     if (schattenEbene) { schattenWeg(); return aktualisieren(); }
     const taste = ev && ev.currentTarget;
     if (taste) { taste.disabled = true; taste.textContent = 'Höhen werden geholt …'; }
     const hoch = Number(s.richtfunk.standorte[0].antennenhoehe) || 3;
-    gelaendeschatten(f.a, hoch, f.mhz, UMKREIS_STANDARD, hoch).then(e => {
+    funksicht(f.a, hoch, f.mhz, UMKREIS_STANDARD, hoch).then(e => {
       if (!e) return hinweis('Für diesen Umkreis liegen keine Höhen vor.', 'fehler');
-      schattenEbene = zeichneSchatten(ctx.karte, e);
+      schattenEbene = zeichneFunksicht(ctx.karte, e);
       schattenBefund = e;
       aktualisieren();
     }).catch(() => hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'))
@@ -938,11 +977,11 @@ function richtfunkGruppe(s, frisch) {
         if (taste) {
           taste.disabled = false;
           taste.textContent = schattenEbene
-            ? 'Geländeschatten ausblenden' : 'Geländeschatten von Platz A';
+            ? 'Funksicht ausblenden' : 'Funksicht von Platz A';
         }
       });
   }, 'klein'));
-  gruppe.appendChild(hoehenTaste);
+  gruppe.appendChild(tastenreihe);
 
   // -- Was für die Strecke als Ganzes gilt
   const betrieb = el('div', 'feld-paar');
@@ -1011,6 +1050,7 @@ function richtfunkGruppe(s, frisch) {
 
   aktualisieren();
   gruppe.appendChild(ergebnis);
+  gelaendePlanen(s, aktualisieren);
   return { gruppe, aktualisieren };
 }
 
@@ -1113,6 +1153,11 @@ function eirpHTML(s, f) {
    (funkrechnung.js), nicht als Fußnote darunter. */
 function gelaendeHTML(s) {
   const u = urteilLesen(s);
+  /* Solange geholt wird, steht das auch da. Ein Kasten, der sich nach ein paar
+     Sekunden stillschweigend um einen Absatz erweitert, wirkt wie ein Fehler. */
+  if (gelaendeLaeuft.has(s.id)) {
+    return '<p class="rf-gelaende rf-laeuft">Geländehöhen werden geholt …</p>';
+  }
   if (u === undefined) return '';
   if (u === null) return '<p class="rf-gelaende">Das Gelände ließ sich nicht beurteilen.</p>';
   return `${profilBildHTML(u)}

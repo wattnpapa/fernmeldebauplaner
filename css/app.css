@@ -581,6 +581,10 @@ body.seite-zu .seite { display: none; }
   color: var(--warnung-tief); font-weight: 600;
 }
 .rf-gelaende.rf-unbeurteilbar { color: var(--text-schwach); }
+/* Während geholt wird, bleibt der Kasten in derselben Form stehen – nur der
+   Text sagt, dass gerade etwas läuft. Ein Ladebalken an dieser Stelle wäre
+   Betrieb um des Betriebs willen: der Abruf dauert ein bis zwei Sekunden. */
+.rf-gelaende.rf-laeuft { color: var(--text-schwach); font-style: italic; }
 
 /* -- Sprechreichweite: ein Befund, keine Bestellmenge. Die Vorschrift nennt
    eine Erfahrungsspanne, deshalb drei Tonlagen statt einer Zahl. Aufbau wie

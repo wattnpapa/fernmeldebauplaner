@@ -1,22 +1,22 @@
-// gelaendeschatten.js – Was das Gelände von einem Aufbauplatz aus verdeckt
+// funksicht.js – Wohin vom Aufbauplatz aus freie Funksicht über das Gelände besteht
 
-/* Das Vorbild aus den Werkzeugen der Hersteller heißt „Viewshed“ und färbt
-   ein, was von einem Standort aus SICHTBAR ist. Genau das wird hier nicht
-   gemacht, und der Unterschied ist der ganze Zweck dieses Moduls.
+/* Eingefärbt wird die Fläche mit freier Funksicht – das ist die Frage, die man
+   auf einer Karte stellt: wohin komme ich von hier. Die Rechnung selbst ist
+   trotzdem eine Schattenrechnung, und das bleibt der Grund, warum die Fläche
+   vorsichtig zu lesen ist.
 
    Die Höhen kommen aus einem Geländemodell ohne Bewuchs und ohne Bebauung
-   (siehe hoehe.js). Wer damit „sichtbar“ einfärbt, malt über einer Ortslage
-   eine Fläche, die zum weit überwiegenden Teil in Wirklichkeit hinter Häusern
-   und Baumreihen liegt – und eine Flächenkarte prüft hinterher niemand Punkt
-   für Punkt nach. Umgekehrt trägt dieselbe Rechnung: was schon das nackte
-   Gelände verdeckt, bleibt verdeckt, denn Bewuchs und Bebauung können nur
-   weiter verdecken, nie freigeben.
+   (siehe hoehe.js). Belastbar ist deshalb nur die eine Richtung: was schon das
+   nackte Gelände verdeckt, bleibt verdeckt, denn Bewuchs und Bebauung können
+   nur weiter verdecken, nie freigeben. Die gefärbte Fläche ist damit die
+   GÜNSTIGSTE ANNAHME und kein Empfangsnachweis – über einer Ortslage liegt ein
+   großer Teil von ihr in Wirklichkeit hinter Häusern und Baumreihen. Das muss
+   der Satz neben der Fläche sagen, und er sagt es (siehe sichtText).
 
-   Eingefärbt wird deshalb der Schatten, nicht die Sicht. Die Aussage lautet
-   „von hier aus sicher nicht“ und nie „von hier aus geht es“. Das ist eine
-   schwächere Aussage als die der Vorbilder, aber die einzige, die diese Daten
-   hergeben – und sie beantwortet die Frage, die am Kartentisch gestellt wird:
-   welche Aufbauplätze fallen weg.
+   Ein Vorteil dieser Richtung wiegt den Nachteil teilweise auf: Zellen ohne
+   Höhendaten bleiben ungefärbt. Beim umgekehrten Anstrich fielen sie mit der
+   freien Fläche zusammen und läsen sich als Sicht; so fallen sie mit der
+   verdeckten zusammen und liegen damit auf der vorsichtigen Seite.
 
    Gerechnet wird mit Funksicht, nicht mit Augensicht: Erdkrümmung und die
    Freiraumforderung der ersten Fresnelzone gehen mit ein, sonst stünde die
@@ -50,25 +50,26 @@ const STRAHLDICHTE = 2;
    größer, als sie ist. */
 const BAENDER = 8;
 
-/* Arbeitswerte im Rasterfeld: 0 heißt „noch kein Strahl darüber“, 2 heißt
-   „geprüft und nicht verdeckt“. Nach außen gibt es nur 0 und 1 – die
-   Unterscheidung dient allein der Frage, welche Zellen überhaupt beurteilt
-   wurden, und damit der ehrlichen Bezugsgröße für den Flächenanteil. */
+/* Arbeitswerte im Rasterfeld. 0 heißt „noch kein Strahl darüber“ – das trifft
+   Zellen jenseits des Umkreises und solche ohne Höhendaten. Nach außen bleibt
+   nur die Sicht stehen; die Unterscheidung dient der Frage, welche Zellen
+   überhaupt beurteilt wurden, und damit der ehrlichen Bezugsgröße für den
+   Flächenanteil. */
 const VERDECKT = 1;
-const GEPRUEFT = 2;
+const SICHT = 2;
 
 /**
- * Geländeschatten um einen Standort.
+ * Fläche mit freier Funksicht um einen Standort.
  *
  * @param {{lat:number,lng:number}} standort
  * @param {number} antennenhoehe  Höhe der Antennenmitte über Grund in Metern
  * @param {number} mhz            Mittenfrequenz des Bandes
  * @param {number} umkreis        Umkreis in Metern
  * @param {number} zielhoehe      angenommene Antennenhöhe am Gegenende
- * @returns {Promise<object|null>} `schatten[i] === 1` heißt: durch das Gelände
- *          verdeckt. `null`, wenn keine Höhen zu bekommen waren.
+ * @returns {Promise<object|null>} `sicht[i] === 1` heißt: freie Funksicht über
+ *          das Gelände. `null`, wenn keine Höhen zu bekommen waren.
  */
-export async function gelaendeschatten(standort, antennenhoehe, mhz, umkreis, zielhoehe = 3) {
+export async function funksicht(standort, antennenhoehe, mhz, umkreis, zielhoehe = 3) {
   const r = Math.min(Math.max(200, umkreis || UMKREIS_STANDARD), UMKREIS_HOECHSTENS);
   const bild = await raster(standort, r);
   if (!bild || bild.fehlend === bild.werte.length) return null;
@@ -107,7 +108,7 @@ export async function gelaendeschatten(standort, antennenhoehe, mhz, umkreis, zi
   }
   const bandVon = d => Math.min(BAENDER - 1, Math.floor(d / r * BAENDER));
 
-  const schatten = new Uint8Array(spalten * zeilen);
+  const feld = new Uint8Array(spalten * zeilen);
   const maxima = new Float32Array(BAENDER);
   const strahlen = Math.max(8, Math.round(2 * Math.PI * rZellen * STRAHLDICHTE));
   let verdeckt = 0;
@@ -131,10 +132,13 @@ export async function gelaendeschatten(standort, antennenhoehe, mhz, umkreis, zi
       /* Der Gegenstandort steht auf einem Mast, nicht auf dem Boden – geprüft
          wird die Antennenmitte, nicht die Geländeoberfläche. */
       const winkelZiel = (h + zielhoehe - standorthoehe - erdstich[i]) * kehrwert[i];
+      /* Eine Zelle, die schon einmal verdeckt war, bleibt es: zwei Strahlen
+         streifen dieselbe Zelle aus leicht verschiedenen Richtungen, und die
+         ungünstigere Aussage ist die belastbare. */
       if (winkelZiel < maxima[bandVon(abstand[i])]) {
-        if (schatten[idx] !== VERDECKT) { schatten[idx] = VERDECKT; verdeckt++; }
-      } else if (schatten[idx] !== VERDECKT) {
-        schatten[idx] = GEPRUEFT;
+        if (feld[idx] !== VERDECKT) { feld[idx] = VERDECKT; verdeckt++; }
+      } else if (feld[idx] !== VERDECKT) {
+        feld[idx] = SICHT;
       }
       /* Fortgeschrieben wird mit der Freiraumforderung: ein Hindernis wirft
          seinen Schatten schon, bevor es die geometrische Sichtlinie berührt. */
@@ -145,33 +149,40 @@ export async function gelaendeschatten(standort, antennenhoehe, mhz, umkreis, zi
     }
   }
 
-  let zellen = 0;
-  for (let i = 0; i < schatten.length; i++) {
-    if (schatten[i] === GEPRUEFT) { schatten[i] = 0; zellen++; }
-    else if (schatten[i] === VERDECKT) zellen++;
+  /* Nach außen bleibt genau ein Bit stehen: 1 für freie Funksicht. Verdeckte
+     Zellen und solche ohne Höhen fallen beide auf 0 – das ist die vorsichtige
+     Seite und der Grund, warum die Karte diese Richtung einfärbt. */
+  const sicht = new Uint8Array(feld.length);
+  let zellen = 0, mitSicht = 0;
+  for (let i = 0; i < feld.length; i++) {
+    if (feld[i] === SICHT) { sicht[i] = 1; zellen++; mitSicht++; }
+    else if (feld[i] === VERDECKT) zellen++;
   }
 
   return {
-    schatten, spalten, zeilen,
+    sicht, spalten, zeilen,
     ecken: bild.ecken,
     fehlend: bild.fehlend,
-    zellen, verdeckt, umkreis: r,
+    zellen, mitSicht, verdeckt, umkreis: r,
     meterJeZelle
   };
 }
 
-/* Der Satz, der neben der Fläche stehen muss. Er nennt beide Grenzen der
-   Aussage: was sie kann – Plätze ausschließen – und was sie nicht kann. Er
-   wird hier gebildet und nicht in der Oberfläche zusammengesetzt, damit auf
-   Blatt und Bildschirm derselbe Wortlaut steht. */
-export function schattenText(e) {
+/* Der Satz, der neben der Fläche stehen muss. Die eingefärbte Fläche sieht aus
+   wie eine Zusage, und genau das ist sie nicht: gerechnet ist sie über nacktem
+   Gelände. „Günstigste Annahme“ steht deshalb im Satz und nicht in einer
+   Fußnote – eine Fußnote liest am Kartentisch niemand. Er wird hier gebildet
+   und nicht in der Oberfläche zusammengesetzt, damit auf Blatt und Bildschirm
+   derselbe Wortlaut steht. */
+export function sichtText(e) {
   if (!e) return 'Für diesen Umkreis liegen keine Geländehöhen vor.';
   const km = (e.umkreis / 1000).toLocaleString('de-DE');
-  const anteil = e.zellen ? Math.round(e.verdeckt / e.zellen * 100) : 0;
+  const anteil = e.zellen ? Math.round(e.mitSicht / e.zellen * 100) : 0;
   const luecke = e.fehlend
-    ? ' Für einen Teil des Umkreises fehlten die Höhen; dort ist nichts eingefärbt.'
+    ? ' Wo Höhen fehlten, bleibt die Fläche ebenfalls ungefärbt.'
     : '';
-  return `Geländeschatten im Umkreis von ${km} km: ${anteil} % der Fläche liegen schon ` +
-    'hinter dem Gelände. Bewuchs und Bebauung stehen in diesen Höhen nicht – die ' +
-    'Fläche schließt Aufbauplätze aus, sie gibt keinen frei.' + luecke;
+  return `Funksicht im Umkreis von ${km} km: ${anteil} % der Fläche haben über das ` +
+    'Gelände freie Sicht zum Aufbauplatz. Bewuchs, Bebauung und Freileitungen stehen ' +
+    'in diesen Höhen nicht – die eingefärbte Fläche ist die günstigste Annahme, kein ' +
+    'Empfangsnachweis.' + luecke;
 }
