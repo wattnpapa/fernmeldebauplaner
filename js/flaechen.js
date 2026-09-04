@@ -53,21 +53,29 @@ export const flaechenTitel = f => f.name || flaechenartById(f.art).kurz;
    auf einen Blick zu unterscheiden ist: der Koffer mit Ausschub und Kabine
    ist der FüKomKW, der breite Kasten mit Mast und Deichsel der Anhänger, das
    Rechteck mit Firstlinie das Zelt. Die Lage entspricht dem Erkundungsblatt –
-   Fahrerhaus unten, Ausschub vom Anhänger weg; beim Anhänger Deichsel und
-   Mast oben, die Treppe unten. Die Zeichnung ist
+   Fahrerhaus unten, Heckstufen oben, Ausschub vom Anhänger weg; beim
+   Anhänger Deichsel und Mast oben, die Treppe unten. Die Zeichnung ist
    über die Vorlagenmaße hinaus dehnbar – wer eine Kante ändert, bekommt
    dieselbe Figur gestreckt. */
 const FIGUREN = {
   fuekomkw: (b, l) => {
     const sx = b / 4.12, sy = l / 9.71;
-    const r = (x, y, w, h, k) =>
-      `<rect x="${x * sx}" y="${y * sy}" width="${w * sx}" height="${h * sy}" class="fl-teil ${k}"/>`;
+    const r = (x, y, w, h, k, rx = 0) =>
+      `<rect x="${x * sx}" y="${y * sy}" width="${w * sx}" height="${h * sy}" rx="${rx * sx}" class="fl-teil ${k}"/>`;
+    const li = (x1, y1, x2, y2) =>
+      `<line x1="${x1 * sx}" y1="${y1 * sy}" x2="${x2 * sx}" y2="${y2 * sy}" class="fl-linie"/>`;
+    /* Dieselbe Sprache wie beim Anhänger: Stufen bedeuten Einstieg. Das
+       Fahrerhaus bekommt die gerundete Front, Windschutzscheibe und Spiegel,
+       damit die Fahrtrichtung auch bei kleiner Figur zu erkennen ist. */
     return r(1.62, 0.9, 2.5, 5.9, 'fl-voll') +   // Koffer
-      r(1.62, 0, 2.5, 0.9, 'fl-leicht') +        // Dachkasten am Heck
+      r(2.5, 0.05, 0.74, 0.85, 'fl-leicht') +    // Trittstufen am Heck
+      li(2.5, 0.35, 3.24, 0.35) + li(2.5, 0.62, 3.24, 0.62) +
+      li(2.87, 0.9, 2.87, 1.15) +                // Hecktür
       r(0, 3.6, 1.62, 2.0, 'fl-voll') +          // Ausschub
-      r(1.72, 6.9, 2.3, 2.6, 'fl-leicht') +      // Fahrerhaus
-      `<line x1="${1.72 * sx}" y1="${8.0 * sy}" x2="${4.02 * sx}" y2="${8.0 * sy}" class="fl-linie"/>` +
-      `<circle cx="${2.87 * sx}" cy="${1.6 * sy}" r="${0.18 * sx}" class="fl-linie"/>`;
+      r(1.72, 6.9, 2.3, 2.7, 'fl-leicht', 0.55) + // Fahrerhaus, vorn gerundet
+      li(1.85, 7.85, 3.89, 7.85) +               // Windschutzscheibe
+      li(1.72, 7.3, 1.45, 7.45) + li(4.02, 7.3, 4.29, 7.45) +   // Spiegel
+      `<circle cx="${2.87 * sx}" cy="${1.9 * sy}" r="${0.18 * sx}" class="fl-linie"/>`;   // Mast
   },
   anh_fuela: (b, l) => {
     const sx = b / 5.21, sy = l / 8.37;
