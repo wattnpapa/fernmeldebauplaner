@@ -138,9 +138,10 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Am Rand Titelzeile, Kopfdaten, Zeichenerklärung, Kennzahlen und Fußzeile – jeder
   Streifen einzeln abschaltbar; alle fünf aus ergibt das nackte Kartenblatt. Auch
   die Streckenbeschriftung lässt sich von der Karte nehmen, wenn nur die Lage zählt
-- Auch die **Strecken** selbst lassen sich abschalten: dann bestimmen taktische
-  Zeichen und Flächen den Ausschnitt allein – das Blatt eines Aufbauplatzes, ohne
-  dass die Trassen es aufziehen
+- Auch die **Strecken** selbst lassen sich abschalten – für das Blatt eines
+  Aufbauplatzes, auf dem nur Zeichen und Flächen stehen. Der Ausschnitt bleibt
+  dabei derselbe wie mit Strecken: er umfasst immer die ganze Auswahl, damit die
+  Blätter einer Lage deckungsgleich übereinander liegen
 - Zwei Angaben bleiben: die Einstufung, die auf jedes Blatt gehört, und die Nennung
   der Kartengrundlage – ohne Fußzeile rückt sie in die Kartenecke, weil
   `dl-de/by-2-0` und ODbL sie verlangen

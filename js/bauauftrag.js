@@ -943,18 +943,17 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
 
 /**
  * Karte der Lagekarte: alle Strecken der Auswahl gleichrangig, dazu die
- * taktischen Zeichen – und die bestimmen den Ausschnitt mit. Auf der
- * Deckblattkarte des Bauauftrags richtet er sich allein nach den Trassen;
- * hier wäre das falsch, denn eine Lagekarte kann aus Zeichen allein bestehen,
- * und ein Zeichen außerhalb der Trassen fiele sonst vom Blatt.
+ * taktischen Zeichen und die Flächen – und die bestimmen den Ausschnitt mit.
+ * Auf der Deckblattkarte des Bauauftrags richtet er sich allein nach den
+ * Trassen; hier wäre das falsch, denn eine Lagekarte kann aus Zeichen allein
+ * bestehen, und ein Zeichen außerhalb der Trassen fiele sonst vom Blatt.
  */
 function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   const p = store.projekt;
   const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.25 });
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
 
-  const zeigeStrecken = opt.strecken !== false;
-  if (zeigeStrecken) {
+  if (opt.strecken !== false) {
     const sl = new StreckenLayer(karte, {
       interaktiv: false, sw, strichFaktor: strichFaktor(mass),
       nurStrecken: auftrag.strecken.map(s => s.id)
@@ -965,7 +964,7 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
     });
   }
 
-  const zeichen = opt.zeichen ? lageZeichen(auftrag) : [];
+  const zeichen = lageZeichen(auftrag);
   if (opt.zeichen) {
     const zl = new ZeichenLayer(karte, {
       interaktiv: false, sw, abschnittSchaltet: false,
@@ -973,13 +972,17 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
     });
     zl.zeichne(zeichenOptionen(p, mass));
   }
-  const flaechen = opt.flaechen ? lageFlaechen(auftrag) : [];
+  const flaechen = lageFlaechen(auftrag);
   if (opt.flaechen) flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined);
 
-  /* Die Flächen zählen mit ihren Ecken, nicht nur mit der Mitte: ein
+  /* Der Ausschnitt umfasst immer alles, was zur Auswahl gehört – auch das,
+     was gerade abgeschaltet ist. Sonst sprängen Maßstab und Mitte bei jedem
+     Haken um, und die Blätter einer Lage ließen sich nicht mehr übereinander
+     legen. Verschoben wird der Ausschnitt allein über „Ausschnitt“.
+     Die Flächen zählen dabei mit ihren Ecken, nicht nur mit der Mitte: ein
      Aufbauplatz von 25 m am Blattrand darf nicht halb abgeschnitten sein. */
   const ecken = [
-    ...(zeigeStrecken ? auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng])) : []),
+    ...auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng])),
     ...zeichen.map(z => [z.lat, z.lng]),
     ...flaechen.flatMap(flaechenEcken)
   ];

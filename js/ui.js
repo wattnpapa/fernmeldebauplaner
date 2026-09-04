@@ -2372,9 +2372,11 @@ export function hilfeDialog() {
            stehen Titelzeile, Kopfdaten, Zeichenerklärung, Kennzahlen und Fußzeile –
            jeder dieser Streifen einzeln abschaltbar. Alle fünf aus ergibt das nackte
            Kartenblatt; auch die Streckenbeschriftung lässt sich von der Karte nehmen,
-           wenn nur die Lage zählt. Nimmt man die <b>Strecken</b> ganz von der Karte,
-           bestimmen Zeichen und Flächen den Ausschnitt allein – das ergibt das
-           Blatt eines Aufbauplatzes, ohne dass die Trassen es aufziehen. Stehen bleiben nur zwei Angaben: die Einstufung,
+           wenn nur die Lage zählt. Auch die <b>Strecken</b> selbst lassen sich
+           ganz von der Karte nehmen – für das Blatt eines Aufbauplatzes mit
+           Zeichen und Flächen allein. Der Ausschnitt bleibt dabei unverändert:
+           er umfasst immer die ganze Auswahl, gleich was gerade abgeschaltet
+           ist, damit die Blätter einer Lage deckungsgleich übereinander liegen. Stehen bleiben nur zwei Angaben: die Einstufung,
            die auf jedes Blatt gehört, und die Nennung der Kartengrundlage – sie
            rückt ohne Fußzeile in die Kartenecke, weil die Lizenz sie verlangt.</p>
         <p>Formate sind <b>A4 bis A0</b> und ein <b>freies Maß</b> in Millimetern – für
