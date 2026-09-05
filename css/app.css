@@ -925,6 +925,20 @@ body.modus-aktiv .kartenoptionen { display: none; }
 .strecken-mass .zus { font-size: 11px; color: #59636f; font-variant-numeric: tabular-nums; }
 .strecken-mass.aktiv { box-shadow: 0 0 0 2px rgba(0,51,153,.3), 0 2px 8px rgba(0,0,0,.22); }
 
+/* Bezeichnung eines Trassenpunktes. Der Versatz steht in em und nicht in
+   Pixeln: im Druckbild wächst die Schrift mit --karten-schrift, ein fester
+   Pixelabstand ließe das Schild dort in die Punktmarke rutschen. Lange Namen
+   werden abgeschnitten – ein Kartenschild, das über den halben Bogen läuft,
+   verdeckt mehr Trasse, als der Name wert ist. */
+.punkt-name {
+  transform: translate(-50%, 1.15em) !important;
+  max-width: 13em; overflow: hidden; text-overflow: ellipsis;
+  background: rgba(255,255,255,.94); color: #101820;
+  border: 1px solid var(--farbe, #555); border-radius: 3px; padding: 0 4px;
+  font-size: 11px; font-weight: 650; line-height: 1.55;
+  box-shadow: 0 1px 3px rgba(0,0,0,.22);
+}
+
 /* Kabelzeichen auf der Trasse. --mass hält sie im doppelt gerenderten
    Druckbild gleich groß wie am Bildschirm, --winkel legt sie in die
    Linienrichtung. Die beschrifteten Zeichen bringen ihre eigene weiße

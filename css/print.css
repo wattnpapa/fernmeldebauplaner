@@ -760,6 +760,7 @@ body.druckansicht { overflow: hidden; }
 .druck-doku.sw .gitter-zahl.dunkel { color: #fff; }
 .druck-doku.sw .gitter-info { color: #000; border-color: #000; }
 .druck-doku.sw .fbp-punkt { border-color: #000 !important; color: #000; }
+.druck-doku.sw .punkt-name { border-color: #000 !important; color: #000; }
 .druck-doku.sw .fbp-punkt.art-start,
 .druck-doku.sw .fbp-punkt.art-ziel { background: #000 !important; color: #fff; }
 /* Schlagschatten der taktischen Zeichen im Bauauftrag abschalten – auch das ist
@@ -785,6 +786,12 @@ body.druckansicht { overflow: hidden; }
 .karten-inner .fbp-punkt {
   width: calc(17px * var(--karten-schrift)); height: calc(17px * var(--karten-schrift));
   font-size: calc(7.5px * var(--karten-schrift)); border-width: calc(2px * var(--karten-schrift));
+}
+.karten-inner .punkt-name {
+  font-size: calc(8.5px * var(--karten-schrift));
+  padding: 0 calc(4px * var(--karten-schrift));
+  border-width: calc(1px * var(--karten-schrift));
+  border-radius: calc(2px * var(--karten-schrift));
 }
 .karten-inner .tz-label {
   font-size: calc(8.5px * var(--karten-schrift)); padding: 0 calc(3px * var(--karten-schrift));

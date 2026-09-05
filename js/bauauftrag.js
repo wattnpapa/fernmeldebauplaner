@@ -77,7 +77,7 @@ const STANDARD_AUFTRAG = {
   /* Beides gehört auf den Bauauftrag und ist deshalb an. Abschalten lohnt
      erst, wenn die Trasse eng geführt ist: dann liegen Zahl an Zahl und
      verdecken den Verlauf, den der Trupp auf dem Blatt sucht. */
-  zwischenpunkte: true, teillaengen: true,
+  zwischenpunkte: true, teillaengen: true, punktnamen: true,
   /* Das Gitter ist im Ausdruck von vornherein an: auf dem Bauplatz ist es
      neben der Punkttabelle der einzige Weg, eine beliebige Stelle der Karte
      als MGRS-Angabe durchzugeben. */
@@ -93,7 +93,7 @@ const STANDARD_LAGE = {
   format: 'a1', ausrichtung: 'quer', farbe: 'farbe',
   freiBreite: 900, freiHoehe: 600,
   strecken: true, zeichen: true, flaechen: true, beschriftung: true, gitter: true,
-  punktnummern: false, zoomVersatz: 0,
+  punktnummern: false, punktnamen: false, zoomVersatz: 0,
   /* Jeder Streifen um die Karte lässt sich einzeln abräumen – alle fünf aus
      ergibt das nackte Kartenblatt, auf dem nur noch die Lage steht. */
   kopf: true, stammdaten: true, legende: true, kennzahlen: true, fuss: true
@@ -320,6 +320,10 @@ function oeffneDruckansicht(auftrag) {
           haken('Streckenbeschriftung', 'beschriftung', opt, neuAufbau, () => !opt.strecken),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
           haken('Trassenpunkte', 'punktnummern', opt, neuAufbau, () => !opt.strecken),
+          /* Die Bezeichnung hängt an der Punktmarke: ohne Trassenpunkte gibt es
+             nichts, worunter sie stehen könnte. */
+          haken('Punktbezeichnungen', 'punktnamen', opt, neuAufbau,
+            () => !opt.strecken || !opt.punktnummern),
           zoomFeld(opt, neuAufbau)
         ])
       : gruppe('Kartenblatt', [
@@ -331,6 +335,7 @@ function oeffneDruckansicht(auftrag) {
              einem Haken vom Blatt verschwinden. */
           haken('Zwischenpunkte', 'zwischenpunkte', opt, neuAufbau),
           haken('Teillängen', 'teillaengen', opt, neuAufbau),
+          haken('Punktbezeichnungen', 'punktnamen', opt, neuAufbau),
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
           haken('Flächen', 'flaechen', opt, neuAufbau),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
@@ -850,6 +855,7 @@ function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
   sl.zeichne({
     ...p.optionen, gesamtlaenge: false, punktnummern: true,
     teillaengen: opt.teillaengen !== false,
+    punktnamen: opt.punktnamen !== false,
     zwischenpunkte: opt.zwischenpunkte !== false
   });
 
@@ -983,7 +989,8 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
     });
     sl.zeichne({
       ...p.optionen, teillaengen: false,
-      gesamtlaenge: !!opt.beschriftung, punktnummern: !!opt.punktnummern
+      gesamtlaenge: !!opt.beschriftung, punktnummern: !!opt.punktnummern,
+      punktnamen: !!opt.punktnamen
     });
   }
 

@@ -420,6 +420,7 @@ const optionsFelder = [
   ['#opt-teillaengen', 'teillaengen'],
   ['#opt-gesamtlaenge', 'gesamtlaenge'],
   ['#opt-punktnummern', 'punktnummern'],
+  ['#opt-punktnamen', 'punktnamen'],
   ['#opt-bilder', 'bilder']
 ];
 for (const [sel, schluessel] of optionsFelder) {

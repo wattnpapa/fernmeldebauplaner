@@ -794,6 +794,23 @@ export class StreckenLayer {
       })
     }).addTo(this.gruppe);
 
+    /* Die Bezeichnung steht unter der Marke – über ihr sitzt das taktische
+       Zeichen, und die Nummer trägt die Marke selbst. Stünde der Name nur in
+       der Punkttabelle, müsste am Bauplatz nachgeschlagen werden, welcher der
+       gezeichneten Punkte „Rathaus“ ist. Abschaltbar bleibt sie trotzdem: auf
+       einer eng geführten Trasse liegen die Schilder ineinander und verdecken
+       den Verlauf, den der Trupp auf dem Blatt sucht. */
+    if (pt.name && o.punktnamen !== false) {
+      L.marker([pt.lat, pt.lng], {
+        pane: 'fbp-labels', interactive: false, keyboard: false,
+        icon: L.divIcon({
+          className: 'fbp-label',
+          html: `<span class="punkt-name" style="--farbe:${st.farbe}">${escapeHtml(pt.name)}</span>`,
+          iconSize: null
+        })
+      }).addTo(this.gruppe);
+    }
+
     if (!this.interaktiv) return;
 
     m.on('click', e => {

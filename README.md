@@ -23,6 +23,8 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Beliebig viele benannte Strecken, jede mit eigener Farbe
 - Teillängen an jedem Abschnitt und Name samt Gesamtlänge an der Strecke – dauerhaft sichtbar
 - Punktarten: Anfangspunkt, Trassenpunkt, Muffe, Verteiler, Querung, Mast, Kabelreserve, Endpunkt
+- Die Bezeichnung eines Punktes steht als Schild unter seiner Marke – auf der Karte, im
+  Bauauftrag und auf der Lagekarte; abschaltbar über die Kartenoptionen und im Druckdialog
 - Kabelreserve mit Länge am Punkt (Vorgabe 10 m, je Punkt anpassbar) – sie geht in
   Kabelbedarf und Trommelzahl ein; die Vorschrift verlangt an Anfangs- und Endstelle
   20 bis 30 m (KatS-Dv 861, 6.5.1)
