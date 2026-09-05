@@ -1044,7 +1044,7 @@ function baueUebersichtskarte(buehne, strecke, mass, sw, karten, sammlung) {
 
   const sl = new StreckenLayer(karte, {
     interaktiv: false, sw, strichFaktor: strichFaktor(mass),
-    hervorheben: strecke.id, nurStrecken: sammlung
+    hervorheben: strecke.id, nurStrecken: sammlung, punktzeichen: false
   });
   sl.zeichne({ teillaengen: false, gesamtlaenge: false, punktnummern: false });
 

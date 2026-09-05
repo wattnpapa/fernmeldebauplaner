@@ -4,6 +4,7 @@ import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText }
 import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar } from './state.js';
 import { auslegung, querschnittText } from './strom.js';
 import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf } from './vorschrift.js';
+import { symbolSVG, GRUNDBREITE } from './symbols.js';
 
 /* Eine rechnerische Trommelstelle so dicht an einer geplanten Muffe ist
    dieselbe Verbindung und wird nicht zusätzlich aufgeführt. */
@@ -322,6 +323,10 @@ export class StreckenLayer {
     // auf der Arbeitskarte gerade ausgeblendet sind.
     this.nurStrecken = opt.nurStrecken ? new Set(opt.nurStrecken) : null;
     this.andereBlass = opt.andereBlass !== false;
+    /* Die Übersichtskarte im Eck des Streckenblatts ist keine vier Zentimeter
+       breit und soll nur zeigen, wo die Trasse überhaupt liegt – ein taktisches
+       Zeichen in Kartengröße stellt sie zu. */
+    this.punktzeichen = opt.punktzeichen !== false;
     // Die Druckkarte wird doppelt so groß gerendert und per CSS halbiert;
     // damit die Linien im Ausdruck gleich stark wirken, werden sie mitskaliert.
     this.strichFaktor = opt.strichFaktor || 1;
@@ -572,8 +577,16 @@ export class StreckenLayer {
     }
 
     // Punkte
-    if ((o.punktnummern !== false || gewaehlt) && !nebensache) {
+    if (!nebensache) {
+      /* Die Punktmarken hängen am Haken; das taktische Zeichen des Verteilers
+         nicht. Es sagt nicht, der wievielte Punkt das ist, sondern dass dort
+         eine Anlage steht – und genau dafür wird die Lagekarte ohne
+         Trassenpunkte gedruckt. Ohne Marke darunter rückt es auf den Punkt. */
+      const marken = o.punktnummern !== false || gewaehlt;
       s.punkte.forEach((pt, i) => {
+        const art = punktartById(pt.art);
+        if (this.punktzeichen && art.zeichen) this._punktzeichen(pt, art, o, marken);
+        if (!marken) return;
         /* Abgeschaltete Zwischenpunkte nehmen nur die reine Geometrie heraus.
            Alles, was am Bauplatz aufgesucht wird – Anfang, Ende, Muffe,
            Verteiler, Querung, Mast, Reserve –, bleibt stehen: sonst nennt die
@@ -730,6 +743,43 @@ export class StreckenLayer {
       `<b>Punkt ${nr}</b> – ${art.name}${zusatz}${pt.name ? '<br>' + escapeHtml(pt.name) : ''}`,
       { direction: 'top', className: 'fbp-tooltip', offset: [0, -10] }
     );
+  }
+
+  /**
+   * Taktisches Zeichen einer Punktart.
+   *
+   * Mit Punktmarke steht es über dem Punkt und nicht auf ihm: die Marke trägt
+   * die Nummer, nach der am Bauplatz gesucht wird, und die darf das Zeichen
+   * nicht zudecken. Die Zeichnung der Sammlung füllt nur das mittlere Viertel
+   * ihrer Fläche – der Anker am unteren Rand setzt das Kästchen damit von selbst
+   * bündig auf die Marke, ohne gerechneten Abstand. Ohne Marke gibt es nichts,
+   * worauf es aufsitzen könnte; dann sitzt es mittig auf dem Punkt und ist die
+   * Marke.
+   *
+   * Es hängt am Linienzug, nicht am Lagebild: es bleibt deshalb stehen, wenn die
+   * taktischen Zeichen des Plans abgeschaltet sind, und wächst im Druck mit dem
+   * Strichfaktor wie das Kabelzeichen und die Punktmarke – ein frei gesetztes
+   * Zeichen wird statt dessen mit dem Blatt kleiner. Bei der halben Größe der
+   * frei gesetzten Zeichen bliebe vom Kästchen auf A4 knapp drei Millimeter,
+   * und die Verzweigung darin wäre auf dem Bauplatz nicht mehr zu erkennen.
+   * Die Zeichengröße der Kartenoptionen gilt trotzdem: wer die Zeichen größer
+   * stellt, meint auch dieses.
+   *
+   * Ein Schlagschatten steht bewusst nicht darauf: Firefox gibt Seitenbereiche
+   * mit CSS-`filter` beim Drucken nicht aus, und das Zeichen deckt sich mit
+   * seiner weißen Fläche ohnehin selbst frei.
+   */
+  _punktzeichen(pt, art, o, aufMarke) {
+    const breite = Math.round(GRUNDBREITE * (o.symbolgroesse || 1) * this.strichFaktor);
+    L.marker([pt.lat, pt.lng], {
+      pane: 'fbp-zeichen', interactive: false, keyboard: false,
+      icon: L.divIcon({
+        className: 'fbp-punktzeichen',
+        html: symbolSVG({ symbol: art.zeichen, breite, sw: this.sw }),
+        iconSize: [breite, breite],
+        iconAnchor: [breite / 2, aufMarke ? breite : breite / 2]
+      })
+    }).addTo(this.gruppe);
   }
 
   _tooltipText(s) {

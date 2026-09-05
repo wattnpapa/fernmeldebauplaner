@@ -40,11 +40,16 @@ export const VERLEGEARTEN = [
   { id: 'gem',   name: 'Gemischt' }
 ];
 
+/* `zeichen` nennt das taktische Zeichen, das die Karte zusätzlich zur Punktmarke
+   an den Punkt setzt. Der Verteiler ist die einzige Punktart, für die die
+   Sammlung ein eigenes Zeichen führt – und die einzige, die im Lagebild einer
+   Fernmeldeleitung eine Anlage und nicht bloß eine Stelle der Trasse ist. Das
+   Buchstabenkürzel allein sagt das niemandem, der die Karte nicht geplant hat. */
 export const PUNKTARTEN = [
   { id: 'start',     name: 'Anfangspunkt',              kurz: 'A'  },
   { id: 'punkt',     name: 'Trassenpunkt',              kurz: '·'  },
   { id: 'muffe',     name: 'Muffe / Verbindung',        kurz: 'M'  },
-  { id: 'verteiler', name: 'Verteiler / Endverzweiger', kurz: 'V'  },
+  { id: 'verteiler', name: 'Verteiler / Endverzweiger', kurz: 'V',  zeichen: 'fernmeldewesen/verteiler' },
   { id: 'querung',   name: 'Querung / Kreuzung',          kurz: 'Q'  },
   { id: 'mast',      name: 'Mast / Hochführung',        kurz: 'H'  },
   { id: 'reserve',   name: 'Kabelreserve',              kurz: 'R'  },
