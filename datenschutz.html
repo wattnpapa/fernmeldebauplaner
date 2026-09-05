@@ -80,8 +80,8 @@
     Bezeichnungen, Angaben für den Bauauftrag – wird ausschließlich lokal in deinem Browser
     verarbeitet und gespeichert. Es findet <b>keine Übertragung an einen Server</b> statt;
     es gibt kein Benutzerkonto und keine Anmeldung. Eine Weitergabe erfolgt nur, wenn du
-    selbst eine Datei erzeugst und teilst (JSON-Sicherung, GeoJSON, GPX oder ein gedrucktes
-    bzw. als PDF gesichertes Bauauftragsblatt).
+    sie selbst veranlasst – als Datei (JSON-Sicherung, GeoJSON, GPX oder ein gedrucktes
+    bzw. als PDF gesichertes Bauauftragsblatt) oder als Link, siehe unten.
   </p>
   <p>
     Dasselbe gilt für <b>Lichtbilder</b>, die du einer Planung hinzufügst. Sie werden im
@@ -91,6 +91,32 @@
     damit personenbezogene Daten; dafür ist die einsetzende Stelle verantwortlich, nicht
     dieses Angebot. Beim Sichern als Datei gehen die Bilder in die Datei ein – wer sie
     weitergibt, gibt auch die Bilder weiter.
+  </p>
+
+  <p>
+    <b>Planung als Link teilen.</b> Über „Datei → Planung als Link teilen“ erzeugt die
+    Anwendung eine Adresse, die die Planung <b>selbst enthält</b> – gepackt hinter dem
+    Rautezeichen, dem sogenannten Fragment. Dieser Teil einer Adresse wird von Browsern
+    grundsätzlich <b>nicht an den Server gesendet</b>: Er steht in keiner Anfrage an
+    fmbauplaner.app oder an GitHub Pages, in keinem Zugriffsprotokoll und in keiner
+    Herkunftsangabe beim Abruf der Kartenkacheln. Auch der Zählimpuls der Reichweitenmessung
+    nimmt ihn nicht mit (Nummer&nbsp;6). Das Erzeugen eines Links überträgt also nichts.
+  </p>
+  <p>
+    Entscheidend ist, was <b>du</b> danach mit dem Link tust: <b>Wer den Link hat, hat die
+    Planung.</b> Verschickst du ihn über einen Messenger, per E-Mail oder auf einem anderen
+    Weg, liegt die Planung anschließend auch dort – bei dem Dienst, den du für den Versand
+    gewählt hast, nach dessen eigenen Regeln zu Speicherung und Aufbewahrung. Dafür ist die
+    einsetzende Stelle verantwortlich, nicht dieses Angebot. Lichtbilder reisen im Link
+    nicht mit; ihre Orte und Beschriftungen dagegen schon. Ein Dienst zum Kürzen von
+    Adressen wird bewusst nicht eingesetzt – er bekäme die vollständige Planung zu sehen.
+  </p>
+  <p>
+    Öffnest du einen solchen Link, wird die enthaltene Planung <b>nicht</b> ungefragt
+    übernommen: Du siehst zuerst, was ankommt, und entscheidest dann. In beiden Fällen
+    entfernt die Anwendung das Fragment sofort aus der Adresszeile, damit die Planung nicht
+    im Verlauf deines Browsers stehen bleibt – ein Browser mit Verlaufssynchronisierung
+    würde sie sonst zu seinem Hersteller übertragen.
   </p>
 
   <h2>4. Kartendienste</h2>

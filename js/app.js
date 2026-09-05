@@ -14,6 +14,7 @@ import { GitterLayer } from './gitter.js';
 import { toMGRS, toDDM, alleFormate } from './geo.js';
 import { hoeheAn } from './hoehe.js';
 import * as io from './io.js';
+import * as teilen from './teilen.js';
 import {
   initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter, zeichneBilderListe,
   zeichneFlaechenListe, flaechenPalette,
@@ -496,6 +497,7 @@ dateiMenu.addEventListener('click', e => {
     oeffnen: projektDialog,
     'export-json': () => planungSichern(),
     import: () => $('#datei-import').click(),
+    teilen: teilenDialog,
     'sammel-pdf': () => oeffneSammeldruck(),
     lagekarte: () => oeffneLagekarte(),
     'export-geojson': () => io.geoJSONExportieren(),
@@ -517,6 +519,227 @@ function neuesProjektDialog() {
       store.neu(box.querySelector('#np-name').value.trim() || 'Neue Planung');
       hinweis('Neue Planung angelegt');
     } }]
+  });
+}
+
+// ---------------------------------------------------------------- Teilen
+
+/* Die Planung reist im Fragment der Adresse – hinter dem `#`, das kein Server
+   je zu sehen bekommt. Wie sie dorthin gepackt wird, steht in `js/teilen.js`;
+   warum der Weg über das Fragment und nicht über eine Ablage im Netz führt, in
+   `TEILEN.md`. Hier steht nur die Bedienung. */
+
+const zahlwort = (n, ein, viele) => `${n.toLocaleString('de-DE')} ${n === 1 ? ein : viele}`;
+
+function umfangText(p) {
+  const punkte = (p.strecken || []).reduce((n, s) => n + (s.punkte || []).length, 0);
+  const teile = [];
+  if ((p.strecken || []).length)
+    teile.push(`${zahlwort(p.strecken.length, 'Strecke', 'Strecken')} mit ${zahlwort(punkte, 'Punkt', 'Punkten')}`);
+  if ((p.zeichen || []).length)
+    teile.push(zahlwort(p.zeichen.length, 'taktisches Zeichen', 'taktische Zeichen'));
+  if ((p.flaechen || []).length) teile.push(zahlwort(p.flaechen.length, 'Fläche', 'Flächen'));
+  return teile.join(' · ') || 'Noch nichts gezeichnet';
+}
+
+/* Die Ampel misst nicht den Browser – der trägt ein Vielfaches –, sondern die
+   Mailprogramme: sie brechen lange Zeilen um, und ein umgebrochener Link kommt
+   beim Empfänger als Bruchstück an. */
+function laengenUrteil(laenge) {
+  const z = `Der Link ist ${laenge.toLocaleString('de-DE')} Zeichen lang`;
+  if (laenge <= teilen.LAENGE_UNBEDENKLICH)
+    return { klasse: 'gut', text: `${z} – unbedenklich, den trägt jeder Weg.` };
+  if (laenge <= teilen.LAENGE_GRENZE)
+    return { klasse: 'knapp', text: `${z} – über einen Messenger sicher; in E-Mails brechen ihn manche Programme um.` };
+  return { klasse: 'zuviel', text: `${z} – zu lang für einen verlässlichen Versand. Lieber einen einzelnen Einsatzabschnitt teilen oder die Planung als Datei schicken.` };
+}
+
+function teilenDialog() {
+  if (!teilen.kannPacken()) {
+    dialog({
+      titel: 'Planung als Link teilen',
+      inhalt: `<p>Dieser Browser bringt die Packfunktion nicht mit, mit der die Planung in
+          einen Link passt. Neuere Fassungen von Firefox, Chrome und Safari haben sie.</p>
+        <p class="klein">Bis dahin führt der Weg über <b>Datei → Planung als Datei sichern</b>.
+          Der Empfänger öffnet die Datei über „Planung oder KML laden“.</p>`,
+      fuss: [{ text: 'Schließen', primaer: true }]
+    });
+    return;
+  }
+
+  const p = store.projekt;
+  const abschnitte = p.einsatzabschnitte || [];
+  const box = document.createElement('div');
+  box.innerHTML = `
+    <label class="feld"><span class="feld-titel">Was soll der Link enthalten?</span>
+      <select id="tl-was">
+        <option value="alles">Die ganze Planung – ${escapeHtml(p.name)}</option>
+        ${abschnitte.map(a =>
+          `<option value="ea:${escapeHtml(a.id)}">Nur den Einsatzabschnitt „${escapeHtml(a.name)}“</option>`).join('')}
+        <option value="ausschnitt">Nur den Kartenausschnitt – ohne Planungsdaten</option>
+      </select></label>
+    <p class="teilen-umfang" id="tl-umfang"></p>
+    <div class="teilen-zeile">
+      <input class="teilen-link" id="tl-link" readonly spellcheck="false" value="wird erzeugt …">
+      <button type="button" class="knopf" id="tl-kopieren">Kopieren</button>
+    </div>
+    <p class="teilen-ampel" id="tl-ampel"></p>
+    <p class="teilen-merke" id="tl-merke"></p>`;
+
+  const was = box.querySelector('#tl-was');
+  const feldLink = box.querySelector('#tl-link');
+  const ampel = box.querySelector('#tl-ampel');
+  const merke = box.querySelector('#tl-merke');
+  const umfang = box.querySelector('#tl-umfang');
+
+  /* Der Merksatz steht bei jedem Link, nicht nur beim langen: Die Anwendung
+     überträgt nichts, aber sie stellt hier etwas her, das der Nutzer selbst
+     überträgt – und der Weg dorthin führt durch fremde Hände. Wer das erst im
+     Kleingedruckten einer Hilfeseite läse, läse es nie. */
+  const MERKSATZ = 'Wer den Link hat, hat die Planung. Er geht durch den Dienst, mit dem du ihn verschickst – dort liegt sie dann.';
+
+  /* Jeder Wechsel des Auswahlfelds startet einen Lauf. Packt der Browser den
+     vorigen langsamer als den neuen, träfe dessen Ergebnis auf einen Dialog,
+     der längst etwas anderes zeigt – der Link passte dann nicht zur Anzeige.
+     Nur der jüngste Lauf schreibt, und nur solange der Dialog noch steht. */
+  let lauf = 0;
+
+  async function neuBauen() {
+    const meins = ++lauf;
+    const gilt = () => meins === lauf && box.isConnected;
+    const wahl = was.value;
+    feldLink.value = 'wird erzeugt …';
+    ampel.className = 'teilen-ampel';
+    ampel.textContent = '';
+    try {
+      if (wahl === 'ausschnitt') {
+        const link = teilen.ausschnittAlsLink(store.projekt.ansicht);
+        feldLink.value = link;
+        umfang.textContent = 'Lage, Maßstab und Basiskarte – sonst nichts.';
+        const u = laengenUrteil(link.length);
+        ampel.className = 'teilen-ampel ' + u.klasse;
+        ampel.textContent = u.text;
+        merke.textContent = 'Dieser Link enthält keine Planungsdaten – nur den Blick auf die Karte.';
+        return;
+      }
+      const quelle = wahl === 'alles' ? store.projekt : io.abschnittAlsProjekt(wahl.slice(3));
+      if (!quelle) {
+        feldLink.value = '';
+        umfang.textContent = 'In diesem Einsatzabschnitt ist noch nichts geplant.';
+        merke.textContent = '';
+        return;
+      }
+      const link = await teilen.alsLink(quelle);
+      if (!gilt()) return;
+      feldLink.value = link;
+      umfang.textContent = umfangText(quelle);
+      const u = laengenUrteil(link.length);
+      ampel.className = 'teilen-ampel ' + u.klasse;
+      ampel.textContent = u.text;
+      const bilder = (quelle.bilder || []).length;
+      merke.textContent = !bilder ? MERKSATZ : bilder === 1
+        ? `${MERKSATZ} Das Lichtbild reist nicht mit – sein Ort und seine Beschriftung ja, die Aufnahme selbst nicht.`
+        : `${MERKSATZ} Die ${bilder} Lichtbilder reisen nicht mit – ihre Orte und Beschriftungen ja, die Aufnahmen selbst nicht.`;
+    } catch (e) {
+      if (!gilt()) return;
+      feldLink.value = '';
+      hinweis(e.message, 'fehler');
+    }
+  }
+
+  was.onchange = neuBauen;
+  box.querySelector('#tl-kopieren').onclick = () => {
+    const wert = feldLink.value;
+    if (!wert || wert.startsWith('wird erzeugt')) return;
+    /* Markieren in jedem Fall: Schlägt die Zwischenablage fehl – ältere
+       Browser, verweigerte Berechtigung –, liegt der Link wenigstens
+       griffbereit für Strg+C. */
+    feldLink.select();
+    const lauf = navigator.clipboard?.writeText(wert);
+    if (!lauf) return hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler');
+    lauf.then(() => hinweis('Link kopiert'))
+      .catch(() => hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler'));
+  };
+
+  dialog({ titel: 'Planung als Link teilen', inhalt: box, breit: true,
+    fuss: [{ text: 'Schließen', primaer: true }] });
+  neuBauen();
+}
+
+// ---------------------------------------------------------------- Link empfangen
+
+/* Ein Link darf nichts überschreiben: Der Empfänger sieht zuerst, was da
+   ankommt, und entscheidet dann. Das Fragment wird in jedem Fall geräumt –
+   sonst stünde die Planung im Verlauf des Browsers, und ein Browser mit
+   Verlaufssynchronisierung trüge sie zu seinem Hersteller. */
+async function geteiltenLinkPruefen() {
+  const art = teilen.artDesFragments();
+  if (!art) return;
+
+  if (art === 'ausschnitt') {
+    const a = teilen.ausschnittAusFragment();
+    teilen.fragmentRaeumen();
+    if (!a) return;
+    if (a.basemap && BASISKARTEN.some(k => k.id === a.basemap)) {
+      basisSelect.value = a.basemap;
+      setzeBasiskarte(karte, a.basemap);
+      store.still(pr => { pr.ansicht.basemap = a.basemap; });
+    }
+    karte.setView([a.lat, a.lng], a.zoom);
+    hinweis('Kartenausschnitt aus dem Link geöffnet');
+    return;
+  }
+
+  let roh;
+  try {
+    roh = await teilen.planungAusFragment();
+  } catch (e) {
+    teilen.fragmentRaeumen();
+    hinweis(e.message, 'fehler');
+    return;
+  }
+  teilen.fragmentRaeumen();
+  if (!roh) return;
+
+  /* Der Bauauftrag legt sich über die ganze Anwendung. Käme der Link an,
+     während er offen steht, stünde der Dialog unsichtbar dahinter. */
+  if (bauauftragOffen()) schliesseBauauftrag();
+
+  const bilder = (roh.bilder || []).length;
+  const stand = roh.geaendert ? zeitpunktKurz(roh.geaendert) : '';
+  const herkunft = roh.herkunft?.einsatzabschnitt
+    ? `<p class="klein">Ausschnitt „${escapeHtml(roh.herkunft.einsatzabschnitt)}“ aus der Planung
+        „${escapeHtml(roh.herkunft.projekt || '')}“.</p>` : '';
+
+  dialog({
+    titel: 'Geteilte Planung geöffnet',
+    inhalt: `<p>Über den Link kommt <b>${escapeHtml(roh.name || 'eine Planung')}</b> herein.</p>
+      <p class="teilen-umfang">${escapeHtml(umfangText(roh))}${stand ? ' · Stand ' + escapeHtml(stand) : ''}</p>
+      ${herkunft}
+      ${bilder ? `<p class="teilen-merke">${bilder === 1
+          ? 'Zu dieser Planung gehört ein Lichtbild, das ein Link nicht tragen kann. Sein Ort und seine Beschriftung sind da, die Aufnahme selbst nicht'
+          : `Zu dieser Planung gehören ${bilder} Lichtbilder, die ein Link nicht tragen kann. Ihre Orte und Beschriftungen sind da, die Aufnahmen selbst nicht`}
+        – dafür braucht es die Planungsdatei.</p>` : ''}
+      <p class="klein">Sie wird als <b>neue</b> Planung übernommen. Deine bisherige bleibt
+        unter „Gespeicherte Planungen“ erhalten.</p>`,
+    fuss: [
+      { text: 'Verwerfen' },
+      { text: 'Übernehmen', primaer: true, tun: () => {
+        /* `uebernehmen` schickt die Planung durch `migrieren()` – dieselbe
+           Strecke, die eine geladene Datei nimmt – und meldet „geladen“;
+           daran hängt der vollständige Neuaufbau samt Kartensprung. */
+        try {
+          store.uebernehmen(roh);
+          hinweis('Geteilte Planung übernommen');
+        } catch (e) {
+          /* Ein von Hand gebauter Link kann Werte falschen Typs mitbringen –
+             `punkte` als Objekt statt als Feld etwa. Ohne diesen Fang bliebe
+             der Dialog offen stehen und der Knopf ohne jede Wirkung. */
+          console.error('Geteilte Planung nicht lesbar', e);
+          hinweis('Die Planung in diesem Link ist beschädigt und wurde nicht übernommen.', 'fehler');
+        }
+      } }
+    ]
   });
 }
 
@@ -910,6 +1133,15 @@ modusAnzeigen();
 speicherstatusZeigen('ruhe');
 $('#btn-undo').disabled = true;
 $('#btn-redo').disabled = true;
+
+geteiltenLinkPruefen();
+
+/* Wer den Link in ein Fenster einfügt, in dem die Anwendung schon läuft, ändert
+   nur das Fragment – der Browser lädt die Seite dabei nicht neu, und ohne
+   dieses Ereignis geschähe gar nichts. `fragmentRaeumen` löst es nicht aus:
+   `history.replaceState` meldet keinen Fragmentwechsel, es gibt also keine
+   Schleife. */
+window.addEventListener('hashchange', geteiltenLinkPruefen);
 
 /* Kein Begrüßungsdialog beim ersten Start: Über eine leere Karte gelegt
    beschreibt die Kurzanleitung nichts, was der Nutzer schon gesehen hat.

@@ -161,6 +161,11 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 
 **Austausch mit anderen Werkzeugen**
 - Planung als `.json` sichern und laden
+- **Planung als Link teilen:** ein Link, der die Planung selbst enthält – gepackt im
+  Fragment der Adresse, ohne Server und ohne Konto. Wahlweise die ganze Planung, ein
+  einzelner Einsatzabschnitt oder nur der Kartenausschnitt. Eine Längenampel warnt,
+  bevor ein Link so lang wird, dass Mailprogramme ihn umbrechen; Lichtbilder reisen
+  nicht mit. Der Empfänger sieht erst, was ankommt, und entscheidet dann
 - KML und KMZ aus Google Earth laden: Pfade werden Strecken, Ortsmarken taktische Zeichen
 - Zurück nach Google Earth als KML (ganze Planung oder eine Strecke), gegliedert
   nach Einsatzabschnitten
@@ -422,6 +427,14 @@ Drei Verbindungen gehen trotzdem nach außen, alle ohne Planungsinhalte:
   Zählimpuls beim Aufruf der Anwendung, ohne Cookie und ohne geräteübergreifende
   Kennung. Widerspruch über *Nicht mitzählen* auf `datenschutz.html`; das setzt
   `skipgc` im `localStorage`, worauf GoatCounter nicht mehr zählt.
+
+Wer eine Planung **als Link teilt**, verschiebt diese Grenze bewusst: Der Link trägt die
+Planung im Fragment der Adresse, das kein Server zu sehen bekommt – weder fmbauplaner.app
+noch GitHub Pages, und auch der Zählimpuls nimmt es nicht mit (er meldet ausdrücklich nur
+Pfad und Abfrageteil). Übertragen wird erst der Versand: Wer den Link hat, hat die Planung,
+und der Dienst, über den er verschickt wird, hat sie ebenfalls. Ein Kürzungsdienst wird
+darum nicht eingesetzt – er bekäme die vollständige Planung zu sehen. Die Überlegungen
+dahinter stehen in [`TEILEN.md`](TEILEN.md).
 
 Der vollständige Text steht in [`datenschutz.html`](datenschutz.html), die
 Anbieterkennzeichnung in [`impressum.html`](impressum.html). Beide sind in der

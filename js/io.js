@@ -118,9 +118,12 @@ async function bilderEinpacken(liste = []) {
   return raus;
 }
 
-/** Einen Einsatzabschnitt als eigenständige Planungsdatei sichern – `null`
- *  nimmt die nicht zugeteilten Strecken. Der Empfänger lädt sie über
- *  „Planung oder KML laden“ und arbeitet nur an seinem Ausschnitt weiter.
+/** Einen Einsatzabschnitt zu einer eigenständigen Planung zuschneiden – `null`
+ *  nimmt die nicht zugeteilten Strecken. Ohne Lichtbilddaten; wer sie tragen
+ *  kann, hängt sie selbst an. Liefert `false`, wenn der Ausschnitt leer wäre.
+ *  Von hier führen zwei Wege weiter: als Datei über `abschnittExportieren()`
+ *  oder als Link über `js/teilen.js`. Der Empfänger arbeitet in beiden Fällen
+ *  nur an seinem Ausschnitt weiter.
  *
  *  Mit gehen die Zeichen dieses Abschnitts und dazu die nicht zugeteilten:
  *  die sind das gemeinsame Lagebild und würden dem Empfänger sonst fehlen.
@@ -128,7 +131,7 @@ async function bilderEinpacken(liste = []) {
  *  Abschnitte gehören nicht in einen Ausschnitt, der weitergegeben wird.
  *  Der Vermerk über die letzte Dateisicherung bleibt unberührt – ein Ausschnitt
  *  sichert nicht die Planung. */
-export async function abschnittExportieren(aid) {
+export function abschnittAlsProjekt(aid) {
   const p = store.projekt;
   const ea = abschnittById(p, aid);
   const strecken = streckenIm(p, aid);
@@ -152,11 +155,6 @@ export async function abschnittExportieren(aid) {
     zeichen,
     // Die Flächen folgen derselben Regel wie die Zeichen.
     flaechen: aid ? flaechenFuer(p, aid) : flaechenIm(p, aid),
-    /* Die Lichtbilder sind keinem Abschnitt zugeteilt und gehören deshalb –
-       wie die nicht zugeteilten Zeichen – zu jedem Ausschnitt. Ein Ausschnitt
-       wird dadurch so schwer wie die ganze Planung; das ist der Preis dafür,
-       dass der Empfänger sieht, wie es an der Stelle aussieht. */
-    bilder: await bilderEinpacken(p.bilder),
     herkunft: {
       projekt: p.name,
       projektId: p.id,
@@ -164,8 +162,22 @@ export async function abschnittExportieren(aid) {
       erzeugt: jetzt
     }
   };
+  return teil;
+}
+
+/** Denselben Ausschnitt als Datei sichern. Die Lichtbilder kommen erst hier
+ *  dazu: sie sind keinem Abschnitt zugeteilt und gehören deshalb – wie die
+ *  nicht zugeteilten Zeichen – zu jedem Ausschnitt. Der Ausschnitt wird dadurch
+ *  so schwer wie die ganze Planung; das ist der Preis dafür, dass der Empfänger
+ *  sieht, wie es an der Stelle aussieht. Ein Link kann diesen Preis nicht
+ *  zahlen und nimmt darum nur den Zuschnitt oben. */
+export async function abschnittExportieren(aid) {
+  const p = store.projekt;
+  const teil = abschnittAlsProjekt(aid);
+  if (!teil) return false;
+  teil.bilder = await bilderEinpacken(p.bilder);
   herunterladen(JSON.stringify(teil, null, 2),
-    dateiname(['Fernmeldebauplanung', p.name, bezeichnung, p.kopf?.datum], 'json'));
+    dateiname(['Fernmeldebauplanung', p.name, teil.herkunft.einsatzabschnitt, p.kopf?.datum], 'json'));
   return true;
 }
 

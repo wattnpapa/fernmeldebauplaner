@@ -517,6 +517,16 @@ export function istGehaltvoll(p) {
     (p.flaechen || []).length >= 2;
 }
 
+/* Farben und Artkennungen aus fremden Planungen werden auf ihre erlaubte Form
+   zurückgeschnitten. Beide landen im Bestand unmaskiert in einem `style`- oder
+   `class`-Attribut – `--farbe:${st.farbe}` und `art-${pt.art}` in `strecken.js`,
+   ebenso im Bauauftrag. Ein präparierter Wert wie `red" onmouseover="…` bräche
+   dort aus dem Attribut aus und schleuste eigenes Markup ein. Geprüft wird
+   deshalb hier, an der einen Stelle, durch die jede fremde Planung läuft: die
+   geladene Datei ebenso wie der geteilte Link. */
+const farbeOderVorgabe = (wert, vorgabe) =>
+  /^#[0-9a-f]{3,8}$/i.test(String(wert ?? '')) ? wert : vorgabe;
+
 /** Ältere/fremde Projektdateien auf das aktuelle Schema heben */
 export function migrieren(p) {
   const v = neuesProjekt(p.name || 'Import');
@@ -532,7 +542,7 @@ export function migrieren(p) {
       id: a.id || id(),
       name: a.name || `Einsatzabschnitt ${i + 1}`,
       leiter: a.leiter || '',
-      farbe: a.farbe || FARBEN[i % FARBEN.length],
+      farbe: farbeOderVorgabe(a.farbe, FARBEN[i % FARBEN.length]),
       bemerkung: a.bemerkung || '',
       sichtbar: a.sichtbar !== false
     })),
@@ -542,7 +552,7 @@ export function migrieren(p) {
     zeichengruppen: (p.zeichengruppen || []).map((g, i) => ({
       id: g.id || id(),
       name: g.name || `Zeichengruppe ${i + 1}`,
-      farbe: g.farbe || FARBEN[i % FARBEN.length],
+      farbe: farbeOderVorgabe(g.farbe, FARBEN[i % FARBEN.length]),
       bemerkung: g.bemerkung || '',
       sichtbar: g.sichtbar !== false
     })),
@@ -551,6 +561,7 @@ export function migrieren(p) {
       return {
         ...v, ...s,
         id: s.id || id(),
+        farbe: farbeOderVorgabe(s.farbe, v.farbe),
         kabeltyp: KABEL_ALIAS[s.kabeltyp] || s.kabeltyp || v.kabeltyp,
         strom: { ...v.strom, ...(s.strom || {}) },
         /* Schema 7 hat die Angaben der Richtfunkstrecke eingeführt, Schema 8
@@ -571,7 +582,10 @@ export function migrieren(p) {
             ({ ...leer, ...(((s.richtfunk || {}).standorte || [])[i] || {}) }));
           return rf;
         })(),
-        punkte: (s.punkte || []).map(pt => ({ ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id() }))
+        punkte: (s.punkte || []).map(pt => ({
+          ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id(),
+          art: PUNKTARTEN.some(a => a.id === pt.art) ? pt.art : 'punkt'
+        }))
       };
     }),
     // Die Zeichen kamen früher aus einem selbst gezeichneten Satz mit eigenen
@@ -589,6 +603,8 @@ export function migrieren(p) {
        gelegt, damit kein Eintrag ohne Maß auf die Karte kommt. */
     flaechen: (p.flaechen || []).map(f => ({
       ...neueFlaeche(f.lat, f.lng, f.art), ...f, id: f.id || id(),
+      art: flaechenartById(f.art).id,
+      farbe: farbeOderVorgabe(f.farbe, neueFlaeche(0, 0, f.art).farbe),
       breite: Number(f.breite) > 0 ? Number(f.breite) : neueFlaeche(0, 0, f.art).breite,
       laenge: Number(f.laenge) > 0 ? Number(f.laenge) : neueFlaeche(0, 0, f.art).laenge
     })),

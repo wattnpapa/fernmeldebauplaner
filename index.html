@@ -19,6 +19,7 @@
 <link rel="modulepreload" href="js/bauauftrag.js">
 <link rel="modulepreload" href="js/ui.js">
 <link rel="modulepreload" href="js/state.js">
+<link rel="modulepreload" href="js/teilen.js">
 <link rel="modulepreload" href="js/strecken.js">
 <link rel="modulepreload" href="js/symbols.js">
 <link rel="modulepreload" href="js/zeichen.js">
@@ -81,6 +82,8 @@
           <button data-akt="export-json">Planung als Datei sichern (.json)</button>
           <button data-akt="import"
                   title="Eigene Planung (.json), GeoJSON sowie KML und KMZ aus Google Earth">Planung oder KML laden …</button>
+          <button data-akt="teilen"
+                  title="Erzeugt einen Link, der die Planung selbst enthält – ohne Server und ohne Konto">Planung als Link teilen …</button>
           <hr>
           <button data-akt="sammel-pdf">Sammel-Bauauftrag aller Strecken (PDF) …</button>
           <button data-akt="lagekarte"
@@ -295,6 +298,13 @@
 
 <!-- Reichweitenmessung ohne Cookies und ohne personenbezogene Daten (GoatCounter).
      Blockiert der Browser das Skript, läuft die Anwendung unverändert weiter. -->
+<script>
+  /* Der Zählimpuls darf das Fragment der Adresse nicht mitnehmen: dort steht beim
+     Teilen die ganze Planung. GoatCounter lässt es von sich aus weg – hier steht es
+     ausdrücklich, damit eine spätere Fassung von count.js die Zusage in
+     datenschutz.html nicht stillschweigend brechen kann. */
+  window.goatcounter = { path: () => location.pathname + location.search };
+</script>
 <script data-goatcounter="https://fmbauplaner.goatcounter.com/count"
         async src="https://gc.zgo.at/count.js"></script>
 <noscript><p style="padding:2rem;font:16px system-ui">Für den FMBauplaner wird JavaScript benötigt.</p></noscript>
