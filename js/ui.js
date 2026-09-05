@@ -2356,7 +2356,7 @@ export function zeichneBilderListe() {
     return;
   }
 
-  for (const b of bilder) liste.appendChild(bildKarte(b));
+  for (const b of alphabetisch(bilder, bildSchluessel)) liste.appendChild(bildKarte(b));
 }
 
 function bildKarte(b) {
@@ -2386,6 +2386,14 @@ function bildKarte(b) {
 
 /** Beschriftung, unter der ein Bild in Liste und Vorschau steht */
 const bildTitel = b => b.name || (b.aufgenommen ? zeitpunkt(b.aufgenommen) : 'Lichtbild');
+
+/* Sortiert wird wie überall nach dem Text der Zeile – nur trägt ein Bild ohne
+   eigenen Namen dort seine Aufnahmezeit, und die steht deutsch mit dem Tag
+   voran. Nach dieser Schreibweise zu sortieren stellte den 5. März vor den
+   12. Januar; verglichen wird deshalb der ISO-Zeitpunkt. Er beginnt mit einer
+   Ziffer und bringt die noch unbenannten Bilder damit gemeinsam an den Anfang
+   der Liste, untereinander in der Reihenfolge des Auslösens. */
+const bildSchluessel = b => b.name || b.aufgenommen || 'Lichtbild';
 
 function zeitpunkt(iso) {
   const d = new Date(iso);
