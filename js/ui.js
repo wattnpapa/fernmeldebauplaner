@@ -207,6 +207,28 @@ function augenKnopf(sichtbar) {
           >${sichtbar ? AUGE_OFFEN : AUGE_ZU}</button>`;
 }
 
+/**
+ * Die Listen der Seitenleiste sind Nachschlagewerke: gesucht wird nach dem
+ * Namen, nicht nach der Reihenfolge des Setzens. Sortiert wird deshalb nur die
+ * Anzeige – die Reihenfolge im Projekt bleibt die des Anlegens, an ihr hängen
+ * Farbvergabe, Ausgabe und Export.
+ *
+ * Verglichen wird der Text, der auch in der Zeile steht: Zeichen und Flächen
+ * tragen einen eigenen Namen erst, wenn einer eingetragen wurde, und heißen
+ * sonst nach ihrem Symbol bzw. ihrer Art. Nach dem leeren Feld zu sortieren
+ * brächte die Liste in eine Ordnung, die auf ihr niemand sieht.
+ *
+ * `numeric` hält „FW 2“ vor „FW 10“, `sensitivity: 'base'` stellt Groß- und
+ * Kleinschreibung gleich – und die deutsche Sortierung stellt „Ölhafen“ zu O
+ * statt hinter Z.
+ */
+const alphabetisch = (liste, titel) => liste.slice().sort((a, b) =>
+  titel(a).localeCompare(titel(b), 'de', { numeric: true, sensitivity: 'base' }));
+
+const streckenTitel = s => s.name || '';
+/** Beschriftung eines Zeichens in der Liste – ohne eigene der Name des Symbols */
+const zeichenTitel = z => z.label || symbolById(z.symbol).name;
+
 // ---------------------------------------------------------------- Strecken
 
 /**
@@ -229,15 +251,6 @@ function kabelSummeHTML(ges) {
        : `<span><b>${e.trommeln}</b> ${e.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>`}`).join('');
   return `<div class="summe-kabel">${zeilen}</div>`;
 }
-
-/**
- * Die Streckenliste ist ein Nachschlagewerk: gesucht wird nach dem Namen, nicht
- * nach der Reihenfolge des Zeichnens. Sortiert wird deshalb nur die Anzeige –
- * die Reihenfolge im Projekt bleibt die des Anlegens, an ihr hängen Farbvergabe,
- * Ausgabe und Export. `numeric` hält „FW 2“ vor „FW 10“.
- */
-const nachNamen = liste => liste.slice().sort((a, b) =>
-  (a.name || '').localeCompare(b.name || '', 'de', { numeric: true, sensitivity: 'base' }));
 
 export function zeichneStreckenListe() {
   const p = store.projekt;
@@ -276,7 +289,7 @@ export function zeichneStreckenListe() {
   /* Ohne Einsatzabschnitte bleibt die Liste, was sie war: eine Reihe Strecken.
      Erst wenn welche gebildet sind, tritt die Gliederung dazwischen. */
   if (!abschnitte.length) {
-    for (const s of nachNamen(p.strecken)) liste.appendChild(streckenKarte(s));
+    for (const s of alphabetisch(p.strecken, streckenTitel)) liste.appendChild(streckenKarte(s));
     return;
   }
 
@@ -362,8 +375,9 @@ function abschnittGruppe(ea, art) {
   const zeichenliste = art === 'zeichen';
   const flaechenliste = art === 'flaechen';
   const aid = ea ? ea.id : null;
-  const eintraege = zeichenliste ? zeichenIm(p, aid)
-    : flaechenliste ? flaechenIm(p, aid) : nachNamen(streckenIm(p, aid));
+  const eintraege = zeichenliste ? alphabetisch(zeichenIm(p, aid), zeichenTitel)
+    : flaechenliste ? alphabetisch(flaechenIm(p, aid), flaechenTitel)
+    : alphabetisch(streckenIm(p, aid), streckenTitel);
 
   const box = klammerBox({
     hat: ea, art, ohneName: 'Ohne Einsatzabschnitt',
@@ -390,7 +404,7 @@ function abschnittGruppe(ea, art) {
 /** Dieselbe Klammer über einer Zeichengruppe. Sie zählt und schaltet nur
  *  Zeichen – Strecken kennt diese Gliederung nicht. */
 function zeichengruppenGruppe(gr) {
-  const eintraege = zeichenInGruppe(store.projekt, gr ? gr.id : null);
+  const eintraege = alphabetisch(zeichenInGruppe(store.projekt, gr ? gr.id : null), zeichenTitel);
   const box = klammerBox({
     hat: gr, art: 'zeichengruppe', ohneName: 'Ohne Gruppe',
     wert: `${eintraege.length} Zeichen`,
@@ -1888,7 +1902,7 @@ export function zeichneZeichenListe() {
   }
 
   if (!abschnitte.length) {
-    for (const z of p.zeichen) liste.appendChild(zeichenKarte(z));
+    for (const z of alphabetisch(p.zeichen, zeichenTitel)) liste.appendChild(zeichenKarte(z));
     return;
   }
 
@@ -1925,7 +1939,7 @@ function zeichenKarte(z) {
   const kopf = el('header', 'eintrag-kopf');
   kopf.innerHTML =
     `<span class="mini-symbol">${symbolSVG({ symbol: z.symbol, breite: 26 })}</span>
-     <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(z.label || basis.name)}</button>
+     <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(zeichenTitel(z))}</button>
      ${augenKnopf(z.sichtbar !== false)}`;
   kopf.onclick = () => ctx.zl.waehle(gewaehlt ? null : z.id);
   kopf.querySelector('[data-akt="sichtbar"]').onclick = e => {
@@ -2130,7 +2144,7 @@ export function zeichneFlaechenListe() {
   }
 
   if (!abschnitte.length) {
-    for (const f of flaechen) liste.appendChild(flaecheKarte(f));
+    for (const f of alphabetisch(flaechen, flaechenTitel)) liste.appendChild(flaecheKarte(f));
     return;
   }
   for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea, 'flaechen'));
