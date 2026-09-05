@@ -15,7 +15,8 @@ import {
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText
 } from './strom.js';
 import {
-  QUERUNGSARTEN, QUERUNG_BAUWEISEN, VS_GRADE, querungsartById, bauweiseById, massText, dtg
+  QUERUNGSARTEN, QUERUNG_BAUWEISEN, VS_GRADE, querungsartById, bauweiseById, massText, dtg,
+  KABELRESERVE_STANDARD
 } from './vorschrift.js';
 import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
 import {
@@ -1322,6 +1323,7 @@ function punktTabelle(s, frisch) {
       zeile.appendChild(auflagenZeile(art));
       zeile.appendChild(bauweiseZeile(pt));
     }
+    if (pt.art === 'reserve') zeile.appendChild(reserveZeile(pt));
 
     const name = document.createElement('input');
     name.type = 'text'; name.className = 'mini-input pz-name';
@@ -1414,6 +1416,18 @@ function bauweiseZeile(pt) {
       platzhalter: String(bauweiseById(pt.bauweise).minuten) });
   zeile.appendChild(zeit);
   return zeile;
+}
+
+/* Die Kabelreserve steht als Länge am Punkt und nicht nur als Merkzeichen auf
+   der Karte: sie ist Kabel, das gebraucht, aber nicht verlegt wird, und war
+   bisher in keiner Zahl des Bauauftrags enthalten – der Trupp fuhr mit dem
+   Bedarf los, den die Trasse ergab, und legte die Schleifen davon ab. Ein
+   leeres Feld heißt „Vorgabewert“, der steht als Platzhalter darin. */
+function reserveZeile(pt) {
+  return feld('Kabelreserve am Punkt', pt.reserve ?? '',
+    v => schreib(() => { pt.reserve = v === '' ? null : Math.max(0, v); }),
+    { typ: 'number', min: 0, step: 5, einheit: 'm', klasse: 'pz-querung pz-reserve',
+      platzhalter: String(KABELRESERVE_STANDARD) });
 }
 
 function koordText(pt) {
@@ -2801,11 +2815,15 @@ export function hilfeDialog() {
         <h3>Längen</h3>
         <p>Teillängen stehen an jedem Abschnitt, Name und Summe an der Strecke. Gerechnet wird
            die geodätische Direktstrecke zwischen den Punkten; der <b>Bauzuschlag</b> deckt
-           Geländeverlauf und Reserve ab und ergibt den Kabelbedarf.</p>
+           Geländeverlauf und Umwege ab. Ein Punkt der Art <b>Kabelreserve</b> bringt
+           zusätzlich eine feste Länge mit – vorgegeben sind 10 m, am Punkt lässt sie sich
+           ändern; die Vorschrift verlangt an Anfangs- und Endstelle 20 bis 30 m
+           (KatS-Dv 861, 6.5.1). Zuschlag und Reserven zusammen ergeben den
+           <b>Kabelbedarf</b>, aus dem die Trommelzahl folgt.</p>
         <h3>Stromleitungen</h3>
         <p>Bei der Leitungsart <b>Stromleitung</b> erscheint die Gruppe
            <b>Stromversorgung</b>. Aus Last, Netzform, zulässigem Spannungsfall und der
-           Leitungslänge einschließlich Bauzuschlag ergibt sich der nötige
+           Leitungslänge einschließlich Bauzuschlag und Kabelreserve ergibt sich der nötige
            Leiterquerschnitt; er steht auch auf dem Bauauftrag. Der Wert ist ein
            Planungsrichtwert für Kupferleitung – die verbindliche Auslegung trifft eine
            Elektrofachkraft.</p>

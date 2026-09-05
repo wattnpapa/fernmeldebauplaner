@@ -17,7 +17,7 @@ import {
 } from './strom.js';
 import {
   massText, bauweiseById, BAUREGELN, SCHUTZABSTAENDE,
-  SCHUTZABSTAND_ERWEITERT_MIN, SCHUTZABSTAND_ERWEITERT_STURM
+  SCHUTZABSTAND_ERWEITERT_MIN, SCHUTZABSTAND_ERWEITERT_STURM, kabelreserve
 } from './vorschrift.js';
 import {
   bandById, polarisationById, modulationById, MIMO_ARTEN,
@@ -1286,8 +1286,12 @@ function kennzahlenHTML(k, s) {
     ['Funkstrecke', formatLaenge(k.trasse), `${k.abschnitte} Abschnitte`]
   ] : [
     ['Trassenlänge', formatLaenge(k.trasse), `${k.abschnitte} Abschnitte`],
-    ['Bauzuschlag', `${k.zuschlag} %`, 'Gelände & Reserve'],
-    ['Kabelbedarf', formatLaenge(k.bedarf), 'einzuplanen'],
+    ['Bauzuschlag', `${k.zuschlag} %`, 'Geländeverlauf & Umwege'],
+    /* Die Reserve steht neben dem Bauzuschlag und nicht in ihm: sie ist
+       abgezählt und liegt an benannten Punkten, er ist geschätzt. Wer am
+       Bauplatz nachrechnet, findet beides in der Summe wieder. */
+    ['Kabelbedarf', formatLaenge(k.bedarf),
+      k.reserve > 0 ? `einschl. ${meter(k.reserve)} Reserve` : 'einzuplanen'],
     ['Trommeln', String(k.trommeln), k.transportgewicht
       ? `à ${meter(k.trommellaenge)} · ${gewichtText(k.transportgewicht)}`
       : `à ${meter(k.trommellaenge)}`],
@@ -1354,7 +1358,8 @@ function sammelKennzahlenHTML(ges) {
   const kacheln = [
     ['Strecken', String(ges.anzahl), `${ges.punkte} Trassenpunkte`],
     ['Trassenlänge', formatLaenge(ges.trasse), 'Summe aller Strecken'],
-    ['Kabelbedarf', formatLaenge(ges.bedarf), 'mit Bauzuschlag'],
+    ['Kabelbedarf', formatLaenge(ges.bedarf),
+      ges.reserve > 0 ? `mit Bauzuschlag, einschl. ${meter(ges.reserve)} Reserve` : 'mit Bauzuschlag'],
     ['Trommeln', String(ges.trommeln), ges.gewicht
       ? gewichtText(ges.gewicht) + (ges.gewichtVollstaendig ? '' : ' (soweit bekannt)')
       : 'je Strecke aufgerundet'],
@@ -1512,7 +1517,8 @@ function punkttabelleRahmenHTML(fortsetzung) {
       <tbody></tbody>
     </table>
     <p class="tab-fussnote">Längen sind geodätische Direktstrecken zwischen den Trassenpunkten
-      (Luftlinie). Geländeverlauf, Umgehungen und Reserven deckt der Bauzuschlag ab.</p>
+      (Luftlinie). Geländeverlauf und Umgehungen deckt der Bauzuschlag ab; Kabelreserven
+      stehen mit ihrer Länge an ihrem Punkt und sind im Kabelbedarf enthalten.</p>
   </section>`;
 }
 
@@ -1521,12 +1527,16 @@ function punktzeilenHTML(s) {
   const kum = kumuliert(s.punkte);
   const zeilen = s.punkte.map((p, i) => {
     const art = punktartById(p.art);
+    /* Am Reservepunkt muss die Länge stehen, nicht nur die Art: gesucht wird am
+       Bauplatz die Zahl, nach der die Schleife abgelegt wird. Sie steht in der
+       Artspalte und nicht in der Bemerkung – die gehört dem Planer. */
+    const artText = kabelreserve(p) > 0 ? `${art.name} (${meter(kabelreserve(p))})` : art.name;
     const teil = i === 0 ? '–' : meter(seg[i - 1]);
     const richt = i === 0 ? '–'
       : `${Math.round(peilung(s.punkte[i - 1], p))}° ${himmelsrichtung(peilung(s.punkte[i - 1], p))}`;
     return `<tr>
       <td class="nr">${i + 1}</td>
-      <td>${escapeHtml(art.name)}</td>
+      <td>${escapeHtml(artText)}</td>
       <td>${escapeHtml(p.name || '')}</td>
       <td class="mono">${escapeHtml(toMGRS(p.lat, p.lng, 5))}</td>
       <td class="mono">${escapeHtml(toDDM(p.lat, p.lng))}</td>
@@ -1603,7 +1613,8 @@ function laengenverbindungenRahmenHTML(k) {
       <tbody></tbody>
     </table>
     <p class="tab-fussnote">Rechnerische Längenverbindungen ergeben sich aus der Trommellänge
-      von ${meter(k.trommellaenge)} einschließlich Bauzuschlag; die tatsächliche Lage verschiebt
+      von ${meter(k.trommellaenge)} einschließlich Bauzuschlag${k.reserve > 0
+        ? ' und Kabelreserven' : ''}; die tatsächliche Lage verschiebt
       sich mit dem Gelände.${k.kabelabschnitte.length > 1
         ? ' An jedem Verteiler beginnt die Zählung von vorn.' : ''}
       Baumeldung nach jeder Länge, spätestens alle 30 Minuten
@@ -1831,7 +1842,12 @@ function materialHTML(s, k) {
     ['Leitungsart', k.kabel.name],
     ['Verlegeart', va ? va.name : '–'],
     ['Trassenlänge (Summe Teilstrecken)', formatLaenge(k.trasse)],
-    ['Bauzuschlag', `${k.zuschlag} %  (${meter(k.bedarf - k.trasse)})`],
+    /* Der Zuschlag rechnet sich aus der Trasse, die Reserve nicht – sie stünde
+       sonst als Prozentsatz da, den niemand nachrechnen kann. Deshalb zwei
+       Zeilen: die Aufstellung muss sich von der Trassenlänge bis zum Bedarf
+       durchaddieren lassen. */
+    ['Bauzuschlag', `${k.zuschlag} %  (${meter(k.bedarf - k.reserve - k.trasse)})`],
+    ...(k.reserve > 0 ? [['Kabelreserve (an den Reservepunkten)', meter(k.reserve)]] : []),
     ['<b>Kabelbedarf gesamt</b>', `<b>${formatLaenge(k.bedarf)}</b>`],
     ['Trommellänge', meter(k.trommellaenge)],
     ...(k.kabelabschnitte.length > 1
@@ -1854,7 +1870,11 @@ function materialHTML(s, k) {
       `${k.laengenverbindungen.filter(v => v.quelle === 'rechnerisch').length}`],
     ['Auflagen mindestens', `${k.abbinden.auflagen} Stück`],
     ['Abbunde mindestens', `${k.abbinden.abbunde} Stück`],
-    ['Kabelreserve Anfangs-/Endstelle', 'je 20 bis 30 m (6.5.1)'],
+    /* Weiter oben steht die geplante Kabelreserve dieser Strecke; hier steht,
+       was die Vorschrift dafür verlangt. Beide Zeilen dürfen nicht gleich
+       heißen – wer am Bauplatz „Kabelreserve“ sucht, muss auf einen Blick
+       sehen, welche Zahl aus der Planung stammt und welche aus der Dv. */
+    ['Geforderte Reserve an Anfang und Ende', 'je 20 bis 30 m (6.5.1)'],
     ...(k.reichweite ? [reichweiteZeile(k.reichweite)] : []),
     ['Masten / Hochführungen', String(s.punkte.filter(p => p.art === 'mast').length)],
     ['Richtwert Bauzeit', k.querungszeitStunden > 0
@@ -1888,7 +1908,8 @@ function materialHTML(s, k) {
     <p class="tab-fussnote">Auflagen und Abbunde nach der Kabellänge: mindestens alle 50 m
       auflegen, längstens alle 150 m abbinden (KatS-Dv 861, 7.3).</p>
     ${a ? `<p class="tab-fussnote mat-fussnote">Querschnitt als Planungsrichtwert für Kupferleitung
-      (drei belastete Adern, frei in Luft) über die Leitungslänge einschließlich Bauzuschlag.
+      (drei belastete Adern, frei in Luft) über die Leitungslänge einschließlich Bauzuschlag
+      und Kabelreserve.
       Aufgerollte Leitungsroller tragen deutlich weniger Strom. Die verbindliche Auslegung
       und die Prüfung der Anlage obliegen einer Elektrofachkraft.</p>` : ''}
   </section>`;

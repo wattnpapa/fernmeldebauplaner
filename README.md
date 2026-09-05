@@ -23,6 +23,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Beliebig viele benannte Strecken, jede mit eigener Farbe
 - Teillängen an jedem Abschnitt und Name samt Gesamtlänge an der Strecke – dauerhaft sichtbar
 - Punktarten: Anfangspunkt, Trassenpunkt, Muffe, Verteiler, Querung, Mast, Kabelreserve, Endpunkt
+- Kabelreserve mit Länge am Punkt (Vorgabe 10 m, je Punkt anpassbar) – sie geht in
+  Kabelbedarf und Trommelzahl ein; die Vorschrift verlangt an Anfangs- und Endstelle
+  20 bis 30 m (KatS-Dv 861, 6.5.1)
 - Querungen mit Art (Straße, Bahn, Gewässer, Freileitung …) und Bauweise am Hindernis:
   Überbau (Ü), Unterbau (U) oder an einem Bauwerk entlang – auf der Karte als Buchstabe
   in der Raute, mit Zeitansatz je Querung
@@ -50,7 +53,7 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 
 **Rechengrößen**
 - Trassenlänge als geodätische Direktstrecke (Vincenty auf WGS84) zwischen den Punkten
-- Kabelbedarf = Trassenlänge + Bauzuschlag
+- Kabelbedarf = Trassenlänge + Bauzuschlag + Kabelreserven
 - Anzahl benötigter Trommeln, Muffen, Querungen und ein Richtwert für die Bauzeit:
   Kabelbedarf durch Verlegeleistung plus Zeitansatz der Querungen (Überbau 45 min,
   Unterbau 60 min, Bauwerk 20 min, sonst 10 min – je Punkt anpassbar)
@@ -385,13 +388,14 @@ committet nur bei grüner Prüfung und stößt anschließend ein Release an.
 ## Hinweise zur Genauigkeit
 
 Die Längen sind **geodätische Direktstrecken zwischen den gesetzten Trassenpunkten**,
-nicht die tatsächliche Kabellänge im Gelände. Geländeverlauf, Umgehungen, Reserven an
-Muffen und Endverzweigern deckt der **Bauzuschlag** ab (Vorgabe 15 %, bei LWL 20 %).
+nicht die tatsächliche Kabellänge im Gelände. Geländeverlauf und Umgehungen deckt der
+**Bauzuschlag** ab (Vorgabe 15 %, bei LWL 20 %); **Kabelreserven** kommen als feste Länge
+an ihrem Punkt hinzu und werden nicht bezuschlagt.
 Wer genauer plant, setzt mehr Trassenpunkte. Der Richtwert für die Bauzeit ist eine
 grobe Planungsgröße aus Bedarfslänge geteilt durch die eingestellte Verlegeleistung.
 
 Der **Leiterquerschnitt** von Stromleitungen ist ein Planungsrichtwert: gerechnet für
-Kupfer über die Leitungslänge einschließlich Bauzuschlag, maßgebend ist der zulässige
+Kupfer über die Leitungslänge einschließlich Bauzuschlag und Kabelreserve, maßgebend ist der zulässige
 Spannungsfall oder die Strombelastbarkeit – je nachdem, was den größeren Querschnitt
 verlangt. Die Belastbarkeit gilt für drei belastete Adern frei in Luft bei 30 °C;
 aufgerollte Leitungsroller tragen deutlich weniger. Die verbindliche Auslegung und die

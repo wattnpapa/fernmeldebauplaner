@@ -6,7 +6,7 @@ import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 import { QUERUNG_STANDARD, BAUWEISE_STANDARD } from './vorschrift.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
 
-export const SCHEMA = 8;
+export const SCHEMA = 9;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -234,14 +234,16 @@ export function neueStrecke(projekt) {
   };
 }
 
-/* Querungsart und Bauweise sind nur bei der Punktart 'querung' von Bedeutung,
-   werden aber an jedem Punkt mitgeführt: ein späterer Wechsel der Punktart soll
-   die einmal getroffene Wahl nicht verlieren. `querungszeit` null heißt: der
-   Richtwert der Bauweise gilt (Schema 6). */
+/* Querungsart, Bauweise und Kabelreserve sind jeweils nur bei einer Punktart von
+   Bedeutung, werden aber an jedem Punkt mitgeführt: ein späterer Wechsel der
+   Punktart soll die einmal getroffene Wahl nicht verlieren. `querungszeit` null
+   heißt: der Richtwert der Bauweise gilt (Schema 6). `reserve` null ebenso: dann
+   gilt der Vorgabewert aus der Vorschrift (Schema 9). */
 export function neuerPunkt(lat, lng, art = 'punkt') {
   return {
     id: id(), lat, lng, art, name: '', bemerkung: '',
-    querungsart: QUERUNG_STANDARD, bauweise: BAUWEISE_STANDARD, querungszeit: null
+    querungsart: QUERUNG_STANDARD, bauweise: BAUWEISE_STANDARD, querungszeit: null,
+    reserve: null
   };
 }
 
@@ -587,6 +589,11 @@ export function migrieren(p) {
             ({ ...leer, ...(((s.richtfunk || {}).standorte || [])[i] || {}) }));
           return rf;
         })(),
+        /* Schema 9 hat der Kabelreserve eine Länge gegeben. Ältere Stände
+           bringen sie nicht mit und öffnen mit dem Vorgabewert – ein Plan mit
+           Reservepunkten weist danach mehr Kabelbedarf aus als sein
+           ausgedrucktes Blatt. Das ist gewollt: die Reserve war vorher nirgends
+           gerechnet, das alte Blatt nennt zu wenig Kabel. */
         punkte: (s.punkte || []).map(pt => ({
           ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id(),
           art: PUNKTARTEN.some(a => a.id === pt.art) ? pt.art : 'punkt'

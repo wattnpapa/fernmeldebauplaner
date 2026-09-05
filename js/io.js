@@ -332,6 +332,7 @@ export function geoJSON(nurStrecke = null) {
         ...(k.kabel.funk ? funkAngaben(s, k) : {
           verlegeart: s.verlegeart,
           trassenlaenge_m: Math.round(k.trasse), zuschlag_prozent: k.zuschlag,
+          kabelreserve_m: Math.round(k.reserve),
           kabelbedarf_m: Math.round(k.bedarf), trommeln: k.trommeln
         }),
         ...(k.strom ? {
@@ -401,7 +402,8 @@ function streckenAngaben(s) {
     k.kabel.funk ? k.kabel.name
       : `${k.kabel.name} · ${(VERLEGEARTEN.find(v => v.id === s.verlegeart) || {}).name || ''}`,
     ...(k.kabel.funk ? funkZeilen(s) : [
-      `Trasse ${Math.round(k.trasse)} m · Bedarf ${Math.round(k.bedarf)} m (${k.zuschlag} % Zuschlag)`,
+      `Trasse ${Math.round(k.trasse)} m · Bedarf ${Math.round(k.bedarf)} m (${k.zuschlag} % Zuschlag` +
+        `${k.reserve > 0 ? `, ${Math.round(k.reserve)} m Reserve` : ''})`,
       `${k.trommeln} ${k.trommeln === 1 ? 'Trommel' : 'Trommeln'} à ${k.trommellaenge} m`
     ]),
     k.strom && `${k.strom.netz.name} · ${Math.round(k.strom.strom * 10) / 10} A · ${k.strom.querschnitt} mm²`,

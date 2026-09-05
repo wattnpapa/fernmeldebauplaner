@@ -3,7 +3,8 @@
 import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText } from './geo.js';
 import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar } from './state.js';
 import { auslegung, querschnittText } from './strom.js';
-import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf } from './vorschrift.js';
+import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf,
+         kabelreserve } from './vorschrift.js';
 import { symbolSVG, GRUNDBREITE } from './symbols.js';
 
 /* Eine rechnerische Trommelstelle so dicht an einer geplanten Muffe ist
@@ -62,7 +63,13 @@ export function kennzahlen(strecke) {
     ? distanz(p[0], p[p.length - 1])
     : kum[kum.length - 1];
   const zuschlag = funk ? 0 : Math.max(0, Number(strecke.zuschlag) || 0);
-  const bedarf = trasse * (1 + zuschlag / 100);
+  /* Der Bauzuschlag dehnt die Trasse, die Kabelreserve kommt als feste Länge
+     obendrauf: sie ist eine Schleife an einer Stelle und wird nicht länger,
+     weil das Gelände zwischen den Punkten Umwege erzwingt. Ein Zuschlag auf die
+     Reserve wäre ein Zuschlag auf eine Zahl, die der Planer selbst gesetzt hat. */
+  const verlegt = trasse * (1 + zuschlag / 100);
+  const reserve = funk ? 0 : p.reduce((m, pt) => m + kabelreserve(pt), 0);
+  const bedarf = verlegt + reserve;
   const tl = Math.max(1, Number(strecke.trommellaenge) || 500);
   const leistung = Math.max(1, Number(strecke.verlegeleistung) || 800);
   /* Ein Verteiler mitten auf der Strecke schließt das Kabel ab, dahinter
@@ -79,12 +86,18 @@ export function kennzahlen(strecke) {
      Unterbau, Warnposten –, steht als Zeitansatz am Punkt und wird der
      Bauzeit aufgeschlagen. */
   const querungszeitStunden = funk ? 0 : querungsliste.reduce((sum, q) => sum + q.minuten, 0) / 60;
-  const verlegezeitStunden = funk ? 0 : bedarf / leistung;
+  /* Die Verlegeleistung zählt laufende Meter der Trasse. Die Reserveschleife
+     wird an ihrer Stelle abgelegt und nicht verlegt – sie in die Bauzeit zu
+     rechnen hieße, für 100 m Reserve eine Viertelstunde Marsch anzusetzen. */
+  const verlegezeitStunden = funk ? 0 : verlegt / leistung;
   const unterbau = querungsliste.some(q => q.bauweise.id === 'unterbau');
   let lv = null;
   return {
     trasse,
     zuschlag,
+    /* Getrennt ausgewiesen, weil beides verschieden zustande kommt: der
+       Zuschlag ist geschätzt, die Reserve steht an ihren Punkten. */
+    reserve,
     bedarf,
     trommellaenge: tl,
     trommeln,
@@ -117,14 +130,19 @@ export function kennzahlen(strecke) {
       if (!lv) lv = funk ? [] : laengenverbindungen(p, kum, ka, tl, zuschlag);
       return lv;
     },
-    abbinden: abbindeBedarf(funk ? 0 : bedarf),
-    /* Maßgebend ist die tatsächlich liegende Kabellänge, also der Bedarf
-       einschließlich Bauzuschlag – so wie es beim Spannungsfall der
-       Stromleitung schon gehandhabt wird, nicht über die Trassenlänge. */
+    /* Aufgelegt und abgebunden wird das liegende Kabel; die Reserveschleife
+       bekommt keine Auflage alle 50 m. */
+    abbinden: abbindeBedarf(funk ? 0 : verlegt),
+    /* Maßgebend ist die tatsächlich am Draht liegende Kabellänge, also der
+       Bedarf einschließlich Bauzuschlag und Reserve – so wie es beim
+       Spannungsfall der Stromleitung schon gehandhabt wird, nicht über die
+       Trassenlänge. Die Reserveschleife hängt in der Leitung und trägt ihren
+       Schleifenwiderstand mit, auch wenn sie aufgerollt am Punkt liegt. */
     reichweite: reichweite(strecke.kabeltyp, strecke.verlegeart, bedarf, unterbau),
     kabel,
     /* Der Querschnitt wird über die tatsächlich liegende Leitung gerechnet,
-       also über den Bedarf einschließlich Bauzuschlag – nicht über die Trasse. */
+       also über den Bedarf einschließlich Bauzuschlag und Reserve – nicht über
+       die Trasse. Auch die aufgerollte Reserve steht im Stromkreis. */
     strom: strecke.kabeltyp === 'strom' ? auslegung(strecke.strom, bedarf) : null
   };
 }
@@ -168,10 +186,22 @@ function kabelabschnitte(punkte, kum, zuschlag, trommellaenge) {
 
   const streckung = 1 + zuschlag / 100;
   const out = [];
+  let kabelVon = 0;
   for (let g = 1; g < grenzen.length; g++) {
     const vonIdx = grenzen[g - 1], bisIdx = grenzen[g];
     const trasse = kum[bisIdx] - kum[vonIdx];
-    const bedarf = trasse * streckung;
+    /* Die Reserven des Abschnitts, jede an ihrer Stelle auf der Trasse. Ein
+       Punkt an der Abschnittsgrenze ist ein Verteiler und bringt keine mit –
+       nur Anfang und Ende der Trasse können selbst Reservepunkte sein, und die
+       liegen in genau einem Abschnitt. Doppelt gezählt wird deshalb nichts. */
+    const reserven = [];
+    for (let i = vonIdx; i <= bisIdx; i++) {
+      const m = kabelreserve(punkte[i]);
+      if (m > 0) reserven.push({ abAnfang: kum[i], meter: m });
+    }
+    const reserve = reserven.reduce((m, r) => m + r.meter, 0);
+    const verlegt = trasse * streckung;
+    const bedarf = verlegt + reserve;
     out.push({
       nr: g,
       vonNr: vonIdx + 1,
@@ -179,14 +209,43 @@ function kabelabschnitte(punkte, kum, zuschlag, trommellaenge) {
       von: kum[vonIdx],
       bis: kum[bisIdx],
       /* Wo der Abschnitt auf dem durchlaufend gezählten Kabel beginnt – die
-         Längenverbindungen geben ihre Lage in dieser Zählung an. */
-      kabelVon: kum[vonIdx] * streckung,
+         Längenverbindungen geben ihre Lage in dieser Zählung an. Aufsummiert
+         statt aus der Trassenlänge gerechnet: die Reserven der Abschnitte davor
+         stehen in keiner Trassenlänge, verschieben die Zählung aber. */
+      kabelVon,
       trasse,
+      verlegt,
+      reserve,
+      reserven,
       bedarf,
       trommeln: bedarf > 0 ? Math.ceil(bedarf / trommellaenge) : 0
     });
+    kabelVon += bedarf;
   }
   return out;
+}
+
+/**
+ * Von einer Länge auf dem Kabel des Abschnitts zurück auf den Trassenmeter.
+ *
+ * Ohne Reserven ist das eine Division durch die Streckung des Bauzuschlags.
+ * Jede Reserve ist dagegen ein Sprung: dort wächst das Kabel um ihre Länge,
+ * ohne dass die Trasse weitergeht. Wer das übergeht, meldet den Trommelstoß um
+ * die Summe der Reserven davor zu weit vorn – und der Trupp sucht die Muffe an
+ * der falschen Stelle. Fällt der Stoß in die Schleife selbst, ist die Stelle
+ * der Reservepunkt: dort wird die Trommel gewechselt.
+ */
+function trasseBeiKabel(a, kabelImAbschnitt, streckung) {
+  let rest = kabelImAbschnitt;
+  let pos = a.von;
+  for (const r of a.reserven) {
+    const bisReserve = (r.abAnfang - pos) * streckung;
+    if (rest < bisReserve) break;
+    rest -= bisReserve + r.meter;
+    pos = r.abAnfang;
+    if (rest < 0) return r.abAnfang;
+  }
+  return pos + rest / streckung;
 }
 
 /**
@@ -215,8 +274,9 @@ function laengenverbindungen(punkte, kum, abschnitte, trommellaenge, zuschlag) {
   });
 
   /* Die Trommellängen zählen entlang des Kabels, das wegen des Bauzuschlags
-     länger ist als die Trasse. Nur über den Zuschlag zurückgerechnet lässt sich
-     der Stoß als Trassenmeter und damit als Ort auf der Karte angeben. */
+     länger ist als die Trasse und an jeder Reserve einen Sprung macht. Nur
+     zurückgerechnet (siehe trasseBeiKabel) lässt sich der Stoß als Trassenmeter
+     und damit als Ort auf der Karte angeben. */
   const streckung = 1 + zuschlag / 100;
   const muffen = liste.map(v => v.abAnfang);
   /* Gezählt wird je Kabelabschnitt neu: hinter einem Verteiler liegt eine
@@ -226,7 +286,7 @@ function laengenverbindungen(punkte, kum, abschnitte, trommellaenge, zuschlag) {
     for (let k = 1; k <= stoesse; k++) {
       const kabelImAbschnitt = k * trommellaenge;
       if (kabelImAbschnitt >= a.bedarf) break;
-      const abAnfang = a.von + kabelImAbschnitt / streckung;
+      const abAnfang = trasseBeiKabel(a, kabelImAbschnitt, streckung);
       // Dort ist die Verbindung schon geplant, sie wird nicht doppelt gezählt.
       if (muffen.some(m => Math.abs(m - abAnfang) < MUFFEN_NAEHE)) continue;
       const stelle = punktBeiLaenge(punkte, abAnfang);
@@ -255,7 +315,7 @@ function laengenverbindungen(punkte, kum, abschnitte, trommellaenge, zuschlag) {
  *  Material bestellt, nicht nach Strecken. */
 export function gesamtKennzahlen(strecken) {
   const ges = {
-    anzahl: strecken.length, trasse: 0, bedarf: 0, trommeln: 0,
+    anzahl: strecken.length, trasse: 0, reserve: 0, bedarf: 0, trommeln: 0,
     gewicht: 0, gewichtVollstaendig: true,
     bauzeitStunden: 0, muffen: 0, querungen: 0, punkte: 0,
     nachKabel: []
@@ -264,6 +324,7 @@ export function gesamtKennzahlen(strecken) {
   for (const s of strecken) {
     const k = kennzahlen(s);
     ges.trasse += k.trasse;
+    ges.reserve += k.reserve;
     ges.bedarf += k.bedarf;
     ges.trommeln += k.trommeln;
     ges.bauzeitStunden += k.bauzeitStunden;
@@ -295,6 +356,18 @@ export function segmentLaengen(strecke) {
 export { kumuliert };
 
 const mitte = (a, b) => L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2);
+
+/* Was aus der Trassenlänge den Kabelbedarf macht – auf Kartenschild und
+   Kurzhinweis in der Reihenfolge, in der gerechnet wird: erst der Zuschlag auf
+   die Trasse, dann die Reserven obendrauf. Stünde dort weiter nur der
+   Prozentsatz, zeigte der Pfeil auf eine Zahl, die sich damit nicht nachrechnen
+   lässt – und die erste Frage am Bauplatz wäre, wo die Meter herkommen. */
+function bedarfsHerkunft(k) {
+  const teile = [];
+  if (k.zuschlag) teile.push(`+${k.zuschlag}%`);
+  if (k.reserve > 0) teile.push(`+${meter(k.reserve)} Res.`);
+  return teile.join(' ');
+}
 
 /**
  * Zeichnet und verwaltet alle Strecken auf einer Karte.
@@ -633,7 +706,7 @@ export class StreckenLayer {
           html: `<span class="strecken-mass${versatz}${gewaehlt ? ' aktiv' : ''}" style="--farbe:${st.farbe}">
                    <b>${escapeHtml(s.name)}</b>
                    <span class="wert">${formatLaenge(k.trasse)}</span>
-                   ${k.zuschlag ? `<span class="zus">+${k.zuschlag}% → ${formatLaenge(k.bedarf)}</span>` : ''}
+                   ${k.zuschlag || k.reserve ? `<span class="zus">${bedarfsHerkunft(k)} → ${formatLaenge(k.bedarf)}</span>` : ''}
                  </span>`,
           iconSize: null
         })
@@ -785,7 +858,7 @@ export class StreckenLayer {
   _tooltipText(s) {
     const k = kennzahlen(s);
     return `<b>${escapeHtml(s.name)}</b><br>${k.kabel.kurz} · ${formatLaenge(k.trasse)} Trasse` +
-           `<br>Bedarf inkl. ${k.zuschlag}%: ${formatLaenge(k.bedarf)}` +
+           `<br>Bedarf ${bedarfsHerkunft(k)}: ${formatLaenge(k.bedarf)}` +
            (k.strom && k.strom.querschnitt ? `<br>Querschnitt: ${querschnittText(k.strom.querschnitt)}` : '');
   }
 

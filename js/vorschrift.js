@@ -267,6 +267,23 @@ export const BAUREGELN = [
   { text: 'Bei Gewitter Bau unterbrechen, Feldkabeltrommel ablegen und mindestens 30 m Abstand halten.', fundstelle: '13.2.2' }
 ];
 
+/* Der Vorgabewert einer Kabelreserve. Die Vorschrift nennt 20 bis 30 m, meint
+   damit aber die Anfangs- und die Endstelle; eine Reserve mitten auf der Trasse
+   – an der Muffe, vor der Querung, am Verteiler – wird kürzer angesetzt. 10 m
+   ist der Wert, mit dem ein neuer Reservepunkt anfängt: wer die volle Reserve
+   der Endstelle meint, trägt sie am Punkt ein. */
+export const KABELRESERVE_STANDARD = 10;
+
+/** Kabelreserve eines Punktes in Metern: der Wert am Punkt, sonst der Vorgabewert.
+ *  Nur die Punktart „Kabelreserve“ bringt Länge mit – an jeder anderen liegt der
+ *  Wert zwar am Punkt, wartet dort aber auf einen Wechsel der Art zurück. */
+export function kabelreserve(pt) {
+  if (!pt || pt.art !== 'reserve') return 0;
+  const eigen = Number(pt.reserve);
+  if (pt.reserve !== null && pt.reserve !== '' && isFinite(eigen) && eigen >= 0) return eigen;
+  return KABELRESERVE_STANDARD;
+}
+
 /** Auflagen und Abbunde einer Strecke (KatS-Dv 861, 7.3) */
 export function abbindeBedarf(laengeMeter) {
   const l = Number(laengeMeter);
