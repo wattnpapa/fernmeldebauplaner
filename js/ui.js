@@ -230,6 +230,15 @@ function kabelSummeHTML(ges) {
   return `<div class="summe-kabel">${zeilen}</div>`;
 }
 
+/**
+ * Die Streckenliste ist ein Nachschlagewerk: gesucht wird nach dem Namen, nicht
+ * nach der Reihenfolge des Zeichnens. Sortiert wird deshalb nur die Anzeige –
+ * die Reihenfolge im Projekt bleibt die des Anlegens, an ihr hängen Farbvergabe,
+ * Ausgabe und Export. `numeric` hält „FW 2“ vor „FW 10“.
+ */
+const nachNamen = liste => liste.slice().sort((a, b) =>
+  (a.name || '').localeCompare(b.name || '', 'de', { numeric: true, sensitivity: 'base' }));
+
 export function zeichneStreckenListe() {
   const p = store.projekt;
   const liste = document.getElementById('strecken-liste');
@@ -267,7 +276,7 @@ export function zeichneStreckenListe() {
   /* Ohne Einsatzabschnitte bleibt die Liste, was sie war: eine Reihe Strecken.
      Erst wenn welche gebildet sind, tritt die Gliederung dazwischen. */
   if (!abschnitte.length) {
-    for (const s of p.strecken) liste.appendChild(streckenKarte(s));
+    for (const s of nachNamen(p.strecken)) liste.appendChild(streckenKarte(s));
     return;
   }
 
@@ -354,7 +363,7 @@ function abschnittGruppe(ea, art) {
   const flaechenliste = art === 'flaechen';
   const aid = ea ? ea.id : null;
   const eintraege = zeichenliste ? zeichenIm(p, aid)
-    : flaechenliste ? flaechenIm(p, aid) : streckenIm(p, aid);
+    : flaechenliste ? flaechenIm(p, aid) : nachNamen(streckenIm(p, aid));
 
   const box = klammerBox({
     hat: ea, art, ohneName: 'Ohne Einsatzabschnitt',
