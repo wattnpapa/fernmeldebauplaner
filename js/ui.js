@@ -225,7 +225,8 @@ function augenKnopf(sichtbar) {
 const alphabetisch = (liste, titel) => liste.slice().sort((a, b) =>
   titel(a).localeCompare(titel(b), 'de', { numeric: true, sensitivity: 'base' }));
 
-const streckenTitel = s => s.name || '';
+/** Strecken, Einsatzabschnitte und Zeichengruppen tragen ihren Namen unmittelbar */
+const nachName = x => x.name || '';
 /** Beschriftung eines Zeichens in der Liste – ohne eigene der Name des Symbols */
 const zeichenTitel = z => z.label || symbolById(z.symbol).name;
 
@@ -256,7 +257,7 @@ export function zeichneStreckenListe() {
   const p = store.projekt;
   const liste = document.getElementById('strecken-liste');
   const summe = document.getElementById('strecken-summe');
-  const abschnitte = p.einsatzabschnitte || [];
+  const abschnitte = alphabetisch(p.einsatzabschnitte || [], nachName);
   liste.innerHTML = '';
 
   const ges = gesamtKennzahlen(p.strecken);
@@ -289,7 +290,7 @@ export function zeichneStreckenListe() {
   /* Ohne Einsatzabschnitte bleibt die Liste, was sie war: eine Reihe Strecken.
      Erst wenn welche gebildet sind, tritt die Gliederung dazwischen. */
   if (!abschnitte.length) {
-    for (const s of alphabetisch(p.strecken, streckenTitel)) liste.appendChild(streckenKarte(s));
+    for (const s of alphabetisch(p.strecken, nachName)) liste.appendChild(streckenKarte(s));
     return;
   }
 
@@ -377,7 +378,7 @@ function abschnittGruppe(ea, art) {
   const aid = ea ? ea.id : null;
   const eintraege = zeichenliste ? alphabetisch(zeichenIm(p, aid), zeichenTitel)
     : flaechenliste ? alphabetisch(flaechenIm(p, aid), flaechenTitel)
-    : alphabetisch(streckenIm(p, aid), streckenTitel);
+    : alphabetisch(streckenIm(p, aid), nachName);
 
   const box = klammerBox({
     hat: ea, art, ohneName: 'Ohne Einsatzabschnitt',
@@ -538,7 +539,7 @@ function streckenKarte(s) {
     }, {
       typ: 'select',
       werte: [['', '— keinem zugeteilt —'],
-        ...store.projekt.einsatzabschnitte.map(a => [a.id, a.name])]
+        ...alphabetisch(store.projekt.einsatzabschnitte, nachName).map(a => [a.id, a.name])]
     }));
   }
   g1.appendChild(farbwahl(s, karte));
@@ -1615,9 +1616,12 @@ function zuteilungsliste(art, ziel, stand, danach = () => {}) {
   const flaechenliste = art === 'flaechen';
   const zeichenliste = art !== 'strecken' && !flaechenliste;
   const nachGruppe = art === 'zeichengruppe';
-  const alle = zeichenliste ? p.zeichen : flaechenliste ? (p.flaechen || []) : p.strecken;
+  const titel = zeichenliste ? zeichenTitel : flaechenliste ? flaechenTitel : nachName;
+  const alle = alphabetisch(
+    zeichenliste ? p.zeichen : flaechenliste ? (p.flaechen || []) : p.strecken, titel);
   const feldname = nachGruppe ? 'gruppe' : 'abschnitt';
-  const klammern = nachGruppe ? (p.zeichengruppen || []) : (p.einsatzabschnitte || []);
+  const klammern = alphabetisch(
+    nachGruppe ? (p.zeichengruppen || []) : (p.einsatzabschnitte || []), nachName);
   const bezeichner = nachGruppe ? 'Zeichengruppe' : 'Einsatzabschnitt';
   const box = el('div', 'ea-zuteilung');
 
@@ -1662,8 +1666,7 @@ function zuteilungsliste(art, ziel, stand, danach = () => {}) {
   }
 
   for (const x of alle) {
-    const bezeichnung = zeichenliste ? (x.label || symbolById(x.symbol).name)
-      : flaechenliste ? flaechenTitel(x) : x.name;
+    const bezeichnung = titel(x);
     const zeile = el('div', 'ez-zeile');
     zeile.innerHTML = zeichenliste
       ? `<span class="mini-symbol">${symbolSVG({ symbol: x.symbol, breite: 24 })}</span>
@@ -1874,8 +1877,8 @@ export function zeichneZeichenListe() {
   const p = store.projekt;
   const liste = document.getElementById('zeichen-liste');
   const wahlbox = document.getElementById('zeichen-gliederung');
-  const abschnitte = p.einsatzabschnitte || [];
-  const gruppen = p.zeichengruppen || [];
+  const abschnitte = alphabetisch(p.einsatzabschnitte || [], nachName);
+  const gruppen = alphabetisch(p.zeichengruppen || [], nachName);
   liste.innerHTML = '';
 
   /* Der Umschalter darf nicht auf eine Gliederung zeigen, die es nicht mehr
@@ -1980,7 +1983,7 @@ function zeichenFormular(z, basis) {
     }, {
       typ: 'select',
       werte: [['', '— keinem zugeteilt (gilt für alle) —'],
-        ...store.projekt.einsatzabschnitte.map(a => [a.id, a.name])]
+        ...alphabetisch(store.projekt.einsatzabschnitte, nachName).map(a => [a.id, a.name])]
     }));
   }
 
@@ -1992,7 +1995,7 @@ function zeichenFormular(z, basis) {
     }, {
       typ: 'select',
       werte: [['', '— ohne Gruppe —'],
-        ...store.projekt.zeichengruppen.map(gr => [gr.id, gr.name])]
+        ...alphabetisch(store.projekt.zeichengruppen, nachName).map(gr => [gr.id, gr.name])]
     }));
   }
 
@@ -2122,7 +2125,7 @@ export function zeichneFlaechenListe() {
   if (!liste) return;
   liste.innerHTML = '';
   const flaechen = p.flaechen || [];
-  const abschnitte = p.einsatzabschnitte || [];
+  const abschnitte = alphabetisch(p.einsatzabschnitte || [], nachName);
 
   const qm = flaechen.reduce((n, f) => n + f.breite * f.laenge, 0);
   summe.innerHTML = flaechen.length
@@ -2231,7 +2234,7 @@ function flaecheFormular(f) {
     }, {
       typ: 'select',
       werte: [['', '— keinem zugeteilt (gilt für alle) —'],
-        ...store.projekt.einsatzabschnitte.map(a => [a.id, a.name])]
+        ...alphabetisch(store.projekt.einsatzabschnitte, nachName).map(a => [a.id, a.name])]
     }));
   }
 
