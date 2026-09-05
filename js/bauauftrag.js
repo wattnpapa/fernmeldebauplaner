@@ -1455,7 +1455,8 @@ function materialGesamtHTML(ges) {
       </tr></tfoot>
     </table>
     <p class="tab-fussnote">Die Trommelzahl ist je Strecke aufgerundet: eine angebrochene
-      Trommel bleibt bei ihrer Strecke.${ges.gewichtVollstaendig ? ''
+      Trommel bleibt bei ihrer Strecke. Ein Verteiler mitten auf der Strecke trennt das
+      Kabel – dahinter beginnt eine neue Trommel.${ges.gewichtVollstaendig ? ''
         : ' Ein Transportgewicht steht nur bei den Leitungsarten, für die es hinterlegt ist.'}</p>
   </section>`;
 }
@@ -1603,7 +1604,9 @@ function laengenverbindungenRahmenHTML(k) {
     </table>
     <p class="tab-fussnote">Rechnerische Längenverbindungen ergeben sich aus der Trommellänge
       von ${meter(k.trommellaenge)} einschließlich Bauzuschlag; die tatsächliche Lage verschiebt
-      sich mit dem Gelände. Baumeldung nach jeder Länge, spätestens alle 30 Minuten
+      sich mit dem Gelände.${k.kabelabschnitte.length > 1
+        ? ' An jedem Verteiler beginnt die Zählung von vorn.' : ''}
+      Baumeldung nach jeder Länge, spätestens alle 30 Minuten
       (KatS-Dv 861, 7.1).</p>
   </section>`;
 }
@@ -1805,6 +1808,16 @@ function richtfunkZeilenHTML(p, s) {
 
 // ---------------------------------------------------------------- Material
 
+/* Ein Verteiler mitten auf der Strecke schließt das Kabel ab; dahinter beginnt
+   eine neue Trommel, der Rest der alten bleibt aufgewickelt. Ohne die
+   Aufstellung läse sich die Trommelzahl wie ein Rechenfehler – über den
+   Gesamtbedarf geteilt geht sie nicht auf. */
+function kabelabschnitteText(k) {
+  return k.kabelabschnitte.map(a =>
+    `${a.nr}. Punkt ${a.vonNr}–${a.bisNr}: ${meter(a.bedarf)} → ` +
+    `${a.trommeln} ${a.trommeln === 1 ? 'Trommel' : 'Trommeln'}`).join('<br>');
+}
+
 function materialHTML(s, k) {
   const va = VERLEGEARTEN.find(v => v.id === s.verlegeart);
   const zeilen = k.kabel.funk ? [
@@ -1821,6 +1834,9 @@ function materialHTML(s, k) {
     ['Bauzuschlag', `${k.zuschlag} %  (${meter(k.bedarf - k.trasse)})`],
     ['<b>Kabelbedarf gesamt</b>', `<b>${formatLaenge(k.bedarf)}</b>`],
     ['Trommellänge', meter(k.trommellaenge)],
+    ...(k.kabelabschnitte.length > 1
+      ? [['Kabelabschnitte (an Verteilern getrennt)', kabelabschnitteText(k)]]
+      : []),
     ['<b>Trommeln erforderlich</b>', `<b>${k.trommeln} Stück</b>`],
     ...(k.transportgewicht
       ? [['Transportgewicht (mit Trommeln)', `${gewichtText(k.transportgewicht)}  (${gewichtText(k.trommelgewicht)} je Trommel)`]]

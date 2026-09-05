@@ -9,9 +9,9 @@ import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBeda
    dieselbe Verbindung und wird nicht zusätzlich aufgeführt. */
 const MUFFEN_NAEHE = 30;
 
-/* Obergrenze der Trommelstöße. Die Schleife endet von sich aus am Streckenende;
-   die Schranke fängt nur den Fall einer versehentlich winzigen Trommellänge ab –
-   kennzahlen() läuft in der Seitenleiste bei jedem Tastendruck. */
+/* Obergrenze der Trommelstöße je Kabelabschnitt. Die Schleife endet von sich aus
+   am Abschnittsende; die Schranke fängt nur den Fall einer versehentlich winzigen
+   Trommellänge ab – kennzahlen() läuft in der Seitenleiste bei jedem Tastendruck. */
 const MAX_STOESSE = 500;
 
 /* Kartografische Zeichen der Kabelarten (KatS-Dv 861): das Kabel wird nicht als
@@ -64,7 +64,14 @@ export function kennzahlen(strecke) {
   const bedarf = trasse * (1 + zuschlag / 100);
   const tl = Math.max(1, Number(strecke.trommellaenge) || 500);
   const leistung = Math.max(1, Number(strecke.verlegeleistung) || 800);
-  const trommeln = bedarf > 0 && !funk ? Math.ceil(bedarf / tl) : 0;
+  /* Ein Verteiler mitten auf der Strecke schließt das Kabel ab, dahinter
+     beginnt ein neues. Der Rest der angebrochenen Trommel bleibt dabei auf der
+     Trommel – abgeschnitten wird nicht (KatS-Dv 861, 6.5.1). Über die ganze
+     Trasse gerechnet fehlte deshalb Kabel: zwei Abschnitte von je 450 m
+     brauchen bei 500 m Trommellänge zwei Trommeln, ihre Summe von 900 m nur
+     eine – und der Trupp stünde mit 450 m zu wenig am Bauplatz. */
+  const ka = funk ? [] : kabelabschnitte(p, kum, zuschlag, tl);
+  const trommeln = ka.reduce((n, a) => n + a.trommeln, 0);
   const querungsliste = querungen(p, kum);
   /* Die Verlegeleistung kennt nur laufende Meter. Was an einer Querung
      dazukommt – Stangen stellen für den Überbau, Graben ziehen für den
@@ -80,6 +87,9 @@ export function kennzahlen(strecke) {
     bedarf,
     trommellaenge: tl,
     trommeln,
+    /* Die Abschnitte zwischen den Verteilern, jeder mit eigener Trommelzahl.
+       Bei einer Strecke ohne Verteiler ist es genau einer. */
+    kabelabschnitte: ka,
     /* Nur belegte Kabelarten tragen ein Trommelgewicht; sonst bleibt das Feld leer,
        damit im Bauauftrag keine erfundene Traglast steht. */
     trommelgewicht: kabel.gewicht,
@@ -103,7 +113,7 @@ export function kennzahlen(strecke) {
        werden die Stellen aber nur im Bauauftrag – deshalb erst beim Zugriff
        rechnen und dann merken. */
     get laengenverbindungen() {
-      if (!lv) lv = funk ? [] : laengenverbindungen(p, kum, bedarf, tl, zuschlag);
+      if (!lv) lv = funk ? [] : laengenverbindungen(p, kum, ka, tl, zuschlag);
       return lv;
     },
     abbinden: abbindeBedarf(funk ? 0 : bedarf),
@@ -139,12 +149,52 @@ function querungen(punkte, kum) {
 }
 
 /**
+ * Kabelabschnitte einer Trasse: an jedem Verteiler endet das Kabel, dahinter
+ * beginnt ein neues. Jeder Abschnitt bekommt seine eigene, aufgerundete
+ * Trommelzahl – ganze Trommeln, weil das Kabel nicht abgeschnitten wird.
+ * Ein Verteiler an Anfang oder Ende teilt nichts, dort liegt ohnehin kein
+ * Kabel weiter.
+ * @returns {object[]} ein Eintrag je Abschnitt, leer bei weniger als zwei Punkten
+ */
+function kabelabschnitte(punkte, kum, zuschlag, trommellaenge) {
+  if (punkte.length < 2) return [];
+
+  const grenzen = [0];
+  for (let i = 1; i < punkte.length - 1; i++) {
+    if (punkte[i].art === 'verteiler') grenzen.push(i);
+  }
+  grenzen.push(punkte.length - 1);
+
+  const streckung = 1 + zuschlag / 100;
+  const out = [];
+  for (let g = 1; g < grenzen.length; g++) {
+    const vonIdx = grenzen[g - 1], bisIdx = grenzen[g];
+    const trasse = kum[bisIdx] - kum[vonIdx];
+    const bedarf = trasse * streckung;
+    out.push({
+      nr: g,
+      vonNr: vonIdx + 1,
+      bisNr: bisIdx + 1,
+      von: kum[vonIdx],
+      bis: kum[bisIdx],
+      /* Wo der Abschnitt auf dem durchlaufend gezählten Kabel beginnt – die
+         Längenverbindungen geben ihre Lage in dieser Zählung an. */
+      kabelVon: kum[vonIdx] * streckung,
+      trasse,
+      bedarf,
+      trommeln: bedarf > 0 ? Math.ceil(bedarf / trommellaenge) : 0
+    });
+  }
+  return out;
+}
+
+/**
  * Stellen, an denen eine Längenverbindung entsteht: geplante Muffen und die
  * rechnerischen Trommelstöße, zusammengeführt und nach Lage durchnumeriert.
  * @returns {object[]} leer, solange die Strecke keine zwei Punkte hat
  */
-function laengenverbindungen(punkte, kum, bedarf, trommellaenge, zuschlag) {
-  if (punkte.length < 2 || !(bedarf > 0)) return [];
+function laengenverbindungen(punkte, kum, abschnitte, trommellaenge, zuschlag) {
+  if (punkte.length < 2 || !abschnitte.length) return [];
 
   const namen = punkte.map(pt => pt.name || '');
   const liste = [];
@@ -168,26 +218,30 @@ function laengenverbindungen(punkte, kum, bedarf, trommellaenge, zuschlag) {
      der Stoß als Trassenmeter und damit als Ort auf der Karte angeben. */
   const streckung = 1 + zuschlag / 100;
   const muffen = liste.map(v => v.abAnfang);
-  const stoesse = Math.min(MAX_STOESSE, Math.ceil(bedarf / trommellaenge));
-  for (let k = 1; k <= stoesse; k++) {
-    const kabelAbAnfang = k * trommellaenge;
-    if (kabelAbAnfang >= bedarf) break;
-    const abAnfang = kabelAbAnfang / streckung;
-    // Dort ist die Verbindung schon geplant, sie wird nicht doppelt gezählt.
-    if (muffen.some(m => Math.abs(m - abAnfang) < MUFFEN_NAEHE)) continue;
-    const stelle = punktBeiLaenge(punkte, abAnfang);
-    if (!stelle) continue;
-    liste.push({
-      nr: 0,
-      quelle: 'rechnerisch',
-      abAnfang,
-      kabelAbAnfang,
-      lat: stelle.lat,
-      lng: stelle.lng,
-      punktNr: stelle.index + 1,
-      name: '',
-      lage: standortText(punkte, abAnfang, namen)
-    });
+  /* Gezählt wird je Kabelabschnitt neu: hinter einem Verteiler liegt eine
+     frische Trommel, der Stoß der vorigen wandert nicht über ihn hinweg. */
+  for (const a of abschnitte) {
+    const stoesse = Math.min(MAX_STOESSE, Math.ceil(a.bedarf / trommellaenge));
+    for (let k = 1; k <= stoesse; k++) {
+      const kabelImAbschnitt = k * trommellaenge;
+      if (kabelImAbschnitt >= a.bedarf) break;
+      const abAnfang = a.von + kabelImAbschnitt / streckung;
+      // Dort ist die Verbindung schon geplant, sie wird nicht doppelt gezählt.
+      if (muffen.some(m => Math.abs(m - abAnfang) < MUFFEN_NAEHE)) continue;
+      const stelle = punktBeiLaenge(punkte, abAnfang);
+      if (!stelle) continue;
+      liste.push({
+        nr: 0,
+        quelle: 'rechnerisch',
+        abAnfang,
+        kabelAbAnfang: a.kabelVon + kabelImAbschnitt,
+        lat: stelle.lat,
+        lng: stelle.lng,
+        punktNr: stelle.index + 1,
+        name: '',
+        lage: standortText(punkte, abAnfang, namen)
+      });
+    }
   }
 
   liste.sort((a, b) => a.abAnfang - b.abAnfang);

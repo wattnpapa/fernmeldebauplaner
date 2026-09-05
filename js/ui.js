@@ -679,7 +679,20 @@ function kennzahlenHTML(k) {
     ['Bauzeit', stundenKurz(k.bauzeitStunden)]
   ];
   return kacheln.map(([t, w]) =>
-    `<div class="kz"><span>${t}</span><b>${escapeHtml(w)}</b></div>`).join('');
+    `<div class="kz"><span>${t}</span><b>${escapeHtml(w)}</b></div>`).join('') +
+    kabelabschnitteHTML(k);
+}
+
+/* Ein Verteiler mitten auf der Strecke schließt das Kabel ab; dahinter beginnt
+   eine neue Trommel, der Rest der alten bleibt aufgewickelt. Ohne den Hinweis
+   sähe die Trommelzahl nach einem Rechenfehler aus – durch die Trommellänge
+   geteilt geht der Gesamtbedarf nicht auf. */
+function kabelabschnitteHTML(k) {
+  if (k.kabelabschnitte.length < 2) return '';
+  const teile = k.kabelabschnitte.map(a =>
+    `${meter(a.bedarf)} → ${a.trommeln}`).join(' · ');
+  return `<p class="kz-hinweis"><b>${k.kabelabschnitte.length} Kabelabschnitte</b> durch
+    Verteiler getrennt – je Abschnitt ganze Trommeln: ${teile}</p>`;
 }
 
 function stundenKurz(h) {
