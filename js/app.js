@@ -358,9 +358,30 @@ $('#wz-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neue
 $('#wz-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
 $('#wz-flaeche').onclick = () => fl.setzModus ? (fl.beendeSetzen(), modusAnzeigen()) : flaecheSetzenStarten();
 $('#wz-suche').onclick = () => koordinatenSucheOeffnen();
-$('#wz-standort').onclick = standortZeigen;
+$('#wz-standort').onclick = standortUmschalten;
 
 let standortMarker = null;
+
+/* Der Standort ist ein Umschalter: wer ihn einmal geholt hat, will ihn beim
+   Weiterplanen auch wieder los sein – ohne die Seite neu zu laden. */
+function standortUmschalten() {
+  if (standortMarker) return standortVerbergen();
+  standortZeigen();
+}
+
+function standortVerbergen() {
+  karte.removeLayer(standortMarker);
+  standortMarker = null;
+  standortKnopfAnzeigen();
+}
+
+function standortKnopfAnzeigen() {
+  const b = $('#wz-standort');
+  const an = !!standortMarker;
+  b.classList.toggle('aktiv', an);
+  b.title = an ? 'Eigenen Standort ausblenden' : 'Eigenen Standort anzeigen';
+}
+
 function standortZeigen() {
   if (!navigator.geolocation) return hinweis('Dieses Gerät liefert keine Position.', 'fehler');
   hinweis('Position wird ermittelt …');
@@ -374,6 +395,7 @@ function standortZeigen() {
           { direction: 'top', className: 'fbp-tooltip' })
     ]).addTo(karte);
     karte.setView([lat, lng], Math.max(karte.getZoom(), 16));
+    standortKnopfAnzeigen();
     hinweis(`Standort: ${toMGRS(lat, lng, 5)} (±${Math.round(accuracy)} m)`);
   }, err => hinweis('Position nicht verfügbar: ' + err.message, 'fehler'),
      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
