@@ -37,8 +37,9 @@ im THW, nicht Verbreitung um jeden Preis.
 
 Was ein Nachbarprodukt nicht wahrheitsgemäß kopieren könnte:
 
-- Die fachlichen Werte und Auflagen der **KatS-Dv 861** stehen mit
-  Gliederungsnummer am Entscheidungsort (Querungsarten, Mindesthöhen,
+- Die fachlichen Werte und Auflagen der **KatS-Dv 861** und des
+  **THW-Ausbildungshandbuchs Kabelbau** stehen mit Gliederungsnummer am
+  Entscheidungsort (Querungsarten, Mindesthöhen, Schutzabstände,
   Genehmigungspflichten) – am Bauort wird nach der Nummer gesucht.
 - Das Werkzeug ist **vom gedruckten Erzeugnis her komponiert**: Bauauftrag,
   Sammel-Bauauftrag und Lagekarte sind das Produkt, die Karte ist der Weg dorthin.
@@ -109,8 +110,9 @@ Einsatzabschnitt, Datum-Zeit-Gruppe. Keine App-Umschreibungen.
 - **Taktische Zeichen:** Sammlung jonas-koeritz/Taktische-Zeichen (CC0),
   erzeugt nach `js/zeichen-daten.js` + `fonts/roboto-slab-bold.woff`;
   wöchentlicher Auffrisch-Workflow mit Prüfskript.
-- **Vorschrift:** Werte und Auflagen der KatS-Dv 861 in `js/vorschrift.js`,
-  jeweils mit Gliederungsnummer als Fundstelle.
+- **Vorschrift:** Werte und Auflagen der KatS-Dv 861 und des
+  THW-Ausbildungshandbuchs Kabelbau in `js/vorschrift.js`, jeweils mit Quelle
+  und Gliederungsnummer als Fundstelle.
 - **Kabeldaten:** Trommellängen, Gewichte und Dämpfungswerte der
   Feldkabel-Familie nach Datenblättern t-fkb.de.
 - **Kartengrundlagen:** BKG TopPlusOpen (farbig/grau/hell), OpenStreetMap,

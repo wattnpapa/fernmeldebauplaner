@@ -16,7 +16,7 @@ import {
 } from './strom.js';
 import {
   QUERUNGSARTEN, QUERUNG_BAUWEISEN, VS_GRADE, querungsartById, bauweiseById, massText, dtg,
-  KABELRESERVE_STANDARD
+  KABELRESERVE_STANDARD, fundstelleText
 } from './vorschrift.js';
 import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
 import {
@@ -1473,7 +1473,7 @@ function reichweiteHTML(r) {
 
   const fuss = [];
   if (r.gemischt) fuss.push('Bei gemischtem Bau ist der Tiefbau angesetzt.');
-  fuss.push('KatS-Dv 861, ' + r.fundstelle);
+  fuss.push(fundstelleText(r));
 
   return `<p class="rw-satz">${escapeHtml(satz)}</p>
           <p class="rw-fuss">${escapeHtml(fuss.join(' · '))}</p>`;
@@ -1625,7 +1625,7 @@ function auflagenZeile(art) {
     : (mass !== '–' ? mass : kurzRegel(art.regel));
 
   const stuecke = [`<b>${escapeHtml(kern)}</b>`,
-    `<span class="pz-fundstelle">KatS-Dv 861, ${escapeHtml(art.fundstelle)}</span>`];
+    `<span class="pz-fundstelle">${escapeHtml(fundstelleText(art))}</span>`];
   if (art.genehmigung) {
     stuecke.push(`<span class="pz-genehmigung">Genehmigung: ${escapeHtml(art.genehmigung)}</span>`);
   }

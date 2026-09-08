@@ -18,10 +18,13 @@ const KEY_DATEI    = 'fbp.dateisicherung.v1';
 /** Grobes Kontingent, das Browser je Website für den localStorage bereitstellen */
 export const SPEICHER_KONTINGENT = 5 * 1024 * 1024;
 
+/* Trommellänge und Gewicht der vier Kabelarten des THW stehen im
+   Ausbildungshandbuch Kabelbau, Kapitel 3.1 (Tabellen 1 bis 4). Sie sind
+   Vorgabewerte für eine neue Strecke – maßgebend bleibt, was am Bau steht. */
 export const KABELTYPEN = [
-  { id: 'fk2',    name: 'Feldkabel 2-adrig (FK 1×2)', kurz: 'FK',      trommel: 800,  gewicht: 14.5, zuschlag: 15, leistung: 900 },
+  { id: 'fk2',    name: 'Feldkabel 2-adrig (FK 1×2)', kurz: 'FK',      trommel: 800,  gewicht: 14,   zuschlag: 15, leistung: 900 },
   { id: 'ffk',    name: 'Feldfernkabel (FFK, auch FK 2×2)', kurz: 'FFK', trommel: 400, gewicht: 60, zuschlag: 15, leistung: 700 },
-  { id: 'ak',     name: 'Anschlusskabel (AK 10×2)',   kurz: 'AK',      trommel: 230,  gewicht: 56,   zuschlag: 10, leistung: 500 },
+  { id: 'ak',     name: 'Anschlusskabel (AK 10×2)',   kurz: 'AK',      trommel: 230,  gewicht: 60,   zuschlag: 10, leistung: 500 },
   { id: 'vk',     name: 'Verbindungskabel (VK 10×2)', kurz: 'VK',      trommel: 200,  gewicht: 56,   zuschlag: 10, leistung: 500 },
   { id: 'lwl',    name: 'Lichtwellenleiter (LWL)',    kurz: 'LWL',     trommel: 500,  zuschlag: 20, leistung: 500 },
   { id: 'lan',    name: 'Netzwerkkabel (Cat.)',       kurz: 'LAN',     trommel: 100,  zuschlag: 15, leistung: 600 },

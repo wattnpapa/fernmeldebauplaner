@@ -44,8 +44,12 @@ Englisch sind nur Web-APIs und die wenigen eingebürgerten Begriffe (`escapeHtml
   (`15 m`), Malzeichen × statt x (`FK 1×2`).
 - **Fachbegriffe des Fernmeldebaus verwenden**, nicht umschreiben: Trasse,
   Muffe, Endverzweiger, Kabelreserve, Bauzuschlag, Trommellänge, Verlegeleistung.
-  Fachliche Werte und Regeln der KatS-Dv 861 stehen in `js/vorschrift.js`, jeweils
-  mit Gliederungsnummer als Fundstelle — am Bauort wird nach der Nummer gesucht.
+  Fachliche Werte und Regeln stehen in `js/vorschrift.js`, jeweils mit
+  Gliederungsnummer als Fundstelle — am Bauort wird nach der Nummer gesucht. Zwei
+  Quellen liegen dort nebeneinander: die KatS-Dv 861 von 1990 und das
+  THW-Ausbildungshandbuch Kabelbau von 2026 samt Merkblatt Sicherheits-
+  bestimmungen. Jedes Datum trägt deshalb `quelle` neben `fundstelle`; ausgegeben
+  wird beides über `fundstelleText()`, nie ein fest verdrahtetes Vorschriftskürzel.
 
 ## Code-Stil
 

@@ -117,7 +117,7 @@ Mächtigkeit darf nie Einweisung verlangen.
 - Eine einzige Bedienfarbe (THW-Blau); Streckenfarben sind Daten
 - Systemschrift, Ziffern tabellarisch, Koordinaten in Mono – funktauglich
 - Harte, gerichtete Schatten; Tiefe erklärt Zustand, nie Dekoration
-- Fachsprache und Fundstellen der KatS-Dv 861 als sichtbarer Teil der Oberfläche
+- Fachsprache und Fundstellen der Vorschrift als sichtbarer Teil der Oberfläche
 
 ## Colors
 

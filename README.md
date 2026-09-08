@@ -163,7 +163,12 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Blatt 1: Kopf- und Stammdaten, Karte mit hervorgehobener Trasse, Nordpfeil,
   Maßstabsleiste mit Maßstabsangabe, Übersichtskarte, Zeichenerklärung, Kennzahlenband
 - Blatt 2: Punkttabelle mit MGRS, GPS, Teilstrecke, Summe und Richtung;
-  Materialbedarf; Auftragstext; Unterschriftenfelder
+  Materialbedarf; Merksätze zum Bau mit Quelle und Gliederungsnummer;
+  Auftragstext; Unterschriftenfelder
+- Fachliche Grundlage sind die KatS-Dv 861 Feldkabelbau (1990) und das
+  THW-Ausbildungshandbuch „Übertragung/Transport von Daten – Kabelbau“ (2026)
+  samt Merkblatt „Sicherheitsbestimmungen bei Kabelbau“; jede Auflage im
+  Ausdruck nennt, aus welchem der Hefte sie stammt
 - Bei einer Funkstrecke steht davor der ausgefüllte Vordruck „Einzelauftrag
   Richtfunkstrecke WLAN“ – ein eigenes Blatt gleich hinter der Karte
 - A4/A3, hoch/quer, Farbe oder Schwarz-Weiß; im S/W-Druck unterscheiden Strichmuster

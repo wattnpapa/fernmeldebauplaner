@@ -147,7 +147,7 @@ export function kennzahlen(strecke) {
   };
 }
 
-/** Querungen in Trassenreihenfolge, Art nach KatS-Dv 861, Abschnitt 8 aufgelöst */
+/** Querungen in Trassenreihenfolge, Art nach Vorschrift und Handbuch aufgelöst */
 function querungen(punkte, kum) {
   const out = [];
   punkte.forEach((pt, i) => {

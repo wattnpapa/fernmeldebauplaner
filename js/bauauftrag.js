@@ -20,8 +20,10 @@ import {
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText, MAX_QUERSCHNITT
 } from './strom.js';
 import {
-  massText, bauweiseById, BAUREGELN, SCHUTZABSTAENDE,
-  SCHUTZABSTAND_ERWEITERT_MIN, SCHUTZABSTAND_ERWEITERT_STURM, kabelreserve
+  massText, bauweiseById, BAUREGELN, SCHUTZABSTAENDE, fundstelleText,
+  SCHUTZABSTAND_ERWEITERT_MIN, SCHUTZABSTAND_ERWEITERT_STURM, kabelreserve,
+  MINDESTABSTAND_MAST, MINDESTABSTAND_UMSPANNWERK, HOECHSTSPANNUNG_KV,
+  QUERUNG_HOECHSTSPANNUNG_BEIDSEITIG, REICHWEITE_OB
 } from './vorschrift.js';
 import {
   bandById, polarisationById, modulationById, MIMO_ARTEN,
@@ -1694,10 +1696,19 @@ const SCHUTZABSTAND_ARTEN = ['starkstrom_hoch', 'fahrleitung'];
 function schutzabstandZeileHTML(k) {
   if (!k.querungsliste.some(q => SCHUTZABSTAND_ARTEN.includes(q.art.id))) return '';
   const staffel = SCHUTZABSTAENDE.map(s => `${s.kv} kV ${s.meter} m`).join(' · ');
+  /* Zwei Sätze, weil zwei Hefte: die Staffel und die Rechnung des erweiterten
+     Schutzabstands stehen nur in der KatS-Dv 861, die Abstände zu Mast,
+     Umspannwerk und Höchstspannungsquerung nur im Handbuch. Getrennt zitiert
+     ist am Bauort erkennbar, wo die jeweilige Zahl nachzuschlagen ist. */
   return `<p class="tab-fussnote q-schutzabstaende">Schutzabstände: ${staffel}.
     Erweiterter Schutzabstand = Höhe Strommast + Höhe Baustange + Schutzabstand,
     mindestens ${SCHUTZABSTAND_ERWEITERT_MIN} m, bei Sturm oder hügeligem Gelände
-    ${SCHUTZABSTAND_ERWEITERT_STURM} m (KatS-Dv 861, 8.3).</p>`;
+    ${SCHUTZABSTAND_ERWEITERT_STURM} m (KatS-Dv 861, 8.3).
+    Mindestabstand zu Hochspannungsmasten ${MINDESTABSTAND_MAST} m, zu Umspannwerken
+    ${MINDESTABSTAND_UMSPANNWERK} m ab Umzäunung; über ${HOECHSTSPANNUNG_KV} kV
+    beidseits der Querung ${QUERUNG_HOECHSTSPANNUNG_BEIDSEITIG} m und je ein eigens
+    geerdeter Überspannungsschutz an der Längenverbindung vor und hinter der
+    Kreuzung (Hdb Kabelbau, 4.2).</p>`;
 }
 
 /** Tabellenrahmen der Querungen; die Staffel steht nur unter dem letzten Teil. */
@@ -1731,7 +1742,7 @@ function querungszeilenHTML(k) {
         ? `<b class="q-verbot">${escapeHtml(a.verbotstext)}.</b> ` : ''
         }${escapeHtml(a.regel)}${a.genehmigung
         ? ` <b class="q-genehmigung">Genehmigung: ${escapeHtml(a.genehmigung)}</b>` : ''
-        }<span class="q-fundstelle">KatS-Dv 861, ${escapeHtml(a.fundstelle)}</span></td>
+        }<span class="q-fundstelle">${escapeHtml(fundstelleText(a))}</span></td>
     </tr>`;
   }).join('');
 }
@@ -2059,7 +2070,8 @@ function reichweiteZeile(r) {
     : (r.stufe === 'grenze' ? 'Kabellänge im oberen Bereich' : 'Kabellänge innerhalb der Reichweite');
   const text = `etwa ${km(r.min)}–${km(r.max)} km · ${befund}` +
     (r.gemischt ? ' (gemischter Bau, Tiefbau angesetzt)' : '') +
-    ` (KatS-Dv 861, ${r.fundstelle})`;
+    ` (${fundstelleText(r)}; Hdb Kabelbau nennt für das Feldkabel etwa ` +
+    `${km(REICHWEITE_OB.meter)} km im OB-Betrieb ohne Unterscheidung nach Bauart)`;
   return [`Sprechreichweite ${escapeHtml(r.bauart)}`,
     r.stufe === 'darueber' ? `<b class="mat-warnung">${text}</b>` : text];
 }
@@ -2067,13 +2079,13 @@ function reichweiteZeile(r) {
 // ---------------------------------------------------------------- Hinweise
 
 /** Merksätze der Vorschrift, jeder mit seiner Fundstelle. Ohne Querung auf der
- *  Strecke entfällt die Warnposten-Regel – sie hätte dort keinen Anlass. */
+ *  Strecke entfallen die Sätze zum Überweg – sie hätten dort keinen Anlass. */
 function regelnHTML(k) {
-  const regeln = BAUREGELN.filter(r => k.querungen > 0 || !r.text.startsWith('Warnposten'));
+  const regeln = BAUREGELN.filter(r => k.querungen > 0 || !r.nurBeiQuerung);
   return `<section class="bl-abschnitt bl-regeln">
-    <h2>Hinweise nach KatS-Dv 861</h2>
+    <h2>Hinweise nach Vorschrift und Handbuch</h2>
     <ul class="rg-liste">${regeln.map(r =>
-      `<li>${escapeHtml(r.text)}<span class="rg-fundstelle">${escapeHtml(r.fundstelle)}</span></li>`
+      `<li>${escapeHtml(r.text)}<span class="rg-fundstelle">${escapeHtml(fundstelleText(r))}</span></li>`
     ).join('')}</ul>
   </section>`;
 }
