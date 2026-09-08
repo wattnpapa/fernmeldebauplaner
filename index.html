@@ -24,6 +24,9 @@
 <link rel="modulepreload" href="js/symbols.js">
 <link rel="modulepreload" href="js/zeichen.js">
 <link rel="modulepreload" href="js/flaechen.js">
+<link rel="modulepreload" href="js/relais.js">
+<link rel="modulepreload" href="js/ausbreitung.js">
+<link rel="modulepreload" href="js/bosfunk.js">
 <link rel="modulepreload" href="js/flaechen-vorlagen.js">
 <link rel="modulepreload" href="js/bilder.js">
 <link rel="modulepreload" href="js/heic.js">
@@ -120,7 +123,11 @@
            Werkzeug und am Setzen-Knopf; der volle Begriff bleibt für die
            Sprachausgabe im aria-label. Zu fünft gilt das erst recht – die
            Flächen stehen zwischen Zeichen und Bildern, weil sie wie die
-           Zeichen zum Lagebild gehören. -->
+           Zeichen zum Lagebild gehören. Zu sechst tragen die Reiter je ein
+           kurzes Wort und nicht mehr: „Relais" steht für die Relaisstellen des
+           Sprechfunks, der volle Begriff bleibt im aria-label. Sie stehen
+           hinter den Flächen, weil sie wie diese ein Ort mit Ausdehnung sind –
+           nur ist ihre Ausdehnung die Funkfläche und nicht der Grundriss. -->
       <nav class="reiter" role="tablist">
         <button role="tab" id="reiter-strecken" class="aktiv" aria-selected="true"
                 aria-controls="inhalt-strecken" data-reiter="strecken">Strecken</button>
@@ -130,6 +137,9 @@
         <button role="tab" id="reiter-flaechen" aria-selected="false" tabindex="-1"
                 aria-controls="inhalt-flaechen" data-reiter="flaechen"
                 aria-label="Flächen und Aufbauplätze">Flächen</button>
+        <button role="tab" id="reiter-relais" aria-selected="false" tabindex="-1"
+                aria-controls="inhalt-relais" data-reiter="relais"
+                aria-label="Relaisstellen des Sprechfunks">Relais</button>
         <button role="tab" id="reiter-bilder" aria-selected="false" tabindex="-1"
                 aria-controls="inhalt-bilder" data-reiter="bilder">Bilder</button>
         <button role="tab" id="reiter-projekt" aria-selected="false" tabindex="-1"
@@ -175,6 +185,19 @@
         <div class="liste" id="flaechen-liste"></div>
       </section>
 
+      <section class="reiter-inhalt" role="tabpanel" id="inhalt-relais"
+               aria-labelledby="reiter-relais" data-inhalt="relais">
+        <div class="seite-kopf">
+          <button class="knopf primaer breit" id="btn-neue-relaisstelle">+ Relaisstelle setzen</button>
+          <div class="seite-kopf-zeile">
+            <button class="knopf klein" id="btn-ueberdeckung"
+                    title="Die Flächen aller Relaisstellen gemeinsam zeigen und den versorgten Anteil ausweisen">◍ Überdeckung aller</button>
+          </div>
+        </div>
+        <div class="summe" id="relais-summe"></div>
+        <div class="liste" id="relais-liste"></div>
+      </section>
+
       <section class="reiter-inhalt" role="tabpanel" id="inhalt-bilder"
                aria-labelledby="reiter-bilder" data-inhalt="bilder">
         <div class="seite-kopf">
@@ -206,6 +229,7 @@
         <button class="wz" id="wz-strecke" title="Strecke zeichnen (S)"><span class="wz-icon">╱</span><span>Strecke<i class="wz-taste">S</i></span></button>
         <button class="wz" id="wz-zeichen" title="Taktisches Zeichen setzen (T)"><span class="wz-icon">◈</span><span>Zeichen<i class="wz-taste">T</i></span></button>
         <button class="wz" id="wz-flaeche" title="Fläche einzeichnen – Fahrzeug, Anhänger, Zelt, Aufbauplatz (F)"><span class="wz-icon">▭</span><span>Fläche<i class="wz-taste">F</i></span></button>
+        <button class="wz" id="wz-relais" title="Relaisstelle des Sprechfunks setzen (R)"><span class="wz-icon">◍</span><span>Relais<i class="wz-taste">R</i></span></button>
         <button class="wz" id="wz-suche" title="Koordinate anspringen (K)"><span class="wz-icon">⌖</span><span>Koordinate<i class="wz-taste">K</i></span></button>
         <button class="wz" id="wz-standort" title="Eigenen Standort anzeigen"><span class="wz-icon">◎</span><span>Standort</span></button>
       </div>

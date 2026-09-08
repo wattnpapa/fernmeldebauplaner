@@ -301,6 +301,33 @@ body.druckansicht { overflow: hidden; }
 .lg-titel { font-weight: 700; text-transform: uppercase; letter-spacing: .4pt; font-size: .92em; }
 .lg-eintrag { display: inline-flex; align-items: center; gap: 1.4mm; }
 .lg-hinweis { color: #555; font-style: italic; margin-left: auto; }
+
+/* Zeichenerklärung der Ausbreitungszonen. Sie bricht aus der einzeiligen
+   Legendenreihe aus: ihre Einträge tragen einen ganzen Satz und nicht ein Wort,
+   und der Vorbehalt darunter ist der wichtigste Satz auf dem Blatt – er darf
+   nicht als vierter Eintrag zwischen den anderen untergehen. */
+.bl-zonen { display: block; }
+.bl-zonen .lg-eintrag {
+  display: block; margin: .5mm 0 0; align-items: baseline; line-height: 1.35;
+}
+.bl-zonen .lg-titel { display: block; margin-bottom: .8mm; }
+.lg-zone {
+  display: inline-block; width: 3.4mm; height: 3.4mm; border-radius: .6mm;
+  border: .5pt solid #999; background: #fff; margin-right: 1.4mm;
+  vertical-align: -.5mm;
+}
+/* Dieselben Deckungen wie die Kartenfläche in map.js. Der Funkschatten (z1)
+   bleibt das leere Feld – auf der Karte ist er die ungefärbte Fläche, und die
+   Erklärung soll zeigen, was dort steht, und nicht eine dritte Farbe erfinden. */
+.lg-zone.z3 { background: rgba(106,27,154,.48); border-color: rgba(106,27,154,.6); }
+.lg-zone.z2 { background: rgba(106,27,154,.2); border-color: rgba(106,27,154,.35); }
+.lg-vorbehalt { display: block; margin-top: 1mm; color: #333; line-height: 1.35; }
+
+/* Im Schwarz-Weiß-Druck trägt allein der Grauwert. Er muss sich deutlicher
+   unterscheiden als in Farbe – ein Ton, der am Bildschirm getrennt aussieht,
+   fällt auf dem Laserdrucker zusammen. Dieselben Werte wie ZONENFARBEN_SW. */
+.druck-doku.sw .lg-zone.z3 { background: rgba(0,0,0,.41); border-color: #666; }
+.druck-doku.sw .lg-zone.z2 { background: rgba(0,0,0,.16); border-color: #999; }
 .lg-punkt {
   display: inline-flex; align-items: center; justify-content: center;
   width: 4mm; height: 4mm; border-radius: 50%; border: .7pt solid var(--farbe, #111);

@@ -5,8 +5,12 @@ import { neueRichtfunkangabe, BAND_ALIAS } from './richtfunk.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 import { QUERUNG_STANDARD, BAUWEISE_STANDARD } from './vorschrift.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
+import {
+  bosBandById, BAND_STANDARD as BOS_BAND, GEGENSTELLE_STANDARD, gegenstelleById
+} from './bosfunk.js';
+import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 9;
+export const SCHEMA = 10;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -109,6 +113,7 @@ export function neuesProjekt(name = 'Neue Planung') {
     strecken: [],
     zeichen: [],
     flaechen: [],
+    relaisstellen: [],
     bilder: []
   };
 }
@@ -269,6 +274,66 @@ export function neueFlaeche(lat, lng, art = 'frei') {
   };
 }
 
+/* Eine Relaisstelle des BOS-Sprechfunks: der Ort, an dem der Mast steht, das
+   Band, auf dem sie arbeitet, und die Höhe, in der die Antenne hängt. Sie ist
+   kein taktisches Zeichen mit Zusatzfeldern, sondern ein eigenes Objekt, weil
+   an ihr eine Rechnung hängt – die Ausbreitungsfläche –, deren Ergebnis von
+   Ort, Band, Masthöhe und Gegenstelle zugleich abhängt. Als Zeichen mit
+   Bemerkungsfeld wäre keine dieser Größen erreichbar.
+
+   `grundhoehe` ist der Zwitter, den auch der Richtfunk kennt: sie käme aus
+   derselben Quelle wie die Fläche, muss aber im Auftrag als Zahl
+   festgeschrieben stehen. Sie wird deshalb geholt und dann gehalten.
+
+   Was hier NICHT steht, ist die gerechnete Fläche. Sie ist ein Befund und kein
+   Planungsinhalt: eine Fläche, die eine Planung überdauert, wäre irgendwann für
+   eine andere Masthöhe gerechnet als die, die danebensteht. Sie liegt deshalb
+   im Zwischenspeicher von relais.js und fällt beim Neuladen heraus – so wie das
+   Geländeurteil der Richtfunkstrecke. */
+export function neueRelaisstelle(projekt, lat, lng, band = BOS_BAND) {
+  const n = (projekt.relaisstellen || []).length;
+  const b = bosBandById(band);
+  return {
+    id: id(),
+    name: `Relaisstelle ${n + 1}`,
+    lat, lng,
+    symbol: 'fernmeldewesen/fug-relais',
+    band: b.id,
+    kanal: '',
+    /* 10 m ist der ausgefahrene Teleskopmast auf dem Fahrzeug – die Höhe, mit
+       der eine Relaisstelle tatsächlich anfängt. Eine Vorgabe von 3 m wie beim
+       Richtfunk führte auf eine Fläche, die niemand so aufbauen würde. */
+    antennenhoehe: 10,
+    mast: '',
+    gegenstelle: GEGENSTELLE_STANDARD,
+    /* Der Umkreis kommt vom Band: das 4-m-Band trägt weiter als DMO, und ein
+       Umkreis über der Reichweite kostet Kacheln für nichts. */
+    umkreis: b.umkreis,
+    grundhoehe: null,
+    farbe: FARBEN[n % FARBEN.length],
+    abschnitt: null,
+    trupp: '',
+    bemerkung: '',
+    sichtbar: true
+  };
+}
+
+/** Eine Relaisstelle verbergen ihr eigenes Auge und das ihres Abschnitts. */
+export function relaisstelleSichtbar(p, r) {
+  return r.sichtbar !== false && abschnittZeigt(p, r);
+}
+
+/** Alle Relaisstellen eines Abschnitts; `null` liefert die nicht zugeteilten. */
+export function relaisstellenIm(p, aid) {
+  return (p.relaisstellen || []).filter(r => gehoertZu(r, aid));
+}
+
+/** Nicht zugeteilt heißt: gehört allen – dieselbe Regel wie bei Zeichen und Flächen. */
+export function relaisstellenFuer(p, aid) {
+  const alle = p.relaisstellen || [];
+  return aid ? alle.filter(r => !r.abschnitt || r.abschnitt === aid) : alle;
+}
+
 /* Ein Lichtbild vom Bauort. Hier steht nur, was das Bild zeigt und wo es
    aufgenommen wurde – die Bilddaten selbst liegen im Bildspeicher des Geräts
    (`js/bildspeicher.js`) und nicht im Projekt: sonst spränge jeder
@@ -379,6 +444,7 @@ class Store {
   strecke(sid) { return this.projekt.strecken.find(s => s.id === sid); }
   zeichen(zid) { return this.projekt.zeichen.find(z => z.id === zid); }
   flaeche(fid) { return (this.projekt.flaechen || []).find(f => f.id === fid); }
+  relaisstelle(rid) { return (this.projekt.relaisstellen || []).find(r => r.id === rid); }
 
   // -------------------------------------------------------------- Speicher
 
@@ -520,8 +586,11 @@ export function istGehaltvoll(p) {
   /* Auch aufgenommene Lichtbilder sind geleistete Arbeit: sie sind vom Bauort
      mitgebracht und in keiner Kamerarolle wiederzufinden, wenn der
      Browserspeicher fällt. */
+  /* Eine einzelne Relaisstelle zählt schon: hinter ihr steht eine Erkundung des
+     Standorts und eine Entscheidung über die Masthöhe, und beides ist nicht in
+     zwei Minuten wiederhergestellt. */
   return punkte >= 4 || (p.zeichen || []).length >= 3 || (p.bilder || []).length >= 2 ||
-    (p.flaechen || []).length >= 2;
+    (p.flaechen || []).length >= 2 || (p.relaisstellen || []).length >= 1;
 }
 
 /* Farben und Artkennungen aus fremden Planungen werden auf ihre erlaubte Form
@@ -620,6 +689,26 @@ export function migrieren(p) {
       breite: Number(f.breite) > 0 ? Number(f.breite) : neueFlaeche(0, 0, f.art).breite,
       laenge: Number(f.laenge) > 0 ? Number(f.laenge) : neueFlaeche(0, 0, f.art).laenge
     })),
+    /* Schema 10 hat die Relaisstellen eingeführt. Ältere Stände bringen das
+       Feld nicht mit und öffnen ohne sie. Band, Gegenstelle und Umkreis werden
+       auf zulässige Werte gezogen: eine fremde Datei kann eine Bandkennung
+       tragen, die es hier nicht gibt, und ein Umkreis jenseits des Höchstmaßes
+       zöge beim Rechnen mehr Höhenkacheln, als der Cache hält. */
+    relaisstellen: (p.relaisstellen || []).map(r => {
+      const v = neueRelaisstelle({ relaisstellen: [] }, r.lat, r.lng, r.band);
+      return {
+        ...v, ...r,
+        id: r.id || id(),
+        band: bosBandById(r.band).id,
+        gegenstelle: gegenstelleById(r.gegenstelle).id,
+        umkreis: gueltigerUmkreis(r.umkreis),
+        farbe: farbeOderVorgabe(r.farbe, v.farbe),
+        symbol: symbolBekannt(r.symbol) ? r.symbol : v.symbol,
+        /* Eine Masthöhe von 0 ist keine Angabe, sondern eine verlorene: mit ihr
+           stünde die Antenne im Boden und die Fläche wäre durchweg Schatten. */
+        antennenhoehe: Number(r.antennenhoehe) > 0 ? Number(r.antennenhoehe) : v.antennenhoehe
+      };
+    }),
     /* Schema 3 hat die Lichtbilder eingeführt, Schema 4 den Vermerk, woher ihr
        Ort stammt – für ältere Stände setzt ihn `neuesBild` aus den vorhandenen
        Koordinaten. `daten` und `mini` tragen sie
@@ -641,6 +730,7 @@ export function migrieren(p) {
   out.strecken.forEach(s => { if (!bekannt.has(s.abschnitt)) s.abschnitt = null; });
   out.zeichen.forEach(z => { if (!bekannt.has(z.abschnitt)) z.abschnitt = null; });
   out.flaechen.forEach(f => { if (!bekannt.has(f.abschnitt)) f.abschnitt = null; });
+  out.relaisstellen.forEach(r => { if (!bekannt.has(r.abschnitt)) r.abschnitt = null; });
   // Ebenso für die Gruppen: ein Verweis ins Leere wäre ein Zeichen, das kein
   // Auge mehr erreicht.
   const gruppen = new Set(out.zeichengruppen.map(g => g.id));

@@ -356,3 +356,63 @@ export function zeichneFunksicht(karte, e) {
   if (el) el.style.imageRendering = 'pixelated';
   return ebene;
 }
+
+// ---------------------------------------------------------------- Ausbreitung
+
+/* Dieselbe Bauart wie die Funksichtfläche darüber und aus denselben Gründen:
+   ein Bild statt eines Polygonzugs, ungeglättet, damit die Rasterkante zeigt,
+   in welcher Körnung gerechnet wurde. Zwei Unterschiede gibt es.
+
+   Erstens sind es drei Zonen und nicht zwei. Sie liegen in derselben Farbe und
+   unterscheiden sich allein in der Deckung: freie Sicht kräftig, Randbereich
+   halb so dicht, Funkschatten ungefärbt. Zwei verschiedene Farbtöne wären
+   leichter zu unterscheiden und wären trotzdem falsch – sie läsen sich als
+   zwei Sachverhalte, und es ist einer: dieselbe Beugungsdämpfung, einmal unter
+   und einmal über der Schwelle. Der Farbton bleibt das Violett der Funksicht,
+   weil eine topografische Karte selbst kein Violett führt und weil Grün die
+   Farbe der Freigabe wäre – und eine Freigabe ist auch diese Fläche nicht.
+
+   Zweitens muss der Unterschied den Schwarz-Weiß-Druck überstehen. Die beiden
+   Deckungen sind deshalb so gewählt, dass sie auch als Grauwerte weit genug
+   auseinanderliegen; im Farbdruck trägt zusätzlich der Ton. Geprüft gehört das
+   an einem wirklich schwarz-weiß gedruckten Blatt und nicht am Bildschirm. */
+const ZONENFARBEN = {
+  3: [106, 27, 154, 122],    // freie Sicht
+  2: [106, 27, 154, 52],     // Randbereich
+  1: [0, 0, 0, 0],           // Funkschatten – ungefärbt, die vorsichtige Seite
+  0: [0, 0, 0, 0]            // nicht beurteilt, ebenso
+};
+
+const ZONENFARBEN_SW = {
+  3: [0, 0, 0, 104],
+  2: [0, 0, 0, 40],
+  1: [0, 0, 0, 0],
+  0: [0, 0, 0, 0]
+};
+
+/**
+ * Ausbreitungsfläche einer Relaisstelle (oder die Überdeckung mehrerer) als
+ * Bildebene. `e` ist ein Befund aus `ausbreitung()` bzw. `ueberdeckung()`.
+ */
+export function zeichneAusbreitung(karte, e, o = {}) {
+  const c = document.createElement('canvas');
+  c.width = e.spalten; c.height = e.zeilen;
+  const ctx = c.getContext('2d');
+  const bild = ctx.createImageData(e.spalten, e.zeilen);
+  const farben = o.sw ? ZONENFARBEN_SW : ZONENFARBEN;
+  for (let i = 0; i < e.zonen.length; i++) {
+    const f = farben[e.zonen[i]];
+    if (!f[3]) continue;
+    const j = i * 4;
+    bild.data[j] = f[0]; bild.data[j + 1] = f[1]; bild.data[j + 2] = f[2]; bild.data[j + 3] = f[3];
+  }
+  ctx.putImageData(bild, 0, 0);
+  const [sw, no] = e.ecken;
+  const ebene = L.imageOverlay(c.toDataURL('image/png'),
+    [[sw.lat, sw.lng], [no.lat, no.lng]],
+    { pane: 'fbp-schatten', interactive: false, alt: 'Ausbreitung über das Gelände' });
+  ebene.addTo(karte);
+  const el = ebene.getElement();
+  if (el) el.style.imageRendering = 'pixelated';
+  return ebene;
+}

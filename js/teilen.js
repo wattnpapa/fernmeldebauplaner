@@ -15,7 +15,8 @@
    verworfenen Wege – steht in `TEILEN.md`. */
 
 import {
-  SCHEMA, neuesProjekt, neueStrecke, neuerPunkt, neuesZeichen, neueFlaeche, neuesBild
+  SCHEMA, neuesProjekt, neueStrecke, neuerPunkt, neuesZeichen, neueFlaeche, neuesBild,
+  neueRelaisstelle
 } from './state.js';
 
 /* Kennung der Linkfassung, nicht des Datenschemas: sie sagt, wie das Fragment
@@ -159,6 +160,24 @@ export function verschlanken(projekt) {
       if (f.abschnitt) raus.abschnitt = verweis(abschnitte, f.abschnitt); else delete raus.abschnitt;
       if (f.verbund) raus.verbund = verbuende.get(f.verbund); else delete raus.verbund;
       return { ...raus, lat: rund(f.lat), lng: rund(f.lng) };
+    }),
+
+    /* Wie bei den Flächen wird gegen eine Relaisstelle DESSELBEN Bandes
+       verglichen: der Umkreis ist eine Vorgabe des Bandes, und gegen das
+       2-m-Band gemessen reiste der Umkreis jeder 4-m-Stelle mit. Das Band
+       selbst bleibt immer stehen – ohne es liefe der Empfänger auf die
+       Vorgabe und rechnete die Fläche mit der falschen Frequenz. */
+    relaisstellen: (p.relaisstellen || []).map(r => {
+      const raus = entruempeln(
+        r, neueRelaisstelle({ relaisstellen: [] }, r.lat, r.lng, r.band), [...IMMER, 'band']);
+      delete raus.id;
+      if (r.abschnitt) raus.abschnitt = verweis(abschnitte, r.abschnitt);
+      else delete raus.abschnitt;
+      /* Die Geländehöhe reist nicht mit: sie ist beim Empfänger in einem
+         Wimpernschlag aus derselben Quelle geholt, und eine Zahl, die aussieht
+         wie eine Messung, soll nicht ungeprüft über einen Link wandern. */
+      delete raus.grundhoehe;
+      return { ...raus, lat: rund(r.lat), lng: rund(r.lng) };
     }),
 
     /* Die Bilddaten liegen im Bildspeicher des Geräts und sind für einen Link

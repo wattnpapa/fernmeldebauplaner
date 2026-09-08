@@ -5,7 +5,7 @@ import {
   neuesZeichen, punktartById, kabelById, neueStrecke, neuerEinsatzabschnitt, abschnittById,
   neueZeichengruppe, zeichengruppeById, zeichenInGruppe,
   streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar, bilderBelegung, bildmarkenAn,
-  flaechenIm, flaecheSichtbar,
+  flaechenIm, flaecheSichtbar, relaisstellenIm, relaisstelleSichtbar,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
@@ -41,6 +41,15 @@ import * as io from './io.js';
 import { oeffneBauauftrag, oeffneSammeldruck, oeffneLagekarte } from './bauauftrag.js';
 import { funksicht, sichtText, UMKREIS_STANDARD, UMKREIS_HOECHSTENS } from './funksicht.js';
 import { zeichneFunksicht } from './map.js';
+import {
+  BOS_BAENDER, GEGENSTELLEN, bosBandById, gegenstelleById, gegenstellenhoehe,
+  strahlermasse, strahlerText, sichtweite, funkhorizont, GEGENGEWICHT_HINWEIS
+} from './bosfunk.js';
+import {
+  ausbreitungText, masthoeheText, flaecheText, ZONEN_ERKLAERUNG,
+  UMKREIS_MINDESTENS as UMKREIS_MIN, UMKREIS_HOECHSTENS as UMKREIS_MAX
+} from './ausbreitung.js';
+import { relaisTitel, relaisKurz, befundLesen, masthoeheFuer, rechenwerte } from './relais.js';
 import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
@@ -368,36 +377,62 @@ function klammerBox(o) {
   return box;
 }
 
+/* Was eine Listenart in der Abschnittsklammer beisteuert. Als Tabelle und
+   nicht als Kette von Bedingungen: mit der vierten Art – den Relaisstellen –
+   wäre jede Zeile darin ein dreifach geschachteltes Fragezeichen geworden, und
+   an drei verschiedenen Stellen dieselbe Reihenfolge zu treffen ist genau die
+   Art Fehler, die niemand beim Lesen sieht. */
+const LISTENARTEN = {
+  strecken: {
+    eintraege: (p, aid) => alphabetisch(streckenIm(p, aid), nachName),
+    wert: e => `${e.length} · ${formatLaenge(gesamtKennzahlen(e).trasse)}`,
+    neu: () => zeichneStreckenListe(),
+    karte: x => streckenKarte(x),
+    leer: 'Keine Strecke zugeteilt. Die Zuteilung steht in der geöffneten Strecke oder unter „⋯“.'
+  },
+  zeichen: {
+    eintraege: (p, aid) => alphabetisch(zeichenIm(p, aid), zeichenTitel),
+    wert: e => `${e.length} Zeichen`,
+    neu: () => zeichneZeichenListe(),
+    karte: x => zeichenKarte(x),
+    leer: 'Kein Zeichen zugeteilt. Nicht zugeteilte Zeichen gehören ohnehin zu jedem Abschnitt.'
+  },
+  flaechen: {
+    eintraege: (p, aid) => alphabetisch(flaechenIm(p, aid), flaechenTitel),
+    wert: e => `${e.length} ${e.length === 1 ? 'Fläche' : 'Flächen'}`,
+    neu: () => zeichneFlaechenListe(),
+    karte: x => flaecheKarte(x),
+    leer: 'Keine Fläche zugeteilt. Nicht zugeteilte Flächen gehören ohnehin zu jedem Abschnitt.'
+  },
+  relais: {
+    eintraege: (p, aid) => alphabetisch(relaisstellenIm(p, aid), relaisTitel),
+    wert: e => `${e.length} ${e.length === 1 ? 'Relaisstelle' : 'Relaisstellen'}`,
+    neu: () => zeichneRelaisListe(),
+    karte: x => relaisKarte(x),
+    leer: 'Keine Relaisstelle zugeteilt. Nicht zugeteilte gehören ohnehin zu jedem Abschnitt.'
+  }
+};
+
 /**
  * Ein Einsatzabschnitt als Klammer über seine Einträge – dieselbe Zeile über
  * den Strecken wie über den taktischen Zeichen. `art` bestimmt, was darin
  * steht und was der Kopf zählt.
  */
 function abschnittGruppe(ea, art) {
-  const p = store.projekt;
-  const zeichenliste = art === 'zeichen';
-  const flaechenliste = art === 'flaechen';
+  const l = LISTENARTEN[art] || LISTENARTEN.strecken;
   const aid = ea ? ea.id : null;
-  const eintraege = zeichenliste ? alphabetisch(zeichenIm(p, aid), zeichenTitel)
-    : flaechenliste ? alphabetisch(flaechenIm(p, aid), flaechenTitel)
-    : alphabetisch(streckenIm(p, aid), nachName);
+  const eintraege = l.eintraege(store.projekt, aid);
 
   const box = klammerBox({
     hat: ea, art, ohneName: 'Ohne Einsatzabschnitt',
-    wert: zeichenliste ? `${eintraege.length} Zeichen`
-      : flaechenliste ? `${eintraege.length} ${eintraege.length === 1 ? 'Fläche' : 'Flächen'}`
-      : `${eintraege.length} · ${formatLaenge(gesamtKennzahlen(eintraege).trasse)}`,
+    wert: l.wert(eintraege),
     oeffnenTitel: 'Einsatzabschnitt öffnen',
     oeffnen: () => einsatzabschnittDialog(aid),
     grund: 'strecke',
-    neu: () => zeichenliste ? zeichneZeichenListe() : flaechenliste ? zeichneFlaechenListe() : zeichneStreckenListe(),
+    neu: l.neu,
     eintraege,
-    leer: zeichenliste
-      ? 'Kein Zeichen zugeteilt. Nicht zugeteilte Zeichen gehören ohnehin zu jedem Abschnitt.'
-      : flaechenliste
-      ? 'Keine Fläche zugeteilt. Nicht zugeteilte Flächen gehören ohnehin zu jedem Abschnitt.'
-      : 'Keine Strecke zugeteilt. Die Zuteilung steht in der geöffneten Strecke oder unter „⋯“.',
-    karte: x => zeichenliste ? zeichenKarte(x) : flaechenliste ? flaecheKarte(x) : streckenKarte(x),
+    leer: l.leer,
+    karte: l.karte,
     neuKnopf: ea ? () => neuKnopf(ea, art) : null
   });
   if (ea) box.dataset.aid = ea.id;
@@ -435,6 +470,11 @@ function neuKnopf(ea, art) {
   if (art === 'flaechen') {
     return knopf('+ Fläche in diesem Abschnitt', () => {
       flaechenPalette(vorlage => ctx.flaecheSetzen(vorlage, { abschnitt: ea.id }));
+    }, 'klein ea-neu');
+  }
+  if (art === 'relais') {
+    return knopf('+ Relaisstelle in diesem Abschnitt', () => {
+      ctx.relaisSetzen({ abschnitt: ea.id });
     }, 'klein ea-neu');
   }
   return knopf('+ Strecke in diesem Abschnitt', () => {
@@ -2528,6 +2568,389 @@ export function flaechenPalette(beiWahl) {
   dialog({ titel: 'Fläche einzeichnen', inhalt: box, breit: true, fuss: [{ text: 'Abbrechen' }] });
 }
 
+// ---------------------------------------------------------------- Relaisstellen
+
+/* Eine Relaisstelle beantwortet eine andere Frage als die Richtfunkstrecke.
+   Dort steht fest, wohin es gehen soll, und gefragt ist, ob die eine Strecke
+   trägt. Hier steht fest, wo der Mast steht, und gefragt ist, wohin man von
+   dort überhaupt kommt – die Antwort ist eine Fläche und keine Linie.
+
+   Das prägt das Formular: die Stellschrauben stehen oben (Band, Masthöhe,
+   Gegenstelle, Umkreis), darunter, was sich daraus rechnet, und ganz unten die
+   Fläche. Wer an der Masthöhe dreht, sieht die Strahlerlänge und den
+   Funkhorizont sofort mitgehen; die Fläche kostet dagegen einen Kachelabruf und
+   wird deshalb auf Knopfdruck geholt – aber nicht gespeichert (siehe den
+   Zwischenspeicher in relais.js). */
+
+/* Antwort der Rückwärtsrechnung je Relaisstelle: welchen Ort jemand angeklickt
+   hat und was dabei herauskam. Flüchtig wie der Befund selbst – sie gilt für
+   eine Masthöhe, und die kann im nächsten Griff eine andere sein. */
+const masthoehen = new Map();
+
+/* Die Geländehöhe führt sich selbst nach, wie beim Richtfunk auch: sie ist eine
+   Angabe, die der Nutzer nicht abtippen soll, aber im Auftrag festgeschrieben
+   stehen muss. Angestoßen wird sie beim Aufbau des Formulars und nur, solange
+   sie fehlt – die Sperre verhindert, dass der Neuaufbau, den das Schreiben
+   auslöst, den Abruf gleich noch einmal anwirft. */
+const hoehenLaeuft = new Set();
+
+function grundhoehePlanen(r) {
+  if (r.grundhoehe !== null && r.grundhoehe !== undefined) return;
+  if (hoehenLaeuft.has(r.id)) return;
+  hoehenLaeuft.add(r.id);
+  hoeheAn(r.lat, r.lng)
+    .then(h => {
+      if (h === null || !isFinite(h)) return;
+      /* Ohne Undo-Punkt: der Nutzer hat diese Zahl nicht eingegeben, und ein
+         Rückgängig, das nur eine nachgeschlagene Höhe zurücknimmt, ginge ins
+         Leere. */
+      store.aendern(() => { r.grundhoehe = Math.round(h); }, 'relais', { undo: false });
+      zeichneRelaisListe();
+    })
+    .catch(() => { /* ohne Höhe bleibt das Feld leer und ist von Hand zu füllen */ })
+    .finally(() => hoehenLaeuft.delete(r.id));
+}
+
+export function zeichneRelaisListe() {
+  const p = store.projekt;
+  const liste = document.getElementById('relais-liste');
+  const summe = document.getElementById('relais-summe');
+  if (!liste) return;
+  liste.innerHTML = '';
+  const stellen = p.relaisstellen || [];
+  const abschnitte = alphabetisch(p.einsatzabschnitte || [], nachName);
+
+  /* Vor allem anderen: die liegenden Flächen an den Stand angleichen. Wer die
+     Masthöhe ändert, ändert den Befund – und die Fläche zur alten Höhe darf
+     nicht liegen bleiben, während das Formular schon die neue zeigt. Erst
+     danach steht fest, was die Kopfzeile und die Knöpfe zu melden haben. */
+  if (ctx.rl) ctx.rl.flaechenNachfuehren();
+
+  /* Die Kopfzeile trägt die Überdeckung, sobald sie liegt: sie ist die Aussage
+     über die Planung als Ganzes und gehört deshalb über die Liste und nicht in
+     einen einzelnen Eintrag. */
+  const roh = ctx.rl && ctx.rl.ueberdeckungAn ? ctx.rl.ueberdeckungBefund() : null;
+  const gesamt = roh === 'zu_weit' ? null : roh;
+  summe.innerHTML = !stellen.length ? ''
+    : gesamt
+      ? `<span><b>${stellen.length}</b> ${stellen.length === 1 ? 'Relaisstelle' : 'Relaisstellen'}</span>
+         <span>frei <b>${escapeHtml(flaecheText(gesamt.flaecheFrei))}</b></span>
+         <span>Rand <b>${escapeHtml(flaecheText(gesamt.flaecheRand))}</b></span>`
+      : `<span><b>${stellen.length}</b> ${stellen.length === 1 ? 'Relaisstelle' : 'Relaisstellen'}</span>`;
+
+  if (roh === 'zu_weit') {
+    liste.appendChild(el('p', 'rl-befund rl-warnung',
+      'Die Relaisstellen liegen zu weit auseinander für eine gemeinsame Fläche. ' +
+      'Sie überdecken einander dann ohnehin nicht – die Flächen sind einzeln zu ' +
+      'betrachten.'));
+  } else if (gesamt) {
+    liste.appendChild(el('p', 'rl-befund', escapeHtml(ausbreitungText(gesamt))));
+    liste.appendChild(zonenErklaerung());
+  }
+
+  if (!stellen.length) {
+    liste.appendChild(el('div', 'leer',
+      `<p><b>Noch keine Relaisstelle gesetzt.</b></p>
+       <p>„Relaisstelle setzen“ wählen und den Standort auf der Karte anklicken.
+       Band, Antennenhöhe über Grund und die Höhe der Gegenstelle stehen dann im
+       Eintrag; auf Knopfdruck wird die Fläche gerechnet, die von dort über das
+       Gelände erreicht wird.</p>
+       <p class="klein">Gerechnet wird Sichtlinie mit Erdkrümmung und dazu die
+       Beugung an der Geländekante. Bewuchs und Bebauung stehen in den Höhendaten
+       nicht – die Fläche ist die günstigste Annahme und kein Empfangsnachweis.</p>`));
+    if (!abschnitte.length) return;
+  }
+
+  if (!abschnitte.length) {
+    for (const r of alphabetisch(stellen, relaisTitel)) liste.appendChild(relaisKarte(r));
+    return;
+  }
+  for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea, 'relais'));
+  if (relaisstellenIm(p, null).length) liste.appendChild(abschnittGruppe(null, 'relais'));
+}
+
+/** Die drei Zonen in Worten – neben jeder Fläche, nie in einer Hilfe. */
+function zonenErklaerung() {
+  const box = el('div', 'rl-zonen');
+  const klasse = { 3: 'z-frei', 2: 'z-rand', 1: 'z-schatten' };
+  for (const z of ZONEN_ERKLAERUNG) {
+    box.appendChild(el('p', 'rl-zone ' + klasse[z.zone],
+      `<span></span><span><b>${escapeHtml(z.name)}</b> <i>${escapeHtml(z.text)}</i></span>`));
+  }
+  return box;
+}
+
+function relaisKarte(r) {
+  const gewaehlt = ctx.rl.auswahl === r.id;
+  const zustand = r.sichtbar === false ? ' verborgen'
+    : (relaisstelleSichtbar(store.projekt, r) ? '' : ' entzogen');
+  const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') + zustand);
+
+  const kopf = el('header', 'eintrag-kopf');
+  kopf.innerHTML =
+    `<span class="farbpunkt" style="--farbe:${r.farbe || '#6a1b9a'}"></span>
+     <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(relaisTitel(r))}</button>
+     <span class="eintrag-wert">${escapeHtml(relaisKurz(r))}</span>
+     ${augenKnopf(r.sichtbar !== false)}`;
+  kopf.onclick = () => ctx.rl.waehle(gewaehlt ? null : r.id);
+  kopf.querySelector('[data-akt="sichtbar"]').onclick = e => {
+    e.stopPropagation();
+    store.aendern(() => { r.sichtbar = r.sichtbar === false; }, 'relais');
+    ctx.rl.flaechenZeichnen();
+  };
+  karte.appendChild(kopf);
+
+  if (gewaehlt) karte.appendChild(relaisFormular(r));
+  return karte;
+}
+
+function relaisFormular(r) {
+  grundhoehePlanen(r);
+  const koerper = el('div', 'eintrag-koerper');
+  const band = bosBandById(r.band);
+  const aktualisieren = () => zeichneRelaisListe();
+
+  const g = el('div', 'feldgruppe');
+  /* Das Neuzeichnen der Marke gehört in den Nachlauf von `schreib` und nicht
+     daneben: die Eingabe wird gesammelt und erst nach 100 ms geschrieben: eine
+     Marke, die sofort neu gezeichnet wird, trägt noch den vorigen Wert und
+     hinkt der Eingabe um einen Anschlag hinterher. */
+  g.appendChild(feld('Bezeichnung', r.name, v => {
+    schreib(() => { r.name = v; }, () => ctx.rl.zeichne());
+  }, { platzhalter: 'z. B. Relais Kuppe Nord' }));
+
+  const funk = el('div', 'feld-paar');
+  funk.append(
+    /* Der Bandwechsel zieht den Umkreis NICHT mit: er ist beim Anlegen eine
+       Vorgabe des Bandes, danach eine Entscheidung des Planers, und eine
+       Entscheidung soll ein Wechsel des Bandes nicht überschreiben. */
+    feld('Frequenzband', r.band, v => {
+      store.aendern(() => { r.band = bosBandById(v).id; }, 'relais');
+      ctx.rl.zeichne();
+    }, { typ: 'select', werte: BOS_BAENDER.map(b => [b.id, b.name]) }),
+    feld('Kanal', r.kanal, v => schreib(() => { r.kanal = v; }),
+      { platzhalter: 'lt. Frequenzzuteilung' })
+  );
+  g.appendChild(funk);
+
+  const masse = el('div', 'feld-paar');
+  masse.append(
+    feld('Antennenhöhe über Grund', r.antennenhoehe, v => {
+      if (!(v > 0)) return;
+      schreib(() => { r.antennenhoehe = v; }, () => { ctx.rl.zeichne(); aktualisieren(); });
+    }, { typ: 'number', min: 1, max: 100, step: 0.5, einheit: 'm' }),
+    feld('Mast / Träger', r.mast, v => schreib(() => { r.mast = v; }),
+      { platzhalter: 'z. B. Teleskopmast 10 m' })
+  );
+  g.appendChild(masse);
+
+  const umgebung = el('div', 'feld-paar');
+  umgebung.append(
+    /* Die Gegenstelle steht als eigene Wahl da und nicht als stille Annahme:
+       eine Fläche für die Fahrzeugantenne gilt für das Handfunkgerät am Mann
+       nicht mehr, und der Unterschied ist erheblich. */
+    feld('Gegenstelle', r.gegenstelle, v => {
+      store.aendern(() => { r.gegenstelle = gegenstelleById(v).id; }, 'relais');
+      ctx.rl.zeichne();
+    }, { typ: 'select', werte: GEGENSTELLEN.map(x => [x.id, x.name]) }),
+    feld('Umkreis der Rechnung', Math.round(r.umkreis / 1000), v => {
+      if (!(v > 0)) return;
+      schreib(() => {
+        r.umkreis = Math.min(UMKREIS_MAX, Math.max(UMKREIS_MIN, Math.round(v) * 1000));
+      }, aktualisieren);
+    }, { typ: 'number', min: 1, max: UMKREIS_MAX / 1000, step: 1, einheit: 'km' })
+  );
+  g.appendChild(umgebung);
+
+  g.appendChild(feld('Geländehöhe am Standort', r.grundhoehe ?? '', v => {
+    schreib(() => { r.grundhoehe = v === '' ? null : Number(v); }, aktualisieren);
+  }, {
+    typ: 'number', step: 1, einheit: 'm NN',
+    platzhalter: hoehenLaeuft.has(r.id) ? 'wird geholt …' : 'aus dem Geländemodell'
+  }));
+
+  if ((store.projekt.einsatzabschnitte || []).length) {
+    g.appendChild(feld('Einsatzabschnitt', r.abschnitt || '', v => {
+      store.aendern(() => { r.abschnitt = v || null; }, 'relais');
+    }, {
+      typ: 'select',
+      werte: [['', '— keinem zugeteilt (gilt für alle) —'],
+        ...alphabetisch(store.projekt.einsatzabschnitte, nachName).map(a => [a.id, a.name])]
+    }));
+  }
+
+  g.appendChild(feld('Trupp / Betreiber', r.trupp, v => schreib(() => { r.trupp = v; })));
+
+  /* Dieselbe Bedienform wie beim taktischen Zeichen: ein Knopf mit Vorschau und
+     Namen, nicht ein schreibgeschütztes Textfeld. Das Zeichen wird gewählt und
+     nicht getippt – und der Name ist lang genug, dass er in der Schmalansicht
+     in einem halbbreiten Feld abgeschnitten würde. */
+  const symZeile = el('div', 'feld');
+  symZeile.appendChild(el('span', 'feld-titel', 'Taktisches Zeichen'));
+  const symKnopf = el('button', 'symbol-waehler');
+  symKnopf.type = 'button';
+  symKnopf.innerHTML = `${symbolSVG({ symbol: r.symbol, breite: 34 })}
+    <span>${escapeHtml(symbolById(r.symbol).name)}</span><span class="pfeil">▾</span>`;
+  symKnopf.onclick = () => symbolPalette(sym => {
+    store.aendern(() => { r.symbol = sym; }, 'relais');
+    ctx.rl.zeichne();
+  });
+  symZeile.appendChild(symKnopf);
+  g.appendChild(symZeile);
+
+  g.appendChild(feld('Bemerkung', r.bemerkung, v => schreib(() => { r.bemerkung = v; }),
+    { typ: 'textarea', zeilen: 2 }));
+  koerper.appendChild(g);
+
+  // -- Was sich aus den Angaben rechnet, ohne eine einzige Höhenkachel
+  koerper.appendChild(werteHTML(r, band));
+  koerper.appendChild(el('p', 'klein', escapeHtml(GEGENGEWICHT_HINWEIS)));
+  for (const h of band.hinweise) koerper.appendChild(el('p', 'klein', escapeHtml(h)));
+
+  koerper.appendChild(el('p', 'klein mono koord-hinweis',
+    `${toMGRS(r.lat, r.lng, 5)}<br>${toDDM(r.lat, r.lng)}`));
+
+  // -- Die Fläche und die Rückwärtsrechnung
+  const tasten = el('div', 'tastenreihe');
+  const liegt = ctx.rl.zeigtFlaeche(r.id);
+  tasten.append(
+    knopf(liegt ? 'Ausbreitung ausblenden' : 'Ausbreitung zeigen', ev => {
+      const taste = ev && ev.currentTarget;
+      if (taste && !liegt) { taste.disabled = true; taste.textContent = 'Höhen werden geholt …'; }
+      ctx.rl.flaecheUmschalten(r)
+        .then(e => {
+          if (e === null) hinweis('Für diesen Umkreis liegen keine Höhen vor.', 'fehler');
+          aktualisieren();
+        })
+        .catch(() => {
+          hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler');
+          aktualisieren();
+        });
+    }, 'klein'),
+    knopf(ctx.rl.zielModus === r.id ? 'Zielwahl abbrechen' : 'Masthöhe bis zu einem Ort …', () => {
+      if (ctx.rl.zielModus === r.id) { ctx.rl.beendeZielwahl(); return aktualisieren(); }
+      ctx.rl.starteZielwahl(r.id);
+      ctx.zurKarte?.();
+      hinweis('Den Ort auf der Karte anklicken, der erreicht werden soll.');
+      aktualisieren();
+    }, 'klein')
+  );
+  koerper.appendChild(tasten);
+
+  const befund = befundLesen(r);
+  if (liegt && befund) {
+    koerper.appendChild(el('p', 'rl-befund', escapeHtml(ausbreitungText(befund, band))));
+    koerper.appendChild(zonenErklaerung());
+  }
+
+  const mh = masthoehen.get(r.id);
+  if (mh) {
+    const warnt = mh.ergebnis && mh.ergebnis.urteil === 'hoeher';
+    const schwach = !mh.ergebnis || mh.ergebnis.urteil === 'unbeurteilbar';
+    const kasten = el('p', 'rl-befund' + (warnt ? ' rl-warnung' : schwach ? ' rl-schwach' : ''),
+      escapeHtml(masthoeheText(mh.ergebnis, 'der Ort ' + toMGRS(mh.ziel.lat, mh.ziel.lng, 4))));
+    koerper.appendChild(kasten);
+  }
+
+  const weiter = el('div', 'tastenreihe');
+  weiter.append(
+    knopf('Auf Karte zeigen', () => {
+      ctx.karte.setView([r.lat, r.lng], Math.max(ctx.karte.getZoom(), 14));
+      ctx.zurKarte?.();
+    }),
+    knopf('Duplizieren', () => {
+      store.aendern(p => {
+        /* Die Kopie steht daneben und trägt keine Geländehöhe: die gehört zum
+           Standort des Originals und wäre hier eine Behauptung. */
+        const k = { ...r, id: id(), name: r.name + ' (Kopie)', lng: r.lng + 0.002, grundhoehe: null };
+        p.relaisstellen.push(k);
+        ctx.rl.auswahl = k.id;
+      }, 'relais');
+      ctx.rl.zeichne();
+    }),
+    knopf('Löschen', () => {
+      store.aendern(p => { p.relaisstellen = p.relaisstellen.filter(x => x.id !== r.id); }, 'relais');
+      ctx.rl.auswahl = null;
+      masthoehen.delete(r.id);
+      ctx.rl.gezeigt.delete(r.id);
+      ctx.rl.flaechenZeichnen();
+      ctx.rl.zeichne();
+      hinweis('Relaisstelle gelöscht');
+    }, 'gefahr')
+  );
+  koerper.appendChild(weiter);
+  return koerper;
+}
+
+/* Die abgeleiteten Werte. Alle vier brauchen keine einzige Höhenkachel und
+   stehen deshalb sofort da – sie sind die Zahlen, mit denen am Mastfuß
+   gearbeitet wird, während die Fläche noch geholt wird.
+
+   Der Funkhorizont ist eine obere Schranke über glatter Kugel und wird auch so
+   benannt: „bis“ und nicht „reicht“. Ohne dieses Wort läse er sich als
+   Reichweitenzusage, und das ist er nicht (siehe bosfunk.js). */
+function werteHTML(r, band) {
+  const st = strahlermasse(band);
+  const zielhoehe = gegenstellenhoehe(r.gegenstelle, r.antennenhoehe);
+  const horizont = sichtweite(r.antennenhoehe, zielhoehe);
+  const nn = r.grundhoehe === null || r.grundhoehe === undefined
+    ? null : Number(r.grundhoehe) + Number(r.antennenhoehe || 0);
+  const km = m => (Math.round(m / 100) / 10).toLocaleString('de-DE',
+    { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' km';
+
+  const zeilen = [
+    ['λ/4-Strahler', `${strahlerText(st.mitte)}`],
+    ['Spanne über das Band', `${strahlerText(st.kurz)} – ${strahlerText(st.lang)}`],
+    ['Antennenmitte', nn === null ? '–' : `${Math.round(nn).toLocaleString('de-DE')} m NN`],
+    ['Sichtweite bis', km(horizont)]
+  ];
+  const box = el('div', 'rl-werte');
+  box.innerHTML = zeilen.map(([t, w]) =>
+    `<span><i>${escapeHtml(t)}</i><b>${escapeHtml(w)}</b></span>`).join('');
+  return box;
+}
+
+/**
+ * Antwort auf die Zielwahl: welche Masthöhe die Relaisstelle bis zu diesem Ort
+ * bräuchte. Wird von der Kartenebene über app.js hereingereicht.
+ */
+export function relaisZielAntwort(rid, ziel) {
+  const r = store.relaisstelle(rid);
+  if (!r) return;
+  masthoehen.set(rid, { ziel, ergebnis: null });
+  zeichneRelaisListe();
+  masthoeheFuer(r, ziel)
+    .then(m => { masthoehen.set(rid, { ziel, ergebnis: m }); zeichneRelaisListe(); })
+    .catch(() => {
+      masthoehen.delete(rid);
+      hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler');
+      zeichneRelaisListe();
+    });
+}
+
+/** Überdeckung aller sichtbaren Relaisstellen ein- und ausschalten. */
+export function ueberdeckungUmschalten(taste) {
+  const an = ctx.rl.ueberdeckungAn;
+  if (taste && !an) { taste.disabled = true; taste.textContent = 'Höhen werden geholt …'; }
+  const fertig = () => {
+    if (taste) {
+      taste.disabled = false;
+      taste.textContent = ctx.rl.ueberdeckungAn ? '◍ Überdeckung ausblenden' : '◍ Überdeckung aller';
+    }
+    zeichneRelaisListe();
+  };
+  ctx.rl.ueberdeckungUmschalten()
+    .then(e => {
+      if (e === 'zu_weit') {
+        hinweis('Die Relaisstellen liegen zu weit auseinander für eine gemeinsame Fläche.', 'warnung');
+      } else if (e === null) {
+        hinweis('Keine sichtbare Relaisstelle, oder keine Höhen zu bekommen.', 'warnung');
+      }
+      fertig();
+    })
+    .catch(() => { hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'); fertig(); });
+}
+
 // ---------------------------------------------------------------- Lichtbilder
 
 /* Ein Lichtbild vom Bauort beantwortet Fragen, für die es keine Zeichenerklärung
@@ -3113,6 +3536,30 @@ export function hilfeDialog() {
           <li>Flächen erscheinen im Bauauftrag, auf der Lagekarte und in GeoJSON und
               KML als Grundriss; wie Zeichen lassen sie sich Einsatzabschnitten zuteilen.</li>
         </ul>
+        <h3>Relaisstellen des Sprechfunks</h3>
+        <p>Im Reiter <b>Relais</b> (<kbd>R</kbd>) wird geplant, wohin eine Relaisstelle
+           über das Gelände trägt – im <b>4-m-</b> und <b>2-m-Band</b> analog und in
+           <b>TETRA DMO</b>. Standort auf der Karte setzen, Band und Antennenhöhe über
+           Grund eintragen, dann zeigt <b>Ausbreitung zeigen</b> die Fläche in drei
+           Zonen: <b>freie Sicht</b>, <b>Randbereich</b> – dort steht eine Kante im Weg,
+           die Beugung trägt aber noch – und der ungefärbte <b>Funkschatten</b>.</p>
+        <ul class="tasten-liste">
+          <li>Die <b>Gegenstelle</b> entscheidet mit: eine Fläche für die Fahrzeugantenne
+              gilt für das <b>Handfunkgerät am Mann</b> nicht mehr. Sie steht deshalb als
+              eigene Wahl im Formular und nicht als stille Annahme.</li>
+          <li><b>Masthöhe bis zu einem Ort …</b> und dann auf die Karte klicken: das sagt,
+              ab welcher Antennenhöhe dieser Ort frei liegt – oder dass dafür kein
+              Teleskopmast mehr reicht und der Standort zu wechseln ist.</li>
+          <li><b>Überdeckung aller</b> legt die Flächen aller Relaisstellen zusammen und
+              weist die versorgte Fläche in Quadratkilometern aus.</li>
+          <li>Die Länge des <b>λ/4-Rundstrahlers</b> steht im Eintrag, dazu die Spanne
+              über das Band – ohne zugeteilten Kanal gilt die Bandmitte. Der Strahler
+              braucht eine <b>Gegengewichtsfläche</b>: auf dem Fahrzeug das Dach, am Mast
+              drei bis vier Radiale derselben Länge.</li>
+          <li>Die Fläche ist die <b>günstigste Annahme</b> und kein Empfangsnachweis:
+              gerechnet über nacktem Gelände, ohne Wald und ohne Häuser. Sie wird deshalb
+              auch <b>nicht gespeichert</b> – wer die Masthöhe ändert, rechnet neu.</li>
+        </ul>
         <h3>Bilder vom Bauort</h3>
         <p>Lichtbilder, die ein Telefon aufgenommen hat, tragen ihren Aufnahmeort in sich.
            Im Reiter <b>Bilder</b> über <b>Bilder vom Gerät hinzufügen</b> auswählen – am
@@ -3161,7 +3608,8 @@ export function hilfeDialog() {
            <b>Datei → Planung als Datei sichern</b> verwenden – die Bilder gehen mit ein.</p>
         <h3>Tastatur</h3>
         <ul class="tasten-liste">
-          <li><kbd>S</kbd> neue Strecke · <kbd>T</kbd> taktisches Zeichen · <kbd>F</kbd> Fläche · <kbd>K</kbd> Koordinate</li>
+          <li><kbd>S</kbd> neue Strecke · <kbd>T</kbd> taktisches Zeichen · <kbd>F</kbd> Fläche ·
+              <kbd>R</kbd> Relaisstelle · <kbd>K</kbd> Koordinate</li>
           <li><kbd>Strg</kbd>+<kbd>Z</kbd> rückgängig · <kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>Z</kbd> wiederholen</li>
           <li><kbd>Enter</kbd> Zeichnen beenden · <kbd>Esc</kbd> abbrechen</li>
           <li><kbd>Strg</kbd>+<kbd>P</kbd> Bauauftrag der gewählten Strecke öffnen</li>

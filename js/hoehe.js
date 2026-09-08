@@ -176,8 +176,26 @@ export async function raster(mitte, radiusM) {
     mitteX: r, mitteY: r,
     meterJeZelle: mjp,
     fehlend,
+    /* Der Ursprung in Weltpixeln der festen Zoomstufe. Zwei Rasterblöcke liegen
+       damit auf demselben Gitter und lassen sich über ganzzahlige Versätze
+       übereinanderlegen – das braucht die Überdeckung mehrerer Relaisstellen
+       (siehe `ueberdeckung` in ausbreitung.js). Über die Ecken ginge das nur
+       mit einer Rückrechnung, die auf halbe Zellen führt. */
+    x0, y0,
     ecken: [weltPixelZurueck(x0, y0 + zeilen), weltPixelZurueck(x0 + spalten, y0)]
   };
+}
+
+/**
+ * Süd-West- und Nord-Ost-Ecke eines Blocks von `spalten` × `zeilen` Zellen ab
+ * dem Weltpixel (x0, y0) – die Form, in der Leaflet eine Überlagerung erwartet.
+ *
+ * Ein `raster()` bringt seine Ecken schon mit. Gebraucht wird das hier für
+ * Felder, die aus mehreren Blöcken zusammengesetzt wurden und deshalb zu keinem
+ * einzelnen Rasterblock mehr gehören (siehe `ueberdeckung` in ausbreitung.js).
+ */
+export function eckenFuer(x0, y0, spalten, zeilen) {
+  return [weltPixelZurueck(x0, y0 + zeilen), weltPixelZurueck(x0 + spalten, y0)];
 }
 
 /* Wie viele Kacheln ein Umkreis kostet – der Aufrufer soll vor dem Abruf sagen

@@ -3,6 +3,7 @@
 import {
   store, migrieren, neueStrecke, neuerPunkt, neuesZeichen, id, ladeAlle, dateisicherungVermerken,
   abschnittById, zeichengruppeById, streckenIm, zeichenIm, zeichenFuer, flaechenIm, flaechenFuer,
+  relaisstellenIm, relaisstellenFuer,
   punktartById, VERLEGEARTEN, KABELTYPEN
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
@@ -13,6 +14,29 @@ import { querungsartById, bauweiseById, querungsMinuten } from './vorschrift.js'
 import { kmlLesen, kmlSchreiben, kmlAusKMZ, istKMZ, alsText } from './kml.js';
 import { alsDatenUrls, ausDatei as bilderAusDatei } from './bildspeicher.js';
 import { flaechenEcken, flaechenTitel, flaechenartById, masseText } from './flaechen.js';
+import { relaisTitel, relaisKurz } from './relais.js';
+import { bosBandById, gegenstelleById, strahlermasse, strahlerText } from './bosfunk.js';
+
+/* Was eine Relaisstelle in einem fremden Programm ausmacht. Das Band steht
+   voran, weil es ohne die Frequenz keine Aussage über die Fläche gibt, und die
+   Strahlerlänge steht dabei, weil sie am Bauort gebraucht wird und sich sonst
+   nirgends ablesen lässt. Die gerechnete Fläche geht NICHT mit: sie ist ein
+   Befund zu einem Stand und kein Bestandteil der Planung (siehe relais.js). */
+const relaisAngaben = r => {
+  const band = bosBandById(r.band);
+  return [
+    band.name,
+    r.kanal && `Kanal ${r.kanal}`,
+    `Antennenhöhe ${r.antennenhoehe} m über Grund`,
+    r.mast,
+    r.grundhoehe === null || r.grundhoehe === undefined ? '' : `Standort ${r.grundhoehe} m NN`,
+    `Gegenstelle: ${gegenstelleById(r.gegenstelle).name}`,
+    `λ/4-Rundstrahler ${strahlerText(strahlermasse(band).mitte)}`,
+    r.trupp && `Trupp: ${r.trupp}`,
+    `MGRS ${toMGRS(r.lat, r.lng, 5)}`,
+    r.bemerkung
+  ].filter(Boolean);
+};
 
 /* Klartext der Querungsart. An allen anderen Punktarten bleibt die Angabe leer –
    der mitgeführte Wert gehört dort nicht in die Ausgabe. */
@@ -135,7 +159,8 @@ export function abschnittAlsProjekt(aid) {
   const p = store.projekt;
   const ea = abschnittById(p, aid);
   const strecken = streckenIm(p, aid);
-  if (!strecken.length && !zeichenIm(p, aid).length && !flaechenIm(p, aid).length) return false;
+  if (!strecken.length && !zeichenIm(p, aid).length && !flaechenIm(p, aid).length &&
+      !relaisstellenIm(p, aid).length) return false;
   const bezeichnung = ea ? ea.name : 'Ohne Einsatzabschnitt';
   const jetzt = new Date().toISOString();
   const zeichen = aid ? zeichenFuer(p, aid) : zeichenIm(p, aid);
@@ -155,6 +180,8 @@ export function abschnittAlsProjekt(aid) {
     zeichen,
     // Die Flächen folgen derselben Regel wie die Zeichen.
     flaechen: aid ? flaechenFuer(p, aid) : flaechenIm(p, aid),
+    // Und die Relaisstellen ebenso: eine nicht zugeteilte versorgt jeden Abschnitt.
+    relaisstellen: aid ? relaisstellenFuer(p, aid) : relaisstellenIm(p, aid),
     herkunft: {
       projekt: p.name,
       projektId: p.id,
@@ -363,6 +390,22 @@ export function geoJSON(nurStrecke = null) {
         bemerkung: z.bemerkung, mgrs: toMGRS(z.lat, z.lng, 5)
       }
     });
+    /* Die Relaisstelle bleibt ein Punkt: ihre Fläche ist gerechnet und nicht
+       gezeichnet, und ein Polygon daraus wäre in einem fremden Programm nicht
+       mehr von einer erkundeten Fläche zu unterscheiden. */
+    for (const r of p.relaisstellen || []) features.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
+      properties: {
+        name: relaisTitel(r), symbol: r.symbol,
+        band: bosBandById(r.band).name, kanal: r.kanal,
+        antennenhoehe_m: r.antennenhoehe, mast: r.mast,
+        gelaendehoehe_m: r.grundhoehe,
+        gegenstelle: gegenstelleById(r.gegenstelle).name,
+        strahler_cm: Math.round(strahlermasse(bosBandById(r.band)).mitte * 1000) / 10,
+        bemerkung: r.bemerkung, mgrs: toMGRS(r.lat, r.lng, 5)
+      }
+    });
     /* Eine Fläche wird zum Polygon aus ihren vier Ecken – so sieht sie in
        jedem GIS so aus wie hier; Maße und Drehung stehen dazu in den
        Eigenschaften, damit sich der Grundriss auch nachrechnen lässt. */
@@ -503,6 +546,23 @@ function flaechenOrdner(flaechen) {
   };
 }
 
+/* Die Relaisstellen als eigener Ordner, damit sie sich in Google Earth
+   geschlossen ein- und ausblenden lassen: sie gehören zum Funklagebild und
+   nicht zur Trasse. */
+function relaisOrdner(relaisstellen) {
+  return {
+    name: 'Relaisstellen', offen: false,
+    eintraege: relaisstellen.map(r => ({
+      art: 'punkt',
+      name: relaisTitel(r),
+      farbe: r.farbe,
+      sichtbar: r.sichtbar,
+      lat: r.lat, lng: r.lng,
+      beschreibung: relaisAngaben(r)
+    }))
+  };
+}
+
 /* Kopf der Planung als Beschreibung des Dokuments – wer die Datei weitergibt,
    soll in Google Earth sehen, zu welchem Einsatz und welchem Stand sie gehört. */
 function planungsAngaben(p) {
@@ -524,21 +584,22 @@ function planungsAngaben(p) {
 function planungsOrdner(p) {
   const abschnitte = p.einsatzabschnitte || [];
   if (!abschnitte.length)
-    return [...p.strecken.map(streckenOrdner), zeichenOrdner(p.zeichen), flaechenOrdner(p.flaechen || [])];
+    return [...p.strecken.map(streckenOrdner), zeichenOrdner(p.zeichen),
+      flaechenOrdner(p.flaechen || []), relaisOrdner(p.relaisstellen || [])];
 
   const ordner = abschnitte.map(ea => ({
     name: ea.name,
     sichtbar: ea.sichtbar,
     beschreibung: [ea.leiter && `Abschnittsleiter: ${ea.leiter}`, ea.bemerkung],
     ordner: [...streckenIm(p, ea.id).map(streckenOrdner), zeichenOrdner(zeichenIm(p, ea.id), ea.farbe),
-      flaechenOrdner(flaechenIm(p, ea.id))]
+      flaechenOrdner(flaechenIm(p, ea.id)), relaisOrdner(relaisstellenIm(p, ea.id))]
   }));
   /* Was keinem Abschnitt zugeteilt ist, gehört allen – und darf deshalb nicht
      unter den Tisch fallen, wenn die Planung gegliedert ist. */
   ordner.push({
     name: 'Ohne Einsatzabschnitt',
     ordner: [...streckenIm(p, null).map(streckenOrdner), zeichenOrdner(zeichenIm(p, null)),
-      flaechenOrdner(flaechenIm(p, null))]
+      flaechenOrdner(flaechenIm(p, null)), relaisOrdner(relaisstellenIm(p, null))]
   });
   return ordner;
 }
@@ -571,6 +632,16 @@ export function gpxExportieren(sid = null) {
     <sym>Waypoint</sym>
   </wpt>`)).join('\n');
 
+  /* Die Relaisstellen kommen nur in den vollständigen Export: wer eine einzelne
+     Strecke aufs Hand-GPS zieht, will die Trasse und nicht das Funklagebild.
+     Als Wegpunkt und nicht als Track – ein Standort hat keine Länge. */
+  const relaisWpts = (sid ? [] : (p.relaisstellen || [])).map(r =>
+    `  <wpt lat="${r.lat.toFixed(7)}" lon="${r.lng.toFixed(7)}">
+    <name>${esc(relaisTitel(r))}</name>
+    <desc>${esc(relaisKurz(r))}</desc>
+    <sym>Radio Tower</sym>
+  </wpt>`).join('\n');
+
   const trks = strecken.map(s => `  <trk>
     <name>${esc(s.name)}</name>
     <desc>${esc(gpxStreckenText(s))}</desc>
@@ -583,6 +654,7 @@ ${s.punkte.map(pt => `      <trkpt lat="${pt.lat.toFixed(7)}" lon="${pt.lng.toFi
 <gpx version="1.1" creator="Fernmeldebauplaner" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata><name>${esc(p.name)}</name><time>${new Date().toISOString()}</time></metadata>
 ${wpts}
+${relaisWpts}
 ${trks}
 </gpx>`;
   const s = sid ? store.strecke(sid) : null;

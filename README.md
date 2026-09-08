@@ -50,6 +50,29 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   steht im Urteil dabei; Freileitungen, Masten und einzelne Bäume stehen in keiner
   dieser Quellen und bleiben Sache der Erkundung
 
+**Relaisstellen des Sprechfunks planen**
+- Standorte des BOS-Sprechfunks als eigene Planungsobjekte: 4-m-Band und 2-m-Band
+  (analog FM) sowie TETRA DMO für den netzunabhängigen Digitalfunk
+- Je Relaisstelle Kanal, Antennenhöhe über Grund, Mast, Trupp und das taktische Zeichen;
+  die Geländehöhe holt das Programm aus dem Höhenmodell
+- **Ausbreitung und Funkschatten** über das Gelände als Fläche auf der Karte, in drei
+  Zonen: freie Sicht (unter 6 dB), Randbereich (6 bis 15 dB) und Funkschatten. Gerechnet
+  wird die Sichtlinie mit Erdkrümmung (k = 4/3) und dazu die Beugungsdämpfung an der
+  Geländekante nach ITU-R P.526 – Geometrie, keine Sendeleistung und keine
+  Empfängerschwelle
+- Die Höhe der Gegenstelle ist wählbar: Handfunkgerät am Mann (1,5 m), Fahrzeugantenne
+  (2,5 m) oder eine zweite Relais- bzw. Feststation. Sie ist nach der eigenen Masthöhe
+  die stärkste Stellschraube der Fläche
+- **Masthöhe rückwärts:** einen Ort auf der Karte anklicken und ablesen, ab welcher
+  Antennenhöhe er in der freien Zone liegt – oder dass dafür kein Mast mehr reicht
+- **Überdeckung** aller Relaisstellen gemeinsam, mit dem versorgten Flächenanteil in km²
+- Maße des λ/4-Rundstrahlers zum Ablängen: Länge zur Bandmitte und die Spanne über das
+  ganze Band, dazu der Hinweis auf die nötige Gegengewichtsfläche
+- Funkhorizont aus eigener Masthöhe und Gegenstelle – eine obere Schranke ohne
+  eine einzige Höhenkachel
+- Relaisstellen und ihre Flächen kommen auf die Lagekarte, in GeoJSON, KML und GPX
+  und in den geteilten Link
+
 **Einsatzabschnitte** (freiwillig)
 - Strecken und taktische Zeichen zu benannten Einsatzabschnitten mit Leitung und
   eigener Farbe zusammenfassen
@@ -198,6 +221,7 @@ Orthophotos der Landesvermessungen (DOP 20 cm, alle 16 Länder).
 | `S` | Neue Strecke zeichnen |
 | `T` | Taktisches Zeichen setzen |
 | `F` | Fläche einzeichnen |
+| `R` | Relaisstelle setzen |
 | `K` | Koordinate anspringen |
 | `Enter` | Zeichnen abschließen |
 | `Rücktaste` | Letzten Punkt zurücknehmen |
@@ -354,6 +378,11 @@ js/exif.js            Ort, Aufnahmezeit und Blickrichtung aus dem Lichtbild
 js/hoehe.js           Geländehöhen aus Höhenkacheln (DGM), Punkt, Profil, Raster
 js/oberflaeche.js     Oberflächenhöhen: Bewuchs und Bebauung über dem Gelände
 js/cog.js             Einzelne Kacheln aus einem Cloud-Optimized GeoTIFF lesen
+js/funkrechnung.js    Geometrie der Funkstrecke: Fresnelzone, Erdstich, Masthöhe
+js/funksicht.js       Fläche mit freier Funksicht für die WLAN-Richtfunkstrecke
+js/relais.js          Relaisstellen des Sprechfunks auf der Karte, Flächen und Befunde
+js/bosfunk.js         Bänder des BOS-Sprechfunks, λ/4-Rundstrahler, Funkhorizont
+js/ausbreitung.js     Ausbreitung und Funkschatten: Sichtlinie und Beugung, drei Zonen
 js/bauauftrag.js      Druckdokumente: Bauauftrag und Lagekarte
 js/ui.js              Seitenleiste, Formulare, Dialoge
 js/io.js              Sichern und Laden, GeoJSON, GPX, CSV, KML
@@ -413,6 +442,25 @@ Spannungsfall oder die Strombelastbarkeit – je nachdem, was den größeren Que
 verlangt. Die Belastbarkeit gilt für drei belastete Adern frei in Luft bei 30 °C;
 aufgerollte Leitungsroller tragen deutlich weniger. Die verbindliche Auslegung und die
 Prüfung der Anlage obliegen einer Elektrofachkraft.
+
+Die **Ausbreitungsfläche einer Relaisstelle** ist die günstigste Annahme und kein
+Empfangsnachweis. Sie rechnet über einem Geländemodell **ohne Bewuchs und ohne
+Bebauung** (EU-DEM, rund 25 m Rasterweite): Wald, Ortslage und Freileitungen dämpfen
+zusätzlich und stehen in keiner dieser Zahlen. Belastbar ist deshalb nur die eine
+Richtung – was schon das nackte Gelände verdeckt, bleibt verdeckt. Gerechnet wird die
+Sichtlinie mit einem um k = 4/3 vergrößerten Erdradius und dazu die Beugungsdämpfung an
+der maßgebenden Geländekante nach ITU-R P.526; die Zonengrenzen liegen bei 6 dB und
+15 dB. Sendeleistung, Antennengewinn und Empfängerschwelle gehen **nicht** ein – eine
+Feldstärke in dBm sähe aus wie eine Messung und wäre geraten. Im Digitalfunk ist auf den
+Randbereich weniger Verlass als im Analogbetrieb: TETRA bricht ab, wo ein analoger Kanal
+noch rauscht und trägt.
+
+Die **Maße des λ/4-Rundstrahlers** sind Ablängmaße mit einem Verkürzungsfaktor von 0,95,
+nicht das Ergebnis eines Abgleichs; ohne den zugeteilten Kanal gilt die Bandmitte,
+deshalb steht die Spanne über das Band daneben. Der **Funkhorizont** ist eine obere
+Schranke über glatter Kugel. Welcher Kanal und welche Bandhälfte einer Relaisstelle
+zustehen, steht in der Frequenzzuteilung der zuständigen Stelle und wird hier nicht
+abgeleitet.
 
 Die taktischen Zeichen stammen aus der Sammlung jonas-koeritz/Taktische-Zeichen
 (Release-Exporte unter CC0-1.0). Für förmliche Lagedarstellungen ist die jeweils

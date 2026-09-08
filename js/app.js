@@ -8,6 +8,7 @@ import { erstelleKarte, setzeBasiskarte, BASISKARTEN } from './map.js';
 import { StreckenLayer, escapeHtml } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
 import { FlaechenLayer } from './flaechen.js';
+import { RelaisLayer } from './relais.js';
 import { BilderLayer, uebernahmeLaeuft } from './bilder.js';
 import { aufraeumen as bilderAufraeumen } from './bildspeicher.js';
 import { GitterLayer } from './gitter.js';
@@ -18,6 +19,7 @@ import * as teilen from './teilen.js';
 import {
   initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter, zeichneBilderListe,
   zeichneFlaechenListe, flaechenPalette,
+  zeichneRelaisListe, relaisZielAntwort, ueberdeckungUmschalten,
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis,
   abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen
 } from './ui.js';
@@ -35,13 +37,19 @@ store.starten();
 const karte = erstelleKarte($('#karte'), store.projekt.ansicht);
 
 const sl = new StreckenLayer(karte, {
-  aufAuswahl: () => { zl.auswahl = null; fl.auswahl = null; fl.zeichne(); zeichneSeite(); },
+  aufAuswahl: () => {
+    zl.auswahl = null; fl.auswahl = null; rl.auswahl = null;
+    fl.zeichne(); rl.zeichne(); zeichneSeite();
+  },
   aufAenderung: () => aktualisiereKennzahlen()
 });
 
 const zl = new ZeichenLayer(karte, {
   aufAuswahl: zid => {
-    if (zid) { sl.auswahl = null; fl.auswahl = null; fl.zeichne(); reiterWechseln('zeichen'); }
+    if (zid) {
+      sl.auswahl = null; fl.auswahl = null; rl.auswahl = null;
+      fl.zeichne(); rl.zeichne(); reiterWechseln('zeichen');
+    }
     zeichneSeite();
   },
   aufAenderung: () => {}
@@ -49,16 +57,40 @@ const zl = new ZeichenLayer(karte, {
 
 const fl = new FlaechenLayer(karte, {
   aufAuswahl: fid => {
-    if (fid) { sl.auswahl = null; zl.auswahl = null; zl.zeichne(); reiterWechseln('flaechen'); }
+    if (fid) {
+      sl.auswahl = null; zl.auswahl = null; rl.auswahl = null;
+      zl.zeichne(); rl.zeichne(); reiterWechseln('flaechen');
+    }
     modusAnzeigen();
     zeichneSeite();
   },
   aufAenderung: () => {}
 });
 
+/* Die Relaisstellen liegen als eigene Ebene neben Zeichen und Flächen: sie
+   tragen ein taktisches Zeichen, führen aber zusätzlich eine gerechnete Fläche,
+   und die muss beim Verschieben und Ausblenden mitgehen. `aufZiel` beantwortet
+   die Rückwärtsfrage nach der Masthöhe – die Ebene fängt den Kartenklick, die
+   Seitenleiste schreibt das Ergebnis. */
+const rl = new RelaisLayer(karte, {
+  aufAuswahl: rid => {
+    if (rid) {
+      sl.auswahl = null; zl.auswahl = null; fl.auswahl = null;
+      zl.zeichne(); fl.zeichne(); reiterWechseln('relais');
+    }
+    modusAnzeigen();
+    zeichneSeite();
+  },
+  aufZiel: (rid, ziel) => { relaisZielAntwort(rid, ziel); modusAnzeigen(); },
+  aufAenderung: () => {}
+});
+
 const bl = new BilderLayer(karte, {
   aufAuswahl: bid => {
-    if (bid) { sl.auswahl = null; zl.auswahl = null; fl.auswahl = null; fl.zeichne(); reiterWechseln('bilder'); }
+    if (bid) {
+      sl.auswahl = null; zl.auswahl = null; fl.auswahl = null; rl.auswahl = null;
+      fl.zeichne(); rl.zeichne(); reiterWechseln('bilder');
+    }
     zeichneSeite();
   },
   aufAenderung: () => {}
@@ -67,8 +99,8 @@ const bl = new BilderLayer(karte, {
 const gl = new GitterLayer(karte);
 
 initUI({
-  karte, sl, zl, bl, fl, weiterzeichnen, zeichenSetzen, flaecheSetzen, zurKarte,
-  bildOrtSetzen, aufAenderung: () => {}
+  karte, sl, zl, bl, fl, rl, weiterzeichnen, zeichenSetzen, flaecheSetzen, relaisSetzen,
+  zurKarte, bildOrtSetzen, aufAenderung: () => {}
 });
 
 // Der Stand steht dauerhaft im Kopf: Wer zu einem gedruckten Bauauftrag
@@ -133,6 +165,7 @@ function zeichenSetzen(symbolId, zuteilung = {}) {
   zeichnenBeenden(true);
   bl.beendeSetzen();
   fl.beendeSetzen();
+  rl.beendeSetzen();
   zl.starteSetzen(symbolId, zuteilung);
   zurKarte();
   modusAnzeigen();
@@ -149,6 +182,7 @@ function flaecheSetzen(vorlage, zuteilung = {}) {
   zeichnenBeenden(true);
   bl.beendeSetzen();
   zl.beendeSetzen();
+  rl.beendeSetzen();
   fl.starteSetzen(vorlage, zuteilung);
   zurKarte();
   modusAnzeigen();
@@ -157,11 +191,26 @@ function flaecheSetzen(vorlage, zuteilung = {}) {
     : 'Auf die Karte klicken – dort steht die Mitte der Fläche. Danach am Griff drehen.');
 }
 
+/** Setzmodus für eine Relaisstelle – der nächste Klick auf die Karte ist ihr
+ *  Standort. `zuteilung` ({abschnitt}) teilt sie gleich beim Setzen zu. */
+function relaisSetzen(zuteilung = {}) {
+  zeichnenBeenden(true);
+  bl.beendeSetzen();
+  zl.beendeSetzen();
+  fl.beendeSetzen();
+  rl.starteSetzen(zuteilung);
+  zurKarte();
+  modusAnzeigen();
+  hinweis('Auf die Karte klicken, um den Standort der Relaisstelle zu setzen.');
+}
+
 /** Ort eines Bildes auf der Karte nachtragen – der nächste Klick setzt ihn */
 function bildOrtSetzen(bid) {
   zeichnenBeenden(true);
   zl.beendeSetzen();
   fl.beendeSetzen();
+  rl.beendeSetzen();
+  rl.beendeZielwahl();
   bl.starteSetzen(bid);
   zurKarte();
   modusAnzeigen();
@@ -172,11 +221,15 @@ function modusAnzeigen() {
   const zeichnet = !!sl.zeichenModus;
   const setzt = !!zl.setzModus;
   const flaecht = !!fl.setzModus;
+  /* Die Zielwahl zählt als Relaismodus: auch sie wartet auf einen Kartenklick,
+     und das Werkzeug muss zeigen, dass der nächste Klick vergeben ist. */
+  const relais = !!rl.setzModus || !!rl.zielModus;
   $('#wz-strecke').classList.toggle('aktiv', zeichnet);
   $('#wz-zeichen').classList.toggle('aktiv', setzt);
   $('#wz-flaeche').classList.toggle('aktiv', flaecht);
+  $('#wz-relais').classList.toggle('aktiv', relais);
   // schmal weicht die Werkzeugleiste der Modusleiste – beide sitzen unten
-  document.body.classList.toggle('modus-aktiv', zeichnet || setzt || flaecht);
+  document.body.classList.toggle('modus-aktiv', zeichnet || setzt || flaecht || relais);
 
   const box = $('#zeichen-hinweis');
   box.hidden = !zeichnet;
@@ -349,6 +402,9 @@ karte.on('moveend zoomend', () => {
 $('#btn-neue-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();
 $('#btn-neues-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
 $('#btn-neue-flaeche').onclick = () => fl.setzModus ? (fl.beendeSetzen(), modusAnzeigen()) : flaecheSetzenStarten();
+$('#btn-neue-relaisstelle').onclick = () =>
+  rl.setzModus ? (rl.beendeSetzen(), modusAnzeigen()) : relaisSetzen();
+$('#btn-ueberdeckung').onclick = ev => ueberdeckungUmschalten(ev.currentTarget);
 $('#btn-neuer-abschnitt').onclick = () => abschnittAnlegen();
 $('#btn-neue-zeichengruppe').onclick = () => zeichengruppeAnlegen();
 $('#btn-sammel-pdf').onclick = () => oeffneSammeldruck();
@@ -357,6 +413,8 @@ $('#btn-lagekarte').onclick = () => oeffneLagekarte();
 $('#wz-strecke').onclick = () => sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten();
 $('#wz-zeichen').onclick = () => zl.setzModus ? (zl.beendeSetzen(), modusAnzeigen()) : zeichenSetzenStarten();
 $('#wz-flaeche').onclick = () => fl.setzModus ? (fl.beendeSetzen(), modusAnzeigen()) : flaecheSetzenStarten();
+$('#wz-relais').onclick = () =>
+  rl.setzModus ? (rl.beendeSetzen(), modusAnzeigen()) : relaisSetzen();
 $('#wz-suche').onclick = () => koordinatenSucheOeffnen();
 $('#wz-standort').onclick = standortUmschalten;
 
@@ -562,6 +620,8 @@ function umfangText(p) {
   if ((p.zeichen || []).length)
     teile.push(zahlwort(p.zeichen.length, 'taktisches Zeichen', 'taktische Zeichen'));
   if ((p.flaechen || []).length) teile.push(zahlwort(p.flaechen.length, 'Fläche', 'Flächen'));
+  if ((p.relaisstellen || []).length)
+    teile.push(zahlwort(p.relaisstellen.length, 'Relaisstelle', 'Relaisstellen'));
   return teile.join(' · ') || 'Noch nichts gezeichnet';
 }
 
@@ -935,6 +995,7 @@ document.addEventListener('keydown', e => {
   if (taste === 's') { e.preventDefault(); sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten(); }
   if (taste === 't') { e.preventDefault(); zeichenSetzenStarten(); }
   if (taste === 'f') { e.preventDefault(); flaecheSetzenStarten(); }
+  if (taste === 'r') { e.preventDefault(); rl.setzModus ? (rl.beendeSetzen(), modusAnzeigen()) : relaisSetzen(); }
   if (taste === 'k') { e.preventDefault(); koordinatenSucheOeffnen(); }
 });
 
@@ -1019,6 +1080,8 @@ function zeichneAlles() {
   sl.zeichne();
   zl.zeichne();
   fl.zeichne();
+  rl.zeichne();
+  rl.flaechenZeichnen();
   bl.zeichne();
   gl.zeichne();
   zeichneSeite();
@@ -1028,6 +1091,7 @@ function zeichneSeite() {
   zeichneStreckenListe();
   zeichneZeichenListe();
   zeichneFlaechenListe();
+  zeichneRelaisListe();
   zeichneBilderListe();
   zeichneProjektReiter();
 }
@@ -1089,6 +1153,12 @@ store.on((p, grund) => {
   sl.zeichne();
   zl.zeichne();
   fl.zeichne();
+  rl.zeichne();
+  /* Nicht nur die Marken, auch die liegenden Flächen: sie hängen an Masthöhe,
+     Band und Gegenstelle, und jede Änderung daran macht die gezeichnete Fläche
+     zu einer Aussage über einen Stand, den es nicht mehr gibt. Die Nachführung
+     vergleicht nur Schlüssel und zeichnet, wenn sich wirklich etwas geändert hat. */
+  rl.flaechenNachfuehren();
   bl.zeichne();
   gl.zeichne();
   modusAnzeigen();
@@ -1097,6 +1167,11 @@ store.on((p, grund) => {
   $('#btn-redo').disabled = !store.redoStapel.length;
 
   if (grund === 'formular') return;    // Eingabefelder nicht neu aufbauen
+
+  /* Eine geladene oder zurückgenommene Planung bringt andere Relaisstellen mit.
+     Die liegende Fläche gehört zur vorherigen und wäre auf der neuen eine
+     Behauptung über einen Standort, den es dort nicht gibt. */
+  if (grund === 'geladen' || grund === 'import') rl.flaechenWeg();
 
   if (grund === 'geladen' || grund === 'undo' || grund === 'redo' || grund === 'import') {
     nameFeld.value = p.name;
@@ -1108,7 +1183,8 @@ store.on((p, grund) => {
       karte.setView([p.ansicht.lat, p.ansicht.lng], p.ansicht.zoom);
       const alle = p.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng]))
         .concat(p.zeichen.map(z => [z.lat, z.lng]))
-        .concat((p.flaechen || []).map(f => [f.lat, f.lng]));
+        .concat((p.flaechen || []).map(f => [f.lat, f.lng]))
+        .concat((p.relaisstellen || []).map(r => [r.lat, r.lng]));
       if (alle.length > 1) karte.fitBounds(L.latLngBounds(alle), { padding: [60, 60] });
     }
   }

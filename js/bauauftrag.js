@@ -8,6 +8,9 @@ import {
 } from './strecken.js';
 import { ZeichenLayer, gezeichneteZeichen } from './zeichen.js';
 import { FlaechenLayer, flaechenEcken } from './flaechen.js';
+import { RelaisLayer, gezeichneteRelaisstellen, befundLesen, relaisTitel } from './relais.js';
+import { ZONEN_ERKLAERUNG, ausbreitungText } from './ausbreitung.js';
+import { bosBandById } from './bosfunk.js';
 import { GitterLayer } from './gitter.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById, dopQuellenangabe, MAX_ZOOM } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
@@ -82,7 +85,7 @@ const STANDARD_AUFTRAG = {
   /* Das Gitter ist im Ausdruck von vornherein an: auf dem Bauplatz ist es
      neben der Punkttabelle der einzige Weg, eine beliebige Stelle der Karte
      als MGRS-Angabe durchzugeben. */
-  andereStrecken: true, zeichen: true, flaechen: true, gitter: true, zoomVersatz: 0,
+  andereStrecken: true, zeichen: true, flaechen: true, relais: true, gitter: true, zoomVersatz: 0,
   // nur im Sammeldruck von Belang
   deckblatt: true, verzeichnis: true, einzelblaetter: true
 };
@@ -93,12 +96,24 @@ const STANDARD_AUFTRAG = {
 const STANDARD_LAGE = {
   format: 'a1', ausrichtung: 'quer', farbe: 'farbe',
   freiBreite: 900, freiHoehe: 600,
-  strecken: true, zeichen: true, flaechen: true, beschriftung: true, gitter: true,
+  strecken: true, zeichen: true, flaechen: true, relais: true, beschriftung: true, gitter: true,
   punktnummern: false, punktnamen: false, zoomVersatz: 0,
+  /* Die gerechnete Ausbreitungsfläche ist auf dem Blatt von vornherein AUS.
+     Sie ist kein Planungsinhalt, sondern ein Befund über nacktem Gelände, und
+     gedruckt sieht sie aus wie eine Zusage – auf einem Blatt, das am Bauplatz
+     ohne den Satz daneben gelesen wird, ist das die gefährlichere Voreinstellung.
+     Wer sie will, schaltet sie ein und bekommt die Zeichenerklärung dazu. */
+  relaisflaeche: false,
   /* Jeder Streifen um die Karte lässt sich einzeln abräumen – alle fünf aus
      ergibt das nackte Kartenblatt, auf dem nur noch die Lage steht. */
   kopf: true, stammdaten: true, legende: true, kennzahlen: true, fuss: true
 };
+
+/* Zoomstufe für ein Lageblatt, dessen ganzer Inhalt an einem einzigen Punkt
+   liegt. 14 zeigt auf A3 rund vier Kilometer Blattbreite – genug, dass der Ort
+   in seiner Umgebung steht, und weit genug entfernt von der höchsten Stufe,
+   auf die ein `fitBounds` ohne Ausdehnung sonst springt. */
+const LAGE_EINZELPUNKT_ZOOM = 14;
 
 const PROFILE = {
   auftrag: { schluessel: 'fbp.druck.v1', standard: STANDARD_AUFTRAG },
@@ -189,9 +204,13 @@ export function oeffneLagekarte(aid) {
   };
   /* Anders als der Bauauftrag darf die Lagekarte aus Zeichen allein bestehen:
      zu Beginn einer Lage steht dort oft nur, wo die Führungsstelle und die
-     Abschnitte liegen – die Trassen kommen erst. */
-  if (!strecken.length && !lageZeichen(auftrag).length && !lageFlaechen(auftrag).length) {
-    hinweis('Für die Lagekarte wird mindestens eine Strecke, ein taktisches Zeichen oder eine Fläche gebraucht.', 'warnung');
+     Abschnitte liegen – die Trassen kommen erst. Für die Relaisstellen gilt
+     dasselbe, und für sie sogar deutlicher: das Funklagebild einer Übung kann
+     ganz aus Relaisstellen bestehen, und dann ist gerade dieses Blatt gemeint. */
+  if (!strecken.length && !lageZeichen(auftrag).length && !lageFlaechen(auftrag).length &&
+      !lageRelais(auftrag).length) {
+    hinweis('Für die Lagekarte wird mindestens eine Strecke, ein taktisches Zeichen, ' +
+      'eine Fläche oder eine Relaisstelle gebraucht.', 'warnung');
     return;
   }
   oeffneDruckansicht(auftrag);
@@ -213,6 +232,14 @@ function lageFlaechen(auftrag) {
   const aid = auftrag.abschnitt ? auftrag.abschnitt.id : undefined;
   return (p.flaechen || []).filter(f =>
     f.sichtbar !== false && !(aid && f.abschnitt && f.abschnitt !== aid));
+}
+
+/** Und die Relaisstellen – dieselbe Auswahl, die auch die Kartenebene zeichnet. */
+function lageRelais(auftrag) {
+  return gezeichneteRelaisstellen(store.projekt, {
+    nurAbschnitt: auftrag && auftrag.abschnitt ? auftrag.abschnitt.id : undefined,
+    abschnittSchaltet: false
+  });
 }
 
 /** Reihenfolge des Sammeldrucks: nach Einsatzabschnitten in der Reihenfolge
@@ -315,6 +342,12 @@ function oeffneDruckansicht(auftrag) {
           haken('Strecken', 'strecken', opt, neuAufbau),
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
           haken('Flächen', 'flaechen', opt, neuAufbau),
+          haken('Relaisstellen', 'relais', opt, neuAufbau),
+          /* Nur was gerechnet ist, kann gedruckt werden – die Fläche entsteht
+             nicht beim Drucken. Der Haken bleibt deshalb gesperrt, solange für
+             keine Relaisstelle ein Befund vorliegt. */
+          haken('Ausbreitungsflächen', 'relaisflaeche', opt, neuAufbau,
+            () => !opt.relais || !lageRelais(auftrag).some(befundLesen)),
           /* Nimmt Name und Trassenlänge zusammen von der Karte – beide stehen
              in einem Schild, und wer die Namen loswerden will, will kein
              Schild mit einer nackten Zahl darin behalten. */
@@ -339,6 +372,7 @@ function oeffneDruckansicht(auftrag) {
           haken('Punktbezeichnungen', 'punktnamen', opt, neuAufbau),
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
           haken('Flächen', 'flaechen', opt, neuAufbau),
+          haken('Relaisstellen', 'relais', opt, neuAufbau),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
           zoomFeld(opt, neuAufbau)
         ]),
@@ -764,6 +798,7 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
     (opt.stammdaten ? sammelStammHTML(p, auftrag) : '') +
     kartenfeldHTML({ quelle: opt.fuss ? '' : kartenquelle(p, opt) }) +
     (opt.legende ? lageLegendeHTML(auftrag, opt, sw, mass) : '') +
+    zonenLegendeHTML(auftrag, opt) +
     (opt.kennzahlen && auftrag.strecken.length
       ? sammelKennzahlenHTML(gesamtKennzahlen(auftrag.strecken)) : '') +
     (opt.fuss ? fussHTML(p, opt) : '');
@@ -829,6 +864,12 @@ function neueDruckkarte(buehne, mass, zusatz = {}) {
     scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, touchZoom: false,
     fadeAnimation: false, zoomAnimation: false, maxZoom: MAX_ZOOM, ...zusatz
   });
+  /* Die Ausbreitungsfläche liegt wie auf der Arbeitskarte unter allem, was
+     geplant wird: sie ist Kartengrundlage und darf die Trassen nicht verdecken,
+     deren Lage sie beurteilen hilft. */
+  const schatten = karte.createPane('fbp-schatten');
+  schatten.style.zIndex = 405;
+  schatten.style.pointerEvents = 'none';
   karte.createPane('fbp-flaechen').style.zIndex = 410;
   karte.createPane('fbp-strecken').style.zIndex = 420;
   karte.createPane('fbp-griffe').style.zIndex = 470;
@@ -868,6 +909,10 @@ function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
     zl.zeichne(zeichenOptionen(p, mass));
   }
   if (opt.flaechen) flaechenEbene(karte, mass, sw, strecke.abschnitt || undefined);
+  /* Auf dem Streckenblatt stehen die Relaisstellen ohne ihre Fläche: das Blatt
+     gilt einer Trasse, und eine Funkfläche darüber verdeckte genau den Verlauf,
+     den der Trupp darauf sucht. Die Fläche gehört auf die Lagekarte. */
+  if (opt.relais) relaisEbene(karte, mass, sw, strecke.abschnitt || undefined, false);
 
   const grenzen = L.latLngBounds(strecke.punkte.map(x => [x.lat, x.lng]));
   const rand = kartenrand(mass);
@@ -958,6 +1003,9 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
     zl.zeichne(zeichenOptionen(p, mass));
   }
   if (opt.flaechen) flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined);
+  if (opt.relais) {
+    relaisEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined, false);
+  }
 
   const alle = auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng]));
   const rand = kartenrand(mass, 55);
@@ -1005,6 +1053,11 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   }
   const flaechen = lageFlaechen(auftrag);
   if (opt.flaechen) flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined);
+  const relaisstellen = lageRelais(auftrag);
+  if (opt.relais) {
+    relaisEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined,
+      !!opt.relaisflaeche);
+  }
 
   /* Der Ausschnitt umfasst immer alles, was zur Auswahl gehört – auch das,
      was gerade abgeschaltet ist. Sonst sprängen Maßstab und Mitte bei jedem
@@ -1015,11 +1068,32 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   const ecken = [
     ...auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng])),
     ...zeichen.map(z => [z.lat, z.lng]),
-    ...flaechen.flatMap(flaechenEcken)
+    ...flaechen.flatMap(flaechenEcken),
+    /* Die Relaisstelle zählt mit ihrem Standort – und mit ihrer ganzen Fläche,
+       sobald diese gedruckt wird. Ohne sie stünde auf einem Blatt, dessen
+       Gegenstand die Ausbreitung ist, ein Ausschnitt von wenigen hundert
+       Metern und die Fläche läge zu neun Zehnteln daneben. Der Preis ist ein
+       kleinerer Maßstab, wenn zugleich Trassen auf dem Blatt sind; das ist die
+       richtige Seite, denn wer den Haken setzt, will die Fläche sehen. */
+    ...relaisstellen.map(r => [r.lat, r.lng]),
+    ...(opt.relaisflaeche ? relaisstellen.flatMap(r => {
+      const e = befundLesen(r);
+      return e ? e.ecken.map(k => [k.lat, k.lng]) : [];
+    }) : [])
   ];
   if (ecken.length) {
     const rand = kartenrand(mass, 55);
-    karte.fitBounds(L.latLngBounds(ecken), { padding: [rand, rand], animate: false });
+    const grenzen = L.latLngBounds(ecken);
+    /* Ein einzelnes Zeichen oder eine einzelne Relaisstelle ergibt einen
+       Ausschnitt ohne Ausdehnung. `fitBounds` geht darauf bis an die höchste
+       Zoomstufe – das Blatt trägt dann einen Maßstab von 1:150 und zeigt eine
+       Handbreit Wiese. Bei einem Punkt wird deshalb nicht eingepasst, sondern
+       eine Zoomstufe gesetzt, auf der ein Ortsbereich im Blatt steht. */
+    if (grenzen.getNorthEast().equals(grenzen.getSouthWest())) {
+      karte.setView(grenzen.getCenter(), LAGE_EINZELPUNKT_ZOOM, { animate: false });
+    } else {
+      karte.fitBounds(grenzen, { padding: [rand, rand], animate: false });
+    }
   } else {
     // Nichts zu umfassen: dann gilt der Ausschnitt der Arbeitskarte
     karte.setView([p.ansicht.lat, p.ansicht.lng], p.ansicht.zoom, { animate: false });
@@ -1042,6 +1116,28 @@ function flaechenEbene(karte, mass, sw, nurAbschnitt) {
     strichFaktor: strichFaktor(mass)
   });
   ebene.zeichne();
+  return ebene;
+}
+
+/* Die Relaisstellen auf einer Druckkarte, nach derselben Abschnittsregel wie
+   Zeichen und Flächen. `mitFlaeche` druckt zusätzlich die gerechneten Zonen –
+   aber nur die, die wirklich gerechnet sind: das Blatt entsteht ohne Netz und
+   soll keinen Kachelabruf auslösen, den es nicht abwarten kann.
+
+   Das Bild trägt seinen Alphakanal selbst und kommt ohne CSS-`filter` aus. Das
+   ist kein Zufall, sondern die Bedingung, unter der Firefox den Seitenbereich
+   überhaupt ausgibt (siehe `grauVariante` in map.js). */
+function relaisEbene(karte, mass, sw, nurAbschnitt, mitFlaeche) {
+  const ebene = new RelaisLayer(karte, {
+    interaktiv: false, sw, abschnittSchaltet: false, nurAbschnitt
+  });
+  if (mitFlaeche) {
+    for (const r of gezeichneteRelaisstellen(store.projekt, ebene)) {
+      if (befundLesen(r)) ebene.gezeigt.add(r.id);
+    }
+    ebene.flaechenZeichnen();
+  }
+  ebene.zeichne(zeichenOptionen(store.projekt, mass));
   return ebene;
 }
 
@@ -1360,6 +1456,38 @@ function lageLegendeHTML(auftrag, opt, sw, mass) {
     ? 'Bezeichnung und Trassenlänge stehen an jeder Strecke'
     : (sw ? '' : 'Die Farbe der Linie ordnet die Strecke zu');
   return sammelLegendeHTML(auftrag, sw, Math.round(12 * mass.blatt), punkte, hinweis);
+}
+
+/* Die Zeichenerklärung der drei Ausbreitungszonen. Sie steht NICHT unter dem
+   Haken „Zeichenerklärung“, sondern hängt allein daran, ob die Flächen auf dem
+   Blatt sind: eine eingefärbte Fläche ohne die Erklärung ihrer Farbe ist kein
+   Kartenblatt, sondern ein Rätsel – und der Satz „günstigste Annahme, kein
+   Empfangsnachweis“ ist der wichtigste Satz auf dem ganzen Blatt. Wer den
+   Randstreifen abräumt, räumt ihn deshalb nicht mit ab.
+
+   Die Farbfelder tragen dieselben Deckungen wie die Kartenfläche, im
+   Schwarz-Weiß-Druck dieselben Grauwerte – sonst stimmte die Erklärung mit
+   dem, was danebensteht, gerade auf dem Blatt nicht überein, auf dem es
+   darauf ankommt. */
+function zonenLegendeHTML(auftrag, opt) {
+  if (!opt.relais || !opt.relaisflaeche) return '';
+  const stellen = lageRelais(auftrag).filter(befundLesen);
+  if (!stellen.length) return '';
+  const felder = ZONEN_ERKLAERUNG.map(z =>
+    `<span class="lg-eintrag"><i class="lg-zone z${z.zone}"></i>` +
+    `<b>${escapeHtml(z.name)}</b> ${escapeHtml(z.text)}</span>`).join('');
+  /* Bei einer einzigen Relaisstelle steht ihr Befundsatz mit den Zahlen da;
+     bei mehreren wäre eine Aneinanderreihung von Prozentwerten nicht zu lesen –
+     dann werden die Stellen genannt und der Vorbehalt einmal. */
+  const befund = stellen.length === 1
+    ? ausbreitungText(befundLesen(stellen[0]), bosBandById(stellen[0].band))
+    : `Ausbreitungsflächen von ${stellen.length} Relaisstellen: ` +
+      stellen.map(r => `${relaisTitel(r)} (${bosBandById(r.band).kurz}, ` +
+        `${r.antennenhoehe} m)`).join(', ') + '. Bewuchs, Bebauung und Freileitungen ' +
+      'stehen in diesen Höhen nicht – die eingefärbten Flächen sind die günstigste ' +
+      'Annahme, kein Empfangsnachweis.';
+  return `<div class="bl-legende bl-zonen"><b class="lg-titel">Funkausbreitung</b>${felder}` +
+    `<span class="lg-vorbehalt">${escapeHtml(befund)}</span></div>`;
 }
 
 function sammelKennzahlenHTML(ges) {
