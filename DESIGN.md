@@ -9,14 +9,21 @@ colors:
   flaeche: "#ffffff"
   flaeche-2: "#f7f9fc"
   linie: "#d5dce6"
-  linie-stark: "#b6c1d1"
+  linie-stark: "#75849d"
   text: "#16202e"
   text-schwach: "#5c6879"
+  text-blau: "#24344f"
   gefahr: "#c62828"
+  gefahr-linie: "#bd7676"
+  gefahr-flaeche: "#fdf2f2"
+  gefahr-matt: "#a35252"
+  gefahr-auf-blau: "#ffd0d0"
   warnung: "#b26a00"
   warnung-flaeche: "#fdf3e0"
   warnung-linie: "#e6c893"
+  warnung-linie-stark: "#a67b30"
   warnung-tief: "#7a4b00"
+  warnung-auf-blau: "#ffe08a"
   gut: "#1b7a3d"
 typography:
   headline:
@@ -136,16 +143,30 @@ eine Meldung mit fester Bedeutung.
 - **Grund** (#eef1f6): die Werkbank hinter allem; kühles Blaugrau.
 - **Fläche** (#ffffff): Karten, Tafeln, Eingaben – das Papier des Bildschirms.
 - **Fläche 2** (#f7f9fc): abgesetzte Innenflächen (Kennzahlen, Punktzeilen, Menü-Hover).
-- **Linie** (#d5dce6) / **Linie stark** (#b6c1d1): Trennung fast immer über
-  1-px-Linien statt über Schatten; „stark“ trägt Bedienelement-Ränder.
+- **Linie** (#d5dce6): Trennung fast immer über 1-px-Linien statt über
+  Schatten. Sie umreißt Behälter – Karten, Kästen, Zeilen – und darf dafür
+  hell bleiben.
+- **Linie stark** (#75849d): trägt ausschließlich die Ränder von
+  Bedienelementen und hält dafür 3:1 gegen jede Fläche, auf der ein Knopf
+  steht (Fläche, Fläche 2, Grund, THW-Blass).
 - **Marineschwarz** (#16202e): Text – ein Schwarz mit dem Blau der Marke darin.
 - **Text schwach** (#5c6879): Zweitinformationen; besteht überall ≥ 4,5:1.
+- **Text blau** (#24344f): Text auf hellblauem Grund – Summenband und
+  Kartenschilder; gehört zur Fläche, auf der er steht.
 
 ### Meldefarben
-- **Gefahr** (#c62828): Löschen, Fehler; stets mit eigener Randfarbe abgesetzt.
+- **Gefahr** (#c62828) mit **Gefahrlinie** (#bd7676), **Gefahrfläche**
+  (#fdf2f2) und **Gefahr matt** (#a35252): Löschen und Fehler. Die Linie
+  umreißt Bedienelemente und hält dafür 3:1; „matt“ trägt Kleinstknöpfe.
 - **Warnung** (#b26a00) mit **Warnfläche** (#fdf3e0), **Warnlinie** (#e6c893),
-  **Warnton tief** (#7a4b00): der Mahnton (ungesichert, Grenzwert überschritten)
-  spricht in einer Sprache – Fläche, Linie und Tiefton wandern gemeinsam.
+  **Warnlinie stark** (#a67b30) und **Warnton tief** (#7a4b00): der Mahnton
+  (ungesichert, Grenzwert überschritten) spricht in einer Sprache – Fläche,
+  Linie und Tiefton wandern gemeinsam. „Stark“ ist die Linie, sobald sie ein
+  Bedienelement umreißt.
+- **Warnung auf Blau** (#ffe08a) und **Gefahr auf Blau** (#ffd0d0): dieselben
+  beiden Töne für die blaue Kopfzeile. Der Mahnton für helle Flächen ist dort
+  nicht zu sehen; diese Stufen sind nach oben aufgehellt (8,42:1 bzw. 7,85:1
+  auf THW-Blau).
 - **Gut** (#1b7a3d): Bestätigungen, sparsam.
 
 ### Named Rules
@@ -156,6 +177,17 @@ Gestaltung – eine neue Bedienfarbe gibt es nicht.
 **Die Farbe-plus-Fettung-Regel.** Eine Warnung trägt nie Farbe allein, sondern
 immer Farbe **und** Fettung – wegen Tageslicht auf blassen Schirmen und weil
 im Schwarz-Weiß-Druck jede Farbe verschwindet.
+
+**Die Rand-vor-Text-Regel.** In jedem Meldeton ist die Arbeit geteilt: die
+mittlere Stufe (`--warnung`, `--gefahr-linie`) trägt Ränder und Sinnbilder,
+die tiefe Stufe (`--warnung-tief`, `--gefahr`) trägt Text. Die mittlere Stufe
+erreicht als Schrift nur 3,7 bis 4,2:1 – die Fettung hebt die Schwelle nicht
+auf, dafür bräuchte es 18,66 px.
+
+**Die Drei-zu-eins-Regel.** Der Umriss eines Bedienelements steht mit
+mindestens 3:1 von seiner Umgebung ab – Knopf, Feld, Auswahlfeld, gleich auf
+welcher Fläche. Behälterlinien bleiben davon frei und dürfen hell sein; die
+Staffelung „Behälter hell, Bedienelement kräftig“ ist selbst eine Aussage.
 
 ## Typography
 
@@ -182,7 +214,11 @@ und Ziffernbehandlung, nicht aus einer Schmuckschrift.
 
 ### Named Rules
 **Die 11-Pixel-Regel.** Keine Schrift der Oberfläche unterschreitet 11 px –
-sie wird bei Tageslicht auf kleinen Schirmen gelesen.
+sie wird bei Tageslicht auf kleinen Schirmen gelesen. Sie gilt auch für die
+Karte (Punktnummern, MGRS-Randzahlen, Relaisschilder) und für Text in SVG:
+dort zählt die **dargestellte** Größe, nicht die im `viewBox` gesetzte. Ein
+Bild, dessen Maße vom gedruckten Blatt kommen, braucht am Bildschirm ein
+eigenes Maß – siehe den Geländeschnitt.
 
 **Die Ziffern-Regel.** Wo Zahlen stehen, stehen sie tabellarisch
 (`font-variant-numeric: tabular-nums`); Koordinaten und Zeitgruppen zusätzlich
@@ -248,8 +284,10 @@ Muffe/Verteiler, 45°-Raute = Querung, gefüllt = Anfang/Ende.
 - **Standard:** weiße Fläche, Marineschwarz, Rand wird beim Hover THW-Blau hell.
 - **Primär:** THW-Blau gefüllt, weiß; Hover eine Stufe heller. Je Ansicht
   führt genau ein Primärknopf.
-- **Gefahr:** rote Schrift auf weiß mit rötlichem Rand; füllt sich nie.
-- **Gesperrt:** 42 % Deckkraft – und der **Grund steht daneben** im Klartext,
+- **Gefahr:** rote Schrift auf weiß mit Gefahrlinie als Rand; füllt sich nie.
+- **Gesperrt:** `disabled` – nie `pointer-events: none`, das hält allein die
+  Maus auf und lässt Tastatur und Sprachausgabe einen benutzbaren Knopf
+  vorfinden. 42 % Deckkraft, und der **Grund steht daneben** im Klartext,
   nie nur im `title`.
 - **Coarse:** min. 44 px Höhe (kleine Knöpfe 40 px mit ::after-Zone).
 
@@ -272,8 +310,12 @@ stark; Einheiten (`m`, `%`) stehen im Feld rechts. Fokus überall als
 2-px-Ring in THW-Blau hell – auf der blauen Kopfzeile in Weiß.
 
 ### Reiter
-Drei gleichbreite Reiter mit 2-px-Unterkante; aktiv: THW-Blau auf weißer
-Fläche. Pfeiltasten wechseln, Tab betritt das Reiterwerk genau einmal.
+Gleich breite Reiter mit 2-px-Unterkante; aktiv: THW-Blau auf weißer Fläche.
+Pfeiltasten wechseln, Tab betritt das Reiterwerk genau einmal. Wo der Platz
+für alle nicht reicht (unter etwa 360 px), rollt die Reihe waagerecht statt
+die Seite aufzuschieben; der angeschnittene Reiter am Rand ist der Hinweis,
+und jeder Wechsel rollt seinen Reiter in den Blick. Zweizeilig geht nicht –
+die Reiterhöhe wird gemessen und trägt die Geometrie der Seitenleiste.
 
 ### Dialog & Menü
 Dialog mittig (max. 560/880 px), 10 px, starker Schatten, Fuß mit
@@ -311,12 +353,20 @@ Bildschirm-Zierde.
 - **Do** Zustände doppelt tragen: Farbe **und** Fettung, Symbol **und**
   Zeilenverhalten (ausgeblendete Einträge verblassen als Ganzes).
 - **Do** neue Farben und Maße ausschließlich über die `:root`-Variablen von
-  `css/app.css` einführen.
+  `css/app.css` einführen – auch die abgeleiteten Stufen eines Meldetons,
+  damit er sich als Ganzes verschieben lässt.
+- **Do** Kontraste nachmessen statt schätzen: 4,5:1 für Text, 3:1 für den
+  Umriss eines Bedienelements.
 
 ### Don't:
 - **Don't** eine zweite Bedienfarbe neben THW-Blau einführen; Streckenfarben
   bleiben Daten.
-- **Don't** Schrift unter 11 px setzen – auch nicht in Fremd-Overrides.
+- **Don't** Schrift unter 11 px setzen – auch nicht in Fremd-Overrides und
+  nicht auf der Karte.
+- **Don't** ein Bedienelement mit `pointer-events: none` oder bloßer
+  Deckkraft sperren; das ist eine Sperre nur fürs Auge und für die Maus.
+- **Don't** eine Farbe über `color-mix()` o. Ä. zur Laufzeit ableiten, wo sie
+  eine Warnung trägt: fällt die Funktion aus, verschwindet die Warnung.
 - **Don't** breite, versatzlose Schattenhöfe oder Glanz verwenden; die
   Druckkanten-Regel gilt überall.
 - **Don't** Funktionen hinter Werkzeugleisten-Gebirgen oder Menübäumen

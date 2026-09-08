@@ -924,6 +924,11 @@ function reiterWechseln(name) {
     /* Wandernder tabindex: Tab betritt das Reiterwerk genau einmal, die
        Pfeiltasten wechseln – erst damit hält role=tablist, was es ankündigt. */
     b.tabIndex = an ? 0 : -1;
+    /* Schmal rollt die Reiterreihe (siehe app.css). Wer über die Pfeiltasten
+       wechselt, wird vom Fokus mitgenommen – wer aber von anderswoher hierher
+       geschickt wird, etwa nach dem Bilderimport, säße sonst vor einem
+       Reiter, der außerhalb des Sichtbereichs liegt. */
+    if (an) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   });
   document.querySelectorAll('.reiter-inhalt').forEach(s =>
     s.classList.toggle('aktiv', s.dataset.inhalt === name));

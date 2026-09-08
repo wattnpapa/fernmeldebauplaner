@@ -33,8 +33,28 @@ import { formatLaenge } from './geo.js';
    verzerrt und die Strichstärken liefen auseinander. So rechnet der Erzeuger
    um, und Text und Striche bleiben, wie sie gesetzt sind. */
 const BREITE = 190;
-const HOEHE = 62;
-const RAND = { links: 13, rechts: 3, oben: 5, unten: 9 };
+
+/* Zwei Maße für dasselbe Bild. Auf dem Blatt ist eine viewBox-Einheit ein
+   Millimeter: 190 mm Satzbreite, und die 2,6er Schrift kommt dort als gute
+   7 pt heraus. In der 372 px schmalen Seitenleiste wird derselbe Kasten aber
+   nur 1,75-fach vergrößert statt 3,6-fach – dieselbe Schrift landete dort bei
+   4,5 px, weit unter dem, was bei Tageslicht zu lesen ist.
+   Die Schrift allein hochzusetzen ging nicht: die Höhenzahlen stehen in einem
+   13 Einheiten breiten linken Rand, die Entfernungen in 9 Einheiten unten –
+   größere Schrift wäre dort hinausgelaufen. Schrift und Ränder wachsen deshalb
+   gemeinsam, und der Kasten wird höher, damit die Zeichnung nicht gedrückt
+   wird. Die Zeichnung selbst ist in beiden Maßen dieselbe; die Überhöhung
+   ändert sich mit dem Seitenverhältnis und steht ohnehin als Zahl dabei. */
+const MASSE = {
+  blatt: {
+    hoehe: 62, rand: { links: 13, rechts: 3, oben: 5, unten: 9 },
+    achseAb: 1.5, grundlinie: 1, achseUnten: 4, marke: 1.2, einheit: 1.4, fuss: 1
+  },
+  schirm: {
+    hoehe: 88, rand: { links: 26, rechts: 7, oben: 11, unten: 20 },
+    achseAb: 3.2, grundlinie: 2.2, achseUnten: 8.5, marke: 2.8, einheit: 3.2, fuss: 2.5
+  }
+};
 
 /* Wie viele Stützpunkte in den Pfad gehen. 260 Punkte sind auf der Blattbreite
    keine 0,8 mm je Punkt – jenseits davon wächst nur die Dateigröße des PDF,
@@ -67,7 +87,7 @@ function achsenschritt(spanne) {
  * @param {number} mitteA  Antennenmitte über NN am Anfang
  * @param {number} mitteB  Antennenmitte über NN am Ende
  * @param {number} mhz     Mittenfrequenz des Bandes
- * @param {object} o       { sw, engste }
+ * @param {object} o       { sw, engste, schirm }
  * @returns {string} `''`, wenn zu wenige Höhen vorliegen
  */
 export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
@@ -76,6 +96,10 @@ export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
   const D = profil[profil.length - 1].d;
   if (!(D > 0)) return '';
   const sw = !!o.sw;
+  /* Ohne Angabe das Blattmaß: der Bauauftrag ist das Erzeugnis, und was für
+     ihn gilt, darf keine Voreinstellung des Bildschirms überschreiben. */
+  const m = o.schirm ? MASSE.schirm : MASSE.blatt;
+  const HOEHE = m.hoehe, RAND = m.rand;
 
   /* Die Kurven werden einmal gerechnet und danach nur noch abgebildet. Das
      Gelände trägt die Erdkrümmung; Sichtlinie und Fresnelgrenzen sind reine
@@ -143,7 +167,7 @@ export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
   for (let h = yMin; h <= yMax + 0.001; h += schritt) {
     gitter.push(`<line class="hp-gitter" x1="${RAND.links}" y1="${rnd(Y(h))}" ` +
       `x2="${rnd(BREITE - RAND.rechts)}" y2="${rnd(Y(h))}"/>` +
-      `<text class="hp-achse" x="${rnd(RAND.links - 1.5)}" y="${rnd(Y(h) + 1)}" ` +
+      `<text class="hp-achse" x="${rnd(RAND.links - m.achseAb)}" y="${rnd(Y(h) + m.grundlinie)}" ` +
       `text-anchor="end">${Math.round(h)}</text>`);
   }
 
@@ -151,8 +175,12 @@ export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
   const teile = D > 4000 ? 5 : 4;
   for (let i = 0; i <= teile; i++) {
     const d = D * i / teile;
-    marken.push(`<text class="hp-achse" x="${rnd(X(d))}" y="${rnd(HOEHE - RAND.unten + 4)}" ` +
-      `text-anchor="middle">${formatLaenge(d, true)}</text>`);
+    /* Die äußeren beiden Marken stehen bündig statt mittig: mittig gesetzt
+       ragte die letzte über den rechten Rand des Kastens hinaus, sobald die
+       Schrift auf Lesegröße wächst. */
+    const anker = i === 0 ? 'start' : (i === teile ? 'end' : 'middle');
+    marken.push(`<text class="hp-achse" x="${rnd(X(d))}" y="${rnd(HOEHE - RAND.unten + m.achseUnten)}" ` +
+      `text-anchor="${anker}">${formatLaenge(d, true)}</text>`);
   }
 
   /* Die Engstelle bekommt eine Senkrechte und ihre Entfernung als Zahl – das
@@ -164,7 +192,7 @@ export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
   const engstelle = e && isFinite(e.d) ? `
     <line class="hp-engstelle" x1="${rnd(X(e.d))}" y1="${RAND.oben}"
           x2="${rnd(X(e.d))}" y2="${rnd(HOEHE - RAND.unten)}"/>
-    <text class="hp-marke" x="${rnd(X(e.d))}" y="${rnd(RAND.oben - 1.2)}"
+    <text class="hp-marke" x="${rnd(X(e.d))}" y="${rnd(RAND.oben - m.marke)}"
           text-anchor="${e.d > D * 0.7 ? 'end' : (e.d < D * 0.3 ? 'start' : 'middle')}"
           >${formatLaenge(e.d, true)}</text>` : '';
 
@@ -173,7 +201,7 @@ export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
      stehen als Daten am Element und nicht in einer Variablen der Anzeige,
      damit das Bild sich selbst erklärt – auch im gedruckten Blatt, wo es
      niemand anfasst. */
-  return `<svg class="hp-svg${sw ? ' hp-sw' : ''}" viewBox="0 0 ${BREITE} ${HOEHE}"
+  return `<svg class="hp-svg${sw ? ' hp-sw' : ''}${o.schirm ? ' hp-schirm' : ''}" viewBox="0 0 ${BREITE} ${HOEHE}"
       preserveAspectRatio="xMidYMid meet" role="img"
       data-x0="${RAND.links}" data-x1="${rnd(BREITE - RAND.rechts)}" data-d="${rnd(D)}"
       aria-label="Geländeschnitt zwischen den Aufbauplätzen">
@@ -191,9 +219,9 @@ export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
     ${engstelle}
     <line class="hp-zeiger" x1="0" y1="${RAND.oben}" x2="0" y2="${rnd(HOEHE - RAND.unten)}" hidden/>
     ${marken.join('')}
-    <text class="hp-achse hp-einheit" x="${rnd(RAND.links - 1.5)}" y="${rnd(RAND.oben - 1.4)}"
+    <text class="hp-achse hp-einheit" x="${rnd(RAND.links - m.achseAb)}" y="${rnd(RAND.oben - m.einheit)}"
           text-anchor="end">m NN</text>
-    <text class="hp-fuss" x="${rnd(BREITE - RAND.rechts)}" y="${rnd(HOEHE - 1)}"
+    <text class="hp-fuss" x="${rnd(BREITE - RAND.rechts)}" y="${rnd(HOEHE - m.fuss)}"
           text-anchor="end">Höhen ${Math.round(ueberhoehung)}-fach überhöht · Erdkrümmung k = 4/3</text>
   </svg>`;
 }

@@ -1382,14 +1382,17 @@ function engstelleHTML(u) {
 function profilBildHTML(u) {
   if (!u.profil) return '';
   const svg = profilSVG(u.profil, u.mitten[0], u.mitten[1], u.mhz,
-    { engste: u.urteil === 'verdeckt' ? u.engste : null });
+    { engste: u.urteil === 'verdeckt' ? u.engste : null, schirm: true });
   if (!svg) return '';
   /* Die Ablesezeile steht zwischen Bild und Erklärung und trägt im Ruhezustand
      den Hinweis, dass es sie gibt – ein leeres Feld, das erst beim Überfahren
      etwas anzeigt, findet niemand. */
+  /* aria-live, weil die Zeile die Antwort des Bildes ist: wer mit den
+     Pfeiltasten durch das Profil geht, hört den Wert sonst nie. Sie ändert
+     sich nur auf eine Handlung hin, wird also kein Dauerton. */
   return `<figure class="hp-bild">${svg}
-    <p class="hp-ablesung" data-ablesung><span class="hp-ruhe">Zum Ablesen über das
-      Profil fahren.</span></p>
+    <p class="hp-ablesung" data-ablesung aria-live="polite"><span class="hp-ruhe">Zum Ablesen
+      über das Profil fahren oder mit den Pfeiltasten gehen.</span></p>
     ${profilLegendeHTML()}
     <figcaption>${escapeHtml(profilVorbehalt(u.profil, u.quellen))}</figcaption></figure>`;
 }
@@ -1416,14 +1419,12 @@ function ablesungBinden(wurzel, s) {
   const ruhe = zeile.innerHTML;
   if (!(D > 0) || !(x1 > x0)) return;
 
-  const zeigen = ev => {
-    const kasten = svg.getBoundingClientRect();
-    if (!kasten.width) return;
-    /* Von Bildschirmpixeln in die Maße des viewBox. Das Bild füllt seine
-       Breite und behält sein Seitenverhältnis, deshalb genügt ein Faktor. */
-    const xv = (ev.clientX - kasten.left) * (svg.viewBox.baseVal.width / kasten.width);
-    const d = Math.min(D, Math.max(0, (xv - x0) / (x1 - x0) * D));
-    const p = punkte.reduce((a, b) => Math.abs(b.d - d) < Math.abs(a.d - d) ? b : a);
+  /* Ein Stützpunkt, eine Anzeige – Zeiger und Tastatur laufen beide hier
+     hinein und unterscheiden sich nur darin, wie sie den Punkt finden. */
+  let stelle = -1;
+  const anStelle = i => {
+    stelle = Math.min(punkte.length - 1, Math.max(0, i));
+    const p = punkte[stelle];
     if (zeiger) {
       const x = x0 + p.d / D * (x1 - x0);
       zeiger.setAttribute('x1', x); zeiger.setAttribute('x2', x);
@@ -1431,13 +1432,42 @@ function ablesungBinden(wurzel, s) {
     }
     zeile.innerHTML = ablesungHTML(p);
   };
-  const ruhen = () => { if (zeiger) zeiger.hidden = true; zeile.innerHTML = ruhe; };
+
+  const zeigen = ev => {
+    const kasten = svg.getBoundingClientRect();
+    if (!kasten.width) return;
+    /* Von Bildschirmpixeln in die Maße des viewBox. Das Bild füllt seine
+       Breite und behält sein Seitenverhältnis, deshalb genügt ein Faktor. */
+    const xv = (ev.clientX - kasten.left) * (svg.viewBox.baseVal.width / kasten.width);
+    const d = Math.min(D, Math.max(0, (xv - x0) / (x1 - x0) * D));
+    let nah = 0;
+    punkte.forEach((p, i) => { if (Math.abs(p.d - d) < Math.abs(punkte[nah].d - d)) nah = i; });
+    anStelle(nah);
+  };
+  const ruhen = () => { stelle = -1; if (zeiger) zeiger.hidden = true; zeile.innerHTML = ruhe; };
 
   /* Zeigerereignisse statt Mausereignisse: auf dem Tablett am Kartentisch wird
      mit dem Finger gezeigt, und `pointer` deckt beides ab. */
   svg.addEventListener('pointermove', zeigen);
   svg.addEventListener('pointerdown', zeigen);
   svg.addEventListener('pointerleave', ruhen);
+
+  /* Derselbe Weg ohne Zeiger. Am Kartentisch wird gezeigt, am Schreibtisch
+     aber auch mit der Tastatur gearbeitet – und wer keine Maus führen kann,
+     kam an die Höhen entlang der Strecke bisher gar nicht heran. Die
+     Pfeiltasten gehen von Stützpunkt zu Stützpunkt, Umschalt springt in
+     Zehnerschritten über die 260 Punkte eines langen Profils. */
+  svg.tabIndex = 0;
+  svg.addEventListener('keydown', e => {
+    const weite = e.shiftKey ? 10 : 1;
+    const schritt = { ArrowRight: weite, ArrowLeft: -weite };
+    if (e.key === 'Home') { e.preventDefault(); return anStelle(0); }
+    if (e.key === 'End') { e.preventDefault(); return anStelle(punkte.length - 1); }
+    if (!(e.key in schritt)) return;
+    e.preventDefault();
+    anStelle(stelle < 0 ? (schritt[e.key] > 0 ? 0 : punkte.length - 1) : stelle + schritt[e.key]);
+  });
+  svg.addEventListener('blur', ruhen);
 }
 
 /* Was an einem Stützpunkt abzulesen ist. Die Herkunft steht dabei, und wo
@@ -3432,19 +3462,27 @@ export function projektDialog() {
   if (!liste.length) box.appendChild(el('p', 'klein', 'Noch keine gespeicherten Planungen.'));
 
   for (const pr of liste) {
-    const zeile = el('div', 'pl-zeile' + (pr.id === store.projekt.id ? ' aktiv' : ''));
+    /* Die schon offene Planung lässt sich nicht noch einmal öffnen. Ihr Knopf
+       wird dafür wirklich gesperrt und nicht nur blass gestellt: mit
+       `pointer-events: none` hielt es allein die Maus auf – über die Tastatur
+       ließ er sich weiter auslösen und warf dabei Undo- und Redo-Stapel weg,
+       und die Sprachausgabe meldete einen gewöhnlichen, benutzbaren Knopf.
+       Der Grund steht im Klartext in der Zeile daneben und nicht im title:
+       den zeigt kein Touchgerät. */
+    const offen = pr.id === store.projekt.id;
+    const zeile = el('div', 'pl-zeile' + (offen ? ' aktiv' : ''));
     zeile.innerHTML =
       `<div class="pl-text"><b>${escapeHtml(pr.name)}</b>
         <span class="klein">${pr.strecken} Strecken · ${pr.zeichen} Zeichen${
           pr.bilder ? ` · ${pr.bilder} Bilder` : ''} ·
-        ${new Date(pr.geaendert).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</span></div>`;
+        ${new Date(pr.geaendert).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}${
+          offen ? ' · <b class="pl-offen">gerade geöffnet</b>' : ''}</span></div>`;
     const t = el('div', 'pl-tasten');
-    t.append(
-      knopf('Öffnen', () => {
-        if (store.laden(pr.id)) { schliesseDialog(); hinweis(`„${pr.name}“ geöffnet`); }
-      }, pr.id === store.projekt.id ? 'aus' : 'primaer'),
-      knopf('Löschen', () => loeschDialog(pr), 'gefahr')
-    );
+    const oeffnen = knopf('Öffnen', () => {
+      if (store.laden(pr.id)) { schliesseDialog(); hinweis(`„${pr.name}“ geöffnet`); }
+    }, offen ? '' : 'primaer');
+    oeffnen.disabled = offen;
+    t.append(oeffnen, knopf('Löschen', () => loeschDialog(pr), 'gefahr'));
     zeile.appendChild(t);
     box.appendChild(zeile);
   }

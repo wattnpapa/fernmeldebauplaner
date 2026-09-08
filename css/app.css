@@ -8,17 +8,56 @@
   --flaeche: #ffffff;
   --flaeche-2: #f7f9fc;
   --linie: #d5dce6;
-  --linie-stark: #b6c1d1;
+  /* Trägt die Ränder der Bedienelemente – Knöpfe, Eingaben, Auswahlfelder.
+     Vorher #b6c1d1: das waren gegen Weiß 1,82:1, gefordert sind 3:1 für den
+     Umriss eines Bedienelements. Ein weißer Knopf auf weißer Tafel war bei
+     Tageslicht am Rand nicht zu fassen. Dieser Wert hält 3:1 auf allen vier
+     Flächen, auf denen ein Knopf steht (Fläche, Fläche 2, Grund, THW-Blass),
+     und bleibt in derselben blaugrauen Familie. --linie trennt weiter nur
+     Textblöcke und darf deshalb hell bleiben. */
+  --linie-stark: #75849d;
   --text: #16202e;
   --text-schwach: #5c6879;
   --gefahr: #c62828;
   --warnung: #b26a00;
   /* Der Mahnton (ungesichert, Grenzwert überschritten) spricht in einer
      Sprache: Fläche, Linie und Tiefton gehören zusammen und wandern gemeinsam –
-     vorher standen dieselben drei Werte an drei Stellen wörtlich im Text. */
+     vorher standen dieselben drei Werte an drei Stellen wörtlich im Text.
+     Innerhalb des Tons ist die Arbeit geteilt: --warnung trägt Ränder und
+     Sinnbilder, --warnung-tief trägt Text. --warnung erreicht auf der
+     Warnfläche nur 3,85:1 und auf Weiß 4,24:1 – zu wenig für einen Satz, der
+     bei Tageslicht auf einem blassen Schirm gelesen wird. Die Fettung hebt die
+     Schwelle nicht auf, dafür bräuchte es 18,66 px. */
   --warnung-flaeche: #fdf3e0;
   --warnung-linie: #e6c893;
   --warnung-tief: #7a4b00;
+  /* Der Gefahrton spricht wie der Mahnton in einer Sprache: Rand, Fläche und
+     ein mattes Rot für Kleinstknöpfe. --gefahr-linie trägt Ränder von
+     Bedienelementen und hält dafür 3:1 auf Weiß wie auf der Gefahrfläche;
+     vorher stand hier #e6c2c2 mit 1,63:1 – ein Löschknopf, dessen Umriss bei
+     Tageslicht nicht zu finden war. */
+  --gefahr-linie: #bd7676;
+  --gefahr-flaeche: #fdf2f2;
+  --gefahr-matt: #a35252;
+  /* Rand eines Knopfes auf der Warnfläche. --warnung-linie (#e6c893) umreißt
+     Kästen und reicht dafür; ein Bedienelement braucht 3:1, und das leistet
+     sie mit 1,46 nicht. */
+  --warnung-linie-stark: #a67b30;
+  /* Auf der blauen Kopfzeile trägt der Mahnton nicht: --warnung ist für helle
+     Flächen gemischt und verschwindet auf THW-Blau. Diese vier Werte sind
+     derselbe Ton, nach oben aufgehellt (Schrift 8,42:1 auf Blau), samt den
+     beiden Deckstufen für Rand und Fläche. Sie standen vorher als bloße Zahlen
+     im Text – wer den Mahnton verschob, verschob nur die Hälfte davon.
+     Ausgeschrieben statt über color-mix gerechnet: fällt eine Farbfunktion auf
+     einem älteren Browser aus, verschwindet sonst ausgerechnet die Warnung. */
+  --warnung-auf-blau: #ffe08a;
+  --warnung-auf-blau-linie: rgba(255,224,138,.45);
+  --warnung-auf-blau-flaeche: rgba(255,224,138,.12);
+  --gefahr-auf-blau: #ffd0d0;
+  /* Text auf hellblauem Grund – Summenband und Kartenschilder. Ein Marineton
+     mit mehr Blau darin als --text, damit er zur Fläche gehört, auf der er
+     steht (10,75:1 auf THW-Blass). */
+  --text-blau: #24344f;
   --gut: #1b7a3d;
   --radius: 8px;
   --radius-klein: 5px;
@@ -91,19 +130,22 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 .kopf :is(button, input):focus-visible { outline-color: #fff; }
 .knopf.primaer { background: var(--thw); border-color: var(--thw); color: #fff; }
 .knopf.primaer:hover:not(:disabled) { background: var(--thw-hell); border-color: var(--thw-hell); }
-.knopf.gefahr { color: var(--gefahr); border-color: #e6c2c2; }
-.knopf.gefahr:hover:not(:disabled) { background: #fdf2f2; border-color: var(--gefahr); }
+.knopf.gefahr { color: var(--gefahr); border-color: var(--gefahr-linie); }
+.knopf.gefahr:hover:not(:disabled) { background: var(--gefahr-flaeche); border-color: var(--gefahr); }
 .knopf.breit { width: 100%; }
 .knopf.klein { padding: 4px 9px; font-size: 12px; }
-.knopf.aus { opacity: .5; pointer-events: none; }
+/* Kein `.knopf.aus` mehr: eine Klasse, die mit `pointer-events: none` nur den
+   Zeiger aufhält, sieht gesperrt aus, ist es aber weder für die Tastatur noch
+   für die Sprachausgabe. Wer sperren will, setzt `disabled` – dann greift die
+   Regel darüber samt Deckkraft – und schreibt den Grund daneben. */
 
 .mini-knopf {
-  border: 1px solid var(--linie); background: var(--flaeche); border-radius: 4px;
+  border: 1px solid var(--linie-stark); background: var(--flaeche); border-radius: 4px;
   width: 24px; height: 24px; line-height: 1; cursor: pointer; color: var(--text-schwach);
   display: inline-flex; align-items: center; justify-content: center;
 }
 .mini-knopf:hover { border-color: var(--thw-hell); color: var(--thw); }
-.mini-knopf.gefahr:hover { border-color: var(--gefahr); color: var(--gefahr); background: #fdf2f2; }
+.mini-knopf.gefahr:hover { border-color: var(--gefahr); color: var(--gefahr); background: var(--gefahr-flaeche); }
 
 /* ---------------------------------------------------------------- Kopfleiste */
 
@@ -143,10 +185,11 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 .speicherstatus.offen { opacity: 1; }
 /* Nie als Datei gesichert, obwohl schon ernsthaft geplant wurde */
 .speicherstatus.mahnung {
-  opacity: 1; color: #ffe08a; border-color: rgba(255,224,138,.45); background: rgba(255,224,138,.12);
+  opacity: 1; color: var(--warnung-auf-blau);
+  border-color: var(--warnung-auf-blau-linie); background: var(--warnung-auf-blau-flaeche);
 }
 .speicherstatus.mahnung:hover { background: rgba(255,224,138,.24); border-color: rgba(255,224,138,.7); }
-.speicherstatus.fehler { color: #ffd0d0; font-weight: 700; opacity: 1; }
+.speicherstatus.fehler { color: var(--gefahr-auf-blau); font-weight: 700; opacity: 1; }
 
 /* ---------------------------------------------------------------- Speicherband */
 
@@ -209,11 +252,31 @@ body.seite-zu .seite { display: none; }
 }
 .ansicht-wechsel .aw.aktiv { color: var(--thw); border-top-color: var(--thw); background: var(--thw-blass); }
 
-.reiter { display: flex; border-bottom: 1px solid var(--linie); background: var(--flaeche-2); }
+/* Gleich breite Reiter, solange sechs Wörter nebeneinander tragen – darunter
+   rollt die Reihe, statt die ganze Seite aufzuschieben. Unter etwa 360 px
+   konnte `flex: 1` die Reiter nur bis zu ihrer Wortbreite stauchen; die Reihe
+   wurde 354 px breit, das Fenster 320, und „Planung" lag außerhalb – die
+   Seite scrollte waagerecht und der letzte Reiter war mit dem Finger nicht zu
+   treffen. Zweizeilig ginge nicht: die Reiterhöhe wird gemessen und trägt die
+   Geometrie der Seitenleiste. Als Raster statt als Flexbox, weil
+   `minmax(max-content, 1fr)` beides zugleich leistet – gleiche Breite, wo der
+   Platz reicht, natürliche Breite, wo gerollt wird. */
+.reiter {
+  display: grid; grid-auto-flow: column;
+  grid-auto-columns: minmax(max-content, 1fr);
+  overflow-x: auto; overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  border-bottom: 1px solid var(--linie); background: var(--flaeche-2);
+}
+/* Ohne Rollbalken: er liegt sonst auf der 2-px-Unterkante des aktiven Reiters
+   und macht sie unlesbar. Den Hinweis, dass es weitergeht, gibt der
+   angeschnittene Reiter am Rand – dieselbe Sprache wie überall sonst. */
+.reiter { scrollbar-width: none; }
+.reiter::-webkit-scrollbar { display: none; }
 .reiter button {
-  flex: 1; padding: 10px 6px; border: 0; background: none; cursor: pointer;
+  padding: 10px 6px; border: 0; background: none; cursor: pointer;
   font-size: 12.5px; font-weight: 600; color: var(--text-schwach);
-  border-bottom: 2px solid transparent;
+  border-bottom: 2px solid transparent; scroll-snap-align: end;
 }
 .reiter button:hover { color: var(--text); }
 .reiter button.aktiv { color: var(--thw); border-bottom-color: var(--thw); background: var(--flaeche); }
@@ -232,7 +295,7 @@ body.seite-zu .seite { display: none; }
 
 .summe {
   display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 10px; margin-bottom: 10px;
-  background: var(--thw-blass); border-radius: var(--radius); font-size: 12.5px; color: #24344f;
+  background: var(--thw-blass); border-radius: var(--radius); font-size: 12.5px; color: var(--text-blau);
 }
 /* Ohne Strecken steht in der Summenzeile nichts – dann ist auch kein blaues
    Band zu zeigen, das über der leeren Liste nichts zusammenfasst. */
@@ -488,7 +551,7 @@ body.seite-zu .seite { display: none; }
 .se-zeilen b { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
 .se-fuss { margin: 6px 0 0; font-size: 11px; line-height: 1.35; color: var(--text-schwach); }
 .se-leer { margin: 0; font-size: 12.5px; color: var(--text-schwach); }
-.se-leer.warnung { color: var(--warnung); font-weight: 600; }
+.se-leer.warnung { color: var(--warnung-tief); font-weight: 600; }
 
 /* -- Richtfunk: im Vordruck stehen die beiden Aufbauplätze nebeneinander, in
    der 372 px schmalen Seitenleiste stehen sie untereinander. Zwei Spalten mit
@@ -547,10 +610,25 @@ body.seite-zu .seite { display: none; }
    im Druck tragen die Muster allein. */
 .hp-bild { margin: 8px 0 0; }
 .hp-svg { display: block; width: 100%; height: auto; overflow: visible; }
+/* Das Profil nimmt die Tastatur an (Pfeiltasten gehen die Stützpunkte ab) und
+   muss den Ring deshalb auch zeigen – die allgemeine Fokusregel greift nur
+   für Knöpfe und Felder. Etwas Abstand, damit der Ring nicht auf der
+   Geländekante liegt. */
+.hp-svg:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 2px; }
 .hp-gitter { stroke: var(--linie); stroke-width: .12; }
 .hp-achse { font-size: 2.6px; fill: var(--text-schwach); }
 .hp-einheit { font-size: 2.4px; }
 .hp-fuss { font-size: 2.4px; fill: var(--text-schwach); }
+/* Blattmaß und Bildschirmmaß: die Werte oben gelten dem Bauauftrag, wo eine
+   viewBox-Einheit ein Millimeter ist. In der Seitenleiste wird derselbe Kasten
+   nur 1,75-fach vergrößert – dort kämen 2,6 Einheiten als 4,5 px heraus. Die
+   Größen unten sind so gewählt, dass sie bei 372 px Leistenbreite über der
+   11-Pixel-Grenze landen; die Ränder dafür kommen aus MASSE.schirm
+   (hoehenprofil.js) und wachsen mit. */
+.hp-svg.hp-schirm .hp-achse { font-size: 6.3px; }
+.hp-svg.hp-schirm .hp-einheit { font-size: 6.3px; }
+.hp-svg.hp-schirm .hp-fuss { font-size: 6.3px; }
+.hp-svg.hp-schirm .hp-marke { font-size: 6.6px; }
 /* Deckende Füllungen mit `fill-opacity` – kein Verlauf. Ein
    `repeating-linear-gradient` kam aus dem Druck schon einmal invertiert
    heraus, ein Alphawert dagegen kommt sauber durch. */
@@ -662,7 +740,7 @@ body.seite-zu .seite { display: none; }
 .reichweite.warnung {
   border-color: var(--warnung-linie); border-left-color: var(--warnung); background: var(--warnung-flaeche);
 }
-.reichweite.warnung .rw-satz { color: var(--warnung); font-weight: 600; }
+.reichweite.warnung .rw-satz { color: var(--warnung-tief); font-weight: 600; }
 .reichweite.warnung .rw-fuss { color: var(--warnung-tief); }
 
 .farbreihe { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -719,12 +797,16 @@ body.seite-zu .seite { display: none; }
    angehefteten Ausgabezeile landen – der Browser scrollt dann weit genug. */
 .eintrag-koerper :is(input, select, textarea, button),
 .eintrag-koerper .punktzeile { scroll-margin-bottom: 80px; }
+/* Bedienelemente tragen den kräftigen Rand, Behälter den hellen: erst damit
+   ist der Umriss eines Feldes 3:1 von seiner Fläche zu unterscheiden. Vorher
+   standen diese fünf bewusst auf --linie, um die Punktzeile ruhig zu halten –
+   ruhig waren sie damit, greifbar bei Tageslicht nicht. */
 .mini-select {
-  padding: 3px 4px; border: 1px solid var(--linie); border-radius: 4px;
+  padding: 3px 4px; border: 1px solid var(--linie-stark); border-radius: 4px;
   background: var(--flaeche); font-size: 11.5px; max-width: 100%;
 }
 .mini-input {
-  width: 100%; padding: 3px 5px; border: 1px solid var(--linie); border-radius: 4px;
+  width: 100%; padding: 3px 5px; border: 1px solid var(--linie-stark); border-radius: 4px;
   background: var(--flaeche); font-size: 12px;
 }
 
@@ -803,7 +885,10 @@ body.seite-zu .seite { display: none; }
 
 .pz-fuss { display: flex; align-items: center; gap: 6px; }
 /* Löschknopf am rechten Rand, deutlich abgesetzt vom Zeigen-Knopf darüber */
-.pz-weg { flex-shrink: 0; margin-left: 6px; width: 26px; height: 26px; color: #a35252; border-color: #e6c2c2; }
+.pz-weg {
+  flex-shrink: 0; margin-left: 6px; width: 26px; height: 26px;
+  color: var(--gefahr-matt); border-color: var(--gefahr-linie);
+}
 .pz-mass {
   font-size: 11.5px; color: var(--text-schwach); font-variant-numeric: tabular-nums;
   white-space: nowrap; flex-shrink: 0;
@@ -820,19 +905,19 @@ body.seite-zu .seite { display: none; }
    ruhig: sie wird gelesen, wenn der Punkt gesetzt wird, danach nicht mehr. */
 .pz-querung { gap: 2px; }
 .pz-querung .feld-titel { font-size: 11px; }
-.pz-querung select { padding: 5px 7px; border-color: var(--linie); font-size: 12.5px; }
+.pz-querung select { padding: 5px 7px; border-color: var(--linie-stark); font-size: 12.5px; }
 /* Bauweise und Zeitansatz nebeneinander: die Zeit ist die Folge der Bauweise
    und soll sich beim Umstellen im selben Blick ändern. Das Zeitfeld bleibt
    schmal – drei Ziffern und die Einheit, mehr steht dort nie. */
 .pz-bauweise { display: flex; gap: 6px; align-items: flex-end; }
 .pz-bauweise .feld { flex: 1 1 auto; min-width: 0; }
 .pz-bauweise .pz-zeit { flex: 0 0 88px; }
-.pz-bauweise .pz-zeit input { padding: 5px 7px; padding-right: 34px; border-color: var(--linie); font-size: 12.5px; }
+.pz-bauweise .pz-zeit input { padding: 5px 7px; padding-right: 34px; border-color: var(--linie-stark); font-size: 12.5px; }
 /* Die Kabelreserve steht allein in ihrer Zeile und bleibt trotzdem schmal: es
    sind Meter in Zehnerschritten, ein Feld über die volle Breite ließe eine
    dreistellige Zahl erwarten und die Punktzeile auseinanderfallen. */
 .pz-reserve { max-width: 150px; }
-.pz-reserve input { padding: 5px 7px; border-color: var(--linie); font-size: 12.5px; }
+.pz-reserve input { padding: 5px 7px; border-color: var(--linie-stark); font-size: 12.5px; }
 
 .pz-auflage { margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--text-schwach); }
 .pz-auflage b { color: var(--text); font-weight: 600; }
@@ -842,7 +927,7 @@ body.seite-zu .seite { display: none; }
 .pz-fundstelle { font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Wo die Vorschrift das Überbauen verbietet, steht das Verbot statt des Maßes:
    Warnfarbe und Fettung zusammen, nie die Farbe allein. */
-.pz-auflage.warnung b { color: var(--warnung); }
+.pz-auflage.warnung b { color: var(--warnung-tief); }
 
 .koord-knopf {
   flex: 1 1 auto;
@@ -987,10 +1072,10 @@ body.modus-aktiv .kartenoptionen { display: none; }
 .gitter-label { background: none; border: 0; }
 .gitter-zahl {
   display: inline-block; white-space: nowrap;
-  color: #24418c; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: #24418c; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
   text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 3px #fff;
 }
-.gitter-zahl small { font-size: 9px; font-weight: 700; }
+.gitter-zahl small { font-size: 11px; font-weight: 700; }
 .gitter-zahl.oben   { transform: translate(-50%, 0); }
 .gitter-zahl.unten  { transform: translate(-50%, -100%); }
 .gitter-zahl.links  { transform: translate(0, -50%); }
@@ -998,7 +1083,7 @@ body.modus-aktiv .kartenoptionen { display: none; }
 .gitter-zahl.dunkel { color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000, 0 0 3px #000; }
 
 .gitter-info {
-  background: rgba(255,255,255,.92); color: #24344f;
+  background: rgba(255,255,255,.92); color: var(--text-blau);
   border: 1px solid rgba(36,65,140,.45); border-radius: 3px; padding: 1px 6px;
   font-size: 11px; font-weight: 600; white-space: nowrap;
 }
@@ -1066,12 +1151,26 @@ body.modus-aktiv .kartenoptionen { display: none; }
   border-radius: calc(2px * var(--mass, 1));
 }
 
-.fbp-punkt-icon { background: none; border: 0; }
+/* Die Marke zentriert sich auf dem Koordinatenpunkt statt an der Ecke ihres
+   Kastens zu kleben: gewählt wächst der Kreis, und ohne diese Zentrierung
+   wanderte er dabei um einen Bildpunkt – in einem Werkzeug, das Koordinaten
+   ausgibt, ist das der falsche Bildpunkt. */
+.fbp-punkt-icon {
+  background: none; border: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+/* Nicht stauchen: der gewählte Kreis ist breiter als sein Kasten und würde
+   sonst nur in der Höhe wachsen – aus dem Kreis würde ein Ei. */
+.fbp-punkt-icon > .fbp-punkt { flex: 0 0 auto; }
+/* Die Nummer in der Marke ist die Ziffer, nach der am Bauort gesucht wird –
+   sie stand mit 9,5 px unter der 11-Pixel-Grenze und war bei Tageslicht auf
+   einem kleinen Schirm nicht mehr abzulesen. Der Kreis wächst mit, sonst
+   säße die Zahl an ihrem Rand: 24 px tragen zwei Ziffern samt Artkürzel. */
 .fbp-punkt {
   display: flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; border-radius: 50%;
+  width: 24px; height: 24px; border-radius: 50%;
   background: #fff; border: 2.5px solid var(--farbe, #333); color: #101820;
-  font-size: 9.5px; font-weight: 700; line-height: 1;
+  font-size: 11px; font-weight: 700; line-height: 1;
   box-shadow: 0 1px 3px rgba(0,0,0,.35); cursor: pointer;
 }
 .fbp-punkt.art-start, .fbp-punkt.art-ziel { background: var(--farbe); color: #fff; border-color: #fff; }
@@ -1082,12 +1181,12 @@ body.modus-aktiv .kartenoptionen { display: none; }
 /* Die Bauweise sitzt als Buchstabe in der Raute. Die Raute ist gedreht, der
    Buchstabe wird zurückgedreht – sonst stünde das Ü schief. Kein Buchstabe
    für „wie die Trasse“: die leere Raute bleibt die gewöhnliche Querung. */
-.fbp-punkt.art-querung::after { display: block; transform: rotate(-45deg); font-size: 9px; }
+.fbp-punkt.art-querung::after { display: block; transform: rotate(-45deg); font-size: 11px; }
 .fbp-punkt.bw-ueberbau::after { content: 'Ü'; }
 .fbp-punkt.bw-unterbau::after { content: 'U'; }
 .fbp-punkt.bw-bauwerk::after { content: 'B'; }
 .fbp-punkt.art-mast { border-radius: 50% 50% 3px 3px; }
-.fbp-punkt.gewaehlt { width: 22px; height: 22px; box-shadow: 0 0 0 3px rgba(0,51,153,.25), 0 1px 4px rgba(0,0,0,.4); }
+.fbp-punkt.gewaehlt { width: 26px; height: 26px; box-shadow: 0 0 0 3px rgba(0,51,153,.25), 0 1px 4px rgba(0,0,0,.4); }
 .fbp-punkt.aktiv { box-shadow: 0 0 0 4px rgba(0,51,153,.45), 0 1px 4px rgba(0,0,0,.4); }
 
 /* Taktisches Zeichen einer Punktart (Verteiler). Kein Schlagschatten wie bei
@@ -1283,6 +1382,9 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .pl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pl-text b { font-size: 13.5px; }
 .pl-text .klein { margin: 0; }
+/* Der Grund, warum „Öffnen“ hier gesperrt ist – in der Bedienfarbe, weil er
+   dasselbe sagt wie der blaue Grund der Zeile, nur in Worten. */
+.pl-offen { color: var(--thw); }
 .pl-tasten { display: flex; gap: 6px; flex-shrink: 0; }
 
 .palette { display: flex; flex-direction: column; gap: 10px; }
@@ -1353,7 +1455,7 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   .sb-stand { display: inline; flex-shrink: 0; }
   .speicherband.mahnung { background: var(--warnung-flaeche); border-bottom-color: var(--warnung-linie); color: var(--warnung-tief); }
   .speicherband.mahnung .sb-stand { font-weight: 650; }
-  .speicherband.mahnung .knopf { border-color: #c99a3d; color: var(--warnung-tief); }
+  .speicherband.mahnung .knopf { border-color: var(--warnung-linie-stark); color: var(--warnung-tief); }
 
   /* Seitenleiste und Karte teilen sich den Platz nicht, sie lösen einander ab.
      Ohne .seite-zu liegt die Seitenleiste über der Karte, mit .seite-zu die Karte frei. */
@@ -1619,7 +1721,7 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   box-shadow: 0 1px 2px rgba(0,0,0,.25);
 }
 .rl-label b { display: block; font-weight: 650; }
-.rl-label i { display: block; font-style: normal; font-size: 10px; color: var(--text-schwach); }
+.rl-label i { display: block; font-style: normal; font-size: 11px; color: var(--text-schwach); }
 
 /* Zeichenerklärung der drei Zonen. Sie steht neben der Fläche und nicht in
    einer Hilfe: die Fläche ist ohne sie nicht zu lesen, und wer am Kartentisch

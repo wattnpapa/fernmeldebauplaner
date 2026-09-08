@@ -790,7 +790,10 @@ export class StreckenLayer {
       icon: L.divIcon({
         className: 'fbp-punkt-icon',
         html: `<span class="${klassen}" style="--farbe:${st.farbe}">${beschriftung}</span>`,
-        iconSize: [22, 22], iconAnchor: [11, 11]
+        /* Deckt sich mit der Kreisgröße in app.css: der Kasten trägt die
+           Marke mittig, damit der gewählte, größere Kreis auf demselben
+           Koordinatenpunkt wächst und nicht daneben. */
+        iconSize: [24, 24], iconAnchor: [12, 12]
       })
     }).addTo(this.gruppe);
 
