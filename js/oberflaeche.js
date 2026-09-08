@@ -86,8 +86,13 @@ export const KONFIG = {
      stillschweigend in eine Warteschlange legt, ewig offen – und mit ihr die
      Meldung „wird geholt …“ in der Anzeige. Nach dieser Frist wird der zweite
      Dienst versucht; bleibt auch der stumm, urteilt die Strecke über das
-     Gelände und sagt, dass die Hindernisdaten fehlten. */
-  frist: 25000
+     Gelände und sagt, dass die Hindernisdaten fehlten.
+
+     40 s sind gemessen, nicht geschätzt: die öffentlichen Overpass-Instanzen
+     sind zeitweise so belastet, dass dieselbe Abfrage über einem Dorf einmal
+     in 1,5 s und einmal in 23 s beantwortet wird. Bei 25 s Frist wären die
+     langsamen Antworten abgeschnitten worden, obwohl sie noch gekommen wären. */
+  frist: 40000
 };
 
 /** Quellenangabe für Blattfuß und Lizenzhinweis. */
@@ -168,18 +173,40 @@ function korridor(punkte) {
   ].map(([lat, lng]) => `${lat.toFixed(5)} ${lng.toFixed(5)}`).join(' ');
 }
 
-function overpassAbfrage(punkte) {
-  const im = `(poly:"${korridor(punkte)}")`;
+/* Zwei Abfragen statt einer, und das ist Erfahrung, keine Ordnungsliebe: die
+   Gebäudeabfrage ist der teure Teil (über einer Stadt Tausende Umrisse), die
+   Flächenabfrage der billige. In einer Vereinigung erledigt der Dienst beide
+   nacheinander – läuft er bei den Gebäuden in die Zeitüberschreitung, fällt die
+   ganze Antwort aus, auch der Wald, der längst dagestanden hätte. Getrennt
+   gefragt trägt jede Quelle ihr eigenes Risiko, und der häufigste Fall der
+   Richtfunkplanung – eine Baumreihe im Weg – überlebt eine überlastete
+   Gebäudeabfrage.
 
+   Beim Gebäudeteil steht das Rechteck VOR dem Streifen, und auch das ist keine
+   Geschmacksfrage: nur das Rechteck greift auf den Ortsindex des Dienstes zu.
+   Ein `poly:` allein muss suchen und lief selbst über einem Dorf in die
+   Zeitüberschreitung – mit vorgeschaltetem Rechteck antwortet dieselbe Abfrage.
+   Der Streifen bleibt trotzdem stehen: er hält die Antwort klein, wenn die
+   Strecke durch eine Stadt führt. */
+function rechteck(punkte) {
   const lat = punkte.map(p => p.lat), lng = punkte.map(p => p.lng);
   const z = KONFIG.bbZuschlag;
-  const bb = '(' + [
+  return '(' + [
     Math.min(...lat) - z, Math.min(...lng) - z,
     Math.max(...lat) + z, Math.max(...lng) + z
   ].map(w => w.toFixed(5)).join(',') + ')';
+}
 
+function gebaeudeAbfrage(punkte) {
+  const bb = rechteck(punkte), im = `(poly:"${korridor(punkte)}")`;
   return `[out:json][timeout:60];(` +
-    `way${im}["building"];relation${im}["building"];` +
+    `way${bb}["building"]${im};relation${bb}["building"]${im};` +
+    `);out geom;`;
+}
+
+function bewuchsAbfrage(punkte) {
+  const bb = rechteck(punkte);
+  return `[out:json][timeout:60];(` +
     `way${bb}["landuse"="forest"];relation${bb}["landuse"="forest"];` +
     `way${bb}["natural"="wood"];relation${bb}["natural"="wood"];` +
     `);out geom;`;
@@ -270,19 +297,30 @@ async function overpass(daten) {
   throw letzter || new Error('Overpass nicht erreichbar');
 }
 
+/* Die beiden Abfragen laufen nebeneinander und jede meldet für sich, ob sie
+   angekommen ist. Was fehlt, muss weitergereicht werden: ein Profil ohne
+   Gebäude sieht aus wie freies Feld, gleichgültig warum. */
 async function osmHindernisse(punkte) {
-  const antwort = await overpass(overpassAbfrage(punkte));
-  const objekte = (antwort.elements || []).map(o => ({ ...hindernisAus(o), ringe: ringe(o) }));
+  const holen = async abfrage => (await overpass(abfrage)).elements || [];
+  const [gebaeude, bewuchs] = await Promise.all([
+    holen(gebaeudeAbfrage(punkte)).then(e => ({ da: true, e }), () => ({ da: false, e: [] })),
+    holen(bewuchsAbfrage(punkte)).then(e => ({ da: true, e }), () => ({ da: false, e: [] }))
+  ]);
 
-  return punkte.map(p => {
-    let treffer = null, ohneHoehe = false;
+  const objekte = [...gebaeude.e, ...bewuchs.e]
+    .map(o => ({ ...hindernisAus(o), ringe: ringe(o) }));
+
+  const treffer = punkte.map(p => {
+    let hoechster = null, ohneHoehe = false;
     for (const o of objekte) {
       if (!o.ringe.some(ring => ring.length > 2 && imRing(ring, p.lat, p.lng))) continue;
       if (o.hoehe === null) { ohneHoehe = true; continue; }
-      if (!treffer || o.hoehe > treffer.hoehe) treffer = o;
+      if (!hoechster || o.hoehe > hoechster.hoehe) hoechster = o;
     }
-    return { treffer, ohneHoehe };
+    return { treffer: hoechster, ohneHoehe };
   });
+
+  return { treffer, gebaeudeDa: gebaeude.da, bewuchsDa: bewuchs.da };
 }
 
 // ---------------------------------------------------------------- Zusammenführung
@@ -297,11 +335,11 @@ const GELAENDE = { art: 'gelaende', quelle: 'dgm', geschaetzt: false };
  * Geländeprofil um die Oberfläche ergänzen.
  *
  * @param {Array<{d:number,lat:number,lng:number,h:?number}>} profil aus hoehe.js
- * @returns {Promise<{punkte:Array, dsm:boolean, osm:boolean}>} dieselben
+ * @returns {Promise<{punkte:Array, dsm:boolean, gebaeude:boolean, bewuchs:boolean}>} dieselben
  *   Stützpunkte, je Punkt zusätzlich: `oberflaeche` (Meter über NN, nie unter
  *   `h`), `hindernis` (Meter über Grund), `art`, `quelle`, `geschaetzt` und
- *   `gebaeudeOhneHoehe`. `dsm` und `osm` sagen, ob die jeweilige Quelle
- *   geantwortet hat.
+ *   `gebaeudeOhneHoehe`. `dsm`, `gebaeude` und `bewuchs` sagen, ob die jeweilige
+ *   Quelle geantwortet hat.
  *
  * Dass eine Quelle ausfällt, MUSS nach außen sichtbar bleiben: fällt Overpass
  * mit einer Drosselung aus – das kommt vor –, sieht ein Profil ohne Gebäude
@@ -312,17 +350,17 @@ export async function oberflaechenprofil(profil) {
   const alle = profil || [];
   const punkte = alle.filter(p => isFinite(p.h));
   const leer = p => ({ ...p, ...GELAENDE, oberflaeche: null, hindernis: null, gebaeudeOhneHoehe: false });
-  if (!punkte.length) return { punkte: alle.map(leer), dsm: false, osm: false };
+  if (!punkte.length) return { punkte: alle.map(leer), dsm: false, gebaeude: false, bewuchs: false };
 
   /* Beide Quellen laufen nebeneinander und jede für sich: fällt der eine Dienst
      aus, soll der andere trotzdem etwas beitragen. */
-  let dsmDa = true, osmDa = true;
+  let dsmDa = true;
   const [dsm, osm] = await Promise.all([
     dsmProfil(punkte).catch(() => { dsmDa = false; return punkte.map(() => null); }),
-    osmHindernisse(punkte).catch(() => {
-      osmDa = false;
-      return punkte.map(() => ({ treffer: null, ohneHoehe: false }));
-    })
+    osmHindernisse(punkte).catch(() => ({
+      treffer: punkte.map(() => ({ treffer: null, ohneHoehe: false })),
+      gebaeudeDa: false, bewuchsDa: false
+    }))
   ]);
   if (dsm.every(w => w === null)) dsmDa = false;
 
@@ -334,7 +372,7 @@ export async function oberflaechenprofil(profil) {
     if (dsm[i] !== null && dsm[i] > p.h) {
       kandidaten.push({ hoehe: dsm[i], art: 'dsm', quelle: 'copernicus-dsm', geschaetzt: false });
     }
-    const t = osm[i].treffer;
+    const t = osm.treffer[i].treffer;
     if (t) kandidaten.push({ hoehe: p.h + t.hoehe, art: t.art, quelle: t.quelle, geschaetzt: t.geschaetzt });
 
     const hoechster = kandidaten.reduce((a, b) => b.hoehe > a.hoehe ? b : a);
@@ -342,13 +380,13 @@ export async function oberflaechenprofil(profil) {
       oberflaeche: hoechster.hoehe,
       hindernis: Math.max(0, hoechster.hoehe - p.h),
       art: hoechster.art, quelle: hoechster.quelle, geschaetzt: hoechster.geschaetzt,
-      gebaeudeOhneHoehe: osm[i].ohneHoehe
+      gebaeudeOhneHoehe: osm.treffer[i].ohneHoehe
     });
   });
 
   return {
     punkte: alle.map(p => nach.has(p.d) ? { ...p, ...nach.get(p.d) } : leer(p)),
-    dsm: dsmDa, osm: osmDa
+    dsm: dsmDa, gebaeude: osm.gebaeudeDa, bewuchs: osm.bewuchsDa
   };
 }
 

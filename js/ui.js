@@ -922,15 +922,16 @@ function gelaendeNachfuehren(s, aktualisieren) {
        Vorbehalt sagt es dann auch. */
     .then(async punkte => {
       const ergaenzt = await oberflaechenprofil(punkte)
-        .catch(() => ({ punkte, dsm: false, osm: false }));
+        .catch(() => ({ punkte, dsm: false, gebaeude: false, bewuchs: false }));
       const mitte = f.hoehen.map(h => h.grund + (h.antenne || 0));
       /* Mitgespeichert werden auch die Stützpunkte: das Blatt zeichnet später
          dasselbe Profil und darf dafür nicht nachladen. */
       urteilMerken(s, {
-        ...gelaendeurteil(ergaenzt.punkte, mitte[0], mitte[1], f.mhz,
-          { dsm: ergaenzt.dsm, osm: ergaenzt.osm }),
+        ...gelaendeurteil(ergaenzt.punkte, mitte[0], mitte[1], f.mhz, ergaenzt),
         profil: ergaenzt.punkte, mitten: mitte, mhz: f.mhz,
-        quellen: { dsm: ergaenzt.dsm, osm: ergaenzt.osm }
+        quellen: {
+          dsm: ergaenzt.dsm, gebaeude: ergaenzt.gebaeude, bewuchs: ergaenzt.bewuchs
+        }
       });
     })
     .catch(() => {})

@@ -225,6 +225,10 @@ export function profilLegendeHTML(sw = false) {
    ein Gebäude nur mit eingetragener Höhe und eine Freileitung überhaupt nicht.
    Welche Quelle gefehlt hat, gehört mit in denselben Satz – ein Profil ohne
    Gebäude sieht aus wie freies Feld, gleichgültig warum. */
+const verbinden = liste => liste.length < 2
+  ? (liste[0] || '')
+  : `${liste.slice(0, -1).join(', ')} und ${liste[liste.length - 1]}`;
+
 export function profilVorbehalt(punkte, quellen = {}) {
   const liste = punkte || [];
   const ohne = liste.filter(p => !isFinite(p.h)).length;
@@ -235,11 +239,12 @@ export function profilVorbehalt(punkte, quellen = {}) {
     : '';
   const fehlend = [
     quellen.dsm === false ? 'das Oberflächenmodell' : null,
-    quellen.osm === false ? 'die Gebäude- und Bewuchsdaten' : null
+    quellen.gebaeude === false ? 'die Gebäudedaten' : null,
+    quellen.bewuchs === false ? 'die Wald- und Gehölzflächen' : null
   ].filter(Boolean);
   const ausfall = fehlend.length
     ? ` Für diese Strecke ${fehlend.length === 1 ? 'stand' : 'standen'} ` +
-      `${fehlend.join(' und ')} nicht zur Verfügung – gezeichnet ist insoweit ` +
+      `${verbinden(fehlend)} nicht zur Verfügung – gezeichnet ist insoweit ` +
       'allein das Gelände.'
     : '';
   return 'Gelände aus dem Höhenmodell (rund 25 m Rasterweite), Oberfläche aus dem ' +

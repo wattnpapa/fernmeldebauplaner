@@ -159,7 +159,7 @@ const schwelleFuer = art => (art === 'gebaeude' || art === 'bewuchs')
  * @param {number} hoeheA  Antennenmitte am Anfang, Meter über NN
  * @param {number} hoeheB  Antennenmitte am Ende, Meter über NN
  * @param {number} mhz     Frequenz in MHz
- * @param {object} o       { dsm, osm } – hat die jeweilige Quelle geantwortet
+ * @param {object} o       { dsm, gebaeude, bewuchs } – hat die Quelle geantwortet
  * @returns {object|null}  null, solange Profil oder Höhen fehlen
  *
  * Geprüft wird gegen die OBERFLÄCHE, nicht gegen das Gelände: ein Dach und
@@ -238,7 +238,7 @@ export function gelaendeurteil(profil, hoeheA, hoeheB, mhz, o = {}) {
     ? { beide, nurA: isFinite(nurA) ? nurA : null, nurB: isFinite(nurB) ? nurB : null }
     : null;
 
-  const quellen = { dsm: !!o.dsm, osm: !!o.osm };
+  const quellen = { dsm: !!o.dsm, gebaeude: !!o.gebaeude, bewuchs: !!o.bewuchs };
   return {
     urteil, engste, anhebung, quellen,
     sichtlinieFrei,
@@ -277,7 +277,8 @@ function urteilssatz(urteil, engste, anhebung, stuetzpunkte, luecken, quellen, o
      „verdeckt“: ein zweites Hindernis kann hinter der Lücke stehen. */
   const fehlend = [
     quellen.dsm ? null : 'das Oberflächenmodell',
-    quellen.osm ? null : 'die Gebäude- und Bewuchsdaten'
+    quellen.gebaeude ? null : 'die Gebäudedaten',
+    quellen.bewuchs ? null : 'die Wald- und Gehölzflächen'
   ].filter(Boolean);
   const ausfall = fehlend.length
     ? ` Für diese Strecke ${fehlend.length === 1 ? 'stand' : 'standen'} ${verbinden(fehlend)} ` +
