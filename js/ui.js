@@ -64,14 +64,28 @@ export function initUI(kontext) { ctx = kontext; }
 
 // ---------------------------------------------------------------- Hinweise
 
-let hinweisTimer = null;
+let hinweisTimer = null, hinweisWeg = null;
 export function hinweis(text, art = 'info') {
   const box = document.getElementById('hinweisbox');
   box.textContent = text;
   box.className = 'hinweisbox ' + art;
   box.hidden = false;
+  /* Die Einblendung soll auch bei der zweiten Meldung in Folge anlaufen. Die
+     Zeile darüber hat `an` bereits abgeräumt; dass sie gleich wieder gesetzt
+     wird, sähe der Browser sonst als gar keine Änderung und startete nichts.
+     Das Auslesen einer Maßangabe erzwingt die Neuberechnung dazwischen. */
+  void box.offsetWidth;
+  box.classList.add('an');
   clearTimeout(hinweisTimer);
-  hinweisTimer = setTimeout(() => { box.hidden = true; }, art === 'fehler' ? 6000 : 3200);
+  clearTimeout(hinweisWeg);
+  /* Die Pille geht schneller, als sie kam, und `hidden` fällt erst danach:
+     vorher wäre sie schlagartig weg, und das liest sich wie ein Aussetzer der
+     Anzeige statt wie eine Meldung, die ihre Zeit hatte. Die Frist ist die
+     Dauer aus --zeit-tipp mit etwas Luft. */
+  hinweisTimer = setTimeout(() => {
+    box.classList.add('geht');
+    hinweisWeg = setTimeout(() => { box.hidden = true; box.classList.remove('an', 'geht'); }, 160);
+  }, art === 'fehler' ? 6000 : 3200);
 }
 
 // ---------------------------------------------------------------- Dialog

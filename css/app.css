@@ -80,6 +80,15 @@
   /* Höhe der Leaflet-Bedienelemente oben rechts (Zoom) – gemessen, damit die
      Kartenoptionen darunter passen, auch wenn dort ein Element dazukommt */
   --karten-kopf: 74px;
+  /* Bewegung. Vier Dauern statt frei gewählter Zahlen, weil sie eine Aussage
+     tragen: je weiter der Weg und je größer die Folge, desto länger. Der
+     Verlauf bremst ab und schwingt nicht nach – die Oberfläche ist Gerät, kein
+     Spielzeug. Wer Bewegung abgestellt hat, bekommt sie nicht (siehe unten). */
+  --zeit-tipp: 120ms;      /* Rückmeldung auf einen Griff */
+  --zeit-zustand: 200ms;   /* ein Zustand wechselt an Ort und Stelle */
+  --zeit-lage: 280ms;      /* eine Schicht oder Ansicht löst die andere ab */
+  --zeit-blatt: 380ms;     /* das Auflegen des Blattes – der eine Augenblick */
+  --weg: cubic-bezier(.16, 1, .3, 1);
   --schrift: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -181,6 +190,13 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
   background: none; border: 1px solid transparent; border-radius: var(--radius-klein);
   color: inherit; padding: 3px 7px; cursor: pointer; font-weight: 550;
 }
+/* Derselbe Mahnton oben in der Kopfzeile – aber am kurzen Maß: dieses Feld ist
+   zugleich ein Knopf, und eine Hover-Rückmeldung, die eine Drittelsekunde
+   braucht, fühlt sich an wie eine hängende Anwendung. */
+.speicherstatus {
+  transition: background-color var(--zeit-tipp) ease, border-color var(--zeit-tipp) ease,
+              color var(--zeit-tipp) ease, opacity var(--zeit-tipp) ease;
+}
 .speicherstatus:hover { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.28); opacity: 1; }
 .speicherstatus.offen { opacity: 1; }
 /* Nie als Datei gesichert, obwohl schon ernsthaft geplant wurde */
@@ -198,6 +214,14 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
   padding: 5px 12px; min-width: 0;
   background: var(--thw-blass); border-bottom: 1px solid var(--linie);
   font-size: 12.5px; color: var(--text-schwach);
+}
+/* Der Mahnton schlägt nicht an, er zieht auf: die Planung ist nicht plötzlich
+   ungesichert, sie ist es geworden. Ein Farbwechsel ohne Weg sähe an dieser
+   Stelle aus wie ein Blinken, und Blinken ist hier kein Mittel – der Ton bleibt
+   ja stehen, bis gesichert wurde. */
+.speicherband {
+  transition: background-color var(--zeit-lage) ease, border-color var(--zeit-lage) ease,
+              color var(--zeit-lage) ease;
 }
 .speicherband .sb-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* margin explizit: .klein bringt für Fließtext eine Außenkante mit */
@@ -991,6 +1015,13 @@ body.seite-zu .seite { display: none; }
 }
 .zeichen-hinweis .zh-text { color: var(--text); }
 .zeichen-hinweis[hidden] { display: none; }
+/* Der Wechsel in den Zeichenmodus vertauscht unten am Kartenrand zwei Leisten:
+   die Werkzeuge weichen, die Modusleiste tritt an. Sie kommt deshalb von der
+   Kante herein, an der sie sitzt – sonst erschiene an derselben Stelle
+   unvermittelt ein anderer Kasten. Sie läuft genau einmal je Modus an: das
+   Setzen jedes weiteren Punktes schreibt `hidden` nur auf denselben Wert. */
+@keyframes leiste-an { from { opacity: 0; transform: translateY(10px); } }
+.zeichen-hinweis:not([hidden]) { animation: leiste-an var(--zeit-zustand) var(--weg); }
 
 /* Der Abstand nach oben ist die gemessene Höhe der Leaflet-Zoomsteuerung plus
    derselbe Rand von 12 px, den alle Kartenaufsätze zur Kante halten. Vorher
@@ -1352,6 +1383,18 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
 .dialog-huelle[hidden] { display: none; }
+
+/* Erst legt sich der Schleier über die Anwendung, dann setzt sich der Dialog
+   darauf: zwei Schichten, in der Reihenfolge, in der sie entstehen. Ohne das
+   springt bei jedem „Löschen?“ das ganze Bild. Beim Dialogwechsel (ein Dialog
+   öffnet den nächsten) bleibt die Hülle stehen und nichts läuft erneut an –
+   es kommt ja auch keine neue Schicht dazu, nur ein anderer Inhalt. */
+@keyframes huelle-an { from { opacity: 0; } }
+@keyframes dialog-an { from { opacity: 0; transform: translateY(-10px) scale(.985); } }
+.dialog-huelle:not([hidden]) { animation: huelle-an var(--zeit-tipp) ease-out; }
+.dialog-huelle:not([hidden]) > .dialog {
+  animation: dialog-an var(--zeit-zustand) var(--weg);
+}
 .dialog {
   background: var(--flaeche); border-radius: 10px; box-shadow: var(--schatten-stark);
   width: min(560px, 100%); max-height: 88vh; display: flex; flex-direction: column;
@@ -1431,6 +1474,20 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .hinweisbox.warnung { background: var(--warnung); }
 .hinweisbox[hidden] { display: none; }
 
+/* Die Meldung kommt von unten herauf, dorthin, wo sie steht – und sie geht
+   schneller, als sie kam. Was gelesen ist, soll nicht noch eine halbe Sekunde
+   im Bild stehen; ein schlagartiges Verschwinden dagegen liest sich wie ein
+   Fehler der Anzeige. Die Klasse `an` setzt ui.js bei jeder Meldung neu, damit
+   auch die zweite Meldung in Folge sichtbar ankommt. */
+@keyframes hinweis-an {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+}
+.hinweisbox.an { animation: hinweis-an var(--zeit-zustand) var(--weg); }
+.hinweisbox.geht {
+  opacity: 0; transform: translateX(-50%) translateY(4px);
+  transition: opacity var(--zeit-tipp) ease-in, transform var(--zeit-tipp) ease-in;
+}
+
 /* ---------------------------------------------------------------- Schmale Fenster */
 
 @media (max-width: 900px) {
@@ -1465,12 +1522,33 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
     position: absolute; inset: 0 0 var(--wechsel-hoehe) 0;
     z-index: 1100;   /* über den Leaflet-Bedienelementen (die liegen auf 1000) */
     border-right: 0; border-top: 1px solid var(--linie);
+    transition: transform var(--zeit-lage) var(--weg), visibility 0s;
   }
-  body.seite-zu .seite { display: none; }
+  /* Liste und Karte lösen einander ab – und zwar sichtbar zur Seite, nicht
+     durch Verschwinden. Die Liste liegt über der Karte; sie schiebt sich nach
+     links heraus und gibt sie frei. Damit ist am Ende der Bewegung zu sehen,
+     wohin der eine Umschalter unten führt und wo das Verlassene liegt – auf dem
+     Telefon ist das der einzige Anhalt, der bleibt.
+
+     Kein `display: none` mehr: eine Leiste, die es nicht gibt, kann nicht
+     weichen. Die Abschottung übernimmt `visibility` – für Tastatur und
+     Sprachausgabe dasselbe, nur erst, wenn die Leiste draußen ist. */
+  body.seite-zu .seite {
+    display: flex;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform var(--zeit-lage) var(--weg),
+                visibility 0s linear var(--zeit-lage);
+  }
   /* Karte samt Bedienelementen ruhigstellen, solange die Seitenleiste davor liegt.
-     Der Rückweg liegt bewusst außerhalb – siehe .ansicht-wechsel. */
-  body:not(.seite-zu) .kartenbereich { visibility: hidden; }
-  body.seite-zu .kartenbereich { visibility: visible; }
+     Der Rückweg liegt bewusst außerhalb – siehe .ansicht-wechsel. Sichtbar wird
+     sie sofort, wenn die Liste zu weichen beginnt (sonst schöbe sich die Liste
+     vor einer leeren Fläche zur Seite), stillgestellt erst, wenn die Liste
+     wieder ganz darüberliegt. */
+  body:not(.seite-zu) .kartenbereich {
+    visibility: hidden; transition: visibility 0s linear var(--zeit-lage);
+  }
+  body.seite-zu .kartenbereich { visibility: visible; transition: visibility 0s; }
 
   .ansicht-wechsel {
     display: grid; grid-template-columns: 1fr 1fr;
@@ -1573,6 +1651,11 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
+    /* Auch die Verzögerungen: der Ansichtswechsel schaltet die Karte um die
+       Dauer der Bewegung versetzt still. Fällt die Bewegung weg, muss der
+       Versatz mitfallen – sonst bliebe die Karte danach noch eine Drittel-
+       sekunde für die Tastatur erreichbar, obwohl die Liste schon davorliegt. */
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
   .knopf:active:not(:disabled) { transform: none; }

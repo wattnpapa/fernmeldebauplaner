@@ -148,6 +148,33 @@ body.druckansicht { overflow: hidden; }
   display: flex; flex-direction: column; gap: 22px;
 }
 
+/* -------------------------------------------------------- Das Blatt auflegen
+
+   Der Bauauftrag ist das Erzeugnis dieses Programms; sein Erscheinen ist der
+   eine Augenblick der Oberfläche, der eine Bewegung verdient – und der einzige.
+   Er ist nachgebildet, was am Schreibtisch geschieht: die Fläche wird frei
+   (die Bühne dunkelt ab), dann wird das Blatt darauf gelegt – von oben, eine
+   Spur größer, weil es näher am Auge war, und abbremsend bis zur Ruhe. Kein
+   Nachfedern: Papier federt nicht.
+
+   Das Blatt trägt zugleich den Vorschaumaßstab in seinem transform. Er steht
+   deshalb auch im Anfangsbild – ohne ihn spränge ein auf 30 % eingepasstes
+   A0-Blatt beim ersten Bild auf volle Größe. Der Schlusswert bleibt offen und
+   ist damit der Wert der Regel oben: der Maßstab, den passeVorschauAn() setzt.
+
+   Beide Bilder laufen einmal beim Öffnen. Ein Wechsel der Druckeinstellungen
+   baut nur den Inhalt des Blattes neu auf, nicht die Bühne – dort wäre eine
+   Bewegung Wartezeit ohne Aussage. */
+@keyframes buehne-auf { from { opacity: 0; } }
+@keyframes blatt-auflegen {
+  from {
+    opacity: 0;
+    transform: scale(var(--vorschau-skala)) translateY(-20px) scale(1.015);
+  }
+}
+#druck { animation: buehne-auf var(--zeit-tipp) ease-out; }
+.druck-doku { animation: blatt-auflegen var(--zeit-blatt) var(--weg) 60ms backwards; }
+
 /* Sind alle Blattarten abgewählt, bleibt kein Papier übrig – dann steht statt
    einer leeren Bühne der Grund dafür. */
 .druck-leer {
@@ -854,6 +881,12 @@ body.druckansicht { overflow: hidden; }
 /* ---------------------------------------------------------------- Ausdruck */
 
 @media print {
+  /* Auf dem Blatt hat die Oberfläche nichts zu suchen – auch nicht ihre
+     Bewegung. Ein Ausdruck, den der Browser mitten in einer Einblendung
+     aufnimmt, hätte ein halb durchsichtiges Blatt; das ist im Bauauftrag kein
+     Schönheitsfehler, sondern eine unlesbare Zeile. Deshalb hier pauschal
+     abgeräumt, nicht Regel für Regel. */
+  *, *::before, *::after { animation: none !important; transition: none !important; }
   html, body { height: auto; background: #fff; overflow: visible; }
   .hinweisbox, .dialog-huelle, .druck-steuerung, .druck-lupe { display: none !important; }
   /* Die Bedienoberfläche nur wegblenden, wenn tatsächlich ein Blatt vorliegt.
