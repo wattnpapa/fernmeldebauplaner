@@ -50,7 +50,8 @@
       (beides Abschnitt 4), und ein <b>Zählimpuls</b> beim Aufruf der Anwendung
       (Abschnitt 6), dem du unten widersprechen kannst. Eine Ausnahme von der Regel
       „nur der Ausschnitt, nie die Position“ gibt es: für die Hindernisprüfung einer
-      Funkstrecke geht deren <b>Verlauf</b> an die Overpass-API – siehe Abschnitt 4.
+      Funkstrecke und für die Querungsprüfung einer Kabeltrasse geht deren
+      <b>Verlauf</b> an die Overpass-API – siehe Abschnitt 4.
     </p>
   </div>
 
@@ -192,7 +193,8 @@
             elevationeuwest.blob.core.windows.net</td>
         </tr>
         <tr>
-          <td>Gebäude sowie Wald- und Gehölzflächen entlang einer Funkstrecke</td>
+          <td>Gebäude sowie Wald- und Gehölzflächen entlang einer Funkstrecke;
+            Freileitungen, Bahnstrecken und Umspannwerke entlang einer Kabeltrasse</td>
           <td>Overpass-API auf Daten von OpenStreetMap (Deutschland)</td>
           <td class="mono">overpass-api.de, ersatzweise overpass.kumi.systems</td>
         </tr>
@@ -216,16 +218,26 @@
     von einem Breiten- mal einem Längengrad angefragt, also rund 110 km mal 70 km.
   </p>
   <p>
-    <b>Eine Ausnahme, und sie ist wichtig:</b> Sobald eine Funkstrecke zwei
-    Aufbauplätze hat, fragt die Anwendung bei der Overpass-API die Gebäude sowie die
-    Wald- und Gehölzflächen ab, die im Weg stehen könnten. Dafür geht der <b>Verlauf
-    der geplanten Strecke</b> an diesen Dienst – ein schmaler Streifen um die
-    Verbindung der beiden Aufbauplätze und das umschließende Rechteck. Das ist nicht
-    nur ein Ausschnitt, das sind die beiden Orte. Wer das nicht möchte, setzt für die
-    Strecke keinen zweiten Aufbauplatz oder prüft die Hindernisse bei der Erkundung
-    statt hier. Ein Konto, eine Kennung oder einen Namen überträgt die Anfrage nicht,
-    und was zurückkommt, wird nicht gespeichert – es geht in das Urteil zu dieser
-    einen Strecke ein und ist mit dem nächsten Neuladen fort. Es gelten die
+    <b>Eine Ausnahme, und sie ist wichtig:</b> An zwei Stellen geht der <b>Verlauf
+    einer geplanten Strecke</b> an die Overpass-API. Das ist nicht nur ein
+    Kartenausschnitt, das sind die geplanten Orte.
+  </p>
+  <ul>
+    <li>Sobald eine <b>Funkstrecke</b> zwei Aufbauplätze hat, fragt die Anwendung von
+      sich aus die Gebäude sowie die Wald- und Gehölzflächen ab, die im Weg stehen
+      könnten – ein schmaler Streifen um die Verbindung der beiden Aufbauplätze und
+      das umschließende Rechteck. Wer das nicht möchte, setzt für die Strecke keinen
+      zweiten Aufbauplatz oder prüft die Hindernisse bei der Erkundung statt hier.</li>
+    <li>Bei einer <b>Kabeltrasse</b> fragt die Anwendung auf ausdrücklichen Knopfdruck
+      („Trasse auf Querungen prüfen“) die Freileitungen, Bahnstrecken und
+      Umspannwerke ab, die die Trasse kreuzen oder daneben liegen. Übertragen werden
+      dabei die umschließenden Rechtecke des Trassenverlaufs. Ohne diesen Knopfdruck
+      geschieht nichts.</li>
+  </ul>
+  <p>
+    Ein Konto, eine Kennung oder einen Namen überträgt die Anfrage in beiden Fällen
+    nicht, und was zurückkommt, wird nicht gespeichert – es geht in den Befund zu
+    dieser einen Strecke ein und ist mit dem nächsten Neuladen fort. Es gelten die
     Nutzungs- und Datenschutzbedingungen des jeweiligen Anbieters.
   </p>
 

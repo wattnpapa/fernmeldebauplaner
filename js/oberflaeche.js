@@ -32,6 +32,7 @@
 
 import { werteAn, oeffnen } from './cog.js';
 import { rasterGitter } from './hoehe.js';
+import { overpass, rechteck as bbFilter, ringe } from './overpass.js';
 
 // ---------------------------------------------------------------- Konfiguration
 
@@ -68,31 +69,19 @@ export const KONFIG = {
      in Grad hält Flächen im Bild, die knapp über den Rand ragen. */
   bbZuschlag: 0.005,
 
-  /* Adressen der Dienste. Beide sind austauschbar: das Oberflächenmodell muss
-     ein Cloud-Optimized GeoTIFF in Grad-Koordinaten sein (cog.js liest
-     Float32/Deflate), die Hindernisabfrage eine Overpass-API. */
+  /* Adresse des Oberflächenmodells. Austauschbar, solange es ein
+     Cloud-Optimized GeoTIFF in Grad-Koordinaten ist (cog.js liest
+     Float32/Deflate). Die Adressen der Hindernisabfrage stehen in
+     overpass.js – sie werden inzwischen von zwei Modulen benutzt. */
   dsmSigner: 'https://planetarycomputer.microsoft.com/api/sas/v1/sign?href=',
   dsmKachel: (nordsued, ostwest) => 'https://elevationeuwest.blob.core.windows.net/' +
     `copernicus-dem/COP30_hh/Copernicus_DSM_COG_10_${nordsued}_00_${ostwest}_00_DEM.tif`,
-  /* Zwei Overpass-Adressen, der Reihe nach: der Hauptdienst drosselt bei
-     Andrang und antwortet dann mit einer Fehlermeldung statt mit Daten. Beim
-     Planen am Kartentisch ist ein zweiter Anlauf auf einem Spiegel die
-     bessere Antwort als eine leere Hindernisliste. */
-  overpass: [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter'
-  ],
 
-  /* Geduld für einen Abruf. Ohne Frist bleibt eine Anfrage, die der Dienst
-     stillschweigend in eine Warteschlange legt, ewig offen – und mit ihr die
-     Meldung „wird geholt …“ in der Anzeige. Nach dieser Frist wird der zweite
-     Dienst versucht; bleibt auch der stumm, urteilt die Strecke über das
-     Gelände und sagt, dass die Hindernisdaten fehlten.
-
-     40 s sind gemessen, nicht geschätzt: die öffentlichen Overpass-Instanzen
-     sind zeitweise so belastet, dass dieselbe Abfrage über einem Dorf einmal
-     in 1,5 s und einmal in 23 s beantwortet wird. Bei 25 s Frist wären die
-     langsamen Antworten abgeschnitten worden, obwohl sie noch gekommen wären. */
+  /* Geduld für einen Kachelabruf. Ohne Frist bliebe eine Anfrage, die der
+     Dienst stillschweigend in eine Warteschlange legt, ewig offen – und mit ihr
+     die Meldung „wird geholt …“ in der Anzeige. Bleibt die Kachel aus, urteilt
+     die Strecke über das Gelände und sagt, dass die Oberfläche fehlte. Dieselbe
+     Frist gilt für Overpass, steht dort aber eigens (overpass.js: FRIST). */
   frist: 40000
 };
 
@@ -200,14 +189,7 @@ function korridor(punkte) {
    Zeitüberschreitung – mit vorgeschaltetem Rechteck antwortet dieselbe Abfrage.
    Der Streifen bleibt trotzdem stehen: er hält die Antwort klein, wenn die
    Strecke durch eine Stadt führt. */
-function rechteck(punkte) {
-  const lat = punkte.map(p => p.lat), lng = punkte.map(p => p.lng);
-  const z = KONFIG.bbZuschlag;
-  return '(' + [
-    Math.min(...lat) - z, Math.min(...lng) - z,
-    Math.max(...lat) + z, Math.max(...lng) + z
-  ].map(w => w.toFixed(5)).join(',') + ')';
-}
+const rechteck = punkte => bbFilter(punkte, KONFIG.bbZuschlag);
 
 function gebaeudeAbfrage(punkte) {
   const bb = rechteck(punkte), im = `(poly:"${korridor(punkte)}")`;
@@ -233,17 +215,6 @@ function hoeheAusTag(wert) {
   if (!m) return null;
   const z = Number(m[1].replace(',', '.'));
   return isFinite(z) && z > 0 && z < 400 ? z : null;
-}
-
-function ringe(o) {
-  if (o.type === 'way' && o.geometry) return [o.geometry];
-  /* Bei Relationen zählen die äußeren Ringe. Innenringe (Lichtungen, Höfe)
-     bleiben unberücksichtigt – sie würden die Fläche kleiner machen, und die
-     vorsichtige Seite ist hier die größere. */
-  if (o.type === 'relation' && Array.isArray(o.members)) {
-    return o.members.filter(m => m.geometry && m.role !== 'inner').map(m => m.geometry);
-  }
-  return [];
 }
 
 /* Strahlensatzverfahren: eine Halbgerade nach Westen zählt die Kanten, die sie
@@ -282,31 +253,6 @@ function hindernisAus(o) {
     hoehe: KONFIG.bewuchsHoehe, art: 'bewuchs',
     quelle: 'bewuchs-annahme', geschaetzt: true
   };
-}
-
-/* Welche Adresse zuletzt geantwortet hat. Der Hauptdienst drosselt tageweise;
-   ohne dieses Merken zahlt jede weitere Strecke der Sitzung erneut die volle
-   Frist, bevor der Spiegel überhaupt gefragt wird. */
-let bewaehrt = null;
-
-async function overpass(daten) {
-  let letzter = null;
-  const reihe = bewaehrt
-    ? [bewaehrt, ...KONFIG.overpass.filter(a => a !== bewaehrt)]
-    : KONFIG.overpass;
-  for (const adresse of reihe) {
-    try {
-      const r = await fetch(adresse, {
-        method: 'POST', body: new URLSearchParams({ data: daten }),
-        signal: AbortSignal.timeout(KONFIG.frist)
-      });
-      if (!r.ok) throw new Error(`Overpass ${r.status}`);
-      const antwort = await r.json();
-      bewaehrt = adresse;
-      return antwort;
-    } catch (fehler) { letzter = fehler; }
-  }
-  throw letzter || new Error('Overpass nicht erreichbar');
 }
 
 /* Die beiden Abfragen laufen nebeneinander und jede meldet für sich, ob sie

@@ -728,6 +728,59 @@ body.seite-zu .seite { display: none; }
   background: var(--flaeche); font-size: 12px;
 }
 
+/* ------------------------------------------------ Querungen aus OpenStreetMap */
+
+/* Die Fundliste ist ein Befund und keine Planung – sie sieht deshalb aus wie
+   die Auflagenzeile der Punktliste und nicht wie ein Formular: kleiner Satz,
+   ruhige Fläche, die Handlung ganz rechts unten. Die Kreuzung trägt den
+   Mahnton, weil an ihr eine Auflage hängt; die Abstandsmeldung bleibt grau,
+   sie ist ein Hinweis auf eine Prüfung und kein Befund über die Trasse. */
+.qp-inhalt { display: flex; flex-direction: column; gap: 7px; }
+.qp-befund { margin: 0; }
+
+.qp-veraltet {
+  margin: 0; font-size: 11.5px; line-height: 1.35;
+  color: var(--warnung-tief); background: var(--warnung-flaeche);
+  border: 1px solid var(--warnung-linie); border-radius: var(--radius-klein);
+  padding: 5px 7px;
+}
+
+.qp-liste { display: flex; flex-direction: column; gap: 5px; }
+
+.qp-fund {
+  border: 1px solid var(--linie); border-left-width: 3px;
+  border-radius: var(--radius-klein);
+  background: var(--flaeche-2); padding: 5px 7px 6px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.qp-kreuzung { border-left-color: var(--warnung); }
+.qp-naehe { border-left-color: var(--linie-stark); }
+
+.qp-kopf { display: flex; align-items: baseline; gap: 6px; }
+/* Die Marke sagt die Art des Fundes in einem Wort. Kein Farbfeld allein: im
+   Schwarz-Weiß-Ausdruck der Seitenleiste – und für den Farbfehlsichtigen –
+   trägt das Wort, nicht der Streifen daneben. */
+.qp-marke {
+  font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .04em;
+  border: 1px solid var(--linie); border-radius: 3px; padding: 3px 4px;
+  background: var(--flaeche); color: var(--text-schwach); white-space: nowrap;
+}
+.qp-kreuzung .qp-marke {
+  color: var(--warnung-tief); background: var(--warnung-flaeche);
+  border-color: var(--warnung-linie);
+}
+.qp-art { font-size: 12px; font-weight: 600; color: var(--text); }
+
+.qp-satz { margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--text-schwach); }
+
+.qp-fuss { display: flex; align-items: center; gap: 6px; }
+.qp-fuss .knopf { margin-left: auto; }
+.qp-schon {
+  margin-left: auto; font-size: 11.5px; color: var(--text-schwach); font-style: italic;
+}
+
+.qp-quelle { margin: 0; font-size: 11px; color: var(--text-schwach); }
+
 /* ---------------------------------------------------------------- Punktliste */
 
 .punktliste { display: flex; flex-direction: column; gap: 5px; }

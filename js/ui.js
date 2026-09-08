@@ -6,7 +6,7 @@ import {
   neueZeichengruppe, zeichengruppeById, zeichenInGruppe,
   streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar, bilderBelegung, bildmarkenAn,
   flaechenIm, flaecheSichtbar, relaisstellenIm, relaisstelleSichtbar,
-  projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id
+  projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id, neuerPunkt
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
 import { formatLaenge, meter, toMGRS, toDDM, alleFormate, parseKoordinate, himmelsrichtung } from './geo.js';
@@ -40,6 +40,12 @@ import { bildUrl, miniUrl } from './bildspeicher.js';
 import * as io from './io.js';
 import { oeffneBauauftrag, oeffneSammeldruck, oeffneLagekarte } from './bauauftrag.js';
 import { funksicht, sichtText, UMKREIS_STANDARD, UMKREIS_HOECHSTENS } from './funksicht.js';
+/* `befundLesen` heißt in relais.js schon etwas anderes – hier umbenannt, damit
+   an der Aufrufstelle steht, um welchen Befund es geht. */
+import {
+  pruefeQuerungen, schonEingetragen, QUERUNGS_QUELLE,
+  befundLesen as querungsbefund, befundText as querungsbefundText
+} from './querungspruefung.js';
 import { zeichneFunksicht } from './map.js';
 import {
   BOS_BAENDER, GEGENSTELLEN, bosBandById, gegenstelleById, gegenstellenhoehe,
@@ -651,6 +657,11 @@ function streckenKarte(s) {
 
   // -- Punkte
   koerper.appendChild(punktTabelle(s, frisch));
+
+  /* -- Was die Trasse kreuzt. Nur bei einer verlegten Leitung: eine Funkstrecke
+     kreuzt nichts, sie fliegt darüber – für sie steht die Freileitung als
+     Hindernis in der Richtfunkprüfung. */
+  if (!k.kabel.funk && s.punkte.length >= 2) koerper.appendChild(querungsGruppe(s));
 
   /* -- Aktionen, gestaffelt statt gleich laut:
      bearbeiten (gleichrangig) · Rohdaten (leise) · Löschen (leise, selten)
@@ -1494,6 +1505,128 @@ function farbwahl(s, karte) {
   }
   wrap.appendChild(reihe);
   return wrap;
+}
+
+// -------------------------------------------------- Querungen aus OpenStreetMap
+
+/* Der Befund ist ein Vorschlag und wird es auch bleiben: übernommen wird jede
+   Kreuzung einzeln oder auf einmal, aber immer durch einen Griff des Planers.
+   Selbsttätig gesetzte Punkte stünden mit der Verbindlichkeit des Bauauftrags
+   auf dem Blatt, ohne dass jemand sie angesehen hätte – und die Kartierung
+   sagt nichts darüber, ob die Leitung an dieser Stelle 8 m oder 25 m hoch
+   hängt. Genau das ist die Frage, die der Erkunder beantwortet. */
+function querungsGruppe(s) {
+  const gruppe = el('div', 'feldgruppe querungspruefung');
+  gruppe.appendChild(el('h3', 'gruppen-titel', 'Querungen aus OpenStreetMap'));
+
+  const inhalt = el('div', 'qp-inhalt');
+  gruppe.appendChild(inhalt);
+  let laeuft = false;
+
+  const uebernehmen = funde => {
+    /* Von hinten nach vorn eingefügt: jeder Punkt verschiebt die Nummern der
+       Segmente hinter sich. Wer vorne anfängt, setzt den zweiten Punkt eine
+       Ecke zu früh. */
+    const reihe = [...funde].sort((a, b) => b.abAnfang - a.abAnfang);
+    store.aendern(p => {
+      const st = p.strecken.find(x => x.id === s.id);
+      if (!st) return;
+      for (const f of reihe) {
+        const pt = neuerPunkt(f.lat, f.lng, 'querung');
+        pt.querungsart = f.art.id;
+        pt.name = f.bezeichnung;
+        /* Von Hand gesetzt heißt es hier auch: die Punktart darf nicht später
+           beim Löschen eines Nachbarn auf Anfang oder Ende umspringen. */
+        pt._manuell = true;
+        st.punkte.splice(Math.min(f.segment + 1, st.punkte.length), 0, pt);
+      }
+    }, 'strecke');
+    hinweis(`${reihe.length} Querung${reihe.length === 1 ? '' : 'en'} übernommen – ` +
+      'Strg+Z macht es rückgängig');
+  };
+
+  const pruefen = () => {
+    if (laeuft) return;
+    laeuft = true;
+    zeichnen();
+    pruefeQuerungen(s)
+      .catch(() => hinweis('OpenStreetMap war nicht zu erreichen.', 'fehler'))
+      .finally(() => { laeuft = false; zeichnen(); });
+  };
+
+  function zeichnen() {
+    inhalt.innerHTML = '';
+    const b = querungsbefund(s);
+
+    const satz = el('p', 'klein qp-befund');
+    satz.textContent = laeuft
+      ? 'Die Trasse wird bei OpenStreetMap abgefragt …'
+      : querungsbefundText(b);
+    inhalt.appendChild(satz);
+
+    if (b && !b.aktuell) {
+      inhalt.appendChild(el('p', 'qp-veraltet',
+        'Die Trasse wurde seit dieser Prüfung verändert – der Befund gilt für ihren ' +
+        'früheren Verlauf.'));
+    }
+
+    const tasten = el('div', 'tastenreihe');
+    const pruefTaste = knopf(b ? 'Erneut prüfen' : 'Trasse auf Querungen prüfen', pruefen);
+    pruefTaste.disabled = laeuft;
+    if (laeuft) pruefTaste.textContent = 'wird geprüft …';
+    tasten.appendChild(pruefTaste);
+
+    const offen = b
+      ? b.funde.filter(f => f.klasse === 'kreuzung' && !schonEingetragen(s, f))
+      : [];
+    if (offen.length > 1) {
+      tasten.appendChild(knopf(`Alle ${offen.length} Kreuzungen übernehmen`,
+        () => uebernehmen(offen)));
+    }
+    inhalt.appendChild(tasten);
+
+    if (!b || !b.funde.length) return;
+
+    const liste = el('div', 'qp-liste');
+    for (const f of b.funde) {
+      const zeile = el('div', 'qp-fund qp-' + f.klasse);
+      const kopf = el('div', 'qp-kopf');
+      kopf.appendChild(el('span', 'qp-marke',
+        f.klasse === 'kreuzung' ? 'Kreuzung' : 'Abstand'));
+      kopf.appendChild(el('span', 'qp-art', escapeHtml(f.art.name)));
+      zeile.appendChild(kopf);
+      zeile.appendChild(el('p', 'qp-satz', escapeHtml(f.satz)));
+
+      const fuss = el('div', 'qp-fuss');
+      const zeigen = el('button', 'mini-knopf', '⌖');
+      zeigen.title = 'Stelle auf der Karte zeigen';
+      zeigen.onclick = () => {
+        ctx.karte.setView([f.lat, f.lng], Math.max(ctx.karte.getZoom(), 16));
+        ctx.zurKarte?.();
+      };
+      fuss.appendChild(zeigen);
+
+      if (f.klasse === 'kreuzung') {
+        if (schonEingetragen(s, f)) {
+          fuss.appendChild(el('span', 'qp-schon', 'als Querung eingetragen'));
+        } else {
+          fuss.appendChild(knopf('Als Querung übernehmen', () => uebernehmen([f]), 'klein'));
+        }
+      } else {
+        /* Eine Unterschreitung des Mindestabstands ist keine Kreuzung: sie
+           bekommt keinen Punkt, weil sie keine Stelle hat, sondern eine
+           Strecke. Sie gehört in die Bemerkung zum Auftrag. */
+        fuss.appendChild(el('span', 'qp-schon', 'kein Querungspunkt – Auflage prüfen'));
+      }
+      zeile.appendChild(fuss);
+      liste.appendChild(zeile);
+    }
+    inhalt.appendChild(liste);
+    inhalt.appendChild(el('p', 'qp-quelle', escapeHtml(QUERUNGS_QUELLE)));
+  }
+
+  zeichnen();
+  return gruppe;
 }
 
 function punktTabelle(s, frisch) {
@@ -3448,6 +3581,13 @@ export function hilfeDialog() {
               über die Straße), Unterbau (U, Graben oder Durchlass) oder an einem Bauwerk
               entlang. Jede Querung bringt einen Zeitansatz in Minuten mit, der in die
               Bauzeit einfließt und sich je Punkt anpassen lässt.</li>
+          <li><b>Trasse auf Querungen prüfen</b> sucht bei OpenStreetMap nach
+              Freileitungen, Bahnstrecken und Umspannwerken entlang der Trasse. Jede
+              Kreuzung lässt sich als Querungspunkt übernehmen, die Art ist dann schon
+              gesetzt. Der Befund ist ein Vorschlag: Hochspannungsleitungen sind dort
+              weitgehend vollständig verzeichnet, Ortsnetz-Freileitungen nicht, und wie
+              hoch eine Leitung über Grund hängt, sagt keine Quelle – das bleibt Sache
+              der Erkundung.</li>
         </ol>
         <h3>Längen</h3>
         <p>Teillängen stehen an jedem Abschnitt, Name und Summe an der Strecke. Gerechnet wird

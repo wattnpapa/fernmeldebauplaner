@@ -31,6 +31,13 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Querungen mit Art (Straße, Bahn, Gewässer, Freileitung …) und Bauweise am Hindernis:
   Überbau (Ü), Unterbau (U) oder an einem Bauwerk entlang – auf der Karte als Buchstabe
   in der Raute, mit Zeitansatz je Querung
+- Querungsprüfung gegen OpenStreetMap: auf Knopfdruck sucht die Anwendung entlang der
+  Trasse nach Freileitungen, Bahnstrecken und Umspannwerken. Jede gefundene Kreuzung
+  lässt sich als Querungspunkt mit vorbelegter Art übernehmen; wo der Mindestabstand
+  zu einem Hochspannungsmast (20 m) oder einem Umspannwerk (300 m) unterschritten
+  wird, steht ein Hinweis. Der Befund ist ein Vorschlag: Hochspannungsleitungen sind
+  in OpenStreetMap weitgehend vollständig verzeichnet, Ortsnetz-Freileitungen nicht,
+  und die Höhe einer Leitung über Grund steht in keiner Quelle
 - Punkte verschieben, Zwischenpunkte über Griffe einfügen, Richtung umkehren
 - Leitungsart (Feldkabel, Feldfernkabel, LWL, Netzwerk, Koax, Strom), Verlegeart,
   Bauzuschlag, Trommellänge und Verlegeleistung je Strecke
@@ -506,9 +513,12 @@ mit dem Verlauf einer Funkstrecke:
 - **Hindernisse entlang einer Funkstrecke** – Gebäude sowie Wald- und Gehölzflächen –
   holt der Browser bei der Overpass-API (OpenStreetMap). Dafür geht der **Verlauf der
   Strecke** hinaus, nicht nur ein Ausschnitt: ein schmaler Streifen um die Verbindung
-  der beiden Aufbauplätze. Das ist die einzige Anfrage, die die geplanten Orte selbst
-  verrät; `datenschutz.html` sagt das ausdrücklich. Ohne zweiten Aufbauplatz
-  unterbleibt sie.
+  der beiden Aufbauplätze. Ohne zweiten Aufbauplatz unterbleibt sie.
+- **Querungen entlang einer Kabeltrasse** – Freileitungen, Bahnstrecken und
+  Umspannwerke – holt derselbe Dienst, aber erst auf ausdrücklichen Knopfdruck. Auch
+  dabei geht der Verlauf der Trasse hinaus, als Folge umschließender Rechtecke.
+  Zusammen mit der Hindernisabfrage sind das die einzigen Anfragen, die die geplanten
+  Orte selbst verraten; `datenschutz.html` sagt das ausdrücklich.
 
 - **Reichweitenmessung** mit [GoatCounter](https://www.goatcounter.com/): ein anonymer
   Zählimpuls beim Aufruf der Anwendung, ohne Cookie und ohne geräteübergreifende
