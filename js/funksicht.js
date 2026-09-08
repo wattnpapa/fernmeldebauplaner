@@ -28,11 +28,16 @@ import { senkung, fresnelradius, FREIRAUM_ANTEIL } from './funkrechnung.js';
 /* Umkreis und Höchstmaß. Der Vorgabewert ist bewusst klein: bei 3 m
    Antennenhöhe – der Vorgabe einer neuen Funkstrecke – liegt der Funkhorizont
    zweier Standorte bei gut 14 km, aber schon jenseits von 5 km verspricht ein
-   25-m-Raster ohne Bewuchs mehr, als es halten kann. Über 10 km wird deshalb
-   nicht gerechnet; dort kostet allein der Kachelabruf mehr, als die Aussage
-   wert ist. */
+   25-m-Raster ohne Bewuchs mehr, als es halten kann.
+
+   Das Höchstmaß liegt trotzdem weit darüber. Wer zwei Masten auf Kuppen stellt,
+   fragt tatsächlich nach 20 oder 30 km, und eine Schranke knapp unterhalb der
+   gestellten Frage beantwortet sie nicht, sie verlagert sie nur. Der Preis
+   wächst dabei mit dem Quadrat: 30 km sind über hundert Höhenkacheln und mehr
+   als fünf Millionen Zellen. Er steht deshalb am Regler und nicht hier –
+   verboten wird die weite Sicht nicht, angesagt schon. */
 export const UMKREIS_STANDARD = 3000;
-export const UMKREIS_HOECHSTENS = 10000;
+export const UMKREIS_HOECHSTENS = 30000;
 
 /* Strahlen je Randzelle. Mit einem Strahl je Randzelle bleiben in
    Standortnähe einige Prozent der Zellen unbesucht, weil benachbarte Strahlen
@@ -174,15 +179,19 @@ export async function funksicht(standort, antennenhoehe, mhz, umkreis, zielhoehe
    Fußnote – eine Fußnote liest am Kartentisch niemand. Er wird hier gebildet
    und nicht in der Oberfläche zusammengesetzt, damit auf Blatt und Bildschirm
    derselbe Wortlaut steht. */
-export function sichtText(e) {
+export function sichtText(e, aufbauplatz) {
   if (!e) return 'Für diesen Umkreis liegen keine Geländehöhen vor.';
   const km = (e.umkreis / 1000).toLocaleString('de-DE');
   const anteil = e.zellen ? Math.round(e.mitSicht / e.zellen * 100) : 0;
   const luecke = e.fehlend
     ? ' Wo Höhen fehlten, bleibt die Fläche ebenfalls ungefärbt.'
     : '';
+  /* Seit die Fläche von beiden Enden aus zu rechnen ist, muss der Satz sagen,
+     von welchem – sonst steht dieselbe Aussage für zwei verschiedene Standorte
+     und wird auf dem Blatt nicht mehr zuzuordnen sein. */
+  const wohin = aufbauplatz ? `zu ${aufbauplatz}` : 'zum Aufbauplatz';
   return `Funksicht im Umkreis von ${km} km: ${anteil} % der Fläche haben über das ` +
-    'Gelände freie Sicht zum Aufbauplatz. Bewuchs, Bebauung und Freileitungen stehen ' +
+    `Gelände freie Sicht ${wohin}. Bewuchs, Bebauung und Freileitungen stehen ` +
     'in diesen Höhen nicht – die eingefärbte Fläche ist die günstigste Annahme, kein ' +
     'Empfangsnachweis.' + luecke;
 }

@@ -26,7 +26,7 @@ import {
   FREQUENZBAENDER, MIMO_ARTEN, POLARISATIONEN, MODULATIONEN,
   bandById, mimoById, gueltigeBandbreite, datenrateText, funkstrecke, azimutText
 } from './richtfunk.js';
-import { hoeheAn, profil } from './hoehe.js';
+import { hoeheAn, profil, kachelbedarf } from './hoehe.js';
 import {
   eirpPruefung, bandById as regelBandById,
   leistungText as eirpLeistungText, massgebendText as eirpMassgebendText, abstandText
@@ -38,7 +38,7 @@ import { bilderAufnehmen } from './bilder.js';
 import { bildUrl, miniUrl } from './bildspeicher.js';
 import * as io from './io.js';
 import { oeffneBauauftrag, oeffneSammeldruck, oeffneLagekarte } from './bauauftrag.js';
-import { funksicht, sichtText, UMKREIS_STANDARD } from './funksicht.js';
+import { funksicht, sichtText, UMKREIS_STANDARD, UMKREIS_HOECHSTENS } from './funksicht.js';
 import { zeichneFunksicht } from './map.js';
 import { VERSION } from './version.js';
 
@@ -826,16 +826,30 @@ function stromErgebnisHTML(a) {
    Satz daneben könnte nur für eine von beiden gelten. Der Zustand steht deshalb
    hier und nicht in der Gruppe: er muss auch dann noch erreichbar sein, wenn die
    Gruppe für eine andere Strecke neu gebaut wird. */
-let schattenEbene = null, schattenBefund = null;
+let schattenEbene = null, schattenBefund = null, schattenPlatz = null, schattenName = '';
+/* Wofür die liegende Fläche gerechnet wurde: Strecke und Lage beider
+   Aufbauplätze. Die Gruppe wird bei jeder Änderung an der Strecke neu gebaut –
+   auch dann, wenn die Höhen sich selbst nachtragen –, und eine Fläche, die
+   dabei jedes Mal verschwände, wäre nach dem Öffnen einer Strecke nicht
+   aufzurufen. Verschwinden muss sie trotzdem, sobald sie nicht mehr gilt:
+   Wechsel der Strecke oder ein verschobener Aufbauplatz. */
+let schattenStrecke = null, schattenOrt = '';
+
+/* Der Umkreis gehört zur Ansicht, nicht zur Planung: er sagt nichts über die
+   Strecke aus, sondern nur, wie weit man gerade hinausschaut. Er wandert
+   deshalb nicht in den Store – steht aber modulweit, damit ein Neuaufbau der
+   Gruppe die eingestellte Weite nicht auf die Vorgabe zurückwirft. */
+let schattenUmkreis = UMKREIS_STANDARD;
 
 function schattenWeg() {
   if (schattenEbene && ctx && ctx.karte) ctx.karte.removeLayer(schattenEbene);
-  schattenEbene = null; schattenBefund = null;
+  schattenEbene = null; schattenBefund = null; schattenPlatz = null; schattenName = '';
+  schattenStrecke = null; schattenOrt = '';
 }
 
 function schattenHTML() {
   if (!schattenBefund) return '';
-  return `<p class="rf-gelaende">${escapeHtml(sichtText(schattenBefund))}</p>`;
+  return `<p class="rf-gelaende">${escapeHtml(sichtText(schattenBefund, schattenName))}</p>`;
 }
 
 /* Höhen und Geländeurteil führen sich selbst nach. Das hing vorher an zwei
@@ -915,7 +929,8 @@ function gelaendeNachfuehren(s, aktualisieren) {
 
 function richtfunkGruppe(s, frisch) {
   const gruppe = el('div', 'feldgruppe');
-  schattenWeg();   // beim Öffnen einer anderen Strecke bleibt kein alter stehen
+  const jetzt = funkstrecke(s);
+  if (schattenStrecke !== s.id || (jetzt && schattenOrt !== ortSignatur(jetzt))) schattenWeg();
   gruppe.appendChild(el('h3', 'gruppen-titel', 'Richtfunkstrecke (WLAN)'));
 
   const v = s.richtfunk;
@@ -994,32 +1009,104 @@ function richtfunkGruppe(s, frisch) {
 
   /* Die Funksichtfläche ist ein Blick, kein Planungsinhalt: sie wird angestoßen,
      angesehen und wieder weggenommen. Deshalb kein Dialog, keine Farbwahl und
-     keine Liste – der Umkreis steht fest, Standort und Antennenhöhe stehen
-     ohnehin schon in der Spalte darüber. Gespeichert wird nichts: eine Fläche,
-     die eine Planung überdauert, wäre irgendwann für eine andere Masthöhe
-     gerechnet als die, die danebensteht. */
-  tastenreihe.appendChild(knopf('Funksicht von Platz A', ev => {
+     keine Liste – Standort und Antennenhöhe stehen ohnehin schon in der Spalte
+     darüber. Gespeichert wird nichts: eine Fläche, die eine Planung überdauert,
+     wäre irgendwann für eine andere Masthöhe gerechnet als die, die danebensteht.
+
+     Beide Enden bekommen eine eigene Taste. Gefragt ist nicht nur, wohin Platz A
+     kommt: liegt eine Strecke schief, entscheidet sich am Gegenende, ob der
+     Mast dort ein paar hundert Meter weiter besser steht – und das sieht man
+     nur an dessen eigener Fläche. Sichtbar bleibt trotzdem immer nur eine.
+     Zwei übereinander wären nicht zu unterscheiden, beide sind dasselbe
+     Violett, und der Satz daneben könnte nur für eine von beiden gelten. */
+  const plaetze = [0, 1].map(i => (i === 0 ? s.von : s.nach) ||
+    `Platz ${i === 0 ? 'A' : 'B'}`);
+  const tasten = [];
+
+  const tastenNachziehen = () => tasten.forEach((t, i) => {
+    t.disabled = false;
+    t.textContent = schattenPlatz === i
+      ? `${plaetze[i]} ausblenden`
+      : `Funksicht von ${plaetze[i]}`;
+    t.classList.toggle('an', schattenPlatz === i);
+  });
+
+  const funksichtZeigen = i => {
     const f = funkstrecke(s);
     if (!f) return hinweis('Erst beide Aufbauplätze auf der Karte setzen.');
-    if (schattenEbene) { schattenWeg(); return aktualisieren(); }
-    const taste = ev && ev.currentTarget;
-    if (taste) { taste.disabled = true; taste.textContent = 'Höhen werden geholt …'; }
-    const hoch = Number(s.richtfunk.standorte[0].antennenhoehe) || 3;
-    funksicht(f.a, hoch, f.mhz, UMKREIS_STANDARD, hoch).then(e => {
+    const war = schattenPlatz;
+    schattenWeg();
+    if (war === i) return (tastenNachziehen(), aktualisieren());
+    tasten.forEach(t => { t.disabled = true; });
+    tasten[i].textContent = 'Höhen werden geholt …';
+    const ort = i === 0 ? f.a : f.b;
+    /* Gerechnet wird mit der Antennenhöhe dieses Endes, und dieselbe Höhe gilt
+       als Annahme für das Gegenüber: eine Fläche, in der man mit 3 m stünde,
+       sagt einem Mast von 10 m nichts. */
+    const hoch = Number(s.richtfunk.standorte[i].antennenhoehe) || 3;
+    const weite = schattenUmkreis;
+    funksicht(ort, hoch, f.mhz, weite, hoch).then(e => {
       if (!e) return hinweis('Für diesen Umkreis liegen keine Höhen vor.', 'fehler');
       schattenEbene = zeichneFunksicht(ctx.karte, e);
       schattenBefund = e;
+      schattenPlatz = i;
+      schattenName = plaetze[i];
+      schattenStrecke = s.id;
+      schattenOrt = ortSignatur(f);
       aktualisieren();
     }).catch(() => hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'))
-      .finally(() => {
-        if (taste) {
-          taste.disabled = false;
-          taste.textContent = schattenEbene
-            ? 'Funksicht ausblenden' : 'Funksicht von Platz A';
-        }
-      });
-  }, 'klein'));
-  gruppe.appendChild(tastenreihe);
+      .finally(() => { tastenNachziehen(); aktualisieren(); });
+  };
+
+  /* Der Umkreis ist ein Regler und kein Zahlenfeld: „wie weit komme ich von
+     hier“ beantwortet man, indem man schiebt und zusieht, nicht indem man
+     8000 tippt. Er steht über den Tasten, weil er für beide Enden gilt.
+
+     Gerechnet wird beim Loslassen, nicht beim Schieben – jeder Zwischenwert
+     wäre ein eigener Kachelabruf. Und er sagt an, was er kostet: der Abruf
+     wächst mit dem Quadrat der Weite, 30 km sind über hundert Kacheln. Diese
+     Zahl steht am Regler, damit niemand in eine Wartezeit läuft, deren Grund
+     er nicht sieht. */
+  const umkreisZeile = el('div', 'rf-umkreis');
+  umkreisZeile.appendChild(el('span', 'rf-umkreis-titel', 'Umkreis'));
+  const regler = document.createElement('input');
+  regler.type = 'range';
+  regler.min = 1; regler.max = Math.round(UMKREIS_HOECHSTENS / 1000); regler.step = 1;
+  regler.value = Math.round(schattenUmkreis / 1000);
+  regler.setAttribute('aria-label', 'Umkreis der Funksicht in Kilometern');
+  const umkreisWert = el('b', 'rf-umkreis-wert');
+  const umkreisFuss = el('p', 'rf-umkreis-fuss');
+  const weiteNachziehen = () => {
+    umkreisWert.textContent = `${Math.round(schattenUmkreis / 1000)} km`;
+    const f = funkstrecke(s);
+    const kacheln = f ? kachelbedarf(f.a.lat, schattenUmkreis) : 0;
+    umkreisFuss.textContent = kacheln > 25
+      ? `Rund ${kacheln} Höhenkacheln – der Abruf dauert entsprechend.` : '';
+  };
+  regler.addEventListener('input', () => {
+    schattenUmkreis = Number(regler.value) * 1000;
+    weiteNachziehen();
+  });
+  /* Steht schon eine Fläche, wird sie mit der neuen Weite neu gerechnet: eine
+     stehengebliebene Fläche neben einem verschobenen Regler behauptete einen
+     Umkreis, für den sie nicht gilt. */
+  regler.addEventListener('change', () => {
+    if (schattenPlatz !== null) {
+      const i = schattenPlatz;
+      schattenWeg(); tastenNachziehen();
+      funksichtZeigen(i);
+    }
+  });
+  umkreisZeile.append(regler, umkreisWert);
+  weiteNachziehen();
+
+  for (const i of [0, 1]) {
+    const t = knopf('', () => funksichtZeigen(i), 'klein');
+    tasten.push(t);
+    tastenreihe.appendChild(t);
+  }
+  tastenNachziehen();
+  gruppe.append(umkreisZeile, umkreisFuss, tastenreihe);
 
   // -- Was für die Strecke als Ganzes gilt
   const betrieb = el('div', 'feld-paar');

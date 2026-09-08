@@ -593,6 +593,28 @@ body.seite-zu .seite { display: none; }
    Betrieb um des Betriebs willen: der Abruf dauert ein bis zwei Sekunden. */
 .rf-gelaende.rf-laeuft { color: var(--text-schwach); font-style: italic; }
 
+/* -- Umkreis der Funksicht. Ein Regler in der Zeile mit seinem Wert: die Zahl
+   steht rechts fest, damit sie beim Schieben nicht unter der Hand wandert.
+   Die Kostenzeile darunter erscheint erst, wenn es etwas zu sagen gibt –
+   ein Hinweis, der immer dasteht, wird nicht mehr gelesen. */
+.rf-umkreis {
+  display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px;
+}
+.rf-umkreis-titel { color: var(--text-schwach); white-space: nowrap; }
+.rf-umkreis input[type="range"] { flex: 1; min-width: 0; accent-color: var(--thw); }
+/* Feste Breite für die Zahl: „3 km“ und „30 km“ dürfen den Regler nicht
+   verschieben, während man ihn zieht. */
+.rf-umkreis-wert { width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
+.rf-umkreis-fuss {
+  margin: 4px 0 0; font-size: 11px; line-height: 1.4; color: var(--text-schwach);
+}
+.rf-umkreis-fuss:empty { display: none; }
+
+/* Die Taste des Endes, dessen Fläche gerade liegt, bleibt sichtbar gedrückt –
+   sonst sagt bei zwei gleich aussehenden Tasten nur der Text, welche der
+   beiden Flächen man vor sich hat. */
+.knopf.an { background: var(--thw-blass); border-color: var(--thw); color: var(--thw); }
+
 /* -- Sprechreichweite: ein Befund, keine Bestellmenge. Die Vorschrift nennt
    eine Erfahrungsspanne, deshalb drei Tonlagen statt einer Zahl. Aufbau wie
    beim Querschnitt darüber – Kasten mit tragender Kante links –, nur ohne
