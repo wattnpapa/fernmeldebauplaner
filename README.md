@@ -55,11 +55,15 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   (analog FM) sowie TETRA DMO für den netzunabhängigen Digitalfunk
 - Je Relaisstelle Kanal, Antennenhöhe über Grund, Mast, Trupp und das taktische Zeichen;
   die Geländehöhe holt das Programm aus dem Höhenmodell
-- **Ausbreitung und Funkschatten** über das Gelände als Fläche auf der Karte, in drei
-  Zonen: freie Sicht (unter 6 dB), Randbereich (6 bis 15 dB) und Funkschatten. Gerechnet
-  wird die Sichtlinie mit Erdkrümmung (k = 4/3) und dazu die Beugungsdämpfung an der
-  Geländekante nach ITU-R P.526 – Geometrie, keine Sendeleistung und keine
-  Empfängerschwelle
+- **Ausbreitung und Funkschatten** als Fläche auf der Karte, in drei Zonen: freie Sicht
+  (unter 6 dB), Randbereich (6 bis 15 dB) und Funkschatten. Gerechnet wird die Sichtlinie
+  mit Erdkrümmung (k = 4/3) und dazu die Beugungsdämpfung an der verdeckenden Kante nach
+  ITU-R P.526 – Geometrie, keine Sendeleistung und keine Empfängerschwelle
+- **Bewuchs und Bebauung verdecken mit** (abschaltbar): die Kante ist die Oberfläche aus
+  dem Copernicus-Modell, nicht der nackte Boden – im 2-m- und 4-m-Band ist der Wald kein
+  Nebenumstand. Der Boden, auf dem die Gegenstelle steht, bleibt das Gelände: wer im Wald
+  funkt, steht unter den Bäumen und nicht auf ihnen. Steht der Mast selbst im Bestand,
+  sagt das Programm es, statt eine schwarze Karte ohne Erklärung zu zeigen
 - Die Höhe der Gegenstelle ist wählbar: Handfunkgerät am Mann (1,5 m), Fahrzeugantenne
   (2,5 m) oder eine zweite Relais- bzw. Feststation. Sie ist nach der eigenen Masthöhe
   die stärkste Stellschraube der Fläche
@@ -444,10 +448,14 @@ aufgerollte Leitungsroller tragen deutlich weniger. Die verbindliche Auslegung u
 Prüfung der Anlage obliegen einer Elektrofachkraft.
 
 Die **Ausbreitungsfläche einer Relaisstelle** ist die günstigste Annahme und kein
-Empfangsnachweis. Sie rechnet über einem Geländemodell **ohne Bewuchs und ohne
-Bebauung** (EU-DEM, rund 25 m Rasterweite): Wald, Ortslage und Freileitungen dämpfen
-zusätzlich und stehen in keiner dieser Zahlen. Belastbar ist deshalb nur die eine
-Richtung – was schon das nackte Gelände verdeckt, bleibt verdeckt. Gerechnet wird die
+Empfangsnachweis. Das Höhenraster stammt aus dem EU-DEM (rund 25 m Rasterweite); als
+verdeckende Kante zählt wahlweise das nackte Gelände oder die **Oberfläche** aus dem
+Copernicus-Modell GLO-30, das Wald und geschlossene Bebauung sieht, das einzelne Haus
+aber nicht. Anders als beim Höhenprofil einer Richtfunkstrecke werden keine
+OpenStreetMap-Gebäude geprüft: eine Fläche von 1.250 km² gegen zehntausende Vielecke zu
+prüfen ist keine Frage der Geduld, sondern der Größenordnung. Freileitungen fehlen in
+beiden Fällen, und wo das Oberflächenmodell ausfällt, sagt der Befund es ausdrücklich –
+eine Fläche ohne Wald sieht sonst aus wie eine mit wenig Wald. Gerechnet wird die
 Sichtlinie mit einem um k = 4/3 vergrößerten Erdradius und dazu die Beugungsdämpfung an
 der maßgebenden Geländekante nach ITU-R P.526; die Zonengrenzen liegen bei 6 dB und
 15 dB. Sendeleistung, Antennengewinn und Empfängerschwelle gehen **nicht** ein – eine

@@ -31,6 +31,7 @@
    „Gebäudehöhe“. */
 
 import { werteAn, oeffnen } from './cog.js';
+import { rasterGitter } from './hoehe.js';
 
 // ---------------------------------------------------------------- Konfiguration
 
@@ -124,6 +125,17 @@ function dsmBild(lat, lng) {
     return oeffnen((await r.json()).href);
   })().catch(() => null);
   bilder.set(url, p);
+  /* Ein Fehlversuch wird NICHT behalten. Der Zwischenspeicher hält denselben
+     Abruf zusammen, solange er läuft – das ist sein Zweck –, aber ein
+     gescheiterter Abruf darf die Kachel nicht für die ganze Sitzung sperren.
+     Genau das passierte beim kalten Start: die erste Anfrage holt Signatur und
+     eine mehrere Megabyte große Kachel, läuft dabei gelegentlich in die Frist,
+     und danach lieferte das Modell bis zum Neuladen der Seite nichts mehr –
+     auch dann nicht, wenn der Nutzer es noch einmal versuchte. Der Unterschied
+     zum Kachelspeicher in hoehe.js liegt im Anlass: dort wird bei jeder
+     Mausbewegung gefragt und ein Wiederholungsversuch je Bewegung wäre eine
+     Last, hier steht hinter jedem Abruf ein Knopfdruck. */
+  p.then(bild => { if (!bild) bilder.delete(url); });
   return p;
 }
 
@@ -388,6 +400,64 @@ export async function oberflaechenprofil(profil) {
     punkte: alle.map(p => nach.has(p.d) ? { ...p, ...nach.get(p.d) } : leer(p)),
     dsm: dsmDa, gebaeude: osm.gebaeudeDa, bewuchs: osm.bewuchsDa
   };
+}
+
+/**
+ * Oberflächenhöhen für einen ganzen Rasterblock aus hoehe.js.
+ *
+ * @param {object} bild aus `raster()`
+ * @returns {Promise<{werte:Float32Array, fehlend:number}|null>} Höhen über NN in
+ *   der Zeilenordnung des Blocks, `NaN` wo das Modell nichts hergibt; `null`,
+ *   wenn das Oberflächenmodell gar nicht antwortet.
+ *
+ * Gegenüber `oberflaechenprofil` fehlt hier absichtlich OpenStreetMap – und
+ * zwar aus zwei Gründen, die beide an der Fläche hängen und nicht am Willen:
+ *
+ * Erstens die Abfrage. Der Streifen um eine Strecke ist ein paar Quadratkilometer
+ * groß; die Fläche einer Relaisstelle mit 20 km Umkreis sind 1.250. Eine
+ * Overpass-Abfrage über so ein Rechteck liefert Wald- und Gebäudeumrisse in
+ * einer Größenordnung, die weder der Dienst gern beantwortet noch der Browser
+ * verarbeitet.
+ *
+ * Zweitens die Prüfung. Beim Profil wird für ein paar hundert Stützpunkte
+ * geprüft, ob sie in einem Vieleck liegen; hier wären es bis zu zweieinhalb
+ * Millionen Zellen gegen zehntausende Vielecke. Das ist keine Frage der
+ * Geduld, sondern der Größenordnung.
+ *
+ * Das Copernicus-Modell trägt die Fläche dagegen von sich aus: es ist ein
+ * Raster und sieht Wald und geschlossene Bebauung. Was ihm fehlt, ist das
+ * einzelne Haus – und das ist genau der Unterschied, der auf einer Karte mit
+ * 25 m Zellenmaß ohnehin nicht mehr abzulesen wäre. Für die Strecke bleibt es
+ * bei der genaueren Prüfung mit OSM, für die Fläche genügt das Modell. Der
+ * Vorbehalt an der Fläche sagt das auch so.
+ */
+export async function oberflaechenraster(bild) {
+  const { lats, lngs } = rasterGitter(bild);
+  const werte = new Float32Array(bild.spalten * bild.zeilen).fill(NaN);
+  const abbild = await dsmBild(lats[bild.mitteY], lngs[bild.mitteX]);
+  if (!abbild) return null;
+
+  /* Zeilenweise und nicht in einem Zug: ein Block über 20 km sind zweieinhalb
+     Millionen Orte, und die alle zugleich als Objekte anzulegen kostet mehr
+     Arbeitsspeicher als die Höhen selbst. Zeilenweise bleibt der Verbrauch bei
+     einer Zeile, und die Kacheln des Modells sind dabei längst geholt: eine
+     Zeile liegt in denselben zwei bis drei Kacheln wie die vorige. */
+  let fehlend = 0;
+  for (let j = 0; j < bild.zeilen; j++) {
+    const orte = new Array(bild.spalten);
+    for (let i = 0; i < bild.spalten; i++) orte[i] = { lat: lats[j], lng: lngs[i] };
+    const zeile = await werteAn(abbild, orte);
+    const versatz = j * bild.spalten;
+    for (let i = 0; i < bild.spalten; i++) {
+      const w = zeile[i];
+      if (w === null) { fehlend++; continue; }
+      werte[versatz + i] = w;
+    }
+  }
+  /* Ein Block, in dem keine einzige Zelle einen Wert hat, ist kein Ergebnis,
+     sondern ein stiller Ausfall – er muss vom leeren Modell unterscheidbar
+     bleiben. */
+  return fehlend === werte.length ? null : { werte, fehlend };
 }
 
 /** Höchste Oberfläche an einem Stützpunkt, ersatzweise das Gelände. */

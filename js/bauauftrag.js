@@ -2145,8 +2145,13 @@ function kartenquelle(p, opt) {
   const funk = (p.strecken || []).some(st => kabelById(st.kabeltyp).funk);
   /* Die Oberflächenquellen stehen nur auf Blättern, die auch ein Profil
      tragen – auf einem Kabelbauauftrag wären sie eine Quellenangabe für Daten,
-     die dort nirgends benutzt werden. */
-  const profil = (p.strecken || []).some(st => urteilLesen(st));
+     die dort nirgends benutzt werden. Eine Ausbreitungsfläche, die mit Bewuchs
+     gerechnet ist, benutzt dieselbe Quelle und braucht sie deshalb ebenso. */
+  const profil = (p.strecken || []).some(st => urteilLesen(st)) ||
+    (p.relaisstellen || []).some(r => {
+      const e = befundLesen(r);
+      return e && e.mitBewuchs;
+    });
   return `Kartengrundlage: ${ohneMarken(text)} · ${escapeHtml(HOEHEN_QUELLE)}` +
     (profil ? ` · ${escapeHtml(OBERFLAECHEN_QUELLE)}` : '') +
     (funk ? ` · ${escapeHtml(MISSWEISUNG_QUELLE)}` : '');

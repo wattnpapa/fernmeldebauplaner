@@ -50,7 +50,7 @@ const befunde = new Map();
 export function befundSchluessel(r) {
   if (!r) return null;
   return `${r.id}|${r.lat.toFixed(5)},${r.lng.toFixed(5)}|${r.band}` +
-    `|${r.antennenhoehe}|${r.gegenstelle}|${r.umkreis}`;
+    `|${r.antennenhoehe}|${r.gegenstelle}|${r.umkreis}|${r.mitBewuchs !== false}`;
 }
 
 /** Befund zu dieser Relaisstelle, `undefined` solange keiner geholt wurde. */
@@ -98,7 +98,8 @@ export function befundHolen(r) {
   const k = befundSchluessel(r);
   if (laeuft.has(k)) return laeuft.get(k);
   const { mhz, zielhoehe } = rechenwerte(r);
-  const lauf = ausbreitung({ lat: r.lat, lng: r.lng }, r.antennenhoehe, mhz, r.umkreis, zielhoehe)
+  const lauf = ausbreitung({ lat: r.lat, lng: r.lng }, r.antennenhoehe, mhz, r.umkreis,
+    zielhoehe, r.mitBewuchs !== false)
     .then(e => { if (e) befundMerken(r, e); return e; })
     .finally(() => laeuft.delete(k));
   laeuft.set(k, lauf);

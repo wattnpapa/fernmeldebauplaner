@@ -309,6 +309,11 @@ export function neueRelaisstelle(projekt, lat, lng, band = BOS_BAND) {
     /* Der Umkreis kommt vom Band: das 4-m-Band trägt weiter als DMO, und ein
        Umkreis über der Reichweite kostet Kacheln für nichts. */
     umkreis: b.umkreis,
+    /* Bewuchs und Bebauung sind von vornherein AN. Im 2-m- und 4-m-Band ist der
+       Wald kein Nebenumstand: bei λ = 1,77 m verdeckt eine Baumreihe von 25 m
+       eine Verbindung, die über dem nackten Boden frei aussieht. Eine Fläche
+       ohne ihn wäre die freundlichere und die falsche Vorgabe. */
+    mitBewuchs: true,
     grundhoehe: null,
     farbe: FARBEN[n % FARBEN.length],
     abschnitt: null,
@@ -706,7 +711,8 @@ export function migrieren(p) {
         symbol: symbolBekannt(r.symbol) ? r.symbol : v.symbol,
         /* Eine Masthöhe von 0 ist keine Angabe, sondern eine verlorene: mit ihr
            stünde die Antenne im Boden und die Fläche wäre durchweg Schatten. */
-        antennenhoehe: Number(r.antennenhoehe) > 0 ? Number(r.antennenhoehe) : v.antennenhoehe
+        antennenhoehe: Number(r.antennenhoehe) > 0 ? Number(r.antennenhoehe) : v.antennenhoehe,
+        mitBewuchs: r.mitBewuchs !== false
       };
     }),
     /* Schema 3 hat die Lichtbilder eingeführt, Schema 4 den Vermerk, woher ihr

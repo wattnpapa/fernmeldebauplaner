@@ -46,7 +46,7 @@ import {
   strahlermasse, strahlerText, sichtweite, funkhorizont, GEGENGEWICHT_HINWEIS
 } from './bosfunk.js';
 import {
-  ausbreitungText, masthoeheText, flaecheText, ZONEN_ERKLAERUNG,
+  ausbreitungText, masthoeheText, flaecheText, bestandText, ZONEN_ERKLAERUNG,
   UMKREIS_MINDESTENS as UMKREIS_MIN, UMKREIS_HOECHSTENS as UMKREIS_MAX
 } from './ausbreitung.js';
 import { relaisTitel, relaisKurz, befundLesen, masthoeheFuer, rechenwerte } from './relais.js';
@@ -2762,6 +2762,17 @@ function relaisFormular(r) {
   );
   g.appendChild(umgebung);
 
+  /* Der Schalter steht bei den Stellschrauben und nicht bei den Anzeigen: er
+     ändert die Rechnung und nicht die Darstellung. Beide Stellungen sind
+     brauchbar – die Fläche ohne Bewuchs sagt, was das Gelände allein hergibt,
+     und der Unterschied zwischen beiden sagt, was der Wald kostet. */
+  g.appendChild(feld('Bewuchs und Bebauung', r.mitBewuchs === false ? 'nein' : 'ja', v => {
+    store.aendern(() => { r.mitBewuchs = v === 'ja'; }, 'relais');
+  }, {
+    typ: 'select',
+    werte: [['ja', 'verdecken mit (Oberflächenmodell)'], ['nein', 'nur nacktes Gelände']]
+  }));
+
   g.appendChild(feld('Geländehöhe am Standort', r.grundhoehe ?? '', v => {
     schreib(() => { r.grundhoehe = v === '' ? null : Number(v); }, aktualisieren);
   }, {
@@ -2839,7 +2850,15 @@ function relaisFormular(r) {
 
   const befund = befundLesen(r);
   if (liegt && befund) {
-    koerper.appendChild(el('p', 'rl-befund', escapeHtml(ausbreitungText(befund, band))));
+    /* Der Ausfall des Oberflächenmodells bekommt die Warnfarbe: die Fläche
+       sieht dann aus wie eine mit Bewuchs und ist keine. */
+    const ausgefallen = befund.bewuchsGewuenscht && !befund.mitBewuchs;
+    koerper.appendChild(el('p', 'rl-befund' + (ausgefallen ? ' rl-warnung' : ''),
+      escapeHtml(ausbreitungText(befund, band))));
+    /* Steht der Mast im Bestand, ist das die Ursache einer schwarzen Karte –
+       und dieser Satz erspart die Suche nach dem Fehler an der falschen Stelle. */
+    const bestand = bestandText(befund);
+    if (bestand) koerper.appendChild(el('p', 'rl-befund rl-warnung', escapeHtml(bestand)));
     koerper.appendChild(zonenErklaerung());
   }
 
@@ -3556,9 +3575,13 @@ export function hilfeDialog() {
               über das Band – ohne zugeteilten Kanal gilt die Bandmitte. Der Strahler
               braucht eine <b>Gegengewichtsfläche</b>: auf dem Fahrzeug das Dach, am Mast
               drei bis vier Radiale derselben Länge.</li>
-          <li>Die Fläche ist die <b>günstigste Annahme</b> und kein Empfangsnachweis:
-              gerechnet über nacktem Gelände, ohne Wald und ohne Häuser. Sie wird deshalb
-              auch <b>nicht gespeichert</b> – wer die Masthöhe ändert, rechnet neu.</li>
+          <li><b>Bewuchs und Bebauung</b> verdecken standardmäßig mit – im 2-m- und
+              4-m-Band ist der Wald kein Nebenumstand. Abschalten zeigt, was das Gelände
+              allein hergibt; der Unterschied zwischen beiden Flächen ist das, was der
+              Wald kostet.</li>
+          <li>Die Fläche ist die <b>günstigste Annahme</b> und kein Empfangsnachweis.
+              Sie wird deshalb auch <b>nicht gespeichert</b> – wer die Masthöhe ändert,
+              rechnet neu.</li>
         </ul>
         <h3>Bilder vom Bauort</h3>
         <p>Lichtbilder, die ein Telefon aufgenommen hat, tragen ihren Aufnahmeort in sich.

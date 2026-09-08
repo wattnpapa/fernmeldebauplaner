@@ -37,6 +37,7 @@
    Fläche ist die günstigste Annahme und kein Empfangsnachweis. */
 
 import { raster, profil, eckenFuer } from './hoehe.js';
+import { oberflaechenraster } from './oberflaeche.js';
 import { ERDRADIUS_WIRKSAM, LUECKEN_GRENZE } from './funkrechnung.js';
 import { wellenlaenge } from './bosfunk.js';
 import { formatLaenge } from './geo.js';
@@ -121,10 +122,13 @@ const STRAHLDICHTE = 2;
  * @param {number} mhz            Rechenfrequenz des Bandes
  * @param {number} umkreis        Umkreis in Metern
  * @param {number} zielhoehe      Antennenhöhe der Gegenstelle über Grund
+ * @param {boolean} mitBewuchs    Bewuchs und Bebauung aus dem Oberflächenmodell
+ *                                als verdeckend rechnen
  * @returns {Promise<object|null>} `zonen[i]` ist FREI, RANDBEREICH, SCHATTEN
  *          oder NICHT_BEURTEILT. `null`, wenn keine Höhen zu bekommen waren.
  */
-export async function ausbreitung(standort, antennenhoehe, mhz, umkreis, zielhoehe = 1.5) {
+export async function ausbreitung(standort, antennenhoehe, mhz, umkreis, zielhoehe = 1.5,
+                                  mitBewuchs = true) {
   const r = gueltigerUmkreis(umkreis);
   const bild = await raster(standort, r);
   if (!bild || bild.fehlend === bild.werte.length) return null;
@@ -133,6 +137,22 @@ export async function ausbreitung(standort, antennenhoehe, mhz, umkreis, zielhoe
   const rZellen = mitteX;
   const grund = werte[mitteY * spalten + mitteX];
   if (!isFinite(grund)) return null;
+
+  /* Zwei Höhen je Zelle, und sie haben verschiedene Aufgaben.
+
+     Verdeckend ist die OBERFLÄCHE: der Waldrand wirft den Schatten, nicht der
+     Boden unter ihm. Der Boden, auf dem die Gegenstelle steht, ist dagegen das
+     GELÄNDE – wer im Wald funkt, steht unter den Bäumen und nicht auf ihnen.
+     Beides zu vermengen wäre in beide Richtungen falsch: mit dem Gelände als
+     Kante verschwände der Wald aus der Rechnung, mit der Oberfläche als Boden
+     stellte man das Handfunkgerät auf den Wipfel und der Wald machte die
+     Reichweite größer statt kleiner.
+
+     Fällt das Oberflächenmodell aus, wird über dem Gelände gerechnet und das
+     Ergebnis sagt es. Ein stiller Rückfall wäre hier das Schlimmste: eine
+     Fläche ohne Wald sieht aus wie eine Fläche mit wenig Wald. */
+  const oberflaeche = mitBewuchs ? await oberflaechenraster(bild).catch(() => null) : null;
+  const dsm = oberflaeche ? oberflaeche.werte : null;
 
   const lambda = wellenlaenge(mhz);
   const hAntenne = Number(antennenhoehe) || 0;
@@ -203,18 +223,29 @@ export async function ausbreitung(standort, antennenhoehe, mhz, umkreis, zielhoe
          belastbare. */
       if (feld[idx] === NICHT_BEURTEILT || zone < feld[idx]) feld[idx] = zone;
 
-      /* Fortgeschrieben wird mit dem Gelände selbst, ohne die Höhe der
+      /* Fortgeschrieben wird mit der Kante selbst, ohne die Höhe der
          Gegenstelle: die Kante wirft ihren Schatten aus ihrer eigenen Höhe und
-         nicht aus der einer Antenne, die dahinter erst noch kommt. */
-      const winkelKante = (z - zAntenne) * kehrwert[i];
+         nicht aus der einer Antenne, die dahinter erst noch kommt. Steht dort
+         Bewuchs oder Bebauung, ist deren Oberkante die Kante. */
+      const ok = dsm && dsm[idx] > h ? dsm[idx] : h;
+      const winkelKante = (ok - senkung[i] - zAntenne) * kehrwert[i];
       if (winkelKante > maxWinkel) { maxWinkel = winkelKante; maxAbstand = abstand[i]; }
     }
   }
 
+  /* Die Oberfläche am Standort selbst ist ein Befund für sich: liegt sie weit
+     über dem Gelände, steht der Mast im Bestand, und dann ist nicht die Karte
+     schwarz, sondern der Standort falsch. Die Zahl gehört deshalb nach außen
+     und nicht nur in die Rechnung. */
+  const dsmStandort = dsm ? dsm[mitteY * spalten + mitteX] : NaN;
+
   return {
     ...zaehlen(feld, bild),
     umkreis: r, meterJeZelle, mhz,
-    standorthoehe: grund, antennenhoehe: hAntenne, zielhoehe: hZiel
+    standorthoehe: grund, antennenhoehe: hAntenne, zielhoehe: hZiel,
+    mitBewuchs: !!dsm,
+    bewuchsGewuenscht: !!mitBewuchs,
+    bestandAmStandort: isFinite(dsmStandort) ? Math.max(0, dsmStandort - grund) : null
   };
 }
 
@@ -458,12 +489,54 @@ export function ausbreitungText(e, band) {
   const wo = e.stellen
     ? `Überdeckung von ${e.stellen} Relaisstellen`
     : `Ausbreitung im Umkreis von ${km} km`;
+  /* Der Vorbehalt ist nicht mehr einer, sondern drei – je nachdem, worüber
+     gerechnet wurde. Er darf sich deshalb nicht in eine feste Formel fügen: ob
+     der Wald in der Rechnung steht, ist der Unterschied zwischen zwei ganz
+     verschiedenen Karten, und wer die Fläche liest, muss wissen, welche er vor
+     sich hat. Der stille Rückfall auf das Gelände bekommt den schärfsten Satz:
+     dort sieht die Karte aus wie eine mit Bewuchs und ist keine. */
+  const grundlage = e.mitBewuchs
+    ? 'Bewuchs und geschlossene Bebauung stehen als verdeckende Kanten in der ' +
+      'Rechnung – aus einem Oberflächenmodell mit 30 m Zellenweite, das den Wald ' +
+      'sieht und das einzelne Haus nicht. Freileitungen fehlen. Wer im Bestand ' +
+      'steht, steht darunter und nicht darauf.'
+    : e.bewuchsGewuenscht
+      ? 'ACHTUNG: Das Oberflächenmodell war nicht zu erreichen – gerechnet ist ' +
+        'allein über nacktem Gelände. Wald und Bebauung fehlen in dieser Fläche ' +
+        'vollständig, sie fällt damit zu günstig aus.'
+      : 'Gerechnet ist über nacktem Gelände: Bewuchs, Bebauung und Freileitungen ' +
+        'stehen in diesen Höhen nicht.';
   return `${wo}: ${anteil(e.frei)} % der Fläche (${flaecheText(e.flaecheFrei)}) haben ` +
-    `freie Sicht über das Gelände, weitere ${anteil(e.rand)} % ` +
+    `freie Sicht, weitere ${anteil(e.rand)} % ` +
     `(${flaecheText(e.flaecheRand)}) liegen im Randbereich – dort verdeckt eine Kante ` +
     `die Sichtlinie, die Beugung trägt aber noch (bis ${RAND_BIS_DB} dB).${digital} ` +
-    'Bewuchs, Bebauung und Freileitungen stehen in diesen Höhen nicht – die eingefärbte ' +
-    'Fläche ist die günstigste Annahme, kein Empfangsnachweis.' + luecke;
+    `${grundlage} Die eingefärbte Fläche ist die günstigste Annahme, kein ` +
+    'Empfangsnachweis.' + luecke;
+}
+
+/* Ab wie viel Bestand über dem Mastfuß es sich lohnt, den Standort in Frage zu
+   stellen. 3 m ist die Schwelle, ab der das Oberflächenmodell nicht mehr bloß
+   rauscht, sondern etwas gesehen hat. */
+const BESTAND_SCHWELLE = 3;
+
+/**
+ * Der Satz zum Bestand am Standort selbst – oder `null`, wenn dort nichts steht.
+ *
+ * Er ist der wichtigste Einzelbefund der ganzen Rechnung: eine Fläche, die
+ * fast ganz schwarz ist, hat meistens nicht das Gelände zur Ursache, sondern
+ * einen Mast, der im Wald steht. Ohne diesen Satz sucht der Planer den Fehler
+ * in der Karte statt am Standort.
+ */
+export function bestandText(e) {
+  if (!e || e.bestandAmStandort === null || e.bestandAmStandort < BESTAND_SCHWELLE) return null;
+  const m = meterText(e.bestandAmStandort);
+  const hoch = e.antennenhoehe;
+  return `Am Standort steht die Oberfläche ${m} über dem Gelände – das Modell sieht dort ` +
+    `Bewuchs oder Bebauung. ` + (hoch <= e.bestandAmStandort
+      ? `Die Antenne steht mit ${meterText(hoch)} darunter; von einem Standort im ` +
+        'Bestand trägt keine Masthöhe. Vor allem anderen ist der Standort zu prüfen.'
+      : `Die Antenne überragt das mit ${meterText(hoch)} – knapp. Am Bauort in ` +
+        'Augenschein nehmen, ob der Mast wirklich frei steht.');
 }
 
 /** Zeichenerklärung der drei Zonen – Seitenleiste und Blatt nehmen denselben Text. */

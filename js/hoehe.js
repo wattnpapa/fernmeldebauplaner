@@ -198,6 +198,26 @@ export function eckenFuer(x0, y0, spalten, zeilen) {
   return [weltPixelZurueck(x0, y0 + zeilen), weltPixelZurueck(x0 + spalten, y0)];
 }
 
+/**
+ * Die Orte der Zellenmitten eines Rasterblocks – nach Zeilen und Spalten
+ * getrennt, nicht als Feld von Punkten.
+ *
+ * Das ist kein Sparsamkeitstrick, sondern folgt aus der Projektion: in
+ * Web-Mercator hängt die geografische Breite allein an der Zeile und die Länge
+ * allein an der Spalte. Ein Block mit 800 × 800 Zellen braucht deshalb 1.600
+ * Umrechnungen und nicht 640.000 – und wer die Orte danach zeilenweise
+ * durchgeht, setzt sie aus zwei Zahlen zusammen. Gebraucht wird das, um zu
+ * einem Höhenraster die passenden Oberflächenhöhen zu holen
+ * (`oberflaechenraster` in oberflaeche.js).
+ */
+export function rasterGitter(bild) {
+  const lats = new Float64Array(bild.zeilen);
+  const lngs = new Float64Array(bild.spalten);
+  for (let j = 0; j < bild.zeilen; j++) lats[j] = weltPixelZurueck(0, bild.y0 + j + 0.5).lat;
+  for (let i = 0; i < bild.spalten; i++) lngs[i] = weltPixelZurueck(bild.x0 + i + 0.5, 0).lng;
+  return { lats, lngs };
+}
+
 /* Wie viele Kacheln ein Umkreis kostet – der Aufrufer soll vor dem Abruf sagen
    können, was er anstößt, statt den Nutzer in eine unbestimmte Wartezeit zu
    schicken. Der Cache oben hält 64 Kacheln; darüber verdrängt sich der Block
