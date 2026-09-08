@@ -12,6 +12,7 @@ import { GitterLayer } from './gitter.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById, dopQuellenangabe, MAX_ZOOM } from './map.js';
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
 import { HOEHEN_QUELLE } from './hoehe.js';
+import { OBERFLAECHEN_QUELLE } from './oberflaeche.js';
 import {
   querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText, MAX_QUERSCHNITT
 } from './strom.js';
@@ -1739,7 +1740,7 @@ function profilAbschnittHTML(s, opt) {
     <h2>Geländeschnitt zwischen den Aufbauplätzen</h2>
     <div class="hp-rahmen">${svg}</div>
     ${profilLegendeHTML()}
-    <p class="hp-vorbehalt">${escapeHtml(profilVorbehalt(u.profil))}</p>
+    <p class="hp-vorbehalt">${escapeHtml(profilVorbehalt(u.profil, u.quellen))}</p>
     <p class="hp-urteil hp-${escapeHtml(u.urteil)}">${escapeHtml(u.satz)}</p>
   </section>`;
 }
@@ -2014,7 +2015,12 @@ function kartenquelle(p, opt) {
      Modell mit Gültigkeitszeitraum gehört zur Quellenangabe wie die Kachel –
      wer das Blatt in zwei Jahren wiederfindet, soll sehen, worauf es beruht. */
   const funk = (p.strecken || []).some(st => kabelById(st.kabeltyp).funk);
+  /* Die Oberflächenquellen stehen nur auf Blättern, die auch ein Profil
+     tragen – auf einem Kabelbauauftrag wären sie eine Quellenangabe für Daten,
+     die dort nirgends benutzt werden. */
+  const profil = (p.strecken || []).some(st => urteilLesen(st));
   return `Kartengrundlage: ${ohneMarken(text)} · ${escapeHtml(HOEHEN_QUELLE)}` +
+    (profil ? ` · ${escapeHtml(OBERFLAECHEN_QUELLE)}` : '') +
     (funk ? ` · ${escapeHtml(MISSWEISUNG_QUELLE)}` : '');
 }
 

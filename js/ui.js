@@ -27,6 +27,7 @@ import {
   bandById, mimoById, gueltigeBandbreite, datenrateText, funkstrecke, azimutText
 } from './richtfunk.js';
 import { hoeheAn, profil, kachelbedarf } from './hoehe.js';
+import { oberflaechenprofil, QUELLTEXT, ARTTEXT } from './oberflaeche.js';
 import {
   eirpPruefung, bandById as regelBandById,
   leistungText as eirpLeistungText, massgebendText as eirpMassgebendText, abstandText
@@ -914,13 +915,22 @@ function gelaendeNachfuehren(s, aktualisieren) {
   gelaendeLaeuft.add(s.id);
   aktualisieren();
   profil(f.a, f.b, 25)
-    .then(punkte => {
+    /* Erst das Gelände, dann die Oberfläche darauf: die Oberflächenquellen
+       brauchen die Stützpunkte, und ohne Geländehöhe wäre eine Hindernishöhe
+       über Grund gar nicht zu bilden. Fällt die Ergänzung aus, wird mit dem
+       Gelände allein geurteilt – wie vor der Oberflächenschicht, und der
+       Vorbehalt sagt es dann auch. */
+    .then(async punkte => {
+      const ergaenzt = await oberflaechenprofil(punkte)
+        .catch(() => ({ punkte, dsm: false, osm: false }));
       const mitte = f.hoehen.map(h => h.grund + (h.antenne || 0));
       /* Mitgespeichert werden auch die Stützpunkte: das Blatt zeichnet später
          dasselbe Profil und darf dafür nicht nachladen. */
       urteilMerken(s, {
-        ...gelaendeurteil(punkte, mitte[0], mitte[1], f.mhz),
-        profil: punkte, mitten: mitte, mhz: f.mhz
+        ...gelaendeurteil(ergaenzt.punkte, mitte[0], mitte[1], f.mhz,
+          { dsm: ergaenzt.dsm, osm: ergaenzt.osm }),
+        profil: ergaenzt.punkte, mitten: mitte, mhz: f.mhz,
+        quellen: { dsm: ergaenzt.dsm, osm: ergaenzt.osm }
       });
     })
     .catch(() => {})
@@ -942,6 +952,7 @@ function richtfunkGruppe(s, frisch) {
 
   const aktualisieren = () => {
     ergebnis.innerHTML = richtfunkErgebnisHTML(s);
+    ablesungBinden(ergebnis, s);
     spalten.querySelectorAll('.rf-abgeleitet').forEach((el2, i) => {
       el2.innerHTML = standortAbgeleitetHTML(s, i);
     });
@@ -1281,12 +1292,35 @@ function gelaendeHTML(s) {
   /* Solange geholt wird, steht das auch da. Ein Kasten, der sich nach ein paar
      Sekunden stillschweigend um einen Absatz erweitert, wirkt wie ein Fehler. */
   if (gelaendeLaeuft.has(s.id)) {
-    return '<p class="rf-gelaende rf-laeuft">Geländehöhen werden geholt …</p>';
+    return '<p class="rf-gelaende rf-laeuft">Gelände- und Oberflächenhöhen werden geholt …</p>';
   }
   if (u === undefined) return '';
   if (u === null) return '<p class="rf-gelaende">Das Gelände ließ sich nicht beurteilen.</p>';
   return `${profilBildHTML(u)}
-    <p class="rf-gelaende rf-${escapeHtml(u.urteil)}">${escapeHtml(u.satz)}</p>`;
+    <p class="rf-gelaende rf-${escapeHtml(u.urteil)}">${escapeHtml(u.satz)}</p>
+    ${engstelleHTML(u)}`;
+}
+
+/* Die knappste Stelle in Zahlen – das, was der Satz oben in Worte fasst. Sie
+   steht auch dann da, wenn die Strecke unauffällig ist: „wie knapp ist knapp“
+   entscheidet, ob man den Mast eine Stufe höher stellt, und das ist am
+   Kartentisch die eigentliche Frage. Der Abstand zur Fresnelzone kann negativ
+   sein; dann ragt die Oberfläche hinein, ohne die Sichtlinie zu berühren. */
+function engstelleHTML(u) {
+  const e = u && u.engste;
+  if (!e || !isFinite(e.abstandSichtlinie)) return '';
+  const anteil = u.freiraumAnteil === null ? null : Math.round(u.freiraumAnteil * 100);
+  /* Steht die Oberfläche über der Sichtlinie, ist der Anteil der Fresnelzone
+     keine Aussage mehr – er wäre negativ und läse sich wie ein Maß. Dann sagt
+     die Zeile nur noch, wie weit darüber. */
+  const daneben = e.abstandSichtlinie < 0;
+  const teile = [
+    `knappste Stelle ${formatLaenge(e.d, true)}`,
+    `Oberfläche ${meterText(e.hoehe)}`,
+    `${meterText(Math.abs(e.abstandSichtlinie))} ${daneben ? 'über' : 'unter'} der Sichtlinie`,
+    daneben || anteil === null ? null : `erste Fresnelzone zu ${anteil} % frei`
+  ].filter(Boolean);
+  return `<p class="rf-engstelle">${escapeHtml(teile.join(' · '))}</p>`;
 }
 
 /* Das Bild steht über dem Satz, nicht darunter: es zeigt, worauf der Satz
@@ -1298,8 +1332,81 @@ function profilBildHTML(u) {
   const svg = profilSVG(u.profil, u.mitten[0], u.mitten[1], u.mhz,
     { engste: u.urteil === 'verdeckt' ? u.engste : null });
   if (!svg) return '';
-  return `<figure class="hp-bild">${svg}${profilLegendeHTML()}
-    <figcaption>${escapeHtml(profilVorbehalt(u.profil))}</figcaption></figure>`;
+  /* Die Ablesezeile steht zwischen Bild und Erklärung und trägt im Ruhezustand
+     den Hinweis, dass es sie gibt – ein leeres Feld, das erst beim Überfahren
+     etwas anzeigt, findet niemand. */
+  return `<figure class="hp-bild">${svg}
+    <p class="hp-ablesung" data-ablesung><span class="hp-ruhe">Zum Ablesen über das
+      Profil fahren.</span></p>
+    ${profilLegendeHTML()}
+    <figcaption>${escapeHtml(profilVorbehalt(u.profil, u.quellen))}</figcaption></figure>`;
+}
+
+/* Das Ablesen am Profil. Am Kartentisch wird auf eine Stelle gezeigt und
+   gefragt „was steht da“ – bisher konnte das Bild darauf nicht antworten, weil
+   es eine reine Zeichenkette ist. Die Zahlen kommen deshalb nicht aus dem SVG,
+   sondern aus denselben Stützpunkten, aus denen es gezeichnet wurde; das Bild
+   liefert nur die Umrechnung von der Zeigerstelle in eine Entfernung.
+
+   Gebunden wird nach jedem Neuaufbau der Ergebnisanzeige – sie wird über
+   innerHTML ersetzt, und damit sind alte Ereignisbindungen ohnehin fort. */
+function ablesungBinden(wurzel, s) {
+  const u = urteilLesen(s);
+  const svg = wurzel.querySelector('.hp-bild .hp-svg');
+  const zeile = wurzel.querySelector('[data-ablesung]');
+  if (!svg || !zeile || !u || !u.profil) return;
+
+  const punkte = u.profil.filter(p => isFinite(p.h));
+  if (punkte.length < 2) return;
+  const x0 = Number(svg.dataset.x0), x1 = Number(svg.dataset.x1);
+  const D = Number(svg.dataset.d);
+  const zeiger = svg.querySelector('.hp-zeiger');
+  const ruhe = zeile.innerHTML;
+  if (!(D > 0) || !(x1 > x0)) return;
+
+  const zeigen = ev => {
+    const kasten = svg.getBoundingClientRect();
+    if (!kasten.width) return;
+    /* Von Bildschirmpixeln in die Maße des viewBox. Das Bild füllt seine
+       Breite und behält sein Seitenverhältnis, deshalb genügt ein Faktor. */
+    const xv = (ev.clientX - kasten.left) * (svg.viewBox.baseVal.width / kasten.width);
+    const d = Math.min(D, Math.max(0, (xv - x0) / (x1 - x0) * D));
+    const p = punkte.reduce((a, b) => Math.abs(b.d - d) < Math.abs(a.d - d) ? b : a);
+    if (zeiger) {
+      const x = x0 + p.d / D * (x1 - x0);
+      zeiger.setAttribute('x1', x); zeiger.setAttribute('x2', x);
+      zeiger.hidden = false;
+    }
+    zeile.innerHTML = ablesungHTML(p);
+  };
+  const ruhen = () => { if (zeiger) zeiger.hidden = true; zeile.innerHTML = ruhe; };
+
+  /* Zeigerereignisse statt Mausereignisse: auf dem Tablett am Kartentisch wird
+     mit dem Finger gezeigt, und `pointer` deckt beides ab. */
+  svg.addEventListener('pointermove', zeigen);
+  svg.addEventListener('pointerdown', zeigen);
+  svg.addEventListener('pointerleave', ruhen);
+}
+
+/* Was an einem Stützpunkt abzulesen ist. Die Herkunft steht dabei, und wo
+   nichts über dem Boden bekannt ist, steht das ausdrücklich – „0 m Hindernis“
+   wäre an dieser Stelle eine Behauptung. */
+function ablesungHTML(p) {
+  const teile = [
+    `Entfernung <b>${escapeHtml(formatLaenge(p.d, true))}</b>`,
+    `Gelände <b>${escapeHtml(meterText(p.h))}</b>`
+  ];
+  if (isFinite(p.oberflaeche)) {
+    teile.push(`Oberfläche <b>${escapeHtml(meterText(p.oberflaeche))}</b>`);
+    teile.push(`Hindernis über Gelände <b>${escapeHtml(meterText(p.hindernis))}</b>` +
+      (p.hindernis > 0.05
+        ? ` (${escapeHtml(ARTTEXT[p.art] || '')}, ${escapeHtml(QUELLTEXT[p.quelle] || '')})`
+        : ''));
+  } else {
+    teile.push('Oberflächendaten: <b>nicht verfügbar</b>');
+  }
+  if (p.gebaeudeOhneHoehe) teile.push('hier steht ein <b>Gebäude ohne Höhenangabe</b>');
+  return teile.join(' · ');
 }
 
 /* Die Vorschrift nennt für die Sprechreichweite eine Erfahrungsspanne, keinen

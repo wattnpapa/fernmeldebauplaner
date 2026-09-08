@@ -14,9 +14,18 @@
    Gerechnet wird in der flachen Erde: die Erdkrümmung wird auf die
    Geländehöhen aufaddiert, statt die Sichtlinie zu biegen. Dadurch bleibt die
    Sichtlinie eine Gerade, und das Blatt kommt mit einer Linie weniger aus –
-   wer eine gebogene Sichtlinie sieht, sucht nach dem Grund für die Biegung. */
+   wer eine gebogene Sichtlinie sieht, sucht nach dem Grund für die Biegung.
+
+   Gezeichnet werden zwei Verläufe: das Gelände als gefüllte Fläche und darüber
+   die Oberfläche – Wald, Bebauung, was sonst auf dem Boden steht. Der Streifen
+   zwischen beiden ist das, was die reine Geländebetrachtung übersieht, und er
+   ist deshalb eigens eingefärbt statt nur als zweite Linie geführt: auf dem
+   Blatt soll man sehen, wie viel von der Freihaltung der Bewuchs frisst. Wo
+   keine Oberflächenhöhe vorliegt, liegt die obere Linie auf der unteren, und
+   dann ist der Streifen zu Recht nicht da. */
 
 import { fresnelradius, senkung, FREIRAUM_ANTEIL } from './funkrechnung.js';
+import { oberflaecheVon } from './oberflaeche.js';
 import { formatLaenge } from './geo.js';
 
 /* Blattmaße statt Sachmaße im viewBox. Ein viewBox in Metern und Kilometern
@@ -74,16 +83,23 @@ export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
   const punkte = ausduennen(alle).map(p => {
     const sicht = mitteA + (mitteB - mitteA) * (p.d / D);
     const f1 = fresnelradius(mhz, p.d, D - p.d);
+    const stich = senkung(p.d, D - p.d);
+    /* Die Oberfläche kann in den Daten unter das Gelände rutschen – zwei
+       Modelle, zwei Aufnahmen. Gezeichnet wird sie nie darunter: eine
+       Oberfläche unter dem Boden ist kein Befund, sondern ein Messfehler,
+       und als Delle im Bild würde sie als Senke gelesen. */
+    const flaeche = Math.max(oberflaecheVon(p), p.h);
     return {
       d: p.d,
-      gelaende: p.h + senkung(p.d, D - p.d),
+      gelaende: p.h + stich,
+      oberflaeche: flaeche + stich,
       oben: sicht + f1,
       unten: sicht - f1,
       grenze: sicht - FREIRAUM_ANTEIL * f1
     };
   });
 
-  const werte = punkte.flatMap(p => [p.gelaende, p.unten, p.oben]);
+  const werte = punkte.flatMap(p => [p.gelaende, p.oberflaeche, p.unten, p.oben]);
   const roh = { min: Math.min(...werte), max: Math.max(...werte) };
   const schritt = achsenschritt(Math.max(20, roh.max - roh.min));
   const yMin = Math.floor((roh.min - schritt * 0.2) / schritt) * schritt;
@@ -104,6 +120,16 @@ export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
 
   const flaeche = `${linie('gelaende')} L${rnd(X(D))} ${rnd(Y(yMin))} ` +
     `L${rnd(X(0))} ${rnd(Y(yMin))} Z`;
+
+  /* Das Band zwischen Gelände und Oberfläche: Oberfläche hin, Gelände zurück.
+     Es wird nur gezeichnet, wenn irgendwo etwas darüber steht – ein
+     nulldicker geschlossener Zug erzeugt im Firefox-Druck einen Haarstrich
+     über die ganze Breite, und der läse sich als Hindernis. */
+  const hatHindernis = punkte.some(p => p.oberflaeche - p.gelaende > 0.05);
+  const band = hatHindernis
+    ? linie('oberflaeche') + ' ' +
+      [...punkte].reverse().map(p => `L${rnd(X(p.d))} ${rnd(Y(p.gelaende))}`).join(' ') + ' Z'
+    : '';
 
   /* Der Fresnelbauch als geschlossener Zug: obere Grenze hin, untere zurück.
      In Farbe trägt die Fläche das Bild, das man aus den Herstellerwerkzeugen
@@ -142,19 +168,28 @@ export function profilSVG(profil, mitteA, mitteB, mhz, o = {}) {
           text-anchor="${e.d > D * 0.7 ? 'end' : (e.d < D * 0.3 ? 'start' : 'middle')}"
           >${formatLaenge(e.d, true)}</text>` : '';
 
+  /* Die drei Maßangaben tragen die Ablesung: die Oberfläche rechnet aus einem
+     Mausort die Entfernung zurück, ohne das Bild noch einmal aufzubauen. Sie
+     stehen als Daten am Element und nicht in einer Variablen der Anzeige,
+     damit das Bild sich selbst erklärt – auch im gedruckten Blatt, wo es
+     niemand anfasst. */
   return `<svg class="hp-svg${sw ? ' hp-sw' : ''}" viewBox="0 0 ${BREITE} ${HOEHE}"
       preserveAspectRatio="xMidYMid meet" role="img"
+      data-x0="${RAND.links}" data-x1="${rnd(BREITE - RAND.rechts)}" data-d="${rnd(D)}"
       aria-label="Geländeschnitt zwischen den Aufbauplätzen">
     <g>${gitter.join('')}</g>
     ${sw ? '' : `<path class="hp-bauch" d="${bauch}"/>`}
     <path class="hp-gelaende" d="${flaeche}"/>
+    ${band ? `<path class="hp-hindernis" d="${band}"/>` : ''}
     <path class="hp-kante" d="${linie('gelaende')}"/>
+    ${hatHindernis ? `<path class="hp-oberflaeche" d="${linie('oberflaeche')}"/>` : ''}
     <path class="hp-fresnel" d="${linie('oben')}"/>
     <path class="hp-fresnel" d="${linie('unten')}"/>
     <path class="hp-grenze" d="${linie('grenze')}"/>
     <line class="hp-sicht" x1="${rnd(X(0))}" y1="${rnd(Y(mitteA))}"
           x2="${rnd(X(D))}" y2="${rnd(Y(mitteB))}"/>
     ${engstelle}
+    <line class="hp-zeiger" x1="0" y1="${RAND.oben}" x2="0" y2="${rnd(HOEHE - RAND.unten)}" hidden/>
     ${marken.join('')}
     <text class="hp-achse hp-einheit" x="${rnd(RAND.links - 1.5)}" y="${rnd(RAND.oben - 1.4)}"
           text-anchor="end">m NN</text>
@@ -180,16 +215,35 @@ export function profilLegendeHTML(sw = false) {
     <li>${probe('hp-fresnel')}erste Fresnelzone</li>
     <li>${probe('hp-grenze')}Freihaltemaß – darunter trägt die Strecke nicht</li>
     <li>${probe('hp-kante')}Gelände einschließlich Erdkrümmung</li>
+    <li>${probe('hp-oberflaeche')}Oberfläche – Bewuchs und Bebauung über dem Gelände</li>
   </ul>`;
 }
 
 /* Der Satz unter dem Bild. Er sagt, worauf es beruht – und was es nicht zeigt.
-   Ohne ihn liest sich ein freier Korridor als Freigabe, und genau die geben
-   diese Höhen nicht her: sie kennen weder Bewuchs noch Bebauung. */
-export function profilVorbehalt(punkte) {
-  const ohne = (punkte || []).filter(p => !isFinite(p.h)).length;
+   Ohne ihn liest sich ein freier Korridor als Freigabe, und die geben auch die
+   Oberflächendaten nicht her: sie sehen einen Wald, aber keinen einzelnen Baum,
+   ein Gebäude nur mit eingetragener Höhe und eine Freileitung überhaupt nicht.
+   Welche Quelle gefehlt hat, gehört mit in denselben Satz – ein Profil ohne
+   Gebäude sieht aus wie freies Feld, gleichgültig warum. */
+export function profilVorbehalt(punkte, quellen = {}) {
+  const liste = punkte || [];
+  const ohne = liste.filter(p => !isFinite(p.h)).length;
   const luecke = ohne ? ` Für ${ohne} Stützpunkte fehlten die Höhen.` : '';
-  return 'Geländehöhen aus dem Höhenmodell, rund 25 m Rasterweite. Bewuchs, Bebauung ' +
-    'und Freileitungen sind darin nicht enthalten – sie liegen über dem gezeichneten ' +
-    'Gelände und entscheiden bei der Erkundung.' + luecke;
+  const geschaetzt = liste.some(p => p.geschaetzt)
+    ? ' Über Wald- und Gehölzflächen sowie bei Gebäuden ohne Höhenangabe ist die ' +
+      'Höhe angenommen, nicht gemessen.'
+    : '';
+  const fehlend = [
+    quellen.dsm === false ? 'das Oberflächenmodell' : null,
+    quellen.osm === false ? 'die Gebäude- und Bewuchsdaten' : null
+  ].filter(Boolean);
+  const ausfall = fehlend.length
+    ? ` Für diese Strecke ${fehlend.length === 1 ? 'stand' : 'standen'} ` +
+      `${fehlend.join(' und ')} nicht zur Verfügung – gezeichnet ist insoweit ` +
+      'allein das Gelände.'
+    : '';
+  return 'Gelände aus dem Höhenmodell (rund 25 m Rasterweite), Oberfläche aus dem ' +
+    'Copernicus-Oberflächenmodell (rund 30 m) sowie aus Gebäuden und Waldflächen ' +
+    'von OpenStreetMap. Freileitungen, Masten und einzelne Bäume stehen in keiner ' +
+    'dieser Quellen – sie entscheiden bei der Erkundung.' + geschaetzt + ausfall + luecke;
 }

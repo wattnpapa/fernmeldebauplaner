@@ -46,9 +46,11 @@
       <b>Das Wesentliche vorweg:</b> Deine Planungen verlassen dein Gerät nicht – es gibt
       keinen Server, auf den sie hochgeladen würden. Nach außen gehen nur drei Dinge: die
       <b>Kartenkacheln</b>, die dein Browser bei den Kartenanbietern abruft, die
-      <b>Höhenkacheln</b> für Geländehöhe und Geländeprüfung (beides Abschnitt 4),
-      und ein <b>Zählimpuls</b> beim Aufruf der Anwendung (Abschnitt 6), dem du unten
-      widersprechen kannst.
+      <b>Höhen- und Oberflächendaten</b> für Geländehöhe und Streckenprüfung
+      (beides Abschnitt 4), und ein <b>Zählimpuls</b> beim Aufruf der Anwendung
+      (Abschnitt 6), dem du unten widersprechen kannst. Eine Ausnahme von der Regel
+      „nur der Ausschnitt, nie die Position“ gibt es: für die Hindernisprüfung einer
+      Funkstrecke geht deren <b>Verlauf</b> an die Overpass-API – siehe Abschnitt 4.
     </p>
   </div>
 
@@ -182,6 +184,18 @@
           <td>Amazon Web Services, Terrain Tiles auf AWS Open Data (USA)</td>
           <td class="mono">s3.amazonaws.com</td>
         </tr>
+        <tr>
+          <td>Oberflächenmodell (Bewuchs und Bebauung im Höhenprofil einer Funkstrecke)</td>
+          <td>Microsoft Planetary Computer (USA/Niederlande) – Copernicus DEM GLO-30 des
+            Copernicus-Programms der Europäischen Union</td>
+          <td class="mono">planetarycomputer.microsoft.com,
+            elevationeuwest.blob.core.windows.net</td>
+        </tr>
+        <tr>
+          <td>Gebäude sowie Wald- und Gehölzflächen entlang einer Funkstrecke</td>
+          <td>Overpass-API auf Daten von OpenStreetMap (Deutschland)</td>
+          <td class="mono">overpass-api.de, ersatzweise overpass.kumi.systems</td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -197,7 +211,21 @@
     beide Aufbauplätze gesetzt sind, und auf ausdrücklichen Knopfdruck für die
     Funksichtfläche. Sie verraten wie die Kartenkacheln nur den Ausschnitt, nicht die
     genaue Position – eine Kachel deckt auf unserer Breite rund 6 km ab und ist damit
-    gröber als jede Kartenkachel, die im selben Ausschnitt ohnehin geladen wird. Es gelten die
+    gröber als jede Kartenkachel, die im selben Ausschnitt ohnehin geladen wird.
+    Für das Oberflächenmodell gilt dasselbe, nur noch gröber: dort wird eine Kachel
+    von einem Breiten- mal einem Längengrad angefragt, also rund 110 km mal 70 km.
+  </p>
+  <p>
+    <b>Eine Ausnahme, und sie ist wichtig:</b> Sobald eine Funkstrecke zwei
+    Aufbauplätze hat, fragt die Anwendung bei der Overpass-API die Gebäude sowie die
+    Wald- und Gehölzflächen ab, die im Weg stehen könnten. Dafür geht der <b>Verlauf
+    der geplanten Strecke</b> an diesen Dienst – ein schmaler Streifen um die
+    Verbindung der beiden Aufbauplätze und das umschließende Rechteck. Das ist nicht
+    nur ein Ausschnitt, das sind die beiden Orte. Wer das nicht möchte, setzt für die
+    Strecke keinen zweiten Aufbauplatz oder prüft die Hindernisse bei der Erkundung
+    statt hier. Ein Konto, eine Kennung oder einen Namen überträgt die Anfrage nicht,
+    und was zurückkommt, wird nicht gespeichert – es geht in das Urteil zu dieser
+    einen Strecke ein und ist mit dem nächsten Neuladen fort. Es gelten die
     Nutzungs- und Datenschutzbedingungen des jeweiligen Anbieters.
   </p>
 

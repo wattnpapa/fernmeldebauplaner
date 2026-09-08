@@ -535,6 +535,8 @@ body.druckansicht { overflow: hidden; }
 .hp-fuss { font-size: 2.4px; }
 .hp-gelaende { fill: #4a3f35; fill-opacity: .18; stroke: none; }
 .hp-kante { fill: none; stroke: #6b5844; stroke-width: .6; }
+.hp-hindernis { fill: #4a3f35; fill-opacity: .38; stroke: none; }
+.hp-oberflaeche { fill: none; stroke: #6b5844; stroke-width: .35; stroke-dasharray: 1.2 .9; }
 .hp-bauch { fill: #003399; fill-opacity: .10; stroke: none; }
 .hp-fresnel { fill: none; stroke: #003399; stroke-width: .3; stroke-dasharray: 2 1.4; }
 .hp-grenze { fill: none; stroke: #b26a00; stroke-width: .45; stroke-dasharray: 4 1.4 1 1.4; }
@@ -548,6 +550,11 @@ body.druckansicht { overflow: hidden; }
    es ist die Linie, an der entschieden wird. */
 .hp-svg.hp-sw .hp-gelaende { fill: #000; fill-opacity: .13; }
 .hp-svg.hp-sw .hp-kante { stroke: #000; stroke-width: .7; }
+/* Im Schwarz-Weiß-Druck trägt der Deckungsunterschied allein: das Band steht
+   sichtbar dunkler auf der Geländefläche, die Oberflächenkante bleibt fein
+   gestrichelt gegen die kräftige Geländekante. */
+.hp-svg.hp-sw .hp-hindernis { fill: #000; fill-opacity: .34; }
+.hp-svg.hp-sw .hp-oberflaeche { stroke: #000; stroke-width: .38; stroke-dasharray: 1.2 .9; }
 .hp-svg.hp-sw .hp-fresnel { stroke: #000; stroke-width: .28; stroke-dasharray: 2 1.6; }
 .hp-svg.hp-sw .hp-grenze { stroke: #000; stroke-width: .5; stroke-dasharray: 4 1.4 1 1.4; }
 .hp-svg.hp-sw .hp-sicht { stroke: #000; stroke-width: .55; }

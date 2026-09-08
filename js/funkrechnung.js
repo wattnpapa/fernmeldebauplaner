@@ -14,6 +14,7 @@
    Geometrie hergibt, steht hier. */
 
 import { meter, formatLaenge } from './geo.js';
+import { oberflaecheVon, ARTTEXT, QUELLTEXT } from './oberflaeche.js';
 
 // ---------------------------------------------------------------- Grundgrößen
 
@@ -45,8 +46,24 @@ export const FREIRAUM_ANTEIL = 0.6;
    1,57 m auf 500 m und 3,13 m auf 2 km – bis rund 3 km ist die Streuung der
    Eingangsdaten also größer als die ganze geprüfte Größe. Wer unterhalb
    dieser Schwelle meldet, meldet das Rauschen. Die Zahl gehört deshalb auf
-   das Blatt und nicht in eine Hilfe. */
+   das Blatt und nicht in eine Hilfe.
+
+   Mit der Oberflächenschicht (oberflaeche.js) wird die Streuung nicht kleiner,
+   sondern größer: die Oberflächenhöhe stammt aus einer anderen Aufnahme als
+   die Geländehöhe, und über freiem Acker gehen die beiden schon deshalb um
+   einige Meter auseinander. Genau davor schützt diese Schwelle. Sie bleibt
+   deshalb, wo sie ist – nur mit einer Ausnahme: eine Höhe, die aus einem
+   eingetragenen Gebäude oder einer Waldfläche stammt, ist keine Streuung
+   zwischen zwei Modellen, sondern ein benanntes Objekt an einer bekannten
+   Stelle. Dort zählt schon ein kleinerer Fehlbetrag (SCHWELLE_OBJEKT). */
 export const ERKENNUNGSSCHWELLE = 7;
+
+/* Für Hindernisse mit Namen und Umriss – Gebäude aus OpenStreetMap, Wald- und
+   Gehölzflächen. Hier steckt der Fehler nicht mehr im Vergleich zweier
+   Höhenmodelle, sondern nur noch in der Höhenannahme über dem Objekt; 3 m
+   entsprechen einem Geschoss und liegen über der Streuung des Geländemodells
+   allein. */
+export const SCHWELLE_OBJEKT = 3;
 
 /* Fehlt mehr als jeder zehnte Stützpunkt, kann hinter der Lücke ein ganzer
    Bergrücken stehen. Dann wird nicht geraten, sondern nicht geurteilt. */
@@ -130,23 +147,33 @@ export function mindestantennenhoehe(mhz, laenge) {
 
 const ohneHoehe = p => p.h === null || p.h === undefined || !isFinite(p.h);
 
+/* Objekte mit Umriss werden schärfer beurteilt als der Vergleich zweier
+   Höhenmodelle – siehe SCHWELLE_OBJEKT. */
+const schwelleFuer = art => (art === 'gebaeude' || art === 'bewuchs')
+  ? SCHWELLE_OBJEKT : ERKENNUNGSSCHWELLE;
+
 /**
- * Urteil über das Gelände zwischen zwei Antennen.
- * @param {Array<{d:number,lat:number,lng:number,h:?number}>} profil aus hoehe.js
+ * Urteil über die Strecke zwischen zwei Antennen.
+ * @param {Array<{d:number,lat:number,lng:number,h:?number,oberflaeche:?number}>} profil
+ *        aus hoehe.js, möglichst durch oberflaeche.js ergänzt
  * @param {number} hoeheA  Antennenmitte am Anfang, Meter über NN
  * @param {number} hoeheB  Antennenmitte am Ende, Meter über NN
  * @param {number} mhz     Frequenz in MHz
+ * @param {object} o       { dsm, osm } – hat die jeweilige Quelle geantwortet
  * @returns {object|null}  null, solange Profil oder Höhen fehlen
  *
- * Das Urteil ist mit Absicht einseitig. „verdeckt“ trägt: steht das Gelände
- * über der Erkennungsschwelle im Weg, kann Bewuchs die Strecke nur weiter
- * verdecken, nie freimachen. Die Gegenrichtung trägt nicht: dass in den
- * Höhendaten nichts steht, heißt nur, dass in den Höhendaten nichts steht.
- * Deshalb gibt es hier keine Ampel, keinen Haken und keinen Prozentsatz einer
- * freien Zone – eine Zahl wie „zu 80 % frei“ würde eine Genauigkeit vorgeben,
- * die das Geländemodell bei diesen Streckenlängen nicht hat.
+ * Geprüft wird gegen die OBERFLÄCHE, nicht gegen das Gelände: ein Dach und
+ * eine Baumreihe verdecken eine Strecke genauso wie eine Kuppe. Wo keine
+ * Oberflächenhöhe vorliegt, tritt das Gelände an ihre Stelle – dann gilt
+ * wieder, was vor der Oberflächenschicht galt, und der Vorbehalt sagt es.
+ *
+ * Das Urteil bleibt mit Absicht einseitig. „verdeckt“ trägt: was im Weg steht,
+ * steht im Weg. Die Gegenrichtung trägt nicht: dass in diesen Daten nichts
+ * steht, heißt nur, dass in diesen Daten nichts steht – ein Funkmast, ein
+ * Silo, eine Freileitung und jeder Baum außerhalb einer kartierten Waldfläche
+ * fehlen darin. Deshalb gibt es weiterhin keine Ampel und keinen Haken.
  */
-export function gelaendeurteil(profil, hoeheA, hoeheB, mhz) {
+export function gelaendeurteil(profil, hoeheA, hoeheB, mhz, o = {}) {
   const punkte = Array.isArray(profil) ? profil : [];
   const a = zahl(hoeheA), b = zahl(hoeheB);
   const D = punkte.length ? punkte[punkte.length - 1].d : 0;
@@ -154,20 +181,44 @@ export function gelaendeurteil(profil, hoeheA, hoeheB, mhz) {
 
   const luecken = punkte.filter(ohneHoehe).length;
   let engste = null, beide = 0, nurA = 0, nurB = 0;
+  let sichtlinieFrei = true, freiraumAnteil = Infinity, ohneGebaeudehoehe = 0;
 
   for (const p of punkte) {
     if (ohneHoehe(p)) continue;
+    if (p.gebaeudeOhneHoehe) ohneGebaeudehoehe++;
+    const hier = oberflaecheVon(p);
     const anteil = p.d / D;
     const sichtlinie = a + (b - a) * anteil;
     const erdstich = senkung(p.d, D - p.d);
-    const freiraum = FREIRAUM_ANTEIL * fresnelradius(mhz, p.d, D - p.d);
-    /* Höchste Geländehöhe, die hier noch durchgeht. Anfang und Ende bleiben
-       bewusst in der Schleife: eine Antenne, die tiefer steht als der Boden
-       um ihren eigenen Mastfuß, ist ein Befund und kein Randfall. */
+    const f1 = fresnelradius(mhz, p.d, D - p.d);
+    const freiraum = FREIRAUM_ANTEIL * f1;
+    /* Höchste Oberfläche, die hier noch durchgeht. Anfang und Ende bleiben
+       bewusst in der Schleife: eine Antenne, die tiefer steht als das, was um
+       ihren eigenen Mastfuß steht, ist ein Befund und kein Randfall. */
     const zulaessig = sichtlinie - erdstich - freiraum;
-    const fehlbetrag = p.h - zulaessig;
-    if (!engste || fehlbetrag > engste.fehlbetrag) {
-      engste = { d: p.d, lat: p.lat, lng: p.lng, hoehe: p.h, zulaessig, fehlbetrag };
+    const fehlbetrag = hier - zulaessig;
+
+    /* Abstand nach oben zur Sichtlinie und zur Freihaltegrenze – die beiden
+       Zahlen, mit denen am Bauplatz entschieden wird. Negativ heißt: ragt
+       hinein. */
+    const abstandSichtlinie = sichtlinie - erdstich - hier;
+    if (abstandSichtlinie < 0) sichtlinieFrei = false;
+    if (f1 > 0) freiraumAnteil = Math.min(freiraumAnteil, abstandSichtlinie / f1);
+
+    /* Maßgebend ist nicht der größte Fehlbetrag, sondern der größte Fehlbetrag
+       über seiner eigenen Schwelle: ein Gebäude, das 4 m zu hoch steht, ist ein
+       Befund, eine Modelldifferenz von 6 m über freiem Feld nicht. */
+    const ueber = fehlbetrag - schwelleFuer(p.art);
+    if (!engste || ueber > engste.ueberSchwelle) {
+      engste = {
+        d: p.d, lat: p.lat, lng: p.lng,
+        hoehe: hier, gelaende: p.h,
+        hindernis: isFinite(p.hindernis) ? p.hindernis : 0,
+        art: p.art || 'gelaende', quelle: p.quelle || 'dgm', geschaetzt: !!p.geschaetzt,
+        zulaessig, fehlbetrag, ueberSchwelle: ueber,
+        schwelle: schwelleFuer(p.art),
+        abstandSichtlinie, abstandFresnel: -fehlbetrag, fresnel: f1
+      };
     }
     if (fehlbetrag > 0) {
       // Beide Enden gleich anzuheben hebt die Sichtlinie überall um denselben
@@ -181,29 +232,66 @@ export function gelaendeurteil(profil, hoeheA, hoeheB, mhz) {
   const gemessen = punkte.length - luecken;
   const urteil = gemessen < 2 || luecken / punkte.length > LUECKEN_GRENZE
     ? 'unbeurteilbar'
-    : (engste.fehlbetrag > ERKENNUNGSSCHWELLE ? 'verdeckt' : 'unauffaellig');
+    : (engste.ueberSchwelle > 0 ? 'verdeckt' : 'unauffaellig');
 
   const anhebung = urteil === 'verdeckt'
     ? { beide, nurA: isFinite(nurA) ? nurA : null, nurB: isFinite(nurB) ? nurB : null }
     : null;
 
+  const quellen = { dsm: !!o.dsm, osm: !!o.osm };
   return {
-    urteil, engste, anhebung,
+    urteil, engste, anhebung, quellen,
+    sichtlinieFrei,
+    /* Anteil der ersten Fresnelzone, der an der knappsten Stelle frei bleibt.
+       Über 1 heißt: die ganze Zone ist frei; unter 0: die Oberfläche steht
+       über der Sichtlinie. Gerundet wird erst in der Anzeige. */
+    freiraumAnteil: isFinite(freiraumAnteil) ? freiraumAnteil : null,
+    ohneGebaeudehoehe,
     stuetzpunkte: punkte.length, luecken,
     schwelle: ERKENNUNGSSCHWELLE,
-    satz: urteilssatz(urteil, engste, anhebung, punkte.length, luecken)
+    satz: urteilssatz(urteil, engste, anhebung, punkte.length, luecken, quellen, ohneGebaeudehoehe)
   };
+}
+
+/* Woher das Hindernis kommt, gehört in den Satz: „das Gelände verdeckt“ und
+   „ein Gebäude verdeckt“ führen am Bauplatz zu verschiedenen Handgriffen –
+   das eine heißt anderer Aufbauplatz, das andere heißt hinsehen und messen. */
+function hindernisWorte(e) {
+  if (!e) return { was: 'Das Gelände', fuerwort: 'es', woher: '' };
+  /* Das Fürwort muss zum Hauptwort passen – „Bewuchs … steht sie“ liest sich
+     wie ein Übersetzungsfehler und beschädigt einen Satz, der eine Ansage ist. */
+  const worte = {
+    gebaeude: ['Ein Gebäude', 'es'], bewuchs: ['Bewuchs', 'er'],
+    dsm: ['Die Oberfläche', 'sie'], gelaende: ['Das Gelände', 'es']
+  }[e.art] || ['Das Gelände', 'es'];
+  const woher = e.quelle && e.quelle !== 'dgm' ? ` (${QUELLTEXT[e.quelle] || e.quelle})` : '';
+  return { was: worte[0], fuerwort: worte[1], woher };
 }
 
 /* Der Satz gehört zum Urteil und wird hier fertig geliefert, nicht in der
    Anzeige zusammengesetzt: bei „unauffaellig“ steht der Vorbehalt mitten im
    Satz und nicht als Fußnote darunter – eine Fußnote liest am Bauort niemand,
    und ohne sie klänge das Urteil wie eine Freigabe. */
-function urteilssatz(urteil, engste, anhebung, stuetzpunkte, luecken) {
+function urteilssatz(urteil, engste, anhebung, stuetzpunkte, luecken, quellen, ohneGebaeudehoehe) {
+  /* Was an den Quellen gefehlt hat, steht in jedem Fall dabei – auch bei
+     „verdeckt“: ein zweites Hindernis kann hinter der Lücke stehen. */
+  const fehlend = [
+    quellen.dsm ? null : 'das Oberflächenmodell',
+    quellen.osm ? null : 'die Gebäude- und Bewuchsdaten'
+  ].filter(Boolean);
+  const ausfall = fehlend.length
+    ? ` Für diese Strecke ${fehlend.length === 1 ? 'stand' : 'standen'} ${verbinden(fehlend)} ` +
+      'nicht zur Verfügung – geprüft ist insoweit nur das Gelände.'
+    : '';
+  const unbekannt = ohneGebaeudehoehe
+    ? ` An ${stellen(ohneGebaeudehoehe)} steht ein Gebäude ohne Höhenangabe; seine Höhe ` +
+      'ist hier mit nichts angesetzt und bei der Erkundung aufzunehmen.'
+    : '';
+
   if (urteil === 'unbeurteilbar') {
     return `Für ${luecken} von ${stuetzpunkten(stuetzpunkte)} liegen keine Höhen vor – ` +
       'die Strecke lässt sich aus diesen Daten nicht beurteilen, sie ist bei der ' +
-      'Erkundung in Augenschein zu nehmen.';
+      'Erkundung in Augenschein zu nehmen.' + ausfall;
   }
   if (urteil === 'verdeckt') {
     /* Die Stelle steht in Kilometern, sobald sie welche hat: „8.173 m hinter dem
@@ -211,6 +299,7 @@ function urteilssatz(urteil, engste, anhebung, stuetzpunkte, luecken) {
     const wo = formatLaenge(engste.d);
     const fehlt = meter(Math.round(engste.fehlbetrag));
     const hoch = meter(Math.ceil(anhebung.beide));
+    const { was, fuerwort, woher } = hindernisWorte(engste);
     /* Die Anhebung an nur einem Ende wächst mit dem Hebelarm: liegt die Engstelle
        kurz vor dem Gegenende, kommen rechnerisch dreistellige Masthöhen heraus.
        Die Zahl stimmt und hilft niemandem – oberhalb dessen, was ein Teleskopmast
@@ -219,18 +308,28 @@ function urteilssatz(urteil, engste, anhebung, stuetzpunkte, luecken) {
       brauchbar(anhebung.nurA) ? `nur am Anfang ${meter(Math.ceil(anhebung.nurA))}` : null,
       brauchbar(anhebung.nurB) ? `nur am Ende ${meter(Math.ceil(anhebung.nurB))}` : null
     ].filter(Boolean).join(', ');
-    return `Das Gelände verdeckt die Strecke: ${wo} hinter dem ersten Standort ` +
-      `steht es ${fehlt} zu hoch. Frei wird sie erst, wenn beide Antennenmitten ` +
-      `${hoch} höher liegen${einzeln ? ` (${einzeln})` : ''}.`;
+    /* Steht die Höhe auf einer Annahme – angenommene Bestandshöhe über Wald,
+       Geschosszahl statt Höhe –, muss das im selben Satz stehen wie die Zahl.
+       Sonst wird aus einer Annahme beim Ablesen eine Messung. */
+    const annahme = engste.geschaetzt ? ' Die Höhe des Hindernisses ist angenommen, nicht gemessen.' : '';
+    return `${was}${woher} verdeckt die Strecke: ${wo} hinter dem ersten Standort ` +
+      `steht ${fuerwort} ${fehlt} zu hoch. Frei wird sie erst, wenn beide ` +
+      `Antennenmitten ${hoch} höher liegen${einzeln ? ` (${einzeln})` : ''}.` +
+      annahme + ausfall + unbekannt;
   }
   const luecke = luecken
     ? ` Für ${luecken} von ${stuetzpunkten(stuetzpunkte)} fehlten dabei die Höhen.`
     : '';
-  return 'Kein Geländehindernis über der Erkennungsschwelle von ' +
-    `${ERKENNUNGSSCHWELLE} m – das ist keine Freigabe: Bewuchs, Bebauung und ` +
-    'Freileitungen stehen in diesen Höhendaten nicht, entschieden wird bei der ' +
-    `Erkundung.${luecke}`;
+  return 'Kein Hindernis über der Erkennungsschwelle – das ist keine Freigabe: ' +
+    'Freileitungen, Masten, einzelne Bäume außerhalb kartierter Waldflächen und ' +
+    'jede Bebauung ohne Höhenangabe stehen in diesen Daten nicht, entschieden wird ' +
+    `bei der Erkundung.${luecke}${ausfall}${unbekannt}`;
 }
+
+const stellen = n => `${n} Stützpunkt${n === 1 ? '' : 'en'}`;
+const verbinden = liste => liste.length < 2
+  ? (liste[0] || '')
+  : `${liste.slice(0, -1).join(', ')} und ${liste[liste.length - 1]}`;
 
 const stuetzpunkten = n => `${n} Stützpunkt${n === 1 ? '' : 'en'}`;
 

@@ -556,12 +556,34 @@ body.seite-zu .seite { display: none; }
    heraus, ein Alphawert dagegen kommt sauber durch. */
 .hp-gelaende { fill: #4a3f35; fill-opacity: .18; stroke: none; }
 .hp-kante { fill: none; stroke: #6b5844; stroke-width: .6; }
+/* Der Streifen zwischen Gelände und Oberfläche. Er liegt über der
+   Geländefüllung und muss sich von ihr unterscheiden, ohne die Fresnelfläche
+   zu erschlagen – dieselbe Farbfamilie, kräftiger gedeckt. */
+.hp-hindernis { fill: #4a3f35; fill-opacity: .38; stroke: none; }
+.hp-oberflaeche { fill: none; stroke: #6b5844; stroke-width: .35; stroke-dasharray: 1.2 .9; }
 .hp-bauch { fill: var(--thw); fill-opacity: .10; stroke: none; }
 .hp-fresnel { fill: none; stroke: var(--thw); stroke-width: .3; stroke-dasharray: 2 1.4; }
 .hp-grenze { fill: none; stroke: var(--warnung); stroke-width: .45; stroke-dasharray: 4 1.4 1 1.4; }
 .hp-sicht { stroke: var(--thw); stroke-width: .5; }
 .hp-engstelle { stroke: var(--warnung); stroke-width: .4; stroke-dasharray: 1.4 1.2; }
 .hp-marke { font-size: 2.8px; font-weight: 700; fill: var(--warnung); }
+/* Die Ableselinie folgt dem Zeiger. Sie ist keine Engstelle und darf nicht so
+   aussehen: dünn, grau, ohne Beschriftung – die Zahlen stehen darunter. */
+.hp-zeiger { stroke: var(--text-schwach); stroke-width: .3; pointer-events: none; }
+.hp-bild .hp-svg { touch-action: pan-y; }
+.hp-ablesung {
+  margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.hp-ablesung .hp-ruhe { color: var(--text-schwach); }
+.hp-ablesung b { font-weight: 600; }
+/* Die Zahlen zur knappsten Stelle. Sie stehen unter dem Urteil und sind
+   bewusst zurückhaltend gesetzt: der Satz trägt die Aussage, diese Zeile nur
+   die Maße dahinter. */
+.rf-engstelle {
+  margin: 4px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-schwach);
+  font-variant-numeric: tabular-nums;
+}
 
 .hp-legende {
   display: flex; flex-wrap: wrap; gap: 3px 12px; margin: 5px 0 0; padding: 0;

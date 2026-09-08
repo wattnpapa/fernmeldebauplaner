@@ -41,6 +41,14 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Access Point, Antenne, Frequenzband, Bandbreite, Kanal, MIMO, Polarisation und
   Modulation. Koordinate, Distanz, Abstrahlrichtung und die Bruttodatenrate der
   Funkschnittstelle rechnet das Programm
+- Zu jeder Funkstrecke ein Geländeschnitt mit Sichtlinie, erster Fresnelzone und
+  Freihaltemaß – und darin nicht nur das Gelände, sondern auch, was darauf steht:
+  Bewuchs und Bebauung aus dem Copernicus-Oberflächenmodell (rund 30 m), aus
+  OpenStreetMap-Gebäuden mit eingetragener Höhe oder Geschosszahl und aus Wald- und
+  Gehölzflächen mit angenommener Bestandshöhe. Geprüft wird gegen diese Oberfläche,
+  gezeichnet werden beide Verläufe getrennt. Was angenommen und nicht gemessen ist,
+  steht im Urteil dabei; Freileitungen, Masten und einzelne Bäume stehen in keiner
+  dieser Quellen und bleiben Sache der Erkundung
 
 **Einsatzabschnitte** (freiwillig)
 - Strecken und taktische Zeichen zu benannten Einsatzabschnitten mit Leitung und
@@ -343,6 +351,9 @@ js/bilder.js          Lichtbilder aufnehmen, verkleinern, auf der Karte zeigen
 js/heic.js            HEIC entschlüsseln (lädt vendor/libheif bei Bedarf nach)
 js/bildspeicher.js    Bilddaten im Gerätespeicher (IndexedDB)
 js/exif.js            Ort, Aufnahmezeit und Blickrichtung aus dem Lichtbild
+js/hoehe.js           Geländehöhen aus Höhenkacheln (DGM), Punkt, Profil, Raster
+js/oberflaeche.js     Oberflächenhöhen: Bewuchs und Bebauung über dem Gelände
+js/cog.js             Einzelne Kacheln aus einem Cloud-Optimized GeoTIFF lesen
 js/bauauftrag.js      Druckdokumente: Bauauftrag und Lagekarte
 js/ui.js              Seitenleiste, Formulare, Dialoge
 js/io.js              Sichern und Laden, GeoJSON, GPX, CSV, KML
@@ -417,7 +428,8 @@ Lichtbilder in der IndexedDB-Datenbank `fbp.bilder`. Nichts davon wird übertrag
 auch nicht der Aufnahmeort in den Bildern. Es gibt keinen Server, kein Konto und keine
 Cookies.
 
-Drei Verbindungen gehen trotzdem nach außen, alle ohne Planungsinhalte:
+Vier Verbindungen gehen nach außen; drei davon ohne Planungsinhalte, die vierte
+mit dem Verlauf einer Funkstrecke:
 
 - **Kartenkacheln** holt der Browser unmittelbar bei den Anbietern (BKG, OpenStreetMap,
   OpenTopoMap, Esri, Landesvermessungen). Sie sehen dabei IP-Adresse und angeforderten
@@ -427,7 +439,15 @@ Drei Verbindungen gehen trotzdem nach außen, alle ohne Planungsinhalte:
 - **Höhenkacheln** für die Geländehöhe, das Höhenprofil einer Funkstrecke und die
   Funksichtfläche holt der Browser bei AWS Open Data (USA). Eine Kachel deckt auf
   unserer Breite rund 6 km ab – der Anbieter sieht damit einen gröberen Ausschnitt,
-  als die Karte darüber ohnehin verrät, nicht die abgefragte Stelle.
+  als die Karte darüber ohnehin verrät, nicht die abgefragte Stelle. Das
+  Oberflächenmodell (Copernicus DEM GLO-30 über den Microsoft Planetary Computer)
+  kommt in Kacheln von einem Breiten- mal einem Längengrad, also noch gröber.
+- **Hindernisse entlang einer Funkstrecke** – Gebäude sowie Wald- und Gehölzflächen –
+  holt der Browser bei der Overpass-API (OpenStreetMap). Dafür geht der **Verlauf der
+  Strecke** hinaus, nicht nur ein Ausschnitt: ein schmaler Streifen um die Verbindung
+  der beiden Aufbauplätze. Das ist die einzige Anfrage, die die geplanten Orte selbst
+  verrät; `datenschutz.html` sagt das ausdrücklich. Ohne zweiten Aufbauplatz
+  unterbleibt sie.
 
 - **Reichweitenmessung** mit [GoatCounter](https://www.goatcounter.com/): ein anonymer
   Zählimpuls beim Aufruf der Anwendung, ohne Cookie und ohne geräteübergreifende

@@ -97,6 +97,18 @@ Es gelten deren Nutzungsbedingungen:
 - **Terrain Tiles** (Höhenkacheln, `js/hoehe.js`) – AWS Open Data, Terrarium-Format;
   in Deutschland aus dem EU-DEM des Copernicus-Programms (© Europäische Union),
   Quellenangabe der Höhendaten: https://github.com/tilezen/joerd/blob/master/docs/attribution.md
+- **Copernicus DEM GLO-30** (Oberflächenmodell, `js/oberflaeche.js`, gelesen über
+  `js/cog.js`) – © DLR e.V. (2014–2018) und © Airbus Defence and Space GmbH (2019),
+  bereitgestellt im Rahmen des Copernicus-Programms der Europäischen Union.
+  Nutzung, Vervielfältigung und Verbreitung sind kostenfrei gestattet, die
+  Namensnennung ist Pflicht. Die Kacheln liegen als Cloud-Optimized GeoTIFF beim
+  Microsoft Planetary Computer, dessen Adresse für den Zugriff kurzzeitig signiert
+  wird. https://spacedata.copernicus.eu/documents/20123/121286/CSCDA_ESA_Mission-specific+Annex.pdf
+- **OpenStreetMap** (Gebäude, Wald- und Gehölzflächen, `js/oberflaeche.js`) –
+  © OpenStreetMap-Mitwirkende, ODbL. Abgefragt über die Overpass-API
+  (overpass-api.de, ersatzweise overpass.kumi.systems). Aus den Daten werden keine
+  Geometrien abgeleitet und weitergegeben; sie gehen in ein Urteil über eine
+  einzelne Funkstrecke ein und werden nicht gespeichert.
 
 - **World Magnetic Model 2025** (Missweisung, `js/missweisung.js`) – Modellkoeffizienten
   von NOAA/NCEI und dem British Geological Survey, erstellt im Auftrag der US-amerikanischen
