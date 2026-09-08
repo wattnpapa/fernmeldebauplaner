@@ -3759,8 +3759,8 @@ export function hilfeDialog() {
               gilt für das <b>Handfunkgerät am Mann</b> nicht mehr. Sie steht deshalb als
               eigene Wahl im Formular und nicht als stille Annahme.</li>
           <li><b>Masthöhe bis zu einem Ort …</b> und dann auf die Karte klicken: das sagt,
-              ab welcher Antennenhöhe dieser Ort frei liegt – oder dass dafür kein
-              Teleskopmast mehr reicht und der Standort zu wechseln ist.</li>
+              ab welcher Antennenhöhe dieser Ort frei liegt und welcher Mast das trägt –
+              oder dass auch der höchste nicht reicht und der Standort zu wechseln ist.</li>
           <li><b>Überdeckung aller</b> legt die Flächen aller Relaisstellen zusammen und
               weist die versorgte Fläche in Quadratkilometern aus.</li>
           <li>Die Länge des <b>λ/4-Rundstrahlers</b> steht im Eintrag, dazu die Spanne

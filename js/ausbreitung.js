@@ -38,7 +38,9 @@
 
 import { raster, profil, eckenFuer } from './hoehe.js';
 import { oberflaechenraster } from './oberflaeche.js';
-import { ERDRADIUS_WIRKSAM, LUECKEN_GRENZE } from './funkrechnung.js';
+import {
+  ERDRADIUS_WIRKSAM, LUECKEN_GRENZE, HOECHSTER_MAST, FAHRZEUGMAST, mastFuer
+} from './funkrechnung.js';
 import { wellenlaenge } from './bosfunk.js';
 import { formatLaenge } from './geo.js';
 
@@ -348,7 +350,7 @@ export function ueberdeckung(befunde) {
  * Maß ist die streifende Sichtlinie – ν = 0, also 6 dB. Darüber hinaus Freiraum
  * zu fordern, wie es der Richtfunk mit 60 % der Fresnelzone tut, führte im
  * 4-m-Band auf zweistellige Zusatzmeter für den letzten halben Dezibel: die
- * trägt kein Teleskopmast, und sie sind es auch nicht wert.
+ * trägt kein Mast, und sie sind es auch nicht wert.
  *
  * @returns {Promise<object|null>} `urteil` ist 'reicht', 'hoeher' oder
  *          'unbeurteilbar'.
@@ -405,12 +407,6 @@ export async function noetigeMasthoehe(standort, ziel, mhz, antennenhoehe, zielh
   };
 }
 
-/* Obergrenze für eine Masthöhe, die noch als Vorschlag durchgeht – dieselbe
-   Grenze wie beim Richtfunk (funkrechnung.js). Darüber ist die Antwort nicht
-   „höherer Mast“, sondern „anderer Standort“, und genau das soll der Satz sagen
-   statt eine Zahl zu nennen, die niemand aufbauen kann. */
-export const MASTHOEHE_GRENZE = 40;
-
 /** Der Satz zur Rückwärtsrechnung – fertig, damit Blatt und Bildschirm gleich lauten. */
 export function masthoeheText(m, ziel = 'dieser Ort') {
   if (!m) return 'Für diese Richtung liegen keine Geländehöhen vor.';
@@ -436,16 +432,26 @@ export function masthoeheText(m, ziel = 'dieser Ort') {
       `${meterText(m.jetzt)}.`;
   }
   const wo = `${formatLaenge(m.engste.d)} vor dem Standort`;
-  if (m.noetig > MASTHOEHE_GRENZE) {
+  /* Die Antwort auf „wie hoch?“ ist am Kartentisch wertlos ohne die Antwort auf
+     „womit?“. Deshalb steht hier nicht mehr eine abstrakte Obergrenze, sondern
+     der Mast, der die Höhe trägt – und wenn keiner sie trägt, der höchste, den
+     es gibt, damit erkennbar bleibt, woran es scheitert. */
+  const mast = mastFuer(m.noetig);
+  if (!mast) {
     return `${gross(ziel)} liegt ${weit} entfernt hinter einer Kante ${wo}. ` +
-      `Rechnerisch wären über ${meterText(MASTHOEHE_GRENZE)} Antennenhöhe nötig – so ` +
-      'viel trägt kein Teleskopmast des Fernmeldebaus. Hier hilft nur ein anderer ' +
-      'Standort oder eine zweite Relaisstelle.';
+      `Rechnerisch wären ${meterText(m.noetig)} Antennenhöhe nötig – mehr als der ` +
+      `höchste Mast des Fernmeldedienstes hergibt, der ${HOECHSTER_MAST.name} mit ` +
+      `${meterText(HOECHSTER_MAST.hoehe)}. Hier hilft nur ein anderer Standort oder eine ` +
+      'zweite Relaisstelle.';
   }
+  /* Der Fahrzeugname gehört erst in den Satz, wenn die Höhe ihn verlangt:
+     unter der Höhe eines gewöhnlichen Fahrzeugmastes ist „dafür braucht es den
+     MastKW“ keine Auskunft, sondern eine Übertreibung. */
+  const womit = m.noetig > FAHRZEUGMAST ? ` Dafür braucht es den ${mast.kurz}.` : '';
   return `${gross(ziel)} liegt ${weit} entfernt im Schatten einer Kante ${wo}. Frei ` +
     `wird die Richtung ab ${meterText(m.noetig)} Antennenhöhe – das sind ` +
-    `${meterText(m.fehlt)} mehr als die aufgebauten ${meterText(m.jetzt)}. Gemeint ist ` +
-    'die streifende Sichtlinie, kein Freiraum darüber hinaus.';
+    `${meterText(m.fehlt)} mehr als die aufgebauten ${meterText(m.jetzt)}.${womit} ` +
+    'Gemeint ist die streifende Sichtlinie, kein Freiraum darüber hinaus.';
 }
 
 const gross = s => s.charAt(0).toUpperCase() + s.slice(1);

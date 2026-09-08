@@ -303,8 +303,8 @@ function urteilssatz(urteil, engste, anhebung, stuetzpunkte, luecken, quellen, o
     const { was, fuerwort, woher } = hindernisWorte(engste);
     /* Die Anhebung an nur einem Ende wächst mit dem Hebelarm: liegt die Engstelle
        kurz vor dem Gegenende, kommen rechnerisch dreistellige Masthöhen heraus.
-       Die Zahl stimmt und hilft niemandem – oberhalb dessen, was ein Teleskopmast
-       trägt, wird sie deshalb weggelassen statt gerundet. */
+       Die Zahl stimmt und hilft niemandem – oberhalb dessen, was der höchste
+       Mast trägt, wird sie deshalb weggelassen statt gerundet. */
     const einzeln = [
       brauchbar(anhebung.nurA) ? `nur am Anfang ${meter(Math.ceil(anhebung.nurA))}` : null,
       brauchbar(anhebung.nurB) ? `nur am Ende ${meter(Math.ceil(anhebung.nurB))}` : null
@@ -334,10 +334,44 @@ const verbinden = liste => liste.length < 2
 
 const stuetzpunkten = n => `${n} Stützpunkt${n === 1 ? '' : 'en'}`;
 
-/* Obergrenze für eine Anhebung, die noch als Vorschlag durchgeht. Ein
-   Teleskopmast des Fernmeldebaus reicht keine 40 m; darüber ist die Antwort
-   nicht „höherer Mast“, sondern „anderer Aufbauplatz“. */
-const MASTHOEHE_GRENZE = 40;
+/* Die Masten des THW-Fernmeldedienstes, aufsteigend nach der Höhe, in der die
+   Antennenmitte steht. Sie stehen als Tabelle da und nicht als bloße
+   Obergrenze, weil die Frage am Kartentisch nicht „geht es noch?“ lautet,
+   sondern „womit?“ – zwischen 34 und 40 m liegt der Unterschied zwischen zwei
+   Fahrzeugen, und eine nackte Zahl sagt nicht, ob eines davon auf dem Hof
+   steht.
+
+   Hier stand vorher, ein Teleskopmast des Fernmeldebaus reiche keine 40 m. Das
+   war falsch: den MastKW gibt es mit 34 m und mit 40 m. Wer die Liste
+   ergänzt – ein weiterer Masttyp, ein anderer Fahrzeugstand –, ändert damit
+   zugleich jede Aussage, die auf sie verweist. */
+export const MASTEN = [
+  { name: 'MastKW', hoehe: 34, kurz: 'MastKW (34 m)' },
+  { name: 'MastKW', hoehe: 40, kurz: 'MastKW (40 m)' }
+];
+
+/** Der höchste verfügbare Mast – die Grenze, jenseits derer der Standort zählt. */
+export const HOECHSTER_MAST = MASTEN[MASTEN.length - 1];
+
+/** Obergrenze für eine Anhebung, die noch als Vorschlag durchgeht. */
+export const MASTHOEHE_GRENZE = HOECHSTER_MAST.hoehe;
+
+/**
+ * Der niedrigste Mast, der diese Antennenhöhe noch trägt – `null`, wenn keiner
+ * es tut. Die Antwort auf „womit?“, und die einzige Stelle, an der aus einer
+ * gerechneten Höhe ein Fahrzeug wird.
+ */
+export function mastFuer(hoehe) {
+  const h = Number(hoehe);
+  if (!isFinite(h)) return null;
+  return MASTEN.find(m => m.hoehe >= h) || null;
+}
+
+/* Was ein Fahrzeugmast ohne eigenes Mastfahrzeug hergibt. Bis hierhin ist die
+   Frage nach dem Gerät keine – darüber wird sie zur Fahrzeugfrage, und erst
+   dann gehört ein Fahrzeugname in den Satz. */
+export const FAHRZEUGMAST = 10;
+
 const brauchbar = m => m !== null && isFinite(m) && m <= MASTHOEHE_GRENZE;
 
 // ---------------------------------------------------------------- Neigung
