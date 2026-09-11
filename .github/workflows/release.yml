@@ -35,11 +35,20 @@ jobs:
         run: |
           # Einheitliches Format YYYY.MMDD.HHMM (z. B. 2026.712.1035): zugleich
           # gültiges SemVer, minutengenau und über Tages-/Jahresgrenzen monoton
-          # steigend. UTC, damit die Sommerzeitumstellung die Reihenfolge nicht
-          # eine Stunde lang rückwärts laufen lässt.
-          Y=$(date -u +%Y)
-          MMDD=$(( 10#$(date -u +%m) * 100 + 10#$(date -u +%d) ))
-          HHMM=$(( 10#$(date -u +%H) * 100 + 10#$(date -u +%M) ))
+          # steigend. Zeitzone ist Europe/Berlin mit Sommer- und Winterzeit, weil
+          # die Nummer am Bauort gegen die Uhr an der Wand gehalten wird – eine
+          # UTC-Nummer liegt im Sommer zwei Stunden daneben.
+          #
+          # In der Nacht der Rückstellung läuft die Ortszeit eine Stunde doppelt.
+          # Eine Veröffentlichung in diesem Fenster kann deshalb eine Nummer
+          # tragen, die kleiner ist als die davor; trifft sie eine schon
+          # vergebene Minute, scheitert das Anlegen des Tags und der Lauf bricht
+          # ab, statt ein Release zu überschreiben.
+          TZ=Europe/Berlin
+          export TZ
+          Y=$(date +%Y)
+          MMDD=$(( 10#$(date +%m) * 100 + 10#$(date +%d) ))
+          HHMM=$(( 10#$(date +%H) * 100 + 10#$(date +%M) ))
           echo "build_version=$Y.$MMDD.$HHMM" >> "$GITHUB_OUTPUT"
 
       - name: Git-Tag anlegen

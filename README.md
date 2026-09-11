@@ -331,9 +331,12 @@ auf `main`.
 
 ### Versionen
 
-Jede Veröffentlichung bekommt eine Nummer im Format **`YYYY.MMDD.HHMM`** in UTC – etwa
-`2026.829.1119` für den 29. August 2026 um 11:19 Uhr. Sie ist minutengenau, steigt über
-Tages- und Jahresgrenzen hinweg monoton und ist zugleich gültiges SemVer. Dieselbe Nummer
+Jede Veröffentlichung bekommt eine Nummer im Format **`YYYY.MMDD.HHMM`** in deutscher
+Ortszeit (`Europe/Berlin`, mit Sommer- und Winterzeit) – etwa `2026.829.1119` für den
+29. August 2026 um 11:19 Uhr MESZ. Sie ist minutengenau, steigt über Tages- und
+Jahresgrenzen hinweg monoton und ist zugleich gültiges SemVer. Einzige Ausnahme ist die
+Stunde der Rückstellung im Oktober, die doppelt läuft; eine Veröffentlichung in diesem
+Fenster bricht ab, wenn sie auf eine bereits vergebene Minute trifft. Dieselbe Nummer
 trägt der Git-Tag und das GitHub-Release; sie steht neben der Wortmarke in der Kopfzeile,
 im Blattfuß jedes gedruckten Bauauftrags und unter **Planung → Über FMBauplaner**. Eine
 Rückfrage zu einem Ausdruck lässt sich damit einem Stand zuordnen. Auf schmalen Geräten
