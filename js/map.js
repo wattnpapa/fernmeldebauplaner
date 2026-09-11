@@ -201,6 +201,15 @@ export function grauVariante(id) {
   return 'topplus_grau';
 }
 
+/* Wer im Reiter „Strecken“ arbeitet, greift nach Trassenpunkten, nicht nach
+   Lichtbildern – liegen beide dicht beieinander, fing bisher immer die
+   Bildmarke den Klick, weil ihre Ebene höher liegt. Deshalb wandern die Griffe
+   über die Bildmarken, solange Strecken oder Flächen bearbeitet werden, und
+   fallen danach zurück. Nur die Griffebene bewegt sich: die taktischen Zeichen
+   bleiben oben, das Lagebild geht weiter vor. */
+const GRIFFE_UNTEN = 470;
+const GRIFFE_UEBER_BILDERN = 631;
+
 export function erstelleKarte(el, ansicht = {}) {
   const karte = L.map(el, {
     center: [ansicht.lat ?? 51.1657, ansicht.lng ?? 10.4515],
@@ -221,7 +230,7 @@ export function erstelleKarte(el, ansicht = {}) {
      läuft darüber – ein Kabel, das in den Anhänger führt, endet auf ihm. */
   karte.createPane('fbp-flaechen').style.zIndex = 410;
   karte.createPane('fbp-strecken').style.zIndex = 420;
-  karte.createPane('fbp-griffe').style.zIndex = 470;
+  karte.createPane('fbp-griffe').style.zIndex = GRIFFE_UNTEN;
   karte.createPane('fbp-labels').style.zIndex = 620;
   karte.getPane('fbp-labels').style.pointerEvents = 'none';
   /* Die Lichtbilder liegen unter den taktischen Zeichen: das Lagebild geht
@@ -234,6 +243,15 @@ export function erstelleKarte(el, ansicht = {}) {
 
   setzeBasiskarte(karte, ansicht.basemap || 'topplus');
   return karte;
+}
+
+/** Vorrang auf der Karte nach dem Reiter, in dem gearbeitet wird – `bereich`
+ *  ist der Reitername. */
+export function setzeVorrang(karte, bereich) {
+  const griffe = karte.getPane('fbp-griffe');
+  if (!griffe) return;
+  const vorn = bereich === 'strecken' || bereich === 'flaechen';
+  griffe.style.zIndex = vorn ? GRIFFE_UEBER_BILDERN : GRIFFE_UNTEN;
 }
 
 export function setzeBasiskarte(karte, id) {

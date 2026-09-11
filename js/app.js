@@ -4,7 +4,7 @@ import {
   store, neueStrecke, neuerPunkt, neuesZeichen,
   dateisicherung, istGehaltvoll, ladeAlle
 } from './state.js';
-import { erstelleKarte, setzeBasiskarte, BASISKARTEN } from './map.js';
+import { erstelleKarte, setzeBasiskarte, setzeVorrang, BASISKARTEN } from './map.js';
 import { StreckenLayer, escapeHtml } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
 import { FlaechenLayer } from './flaechen.js';
@@ -911,6 +911,10 @@ $('#datei-import').onchange = e => {
 document.querySelectorAll('.reiter button').forEach(b => {
   b.onclick = () => reiterWechseln(b.dataset.reiter);
 });
+/* Die Seite öffnet auf „Strecken“, ohne dass jemand den Reiter angeklickt hat –
+   ohne diesen Anstoß bliebe der Vorrang auf der Karte bis zum ersten Wechsel
+   falsch gesetzt. */
+setzeVorrang(karte, document.querySelector('.reiter button.aktiv')?.dataset.reiter);
 /** Auf schmalen Geräten die Karte in den Vordergrund holen */
 function zurKarte() {
   if (window.matchMedia('(max-width: 900px)').matches) ansichtSetzen(true);
@@ -932,6 +936,7 @@ function reiterWechseln(name) {
   });
   document.querySelectorAll('.reiter-inhalt').forEach(s =>
     s.classList.toggle('aktiv', s.dataset.inhalt === name));
+  setzeVorrang(karte, name);
   ansichtSetzen(false);
 }
 
