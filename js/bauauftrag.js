@@ -84,6 +84,12 @@ const STANDARD_AUFTRAG = {
      erst, wenn die Trasse eng geführt ist: dann liegen Zahl an Zahl und
      verdecken den Verlauf, den der Trupp auf dem Blatt sucht. */
   zwischenpunkte: true, teillaengen: true, punktnamen: true,
+  /* Das taktische Zeichen des Verteilers steht zusätzlich zur Punktmarke auf
+     der Karte und ist deshalb an: es sagt, dass dort eine Anlage steht, und
+     nicht bloß, der wievielte Punkt der Trasse das ist. Liegen mehrere
+     Verteiler dicht beieinander, decken die Kästchen den Verlauf zu – dann
+     nimmt der Haken sie vom Blatt, ohne die Punkte selbst zu entfernen. */
+  punktzeichen: true,
   /* Das Gitter ist im Ausdruck von vornherein an: auf dem Bauplatz ist es
      neben der Punkttabelle der einzige Weg, eine beliebige Stelle der Karte
      als MGRS-Angabe durchzugeben. */
@@ -99,7 +105,7 @@ const STANDARD_LAGE = {
   format: 'a1', ausrichtung: 'quer', farbe: 'farbe',
   freiBreite: 900, freiHoehe: 600,
   strecken: true, zeichen: true, flaechen: true, relais: true, beschriftung: true, gitter: true,
-  punktnummern: false, punktnamen: false, zoomVersatz: 0,
+  punktnummern: false, punktnamen: false, punktzeichen: true, zoomVersatz: 0,
   /* Die gerechnete Ausbreitungsfläche ist auf dem Blatt von vornherein AUS.
      Sie ist kein Planungsinhalt, sondern ein Befund über nacktem Gelände, und
      gedruckt sieht sie aus wie eine Zusage – auf einem Blatt, das am Bauplatz
@@ -225,6 +231,14 @@ function lageZeichen(auftrag) {
     nurAbschnitt: auftrag.abschnitt ? auftrag.abschnitt.id : undefined,
     abschnittSchaltet: false
   });
+}
+
+/* Trägt eine der gedruckten Strecken einen Punkt, an dem ein taktisches
+   Zeichen steht? Nur dann steht der Haken dafür in der Leiste – ein
+   Bedienelement, das auf dem Blatt nichts ändern kann, macht die Leiste
+   länger und die Entscheidung schwerer. */
+function hatPunktzeichen(strecken) {
+  return strecken.some(s => s.punkte.some(pt => !!punktartById(pt.art).zeichen));
 }
 
 /** Ebenso die Flächen – geprüft wird über eine Ebene ohne Karte, denn die
@@ -360,6 +374,11 @@ function oeffneDruckansicht(auftrag) {
              nichts, worunter sie stehen könnte. */
           haken('Punktbezeichnungen', 'punktnamen', opt, neuAufbau,
             () => !opt.strecken || !opt.punktnummern),
+          /* Hängt allein an den Strecken, nicht an den Trassenpunkten: das
+             Zeichen des Verteilers steht auch auf dem Blatt ohne Punktmarken –
+             dort rückt es auf den Punkt und zeigt die Anlage. */
+          ...(hatPunktzeichen(auftrag.strecken)
+            ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau, () => !opt.strecken)] : []),
           zoomFeld(opt, neuAufbau)
         ])
       : gruppe('Kartenblatt', [
@@ -372,6 +391,12 @@ function oeffneDruckansicht(auftrag) {
           haken('Zwischenpunkte', 'zwischenpunkte', opt, neuAufbau),
           haken('Teillängen', 'teillaengen', opt, neuAufbau),
           haken('Punktbezeichnungen', 'punktnamen', opt, neuAufbau),
+          /* Führt nur der Verteiler ein eigenes Zeichen, heißt der Haken auch
+             danach – „Punktzeichen“ sagt am Bauplatz niemandem etwas. Kommt
+             eine zweite Punktart mit Zeichen dazu, gehört die Beschriftung
+             hier auf den Oberbegriff umgestellt. */
+          ...(hatPunktzeichen(auftrag.strecken)
+            ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau)] : []),
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
           haken('Flächen', 'flaechen', opt, neuAufbau),
           haken('Relaisstellen', 'relais', opt, neuAufbau),
@@ -894,7 +919,8 @@ function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
     interaktiv: false, sw, strichFaktor: strichFaktor(mass),
     hervorheben: strecke.id,
     nurStrecke: opt.andereStrecken ? null : strecke.id,
-    nurStrecken: opt.andereStrecken ? sammlung : null
+    nurStrecken: opt.andereStrecken ? sammlung : null,
+    punktzeichen: opt.punktzeichen !== false
   });
   sl.zeichne({
     ...p.optionen, gesamtlaenge: false, punktnummern: true,
@@ -990,7 +1016,8 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
 
   const sl = new StreckenLayer(karte, {
     interaktiv: false, sw, strichFaktor: strichFaktor(mass),
-    nurStrecken: auftrag.strecken.map(s => s.id)
+    nurStrecken: auftrag.strecken.map(s => s.id),
+    punktzeichen: opt.punktzeichen !== false
   });
   /* Teillängen und Punktnummern aller Strecken übereinander wären auf einem
      Blatt nicht mehr zu lesen – auf dem Deckblatt zählt, welche Strecke wo
@@ -1036,7 +1063,8 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   if (opt.strecken !== false) {
     const sl = new StreckenLayer(karte, {
       interaktiv: false, sw, strichFaktor: strichFaktor(mass),
-      nurStrecken: auftrag.strecken.map(s => s.id)
+      nurStrecken: auftrag.strecken.map(s => s.id),
+      punktzeichen: opt.punktzeichen !== false
     });
     sl.zeichne({
       ...p.optionen, teillaengen: false,
