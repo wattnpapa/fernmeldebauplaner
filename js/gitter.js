@@ -30,6 +30,11 @@ export class GitterLayer {
     // Die Druckkarte wird doppelt gerendert und halbiert – wie bei den
     // Strecken wachsen Striche und Abstände mit, sonst wird das Gitter zu eng.
     this.strichFaktor = opt.strichFaktor || 1;
+    /* Die im Druck gewählte Strichstärke gilt nur der Linie selbst. Der
+       Gittermaschenweite darf sie nicht zugeschlagen werden: welche Weite
+       gewählt wird, entscheidet der Maßstab, und ein dünnerer Strich soll
+       nicht die Zahlen am Blattrand umstellen. */
+    this.strichbreite = opt.strichbreite || 1;
     this.gruppe = L.layerGroup().addTo(karte);
     this._an = false;
     this._stand = null;
@@ -145,7 +150,7 @@ export class GitterLayer {
     const stil = {
       pane: 'fbp-gitter', interactive: false,
       color: dunkel ? '#ffffff' : (this.sw ? '#000000' : '#2c4a9e'),
-      weight: this.strichFaktor,
+      weight: this.strichFaktor * this.strichbreite,
       opacity: dunkel ? 0.75 : 0.55
     };
 

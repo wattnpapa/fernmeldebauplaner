@@ -180,6 +180,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Richtfunkstrecke WLAN“ – ein eigenes Blatt gleich hinter der Karte
 - A4/A3, hoch/quer, Farbe oder Schwarz-Weiß; im S/W-Druck unterscheiden Strichmuster
   statt Farben, die Karte wird auf die amtliche Graustufenkarte umgestellt
+- Die **Strichstärke** der Karteninhalte ist in vier Stufen wählbar: dünner, wenn
+  zwei Trassen dieselbe Straße entlanglaufen, kräftiger für den nassen Ausdruck
+  im Halbdunkel – sie gilt für Strecken, Flächenumrisse und Koordinatengitter
 - Die Druckkarte wird in doppelter Auflösung gerendert (≈ 190 dpi statt 96 dpi)
 
 **Sammel-Bauauftrag als PDF**
@@ -195,6 +198,8 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - **A4 bis A0** und ein freies Maß von 100 bis 1200 mm je Kante – für Plotterrollen
 - Schrift, Kartenbeschriftung und Strichstärken wachsen mit dem Blatt: eine A0-Karte
   wird an der Wand aus zwei Metern gelesen, nicht in der Hand aus vierzig Zentimetern
+- Darüber hinaus ist die **Strichstärke** in vier Stufen wählbar, unabhängig vom
+  Format – für das Blatt an der Wand oder für eine dicht belegte Lage
 - Am Rand Titelzeile, Kopfdaten, Zeichenerklärung, Kennzahlen und Fußzeile – jeder
   Streifen einzeln abschaltbar; alle fünf aus ergibt das nackte Kartenblatt. Auch
   die Streckenbeschriftung lässt sich von der Karte nehmen, wenn nur die Lage zählt

@@ -403,6 +403,11 @@ export class StreckenLayer {
     // Die Druckkarte wird doppelt so groß gerendert und per CSS halbiert;
     // damit die Linien im Ausdruck gleich stark wirken, werden sie mitskaliert.
     this.strichFaktor = opt.strichFaktor || 1;
+    /* Die im Druck gewählte Strichstärke. Sie liegt getrennt vom Schärfe- und
+       Blattfaktor, weil sie allein die Linien meint: Trassenpunkte und
+       Kabelzeichen behalten ihre Größe, sonst wüchse mit einem kräftigeren
+       Strich das halbe Kartenbild mit. */
+    this.strichbreite = opt.strichbreite || 1;
     this._vorschau = null;
     this._vorschauLabel = null;
     this._zoomWaechter = () => this._kabelzeichenSetzen();
@@ -550,7 +555,7 @@ export class StreckenLayer {
    */
   _stil(s) {
     const st = this._stilRoh(s);
-    const f = this.strichFaktor;
+    const f = this.strichFaktor * this.strichbreite;
     return f === 1 ? st : {
       ...st,
       breite: st.breite * f,

@@ -3705,6 +3705,13 @@ export function hilfeDialog() {
            Streckenverzeichnis mit dem Materialbedarf nach Leitungsarten und je Strecke
            das gewohnte Kartenblatt. Welche dieser Blätter entstehen, ist oben in der
            Gruppe <b>Blätter</b> zu wählen.</p>
+        <p>Die <b>Strichstärke</b> der Karteninhalte ist in vier Stufen zu wählen und
+           gilt für Strecken, Flächenumrisse und Koordinatengitter. „Dünn“ hilft, wenn
+           zwei Trassen dieselbe Straße entlanglaufen und sonst zu einem Balken
+           zusammenwachsen; „Kräftig“ und „Sehr kräftig“ sind für den Ausdruck gedacht,
+           der bei Regen und im Halbdunkel gelesen wird, und für das Blatt an der Wand
+           der Führungsstelle. Die Einstellung merkt sich das Gerät getrennt für
+           Bauauftrag und Lagekarte.</p>
         <p>Im Druckdialog dasselbe Papierformat einstellen, das oben gewählt wurde, und
            die Ränder auf „Keine“ stellen – das Blatt bringt seine Ränder selbst mit.
            Der Hinweis am Druckknopf nennt die drei Angaben. Der vorgeschlagene Dateiname

@@ -55,6 +55,21 @@ const PAPIERE_LAGE = [
    Plotterrollen ab. */
 const FREI_MIN = 100, FREI_MAX = 1200;
 
+/* Strichstärke der Karteninhalte: Strecken, Flächenumrisse und
+   Koordinatengitter. „Normal“ ist die erprobte Stärke und deshalb 1 – die
+   beiden Nachbarn sind das, was auf dem Bauplatz wirklich gebraucht wird:
+   dünner, wenn zwei Trassen dieselbe Straße entlanglaufen und sonst zu einem
+   Balken zusammenwachsen, kräftiger für das Plotterblatt an der Wand der
+   Führungsstelle und für den nassen Ausdruck im Halbdunkel. Gespeichert wird
+   das Kennwort, nicht die Zahl: so bleiben ältere Stände lesbar, auch wenn
+   die Stufen einmal anders belegt werden. */
+const STRICHSTAERKEN = [
+  ['duenn', 'Dünn'], ['normal', 'Normal'], ['kraeftig', 'Kräftig'], ['stark', 'Sehr kräftig']
+];
+const STRICH_WERTE = { duenn: 0.7, normal: 1, kraeftig: 1.45, stark: 2 };
+
+const strichbreite = opt => STRICH_WERTE[opt.strichstaerke] || 1;
+
 /* Längste Kante der gerenderten Karte in Bildpunkten. Ein A0-Blatt mit dem
    vollen Schärfefaktor wären rund 57 Millionen Bildpunkte und über 900
    Kacheln – so viel hält kein Browser durch. Bei dieser Schranke bleiben auf
@@ -93,7 +108,8 @@ const STANDARD_AUFTRAG = {
   /* Das Gitter ist im Ausdruck von vornherein an: auf dem Bauplatz ist es
      neben der Punkttabelle der einzige Weg, eine beliebige Stelle der Karte
      als MGRS-Angabe durchzugeben. */
-  andereStrecken: true, zeichen: true, flaechen: true, relais: true, gitter: true, zoomVersatz: 0,
+  andereStrecken: true, zeichen: true, flaechen: true, relais: true, gitter: true,
+  zoomVersatz: 0, strichstaerke: 'normal',
   // nur im Sammeldruck von Belang
   deckblatt: true, verzeichnis: true, einzelblaetter: true
 };
@@ -105,7 +121,8 @@ const STANDARD_LAGE = {
   format: 'a1', ausrichtung: 'quer', farbe: 'farbe',
   freiBreite: 900, freiHoehe: 600,
   strecken: true, zeichen: true, flaechen: true, relais: true, beschriftung: true, gitter: true,
-  punktnummern: false, punktnamen: false, punktzeichen: true, zoomVersatz: 0,
+  punktnummern: false, punktnamen: false, punktzeichen: true,
+  zoomVersatz: 0, strichstaerke: 'normal',
   /* Die gerechnete Ausbreitungsfläche ist auf dem Blatt von vornherein AUS.
      Sie ist kein Planungsinhalt, sondern ein Befund über nacktem Gelände, und
      gedruckt sieht sie aus wie eine Zusage – auf einem Blatt, das am Bauplatz
@@ -390,7 +407,8 @@ function oeffneDruckansicht(auftrag) {
           ...(hatPunktzeichen(auftrag.strecken)
             ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau, () => !opt.strecken)] : []),
           ...(ausschnittWaehlbar(auftrag) ? [ausschnittFeld(auftrag, opt, neuAufbau)] : []),
-          zoomFeld(opt, neuAufbau)
+          zoomFeld(opt, neuAufbau),
+          auswahl('Strichstärke', 'strichstaerke', STRICHSTAERKEN, opt, neuAufbau)
         ])
       : gruppe('Kartenblatt', [
           haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
@@ -412,7 +430,8 @@ function oeffneDruckansicht(auftrag) {
           haken('Flächen', 'flaechen', opt, neuAufbau),
           haken('Relaisstellen', 'relais', opt, neuAufbau),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
-          zoomFeld(opt, neuAufbau)
+          zoomFeld(opt, neuAufbau),
+          auswahl('Strichstärke', 'strichstaerke', STRICHSTAERKEN, opt, neuAufbau)
         ]),
     lage
       /* In der Reihenfolge, in der die Streifen auf dem Blatt liegen –
@@ -967,7 +986,7 @@ function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
 
   const sl = new StreckenLayer(karte, {
-    interaktiv: false, sw, strichFaktor: strichFaktor(mass),
+    interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt),
     hervorheben: strecke.id,
     nurStrecke: opt.andereStrecken ? null : strecke.id,
     nurStrecken: opt.andereStrecken ? sammlung : null,
@@ -987,7 +1006,7 @@ function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
     });
     zl.zeichne(zeichenOptionen(p, mass));
   }
-  if (opt.flaechen) flaechenEbene(karte, mass, sw, strecke.abschnitt || undefined);
+  if (opt.flaechen) flaechenEbene(karte, mass, sw, strecke.abschnitt || undefined, opt);
   /* Auf dem Streckenblatt stehen die Relaisstellen ohne ihre Fläche: das Blatt
      gilt einer Trasse, und eine Funkfläche darüber verdeckte genau den Verlauf,
      den der Trupp darauf sucht. Die Fläche gehört auf die Lagekarte. */
@@ -1000,7 +1019,9 @@ function baueDruckkarte(buehne, strecke, opt, mass, sw, karten, sammlung) {
   karte.invalidateSize({ animate: false });
   // erst nach dem endgültigen Ausschnitt – das Gitter zeichnet, was es vorfindet
   if (opt.gitter) {
-    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: strichFaktor(mass) }).zeichne({ gitter: true });
+    new GitterLayer(karte, {
+      interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt)
+    }).zeichne({ gitter: true });
   }
   karten.push(karte);
   return karte;
@@ -1066,7 +1087,7 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
 
   const sl = new StreckenLayer(karte, {
-    interaktiv: false, sw, strichFaktor: strichFaktor(mass),
+    interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt),
     nurStrecken: auftrag.strecken.map(s => s.id),
     punktzeichen: opt.punktzeichen !== false
   });
@@ -1082,7 +1103,9 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
     });
     zl.zeichne(zeichenOptionen(p, mass));
   }
-  if (opt.flaechen) flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined);
+  if (opt.flaechen) {
+    flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined, opt);
+  }
   if (opt.relais) {
     relaisEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined, false);
   }
@@ -1093,7 +1116,9 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
   if (opt.zoomVersatz) karte.setZoom(karte.getZoom() + opt.zoomVersatz, { animate: false });
   karte.invalidateSize({ animate: false });
   if (opt.gitter) {
-    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: strichFaktor(mass) }).zeichne({ gitter: true });
+    new GitterLayer(karte, {
+      interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt)
+    }).zeichne({ gitter: true });
   }
   karten.push(karte);
   return karte;
@@ -1113,7 +1138,7 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
 
   if (opt.strecken !== false) {
     const sl = new StreckenLayer(karte, {
-      interaktiv: false, sw, strichFaktor: strichFaktor(mass),
+      interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt),
       nurStrecken: auftrag.strecken.map(s => s.id),
       punktzeichen: opt.punktzeichen !== false
     });
@@ -1133,7 +1158,9 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
     zl.zeichne(zeichenOptionen(p, mass));
   }
   const flaechen = lageFlaechen(auftrag);
-  if (opt.flaechen) flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined);
+  if (opt.flaechen) {
+    flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined, opt);
+  }
   const relaisstellen = lageRelais(auftrag);
   if (opt.relais) {
     relaisEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined,
@@ -1168,7 +1195,9 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   if (opt.zoomVersatz) karte.setZoom(karte.getZoom() + opt.zoomVersatz, { animate: false });
   karte.invalidateSize({ animate: false });
   if (opt.gitter) {
-    new GitterLayer(karte, { interaktiv: false, sw, strichFaktor: strichFaktor(mass) }).zeichne({ gitter: true });
+    new GitterLayer(karte, {
+      interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt)
+    }).zeichne({ gitter: true });
   }
   karten.push(karte);
   return karte;
@@ -1226,10 +1255,12 @@ function eigeneEcken(auftrag, opt, aid, teile = null) {
 /* Die Flächen erscheinen auf jeder Druckkarte nach derselben Abschnittsregel
    wie die Zeichen. Die Ebene hört selbst auf den Zoom – sie zeichnet nach dem
    fitBounds neu, ohne dass die Karte sie eigens anstoßen muss. */
-function flaechenEbene(karte, mass, sw, nurAbschnitt) {
+function flaechenEbene(karte, mass, sw, nurAbschnitt, opt) {
   const ebene = new FlaechenLayer(karte, {
     interaktiv: false, sw, abschnittSchaltet: false, nurAbschnitt,
-    strichFaktor: strichFaktor(mass)
+    /* Die Ebene bemisst mit diesem Faktor ausschließlich Striche – die
+       gewählte Stärke geht deshalb hier gleich mit ein. */
+    strichFaktor: strichFaktor(mass) * strichbreite(opt)
   });
   ebene.zeichne();
   return ebene;
@@ -1262,6 +1293,9 @@ function baueUebersichtskarte(buehne, strecke, mass, sw, karten, sammlung) {
   const karte = neueDruckkarte(buehne, mass);
   setzeBasiskarte(karte, 'topplus_grau');
 
+  /* Ohne die gewählte Strichstärke: das Kästchen ist keine vier Zentimeter
+     breit und zeigt nur, wo die Trasse überhaupt liegt. Ein doppelt starker
+     Strich machte daraus einen Fleck, ein dünner einen Haarriss. */
   const sl = new StreckenLayer(karte, {
     interaktiv: false, sw, strichFaktor: strichFaktor(mass),
     hervorheben: strecke.id, nurStrecken: sammlung, punktzeichen: false
