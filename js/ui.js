@@ -3721,7 +3721,12 @@ export function hilfeDialog() {
            ganz von der Karte nehmen – für das Blatt eines Aufbauplatzes mit
            Zeichen und Flächen allein. Der Ausschnitt bleibt dabei unverändert:
            er umfasst immer die ganze Auswahl, gleich was gerade abgeschaltet
-           ist, damit die Blätter einer Lage deckungsgleich übereinander liegen. Stehen bleiben nur zwei Angaben: die Einstufung,
+           ist, damit die Blätter einer Lage deckungsgleich übereinander liegen.
+           Gibt es Einsatzabschnitte, engt <b>Eingemittet auf</b> Blattmitte und
+           Maßstab auf einen von ihnen ein – gezeichnet wird weiter die ganze
+           Lage, die Nachbarschaft bleibt also ringsum zu sehen. Einmal je
+           Abschnitt gedruckt, ergibt das den Satz Blätter für die
+           Abschnittsleitungen; welcher gemeint ist, steht in den Kopfdaten. Stehen bleiben nur zwei Angaben: die Einstufung,
            die auf jedes Blatt gehört, und die Nennung der Kartengrundlage – sie
            rückt ohne Fußzeile in die Kartenecke, weil die Lizenz sie verlangt.</p>
         <p>Formate sind <b>A4 bis A0</b> und ein <b>freies Maß</b> in Millimetern – für

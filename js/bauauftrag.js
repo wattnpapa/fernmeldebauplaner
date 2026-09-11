@@ -112,6 +112,10 @@ const STANDARD_LAGE = {
      ohne den Satz daneben gelesen wird, ist das die gefährlichere Voreinstellung.
      Wer sie will, schaltet sie ein und bekommt die Zeichenerklärung dazu. */
   relaisflaeche: false,
+  /* Leer heißt: der Ausschnitt umfasst die ganze Auswahl. Steht hier die
+     Kennung eines Einsatzabschnitts, zieht allein dessen Inhalt den Ausschnitt
+     auf – gedruckt wird trotzdem das ganze Lagebild. */
+  ausschnittAbschnitt: '',
   /* Jeder Streifen um die Karte lässt sich einzeln abräumen – alle fünf aus
      ergibt das nackte Kartenblatt, auf dem nur noch die Lage steht. */
   kopf: true, stammdaten: true, legende: true, kennzahlen: true, fuss: true
@@ -299,6 +303,12 @@ function oeffneDruckansicht(auftrag) {
   const lage = auftrag.modus === 'lage';
   const profil = profilVon(auftrag);
   const opt = ladeOptionen(profil);
+  /* Die Kennung eines Einsatzabschnitts gilt nur in der Planung, in der sie
+     vergeben wurde. Aus dem Ausdruck einer anderen stammt sie ins Leere und
+     würde den Ausschnitt auf nichts einengen. */
+  if (lage && opt.ausschnittAbschnitt && !abschnittById(store.projekt, opt.ausschnittAbschnitt)) {
+    opt.ausschnittAbschnitt = '';
+  }
   const titel = auftragTitel(auftrag);
 
   const wurzel = document.createElement('div');
@@ -379,6 +389,7 @@ function oeffneDruckansicht(auftrag) {
              dort rückt es auf den Punkt und zeigt die Anlage. */
           ...(hatPunktzeichen(auftrag.strecken)
             ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau, () => !opt.strecken)] : []),
+          ...(ausschnittWaehlbar(auftrag) ? [ausschnittFeld(auftrag, opt, neuAufbau)] : []),
           zoomFeld(opt, neuAufbau)
         ])
       : gruppe('Kartenblatt', [
@@ -578,6 +589,46 @@ function grenzeMM(wert, bisher) {
   const n = Math.round(Number(wert));
   if (!isFinite(n) || n <= 0) return bisher;
   return Math.min(FREI_MAX, Math.max(FREI_MIN, n));
+}
+
+/* Der Ausschnitt lässt sich auf einen Einsatzabschnitt einengen, obwohl das
+   Blatt weiter die ganze Lage zeigt: die Führungsstelle druckt dieselbe
+   Planung einmal je Abschnitt, jedes Blatt auf seinen Abschnitt eingemittet,
+   die Nachbarschaft ringsum bleibt darauf sichtbar. Ein Blatt, das schon auf
+   einen Abschnitt beschnitten ist, braucht die Wahl nicht – dort zieht dessen
+   Inhalt den Ausschnitt ohnehin allein auf. */
+function ausschnittWaehlbar(auftrag) {
+  return auftrag.modus === 'lage' && auftrag.umfang === 'projekt' &&
+    (store.projekt.einsatzabschnitte || []).length > 0;
+}
+
+function ausschnittFeld(auftrag, opt, aendern) {
+  const el = document.createElement('label');
+  el.className = 'ds-feld';
+  el.title = 'Blattmitte und Maßstab richten sich allein nach dem Inhalt dieses ' +
+    'Einsatzabschnitts; gezeichnet wird weiter die ganze Lage.';
+  el.innerHTML = '<span>Eingemittet auf</span>';
+  const sel = document.createElement('select');
+  const werte = [['', 'ganze Auswahl'],
+    ...(store.projekt.einsatzabschnitte || []).map(a => [a.id, a.name])];
+  werte.forEach(([w, t]) => {
+    const o = document.createElement('option');
+    o.value = w; o.textContent = t; o.selected = (opt.ausschnittAbschnitt || '') === w;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => {
+    opt.ausschnittAbschnitt = sel.value;
+    /* Ein Abschnitt ohne eigene Strecken, Zeichen, Flächen und Relaisstellen
+       ergäbe ein Blatt ohne Ausschnitt. Es bleibt dann bei der ganzen
+       Auswahl – gesagt wird das, sonst sieht es nach einem Fehler aus. */
+    if (sel.value && !eigeneEcken(auftrag, opt, sel.value).length) {
+      hinweis('Diesem Einsatzabschnitt ist noch nichts zugeteilt – der Ausschnitt ' +
+        'umfasst weiter die ganze Auswahl.', 'warnung');
+    }
+    aendern();
+  };
+  el.appendChild(sel);
+  return el;
 }
 
 function zoomFeld(opt, aendern) {
@@ -822,7 +873,7 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
     (opt.kopf
       ? blattkopfHTML(p, { titel: auftragTitel(auftrag), unter: umfangText(auftrag), doktyp: doktyp(auftrag) })
       : '') +
-    (opt.stammdaten ? sammelStammHTML(p, auftrag) : '') +
+    (opt.stammdaten ? sammelStammHTML(p, auftrag, opt) : '') +
     kartenfeldHTML({ quelle: opt.fuss ? '' : kartenquelle(p, opt) }) +
     (opt.legende ? lageLegendeHTML(auftrag, opt, sw, mass) : '') +
     zonenLegendeHTML(auftrag, opt) +
@@ -1089,28 +1140,14 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
       !!opt.relaisflaeche);
   }
 
-  /* Der Ausschnitt umfasst immer alles, was zur Auswahl gehört – auch das,
-     was gerade abgeschaltet ist. Sonst sprängen Maßstab und Mitte bei jedem
-     Haken um, und die Blätter einer Lage ließen sich nicht mehr übereinander
-     legen. Verschoben wird der Ausschnitt allein über „Ausschnitt“.
+  /* Der Ausschnitt umfasst alles, was zur Auswahl gehört – auch das, was
+     gerade abgeschaltet ist. Sonst sprängen Maßstab und Mitte bei jedem Haken
+     um, und die Blätter einer Lage ließen sich nicht mehr übereinander legen.
+     Verschoben wird er allein über „Ausschnitt“, eingeengt allein über
+     „Eingemittet auf“.
      Die Flächen zählen dabei mit ihren Ecken, nicht nur mit der Mitte: ein
      Aufbauplatz von 25 m am Blattrand darf nicht halb abgeschnitten sein. */
-  const ecken = [
-    ...auftrag.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng])),
-    ...zeichen.map(z => [z.lat, z.lng]),
-    ...flaechen.flatMap(flaechenEcken),
-    /* Die Relaisstelle zählt mit ihrem Standort – und mit ihrer ganzen Fläche,
-       sobald diese gedruckt wird. Ohne sie stünde auf einem Blatt, dessen
-       Gegenstand die Ausbreitung ist, ein Ausschnitt von wenigen hundert
-       Metern und die Fläche läge zu neun Zehnteln daneben. Der Preis ist ein
-       kleinerer Maßstab, wenn zugleich Trassen auf dem Blatt sind; das ist die
-       richtige Seite, denn wer den Haken setzt, will die Fläche sehen. */
-    ...relaisstellen.map(r => [r.lat, r.lng]),
-    ...(opt.relaisflaeche ? relaisstellen.flatMap(r => {
-      const e = befundLesen(r);
-      return e ? e.ecken.map(k => [k.lat, k.lng]) : [];
-    }) : [])
-  ];
+  const ecken = ausschnittEcken(auftrag, opt, { zeichen, flaechen, relaisstellen });
   if (ecken.length) {
     const rand = kartenrand(mass, 55);
     const grenzen = L.latLngBounds(ecken);
@@ -1135,6 +1172,55 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
   }
   karten.push(karte);
   return karte;
+}
+
+/**
+ * Die Punkte, die der Ausschnitt der Lagekarte umfassen muss.
+ *
+ * `teile` sind die Zeichen, Flächen und Relaisstellen des Blattes – sie kommen
+ * von außen, weil die Kartenebenen sie ohnehin schon ausgewählt haben.
+ *
+ * Ist ein Einsatzabschnitt gewählt, zählt allein, was ihm zugeteilt ist. Das
+ * gemeinsame Lagebild – Führungsstelle, Bereitstellungsraum, die Zeichen ohne
+ * Abschnitt – bleibt dabei außen vor, obwohl es gezeichnet wird: es gehört zu
+ * jedem Abschnitt und zöge den Ausschnitt wieder über die ganze Lage auf,
+ * womit die Einengung nichts mehr bewirkte.
+ */
+function ausschnittEcken(auftrag, opt, teile) {
+  const gewaehlt = ausschnittWaehlbar(auftrag) ? (opt.ausschnittAbschnitt || '') : '';
+  const eigene = gewaehlt ? eigeneEcken(auftrag, opt, gewaehlt, teile) : [];
+  /* Ein Abschnitt, dem noch nichts zugeteilt ist, würde das Blatt leer
+     lassen – dann gilt wieder die ganze Auswahl. */
+  return eigene.length ? eigene : eigeneEcken(auftrag, opt, '', teile);
+}
+
+/** Die Ecken der Auswahl, auf einen Einsatzabschnitt eingeengt; `aid` leer
+ *  nimmt alles. Ohne `teile` werden Zeichen, Flächen und Relaisstellen selbst
+ *  geholt – so lässt sich schon vor dem Kartenaufbau prüfen, ob ein Abschnitt
+ *  überhaupt etwas Eigenes beiträgt. */
+function eigeneEcken(auftrag, opt, aid, teile = null) {
+  const t = teile || {
+    zeichen: lageZeichen(auftrag), flaechen: lageFlaechen(auftrag),
+    relaisstellen: lageRelais(auftrag)
+  };
+  const dabei = x => !aid || x.abschnitt === aid;
+  const relaisstellen = t.relaisstellen.filter(dabei);
+  return [
+    ...auftrag.strecken.filter(dabei).flatMap(s => s.punkte.map(x => [x.lat, x.lng])),
+    ...t.zeichen.filter(dabei).map(z => [z.lat, z.lng]),
+    ...t.flaechen.filter(dabei).flatMap(flaechenEcken),
+    /* Die Relaisstelle zählt mit ihrem Standort – und mit ihrer ganzen Fläche,
+       sobald diese gedruckt wird. Ohne sie stünde auf einem Blatt, dessen
+       Gegenstand die Ausbreitung ist, ein Ausschnitt von wenigen hundert
+       Metern und die Fläche läge zu neun Zehnteln daneben. Der Preis ist ein
+       kleinerer Maßstab, wenn zugleich Trassen auf dem Blatt sind; das ist die
+       richtige Seite, denn wer den Haken setzt, will die Fläche sehen. */
+    ...relaisstellen.map(r => [r.lat, r.lng]),
+    ...(opt.relaisflaeche ? relaisstellen.flatMap(r => {
+      const e = befundLesen(r);
+      return e ? e.ecken.map(k => [k.lat, k.lng]) : [];
+    }) : [])
+  ];
 }
 
 /* Die Flächen erscheinen auf jeder Druckkarte nach derselben Abschnittsregel
@@ -1382,8 +1468,13 @@ function stammHTML(p, s, k) {
   ]);
 }
 
-function sammelStammHTML(p, auftrag) {
+function sammelStammHTML(p, auftrag, opt = null) {
   const ea = auftrag.abschnitt;
+  /* Ist der Ausschnitt auf einen Abschnitt eingemittet, gehört das in die
+     Kopfdaten: am Blatt hängt sonst nichts, woran sich die Stapel mehrerer
+     Abschnitte derselben Planung auseinanderhalten ließen. */
+  const mitte = opt && ausschnittWaehlbar(auftrag)
+    ? abschnittById(p, opt.ausschnittAbschnitt) : null;
   return stammFelderHTML([
     ['Einsatz / Übung', p.kopf.einsatz],
     ['Ort / Abschnitt', p.kopf.ort],
@@ -1392,6 +1483,7 @@ function sammelStammHTML(p, auftrag) {
       ? [['Einsatzabschnitt', ea.name], ['Leitung Einsatzabschnitt', ea.leiter]]
       : [['Umfang', auftrag.umfang === 'ohne'
           ? 'Strecken ohne Einsatzabschnitt' : 'alle Strecken der Planung']]),
+    ...(mitte ? [['Eingemittet auf', mitte.name]] : []),
     ['Erstellt von', p.kopf.ersteller]
   ]);
 }
@@ -2306,8 +2398,12 @@ function drucken(auftrag, opt) {
 
   const alterTitel = document.title;
   const p = store.projekt;
+  /* Der eingeengte Ausschnitt gehört in den Dateinamen: dieselbe Planung
+     einmal je Einsatzabschnitt gedruckt ergäbe sonst viermal denselben
+     Vorschlag und im Ordner vier Dateien, die niemand unterscheidet. */
+  const mitte = ausschnittWaehlbar(auftrag) ? abschnittById(p, opt.ausschnittAbschnitt) : null;
   document.title = [erzeugnis(auftrag),
-    p.kopf.auftragNr, auftragTitel(auftrag), p.kopf.datum]
+    p.kopf.auftragNr, auftragTitel(auftrag), mitte ? mitte.name : '', p.kopf.datum]
     .filter(Boolean).join('_')
     .replace(/[^\wäöüÄÖÜß.\-_]+/g, '-')
     .replace(/-{2,}/g, '-')

@@ -198,6 +198,10 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Am Rand Titelzeile, Kopfdaten, Zeichenerklärung, Kennzahlen und Fußzeile – jeder
   Streifen einzeln abschaltbar; alle fünf aus ergibt das nackte Kartenblatt. Auch
   die Streckenbeschriftung lässt sich von der Karte nehmen, wenn nur die Lage zählt
+- **Eingemittet auf** engt Blattmitte und Maßstab auf einen Einsatzabschnitt ein,
+  ohne das Lagebild zu beschneiden: gezeichnet wird weiter die ganze Planung, die
+  Nachbarschaft bleibt ringsum sichtbar. So entsteht aus einer Planung je Abschnitt
+  ein eigenes Blatt; der Abschnitt steht dann in den Kopfdaten unter „Eingemittet auf“
 - Auch die **Strecken** selbst lassen sich abschalten – für das Blatt eines
   Aufbauplatzes, auf dem nur Zeichen und Flächen stehen. Der Ausschnitt bleibt
   dabei derselbe wie mit Strecken: er umfasst immer die ganze Auswahl, damit die
