@@ -10,7 +10,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 10;
+export const SCHEMA = 11;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -231,6 +231,10 @@ export function neueStrecke(projekt) {
     verlegeart: 'boden',
     zuschlag: k.zuschlag,
     trommellaenge: k.trommel,
+    /* `trommelnVorgabe` null heißt: die Trommelzahl wird gerechnet (Schema 11).
+       Eine Zahl setzt die Rechnung außer Kraft – für Material, das aus der
+       Trasse nicht hervorgeht. */
+    trommelnVorgabe: null,
     verlegeleistung: k.leistung,
     strom: neueStromangabe(),
     richtfunk: neueRichtfunkangabe(),

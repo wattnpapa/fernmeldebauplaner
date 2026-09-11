@@ -41,6 +41,8 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Punkte verschieben, Zwischenpunkte über Griffe einfügen, Richtung umkehren
 - Leitungsart (Feldkabel, Feldfernkabel, LWL, Netzwerk, Koax, Strom), Verlegeart,
   Bauzuschlag, Trommellänge und Verlegeleistung je Strecke
+- Trommelzahl abweichend von der Rechnung eintragbar, wenn mehr Material gebraucht
+  wird, als aus der Trasse folgt; Seitenleiste und Bauauftrag nennen dann beide Zahlen
 - WLAN-Richtfunk als gestrichelte Funkstrecke – ohne Trommeln und Bauansatz
 - Für die Funkstrecke die Angaben des Vordrucks „Einzelauftrag Richtfunkstrecke WLAN“:
   je Aufbauplatz Einheit mit Ansprechpartner, Erreichbarkeit und Rufname, Adresse,

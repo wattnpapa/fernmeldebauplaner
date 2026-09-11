@@ -43,6 +43,22 @@ export function kabelzeichen(kabeltyp) {
   return KABELZEICHEN[kabelById(kabeltyp).id] || null;
 }
 
+/**
+ * Die von Hand eingetragene Trommelzahl einer Strecke oder null, wenn gerechnet
+ * werden soll. Gefiltert wird hier und nicht erst in der Anzeige: über Datei
+ * oder Link kann eine fremde Zahl hereinkommen, und eine negative Trommelzahl
+ * risse die Materialsumme der ganzen Planung ins Minus.
+ */
+export function trommelnVorgabe(strecke) {
+  const roh = strecke.trommelnVorgabe;
+  /* Nicht über Number() geprüft: das leere Feld und der fehlende Eintrag
+     älterer Stände würden zu 0 – und die Strecke käme ohne eine einzige
+     Trommel auf den Bauplatz. */
+  if (roh === null || roh === undefined || roh === '') return null;
+  const v = Number(roh);
+  return Number.isFinite(v) && v >= 0 ? Math.floor(v) : null;
+}
+
 /** Kennzahlen einer Strecke – überall gleich gerechnet */
 export function kennzahlen(strecke) {
   const p = strecke.punkte;
@@ -79,7 +95,14 @@ export function kennzahlen(strecke) {
      brauchen bei 500 m Trommellänge zwei Trommeln, ihre Summe von 900 m nur
      eine – und der Trupp stünde mit 450 m zu wenig am Bauplatz. */
   const ka = funk ? [] : kabelabschnitte(p, kum, zuschlag, tl);
-  const trommeln = ka.reduce((n, a) => n + a.trommeln, 0);
+  const gerechnet = ka.reduce((n, a) => n + a.trommeln, 0);
+  /* Was der Planer von Hand einträgt, geht der Rechnung vor: am Bauplatz
+     kommt Kabel dazu, das in keiner Trassenlänge steht – ein Umweg um ein
+     gesperrtes Grundstück, eine zweite Trommel als Rückhalt, Reste auf
+     angebrochenen Trommeln. Die gerechnete Zahl bleibt daneben stehen, damit
+     die Abweichung sichtbar ist und nicht wie ein Rechenfehler aussieht. */
+  const vorgabe = funk ? null : trommelnVorgabe(strecke);
+  const trommeln = vorgabe === null ? gerechnet : vorgabe;
   const querungsliste = querungen(p, kum);
   /* Die Verlegeleistung kennt nur laufende Meter. Was an einer Querung
      dazukommt – Stangen stellen für den Überbau, Graben ziehen für den
@@ -101,6 +124,10 @@ export function kennzahlen(strecke) {
     bedarf,
     trommellaenge: tl,
     trommeln,
+    /* Die Zahl aus der Rechnung – ausgewiesen auch dann, wenn eine Vorgabe sie
+       verdrängt: Seitenleiste und Bauauftrag nennen beide Zahlen nebeneinander. */
+    trommelnGerechnet: gerechnet,
+    trommelnVonHand: vorgabe !== null,
     /* Die Abschnitte zwischen den Verteilern, jeder mit eigener Trommelzahl.
        Bei einer Strecke ohne Verteiler ist es genau einer. */
     kabelabschnitte: ka,

@@ -571,6 +571,10 @@ function streckenKarte(s) {
   /* Distanz und Azimut der Funkstrecke hängen an den gezeichneten Punkten –
      sie werden mit denselben Anlässen erneuert wie die Kennzahlen. */
   let funkFrisch = () => {};
+  /* Das Trommelfeld zeigt die gerechnete Zahl als Platzhalter – sie ändert sich
+     mit Bauzuschlag, Trommellänge und jedem gesetzten Punkt und muss deshalb
+     mitlaufen, sonst stünde dort der Stand von vor drei Eingaben. */
+  let trommelFrisch = () => {};
   const frisch = () => {
     const neu = kennzahlen(s);
     kz.innerHTML = kennzahlenHTML(neu);
@@ -578,6 +582,7 @@ function streckenKarte(s) {
     if (kopfWert) kopfWert.textContent = formatLaenge(neu.trasse);
     stromFrisch();
     funkFrisch();
+    trommelFrisch(neu);
     reichweiteFrisch(neu);
   };
 
@@ -643,6 +648,31 @@ function streckenKarte(s) {
         { typ: 'number', min: 1, step: 50, einheit: 'm/h' })
     );
     g2.appendChild(zahlen);
+
+    /* Die gerechnete Trommelzahl ist ein Vorschlag, kein Befund: sie kennt nur
+       die Trasse. Wer am Bauplatz weiß, dass mehr gebraucht wird – eine
+       Trommel als Rückhalt, angebrochene Reste, ein Umweg, der nicht in der
+       Planung steht –, trägt seine Zahl hier ein; leer heißt weiter gerechnet.
+       Die Zahl geht durch die ganze Ausgabe bis ins Materialblatt des
+       Bauauftrags, deshalb bleibt daneben stehen, was gerechnet worden wäre. */
+    const trommelFeld = feld('Trommeln abweichend (Stück)', s.trommelnVorgabe, v => {
+      /* Auffrischen erst, wenn geschrieben ist: die Eingabe wird gesammelt, und
+         eine gleich danach gerechnete Kachel zeigte den Stand davor. */
+      schreib(() => {
+        s.trommelnVorgabe = v === '' ? null : Math.max(0, Math.round(Number(v) || 0));
+      }, frisch);
+    }, { typ: 'number', min: 0, step: 1 });
+    const trommelHinweis = el('p', 'klein');
+    g2.append(trommelFeld, trommelHinweis);
+    const trommelEingabe = trommelFeld.querySelector('input');
+    trommelFrisch = kz2 => {
+      trommelEingabe.placeholder = `gerechnet: ${kz2.trommelnGerechnet}`;
+      trommelHinweis.textContent = kz2.trommelnVonHand
+        ? `Von Hand gesetzt: ${kz2.trommeln} statt gerechnet ${kz2.trommelnGerechnet}. `
+          + 'Feld leeren, um wieder zu rechnen.'
+        : 'Leer lassen heißt: aus Kabelbedarf und Trommellänge gerechnet.';
+    };
+    trommelFrisch(k);
   }
   g2.appendChild(feld('Auftrag an (Trupp)', s.trupp, v => schreib(() => { s.trupp = v; }),
     { platzhalter: 'z. B. FmBauTr 1' }));
@@ -766,7 +796,7 @@ function kennzahlenHTML(k) {
   ] : [
     ['Trasse', formatLaenge(k.trasse)],
     ['Bedarf', formatLaenge(k.bedarf)],
-    ['Trommeln', String(k.trommeln)],
+    ['Trommeln', String(k.trommeln) + (k.trommelnVonHand ? '*' : '')],
     ['Bauzeit', stundenKurz(k.bauzeitStunden)]
   ];
   return kacheln.map(([t, w]) =>
@@ -779,10 +809,17 @@ function kennzahlenHTML(k) {
    sähe die Trommelzahl nach einem Rechenfehler aus – durch die Trommellänge
    geteilt geht der Gesamtbedarf nicht auf. */
 function kabelabschnitteHTML(k) {
-  if (k.kabelabschnitte.length < 2) return '';
+  /* Steht eine Zahl von Hand in der Kachel, geht die Aufstellung der Abschnitte
+     nicht mehr auf – der Stern wird deshalb zuerst erklärt, sonst sucht der
+     Leser den Fehler in der Teilung. */
+  const vonHand = k.trommelnVonHand
+    ? `<p class="kz-hinweis">* Trommelzahl von Hand gesetzt –
+       gerechnet wären es ${k.trommelnGerechnet}.</p>`
+    : '';
+  if (k.kabelabschnitte.length < 2) return vonHand;
   const teile = k.kabelabschnitte.map(a =>
     `${meter(a.bedarf)} → ${a.trommeln}`).join(' · ');
-  return `<p class="kz-hinweis"><b>${k.kabelabschnitte.length} Kabelabschnitte</b> durch
+  return vonHand + `<p class="kz-hinweis"><b>${k.kabelabschnitte.length} Kabelabschnitte</b> durch
     Verteiler getrennt – je Abschnitt ganze Trommeln: ${teile}</p>`;
 }
 

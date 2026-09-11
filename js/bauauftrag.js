@@ -1552,9 +1552,14 @@ function kennzahlenHTML(k, s) {
        Bauplatz nachrechnet, findet beides in der Summe wieder. */
     ['Kabelbedarf', formatLaenge(k.bedarf),
       k.reserve > 0 ? `einschl. ${meter(k.reserve)} Reserve` : 'einzuplanen'],
-    ['Trommeln', String(k.trommeln), k.transportgewicht
-      ? `à ${meter(k.trommellaenge)} · ${gewichtText(k.transportgewicht)}`
-      : `à ${meter(k.trommellaenge)}`],
+    /* Eine von Hand gesetzte Trommelzahl sagt die Kachel dazu: sonst stünde auf
+       dem Blatt eine Zahl, die sich aus Bedarf und Trommellänge nicht
+       nachrechnen lässt, und am Bauplatz gilt das als Druckfehler. */
+    ['Trommeln', String(k.trommeln), k.trommelnVonHand
+      ? `à ${meter(k.trommellaenge)} · von Hand (gerechnet ${k.trommelnGerechnet})`
+      : k.transportgewicht
+        ? `à ${meter(k.trommellaenge)} · ${gewichtText(k.transportgewicht)}`
+        : `à ${meter(k.trommellaenge)}`],
     ['Richtwert Bauzeit', stundenText(k.bauzeitStunden), bauzeitUnterHTML(k, s)]
   ];
   // Bei Stromleitungen ist der Querschnitt die Zahl, die der Trupp mitnehmen muss
@@ -2154,7 +2159,8 @@ function materialHTML(s, k) {
     ...(k.kabelabschnitte.length > 1
       ? [['Kabelabschnitte (an Verteilern getrennt)', kabelabschnitteText(k)]]
       : []),
-    ['<b>Trommeln erforderlich</b>', `<b>${k.trommeln} Stück</b>`],
+    ['<b>Trommeln erforderlich</b>', `<b>${k.trommeln} Stück</b>` +
+      (k.trommelnVonHand ? `  (von Hand gesetzt, gerechnet ${k.trommelnGerechnet} Stück)` : '')],
     ...(k.transportgewicht
       ? [['Transportgewicht (mit Trommeln)', `${gewichtText(k.transportgewicht)}  (${gewichtText(k.trommelgewicht)} je Trommel)`]]
       : []),
