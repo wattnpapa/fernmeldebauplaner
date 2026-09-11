@@ -56,19 +56,25 @@ const PAPIERE_LAGE = [
 const FREI_MIN = 100, FREI_MAX = 1200;
 
 /* Strichstärke der Karteninhalte: Strecken, Flächenumrisse und
-   Koordinatengitter. „Normal“ ist die erprobte Stärke und deshalb 1 – die
-   beiden Nachbarn sind das, was auf dem Bauplatz wirklich gebraucht wird:
-   dünner, wenn zwei Trassen dieselbe Straße entlanglaufen und sonst zu einem
-   Balken zusammenwachsen, kräftiger für das Plotterblatt an der Wand der
-   Führungsstelle und für den nassen Ausdruck im Halbdunkel. Gespeichert wird
-   das Kennwort, nicht die Zahl: so bleiben ältere Stände lesbar, auch wenn
-   die Stufen einmal anders belegt werden. */
-const STRICHSTAERKEN = [
-  ['duenn', 'Dünn'], ['normal', 'Normal'], ['kraeftig', 'Kräftig'], ['stark', 'Sehr kräftig']
-];
-const STRICH_WERTE = { duenn: 0.7, normal: 1, kraeftig: 1.45, stark: 2 };
+   Koordinatengitter. 1 ist die erprobte Stärke der Arbeitskarte; von dort
+   geht der Regler nach beiden Seiten. Nach unten bis auf ein Drittel: laufen
+   zwei Trassen dieselbe Straße entlang, wachsen sie sonst zu einem Balken
+   zusammen, und auf einem kleinen Maßstab deckt der Strich die Straße zu, an
+   der gebaut wird. Nach oben bis zum Doppelten für das Plotterblatt an der
+   Wand der Führungsstelle und für den Ausdruck, der bei Regen im Halbdunkel
+   gelesen wird. Feine Schritte statt einiger Stufen, weil die richtige Stärke
+   an Blattmaß und Dichte der Trassen hängt und am Bild getroffen wird. */
+const STRICH_MIN = 0.3, STRICH_MAX = 2, STRICH_SCHRITT = 0.05;
 
-const strichbreite = opt => STRICH_WERTE[opt.strichstaerke] || 1;
+/* Zuvor stand dort eines von vier Kennwörtern. Sie werden weiter verstanden:
+   im localStorage der Nutzer liegt die Einstellung ihres letzten Ausdrucks. */
+const STRICH_ALT = { duenn: 0.7, normal: 1, kraeftig: 1.45, stark: 2 };
+
+function strichbreite(opt) {
+  const wert = STRICH_ALT[opt.strichstaerke] ?? Number(opt.strichstaerke);
+  if (!isFinite(wert) || wert <= 0) return 1;
+  return Math.min(STRICH_MAX, Math.max(STRICH_MIN, wert));
+}
 
 /* Längste Kante der gerenderten Karte in Bildpunkten. Ein A0-Blatt mit dem
    vollen Schärfefaktor wären rund 57 Millionen Bildpunkte und über 900
@@ -109,7 +115,7 @@ const STANDARD_AUFTRAG = {
      neben der Punkttabelle der einzige Weg, eine beliebige Stelle der Karte
      als MGRS-Angabe durchzugeben. */
   andereStrecken: true, zeichen: true, flaechen: true, relais: true, gitter: true,
-  zoomVersatz: 0, strichstaerke: 'normal',
+  zoomVersatz: 0, strichstaerke: 1,
   // nur im Sammeldruck von Belang
   deckblatt: true, verzeichnis: true, einzelblaetter: true
 };
@@ -122,7 +128,7 @@ const STANDARD_LAGE = {
   freiBreite: 900, freiHoehe: 600,
   strecken: true, zeichen: true, flaechen: true, relais: true, beschriftung: true, gitter: true,
   punktnummern: false, punktnamen: false, punktzeichen: true,
-  zoomVersatz: 0, strichstaerke: 'normal',
+  zoomVersatz: 0, strichstaerke: 1,
   /* Die gerechnete Ausbreitungsfläche ist auf dem Blatt von vornherein AUS.
      Sie ist kein Planungsinhalt, sondern ein Befund über nacktem Gelände, und
      gedruckt sieht sie aus wie eine Zusage – auf einem Blatt, das am Bauplatz
@@ -408,7 +414,7 @@ function oeffneDruckansicht(auftrag) {
             ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau, () => !opt.strecken)] : []),
           ...(ausschnittWaehlbar(auftrag) ? [ausschnittFeld(auftrag, opt, neuAufbau)] : []),
           zoomFeld(opt, neuAufbau),
-          auswahl('Strichstärke', 'strichstaerke', STRICHSTAERKEN, opt, neuAufbau)
+          strichFeld(opt, neuAufbau)
         ])
       : gruppe('Kartenblatt', [
           haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
@@ -431,7 +437,7 @@ function oeffneDruckansicht(auftrag) {
           haken('Relaisstellen', 'relais', opt, neuAufbau),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
           zoomFeld(opt, neuAufbau),
-          auswahl('Strichstärke', 'strichstaerke', STRICHSTAERKEN, opt, neuAufbau)
+          strichFeld(opt, neuAufbau)
         ]),
     lage
       /* In der Reihenfolge, in der die Streifen auf dem Blatt liegen –
@@ -647,6 +653,35 @@ function ausschnittFeld(auftrag, opt, aendern) {
     aendern();
   };
   el.appendChild(sel);
+  return el;
+}
+
+/* Strichstärke als Schieberegler: getroffen wird sie am Bild, nicht an einer
+   Zahl – deshalb steht der Regler über der Vorschau und nicht im Druckdialog.
+   Übernommen wird erst beim Loslassen, wie beim freien Blattmaß: bei jedem
+   Schritt des Ziehens die Karte neu aufzubauen, machte den Regler
+   unbedienbar. Der Prozentwert daneben läuft dagegen beim Ziehen mit, sonst
+   zöge man ins Blinde. */
+function strichFeld(opt, aendern) {
+  const el = document.createElement('label');
+  el.className = 'ds-feld ds-strich';
+  el.innerHTML = '<span>Strichstärke</span>';
+  const regler = document.createElement('input');
+  regler.type = 'range';
+  regler.min = STRICH_MIN; regler.max = STRICH_MAX; regler.step = STRICH_SCHRITT;
+  regler.value = strichbreite(opt);
+  regler.setAttribute('aria-label', 'Strichstärke der Karteninhalte');
+  const anzeige = Object.assign(document.createElement('span'), { className: 'ds-strichwert' });
+  const schreib = () => {
+    anzeige.textContent = Math.round(regler.value * 100) + ' %';
+    /* Vorgelesen wird der Prozentwert, nicht die Rohzahl 0,65 – die sagt
+       niemandem, wie stark der Strich wird. */
+    regler.setAttribute('aria-valuetext', anzeige.textContent);
+  };
+  regler.oninput = schreib;
+  regler.onchange = () => { opt.strichstaerke = Number(regler.value); aendern(); };
+  schreib();
+  el.append(regler, anzeige);
   return el;
 }
 

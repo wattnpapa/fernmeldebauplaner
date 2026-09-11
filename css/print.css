@@ -69,6 +69,13 @@ body.druckansicht { overflow: hidden; }
 }
 .ds-mal, .ds-einheit { color: var(--text-schwach); }
 .ds-zoomwert { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* Strichstärke: kurzer Regler mit dem Prozentwert daneben. Der Wert hat einen
+   festen Platz, sonst rückte die halbe Gruppe beim Ziehen hin und her. */
+.ds-strich input[type="range"] { width: 96px; accent-color: var(--thw); }
+.ds-strichwert {
+  min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600;
+}
 .ds-tasten { grid-area: tasten; display: flex; align-items: flex-end; gap: 8px; }
 
 /* Umfang des Sammelauftrags neben seinem Titel – die Zahl, an der zu erkennen
@@ -106,6 +113,12 @@ body.druckansicht { overflow: hidden; }
   }
   .ds-gruppe { flex-direction: column; align-items: flex-start; gap: 2px; }
   .ds-gruppen-felder { gap: 2px 12px; }
+  /* Regler und Name nebeneinander sind breiter, als eine Rasterspalte hergibt –
+     die Spalte wüchse über das Fenster hinaus und nähme die Haken daneben mit.
+     Der Name rückt deshalb über den Regler, und der Regler gibt nach. */
+  .ds-strich { flex-wrap: wrap; width: 100%; }
+  .ds-strich > span:first-child { flex-basis: 100%; }
+  .ds-strich input[type="range"] { flex: 1 1 60px; width: auto; min-width: 0; }
   /* „Schließen“ neben dem Druckknopf, der Formathinweis darunter über die
      ganze Breite: nebeneinander umbrach er und kostete mehr Höhe, als die
      Zeile einspart. */
