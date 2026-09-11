@@ -712,10 +712,40 @@ body.seite-zu .seite { display: none; }
   color: var(--warnung-tief); font-weight: 600;
 }
 .rf-gelaende.rf-unbeurteilbar { color: var(--text-schwach); }
-/* Während geholt wird, bleibt der Kasten in derselben Form stehen – nur der
-   Text sagt, dass gerade etwas läuft. Ein Ladebalken an dieser Stelle wäre
-   Betrieb um des Betriebs willen: der Abruf dauert ein bis zwei Sekunden. */
-.rf-gelaende.rf-laeuft { color: var(--text-schwach); font-style: italic; }
+/* Während geholt wird, bleibt der Kasten in derselben Form stehen. Der Balken
+   darin stand hier einmal als Betrieb um des Betriebs willen – gemessen war
+   damals nur der Höhenabruf, und der dauert ein bis zwei Sekunden. Mit der
+   Oberfläche kamen drei fremde Dienste dazu, und die Gebäudeabfrage bei
+   Overpass braucht über einer Stadt auch einmal zwanzig Sekunden. So lange
+   beantwortet ein Satz allein die Frage nicht mehr, ob noch etwas läuft. */
+.rf-gelaende.rf-laeuft { color: var(--text-schwach); }
+.rf-laeuft-kopf {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  margin: 0; font-style: italic;
+}
+.rf-laeuft-kopf b {
+  font-style: normal; font-weight: 650; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.rf-balken {
+  height: 4px; margin: 6px 0 0; border-radius: 2px;
+  background: var(--linie); overflow: hidden;
+}
+/* Die Breite steht im Markup und springt in Stufen: der Kasten wird bei jedem
+   Teilschritt neu aufgebaut, ein Übergang liefe deshalb ins Leere. */
+.rf-balken i { display: block; height: 100%; background: var(--thw); }
+.rf-laeuft-schritt { margin: 4px 0 0; font-size: 11px; line-height: 1.4; }
+
+/* Ein ausgefallener Abruf ist kein Befund über die Strecke. Er trägt deshalb
+   nicht den Mahnton des Urteils „verdeckt“ – wer das Blatt später liest, soll
+   den Unterschied zwischen einem Hindernis und einem stummen Dienst nicht erst
+   am Wortlaut suchen müssen. */
+.rf-gelaende.rf-fehlgeschlagen { border-left-color: var(--linie-stark); }
+.rf-fehler-text { margin: 0; }
+.rf-fehler-fuss {
+  margin: 4px 0 0; font-size: 11px; line-height: 1.4; color: var(--text-schwach);
+}
+.rf-gelaende.rf-fehlgeschlagen .knopf { margin-top: 7px; }
 
 /* -- Umkreis der Funksicht. Ein Regler in der Zeile mit seinem Wert: die Zahl
    steht rechts fest, damit sie beim Schieben nicht unter der Hand wandert.

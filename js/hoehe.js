@@ -27,6 +27,7 @@ const KANTE = 256;
    bleibt als `null` stehen – ein Dienst, der gerade nicht antwortet, soll
    nicht bei jeder Mausbewegung erneut angefragt werden. */
 const kacheln = new Map();
+const fehlversuche = new Set();
 const HOECHSTENS = 64;   // 64 × 256 KB Pixeldaten sind ein vertretbarer Speicher
 
 function kachelSchluessel(x, y) { return `${ZOOM}/${x}/${y}`; }
@@ -52,9 +53,24 @@ function kachelHolen(x, y) {
       return ctx.getImageData(0, 0, KANTE, KANTE).data;
     })
     .catch(() => null);
+  p.then(daten => { if (!daten) fehlversuche.add(schluessel); });
   kacheln.set(schluessel, p);
   if (kacheln.size > HOECHSTENS) kacheln.delete(kacheln.keys().next().value);
   return p;
+}
+
+/**
+ * Fehlversuche vergessen, damit der nächste Abruf sie wirklich wiederholt.
+ *
+ * Der Zwischenspeicher behält eine gescheiterte Kachel mit Absicht – sonst
+ * fragte jede Mausbewegung über einer Lücke erneut an. Hinter einem Knopf
+ * „Erneut versuchen“ steht aber kein Zufall, sondern jemand, der gerade
+ * gesehen hat, dass es nicht ging: für ihn wäre der gemerkte Fehlschlag eine
+ * Sackgasse bis zum Neuladen der Seite.
+ */
+export function kachelfehlerVergessen() {
+  for (const k of fehlversuche) kacheln.delete(k);
+  fehlversuche.clear();
 }
 
 // ---------------------------------------------------------------- Projektion
@@ -101,15 +117,21 @@ function interpoliert(daten, lat, lng) {
   return (h00 * (1 - fx) + h10 * fx) * (1 - fy) + (h01 * (1 - fx) + h11 * fx) * fy;
 }
 
-async function kachelnFuer(punkte) {
+/* `beiKachel` meldet, wie viele der nötigen Kacheln da sind. Das ist die
+   einzige Stelle, an der ein Fortschritt überhaupt zu haben ist: wie lange ein
+   Profil braucht, hängt nicht an seinen Stützpunkten, sondern daran, wie viele
+   Kacheln dafür über das Netz müssen – und die kommen einzeln an. */
+async function kachelnFuer(punkte, beiKachel) {
   const noetig = new Map();
   for (const p of punkte) {
     const { x, y } = weltPixel(p.lat, p.lng);
     for (const [kx, ky] of pixelKacheln(x, y)) noetig.set(kachelSchluessel(kx, ky), [kx, ky]);
   }
   const daten = new Map();
+  let fertig = 0;
   await Promise.all([...noetig].map(async ([schluessel, [kx, ky]]) => {
     daten.set(schluessel, await kachelHolen(kx, ky));
+    if (beiKachel) beiKachel(++fertig, noetig.size);
   }));
   return daten;
 }
@@ -241,8 +263,11 @@ export async function hoeheAn(lat, lng) {
  * Abstand vom Anfang in Metern und h als Höhe (oder null ohne Daten).
  * Die Stützpunkte liegen linear zwischen den Koordinaten – auf
  * Richtfunkdistanzen weicht das nur um Zentimeter von der Großkreislinie ab.
+ *
+ * `beiKachel(fertig, gesamt)` wird nach jeder eingetroffenen Höhenkachel
+ * gerufen, damit der Aufrufer einen Fortschritt anzeigen kann.
  */
-export async function profil(a, b, schritt = 25) {
+export async function profil(a, b, schritt = 25, beiKachel = null) {
   const laenge = distanz(a, b);
   const n = Math.max(1, Math.ceil(laenge / schritt));
   const punkte = [];
@@ -250,7 +275,7 @@ export async function profil(a, b, schritt = 25) {
     const t = i / n;
     punkte.push({ d: laenge * t, lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t });
   }
-  const daten = await kachelnFuer(punkte);
+  const daten = await kachelnFuer(punkte, beiKachel);
   return punkte.map(p => ({ ...p, h: interpoliert(daten, p.lat, p.lng) }));
 }
 

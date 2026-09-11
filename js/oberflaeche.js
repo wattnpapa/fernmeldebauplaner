@@ -258,11 +258,14 @@ function hindernisAus(o) {
 /* Die beiden Abfragen laufen nebeneinander und jede meldet für sich, ob sie
    angekommen ist. Was fehlt, muss weitergereicht werden: ein Profil ohne
    Gebäude sieht aus wie freies Feld, gleichgültig warum. */
-async function osmHindernisse(punkte) {
+async function osmHindernisse(punkte, beiTeil) {
   const holen = async abfrage => (await overpass(abfrage)).elements || [];
+  const melden = teil => r => { if (beiTeil) beiTeil(teil); return r; };
   const [gebaeude, bewuchs] = await Promise.all([
-    holen(gebaeudeAbfrage(punkte)).then(e => ({ da: true, e }), () => ({ da: false, e: [] })),
+    holen(gebaeudeAbfrage(punkte)).then(e => ({ da: true, e }), () => ({ da: false, e: [] }))
+      .then(melden('gebaeude')),
     holen(bewuchsAbfrage(punkte)).then(e => ({ da: true, e }), () => ({ da: false, e: [] }))
+      .then(melden('bewuchs'))
   ]);
 
   const objekte = [...gebaeude.e, ...bewuchs.e]
@@ -293,6 +296,11 @@ const GELAENDE = { art: 'gelaende', quelle: 'dgm', geschaetzt: false };
  * Geländeprofil um die Oberfläche ergänzen.
  *
  * @param {Array<{d:number,lat:number,lng:number,h:?number}>} profil aus hoehe.js
+ * @param {?function(string)} beiTeil wird mit `'dsm'`, `'gebaeude'` und
+ *   `'bewuchs'` gerufen, sobald die jeweilige Quelle geantwortet hat – auch
+ *   dann, wenn sie ausgefallen ist. Die drei laufen nebeneinander und kommen in
+ *   beliebiger Reihenfolge an; gezählt werden kann deshalb nur, wie viele der
+ *   drei durch sind, nicht welche gerade läuft.
  * @returns {Promise<{punkte:Array, dsm:boolean, gebaeude:boolean, bewuchs:boolean}>} dieselben
  *   Stützpunkte, je Punkt zusätzlich: `oberflaeche` (Meter über NN, nie unter
  *   `h`), `hindernis` (Meter über Grund), `art`, `quelle`, `geschaetzt` und
@@ -304,7 +312,7 @@ const GELAENDE = { art: 'gelaende', quelle: 'dgm', geschaetzt: false };
  * genauso aus wie eines über freiem Feld. Der Unterschied entscheidet, ob man
  * dem Bild glauben darf, und deshalb steht er im Ergebnis und im Vorbehalt.
  */
-export async function oberflaechenprofil(profil) {
+export async function oberflaechenprofil(profil, beiTeil = null) {
   const alle = profil || [];
   const punkte = alle.filter(p => isFinite(p.h));
   const leer = p => ({ ...p, ...GELAENDE, oberflaeche: null, hindernis: null, gebaeudeOhneHoehe: false });
@@ -314,8 +322,9 @@ export async function oberflaechenprofil(profil) {
      aus, soll der andere trotzdem etwas beitragen. */
   let dsmDa = true;
   const [dsm, osm] = await Promise.all([
-    dsmProfil(punkte).catch(() => { dsmDa = false; return punkte.map(() => null); }),
-    osmHindernisse(punkte).catch(() => ({
+    dsmProfil(punkte).catch(() => { dsmDa = false; return punkte.map(() => null); })
+      .then(r => { if (beiTeil) beiTeil('dsm'); return r; }),
+    osmHindernisse(punkte, beiTeil).catch(() => ({
       treffer: punkte.map(() => ({ treffer: null, ohneHoehe: false })),
       gebaeudeDa: false, bewuchsDa: false
     }))

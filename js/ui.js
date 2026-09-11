@@ -26,7 +26,7 @@ import {
   FREQUENZBAENDER, MIMO_ARTEN, POLARISATIONEN, MODULATIONEN,
   bandById, mimoById, gueltigeBandbreite, datenrateText, funkstrecke, azimutText
 } from './richtfunk.js';
-import { hoeheAn, profil, kachelbedarf } from './hoehe.js';
+import { hoeheAn, profil, kachelbedarf, kachelfehlerVergessen } from './hoehe.js';
 import { oberflaechenprofil, QUELLTEXT, ARTTEXT } from './oberflaeche.js';
 import {
   eirpPruefung, bandById as regelBandById,
@@ -975,6 +975,36 @@ const gelaendeLaeuft = new Set();
 const hoehenStand = new Map();
 let gelaendeTimer = null;
 
+/* Wie lange der Abruf dauert, hängt an fremden Diensten: die Höhenkacheln
+   kommen in Sekundenbruchteilen, die Gebäudeabfrage bei Overpass braucht über
+   einer Stadt auch einmal zwanzig Sekunden. Ein Satz „wird geholt …“ ließ dabei
+   offen, ob noch etwas läuft oder etwas hängt, und ein Ausfall war überhaupt
+   nicht zu sehen: der Kasten verschwand wieder, und die Strecke stand ohne
+   Geländeurteil da, als hätte niemand danach gefragt.
+
+   Der Anteil zählt erledigte Teilschritte und ist keine Zeitschätzung – er
+   springt. Gewichtet ist er nach Erfahrung: das Profil braucht die Kacheln
+   entlang der Strecke, die Oberfläche drei Dienste nebeneinander, und der
+   letzte davon bestimmt die Wartezeit. */
+const gelaendeStand = new Map();    // s.id → { anteil, schritt }
+const gelaendeFehler = new Map();   // s.id → Meldung, solange der Abruf ausfiel
+
+function standSetzen(s, anteil, schritt, aktualisieren) {
+  const alt = gelaendeStand.get(s.id);
+  /* Der Balken läuft nie zurück. Die drei Oberflächenquellen melden
+     nebeneinander, und ein Anteil, der dabei kurz kleiner wird, liest sich wie
+     ein Rückschritt. */
+  const wert = Math.max(anteil, alt ? alt.anteil : 0);
+  if (alt && alt.anteil === wert && alt.schritt === schritt) return;
+  gelaendeStand.set(s.id, { anteil: wert, schritt });
+  aktualisieren();
+}
+
+function gelaendeFehlgeschlagen(s, meldung) {
+  gelaendeStand.delete(s.id);
+  gelaendeFehler.set(s.id, meldung);
+}
+
 const ortSignatur = f =>
   `${f.a.lat.toFixed(5)},${f.a.lng.toFixed(5)}|${f.b.lat.toFixed(5)},${f.b.lng.toFixed(5)}`;
 
@@ -993,38 +1023,87 @@ function gelaendeNachfuehren(s, aktualisieren) {
      wird über das übergebene Projekt und nicht über den mitgeschleppten
      Schnappschuss – zwischen Anstoß und Antwort kann die Strecke gelöscht
      worden sein. */
-  if (hoehenStand.get(s.id) !== ort || f.hoehen.some(h => h.grund === null)) {
+  /* Eine fehlende Geländehöhe stößt den Abruf erneut an – jemand kann das Feld
+     geleert haben, ohne den Aufbauplatz zu verschieben. Nach einem gemeldeten
+     Ausfall gilt das nicht mehr: der Abruf würde sich sonst alle halbe Sekunde
+     selbst wiederholen, solange der Dienst nicht antwortet. Weiter geht es dann
+     über den Knopf im Fehlerkasten oder über einen verschobenen Aufbauplatz. */
+  const hoeheOffen = f.hoehen.some(h => h.grund === null) && !gelaendeFehler.has(s.id);
+  if (hoehenStand.get(s.id) !== ort || hoeheOffen) {
     gelaendeLaeuft.add(s.id);
-    aktualisieren();
-    Promise.all([f.a, f.b].map(pt => hoeheAn(pt.lat, pt.lng)))
+    gelaendeFehler.delete(s.id);
+    standSetzen(s, 0.02, 'Geländehöhen der Aufbauplätze', aktualisieren);
+    let da = 0;
+    Promise.all([f.a, f.b].map(pt => hoeheAn(pt.lat, pt.lng)
+      .finally(() => standSetzen(s, 0.02 + 0.13 * (++da / 2),
+        'Geländehöhen der Aufbauplätze', aktualisieren))))
       .then(hoehen => {
         hoehenStand.set(s.id, ort);
-        if (hoehen.every(h => h === null)) return;
-        store.aendern(p => {
-          const st = p.strecken.find(x => x.id === s.id);
-          if (!st) return;
-          hoehen.forEach((h, i) => {
-            if (h !== null) st.richtfunk.standorte[i].hoehe = Math.round(h);
-          });
-        }, 'strecke');
+        if (hoehen.some(h => h !== null)) {
+          store.aendern(p => {
+            const st = p.strecken.find(x => x.id === s.id);
+            if (!st) return;
+            hoehen.forEach((h, i) => {
+              if (h !== null) st.richtfunk.standorte[i].hoehe = Math.round(h);
+            });
+          }, 'strecke');
+        }
+        /* Ohne beide Geländehöhen steht die Antennenmitte nicht fest, und ohne
+           sie ist kein Urteil zu bilden – das ist der Ausfall, nicht erst der
+           leere Kachelabruf. Gemeldet wird auch der halbe Fall: eine Strecke,
+           deren eines Ende eine Höhe hat und das andere nicht, sähe sonst aus
+           wie eine, an der niemand gerechnet hat. */
+        const fehlt = hoehen.filter((h, i) => h === null && f.hoehen[i].grund === null).length;
+        if (fehlt === 2) {
+          gelaendeFehlgeschlagen(s, 'Die Geländehöhen der Aufbauplätze waren nicht zu holen.');
+        } else if (fehlt === 1) {
+          gelaendeFehlgeschlagen(s, 'Für einen der beiden Aufbauplätze war keine Geländehöhe zu holen.');
+        }
       })
-      .catch(() => {})
-      .finally(() => { gelaendeLaeuft.delete(s.id); aktualisieren(); });
+      .catch(() => gelaendeFehlgeschlagen(s, 'Die Geländehöhen der Aufbauplätze waren nicht zu holen.'))
+      /* Nach einem Ausfall verschwindet der Balken, sonst bleibt er stehen:
+         gleich läuft der zweite Durchgang, und ein Balken, der dazwischen für
+         eine halbe Sekunde verschwindet, sieht aus wie ein Abbruch. Angestoßen
+         wird der zweite Durchgang vom Neuaufbau, den das Schreiben der Höhen
+         auslöst – von hier aus ginge er mit dieser Fassung der Strecke los, und
+         die hat die eben geholten Höhen noch nicht. */
+      .finally(() => {
+        gelaendeLaeuft.delete(s.id);
+        if (gelaendeFehler.has(s.id)) gelaendeStand.delete(s.id);
+        aktualisieren();
+      });
     return;
   }
 
-  if (urteilLesen(s) !== undefined) return;
+  if (urteilLesen(s) !== undefined) { gelaendeStand.delete(s.id); return; }
+  /* Ohne beide Geländehöhen stünde die Antennenmitte auf NaN und das Urteil
+     gälte für eine Strecke, die es so nicht gibt. Gemeldet ist der Ausfall an
+     dieser Stelle längst – hier bleibt nur, das Profil nicht zu holen. */
+  if (f.hoehen.some(h => h.grund === null)) return;
   gelaendeLaeuft.add(s.id);
-  aktualisieren();
-  profil(f.a, f.b, 25)
+  gelaendeFehler.delete(s.id);
+  standSetzen(s, 0.15, 'Höhenprofil der Strecke', aktualisieren);
+  profil(f.a, f.b, 25, (fertig, gesamt) => standSetzen(s, 0.15 + 0.35 * (fertig / gesamt),
+    'Höhenprofil der Strecke', aktualisieren))
     /* Erst das Gelände, dann die Oberfläche darauf: die Oberflächenquellen
        brauchen die Stützpunkte, und ohne Geländehöhe wäre eine Hindernishöhe
        über Grund gar nicht zu bilden. Fällt die Ergänzung aus, wird mit dem
        Gelände allein geurteilt – wie vor der Oberflächenschicht, und der
        Vorbehalt sagt es dann auch. */
     .then(async punkte => {
-      const ergaenzt = await oberflaechenprofil(punkte)
+      /* Kein einziger Stützpunkt mit Höhe heißt: die Kacheln sind nicht
+         angekommen. Ein Profil aus lauter Lücken zu zeichnen wäre schlimmer als
+         keines – es sähe aus wie ebenes Gelände. */
+      if (punkte.every(p => p.h === null)) {
+        return gelaendeFehlgeschlagen(s, 'Für diese Strecke waren keine Höhen zu holen.');
+      }
+      let teile = 0;
+      standSetzen(s, 0.5, 'Oberfläche: Modell, Gebäude und Bewuchs', aktualisieren);
+      const ergaenzt = await oberflaechenprofil(punkte, () =>
+        standSetzen(s, 0.5 + 0.45 * (++teile / 3),
+          'Oberfläche: Modell, Gebäude und Bewuchs', aktualisieren))
         .catch(() => ({ punkte, dsm: false, gebaeude: false, bewuchs: false }));
+      standSetzen(s, 0.95, 'Sichtlinie wird beurteilt', aktualisieren);
       const mitte = f.hoehen.map(h => h.grund + (h.antenne || 0));
       /* Mitgespeichert werden auch die Stützpunkte: das Blatt zeichnet später
          dasselbe Profil und darf dafür nicht nachladen. */
@@ -1036,8 +1115,8 @@ function gelaendeNachfuehren(s, aktualisieren) {
         }
       });
     })
-    .catch(() => {})
-    .finally(() => { gelaendeLaeuft.delete(s.id); aktualisieren(); });
+    .catch(() => gelaendeFehlgeschlagen(s, 'Das Höhenprofil der Strecke war nicht zu holen.'))
+    .finally(() => { gelaendeLaeuft.delete(s.id); gelaendeStand.delete(s.id); aktualisieren(); });
 }
 
 function richtfunkGruppe(s, frisch) {
@@ -1056,6 +1135,7 @@ function richtfunkGruppe(s, frisch) {
   const aktualisieren = () => {
     ergebnis.innerHTML = richtfunkErgebnisHTML(s);
     ablesungBinden(ergebnis, s);
+    erneutBinden(ergebnis, s, aktualisieren);
     spalten.querySelectorAll('.rf-abgeleitet').forEach((el2, i) => {
       el2.innerHTML = standortAbgeleitetHTML(s, i);
     });
@@ -1391,17 +1471,53 @@ function eirpHTML(s, f) {
    stehen in diesen Höhen nicht. Der Vorbehalt steht deshalb im Satz selbst
    (funkrechnung.js), nicht als Fußnote darunter. */
 function gelaendeHTML(s) {
-  const u = urteilLesen(s);
+  /* Ein Ausfall geht dem Urteil vor: das alte Urteil kann von einem früheren
+     Ort stammen, und ein Balken, der nach einem Abbruch weiterläuft, verspricht
+     etwas, das nicht mehr kommt. */
+  const fehler = gelaendeFehler.get(s.id);
+  if (fehler) return gelaendeFehlerHTML(fehler);
   /* Solange geholt wird, steht das auch da. Ein Kasten, der sich nach ein paar
      Sekunden stillschweigend um einen Absatz erweitert, wirkt wie ein Fehler. */
-  if (gelaendeLaeuft.has(s.id)) {
-    return '<p class="rf-gelaende rf-laeuft">Gelände- und Oberflächenhöhen werden geholt …</p>';
-  }
+  const stand = gelaendeStand.get(s.id);
+  if (stand) return gelaendeFortschrittHTML(stand);
+  const u = urteilLesen(s);
   if (u === undefined) return '';
   if (u === null) return '<p class="rf-gelaende">Das Gelände ließ sich nicht beurteilen.</p>';
   return `${profilBildHTML(u)}
     <p class="rf-gelaende rf-${escapeHtml(u.urteil)}">${escapeHtml(u.satz)}</p>
     ${engstelleHTML(u)}`;
+}
+
+/* Der Fortschritt in Worten und als Balken. Beides zusammen, weil beides etwas
+   anderes beantwortet: der Balken, ob überhaupt etwas vorangeht, der Schritt,
+   worauf gerade gewartet wird – bleibt die Anzeige bei „Gebäude und Bewuchs“
+   stehen, liegt es an Overpass und nicht am Gerät. Die Zahl steht groß daneben,
+   weil am Kartentisch aus zwei Metern Abstand auf den Schirm gesehen wird.
+   Der Balken selbst trägt kein aria-live: er würde bei jeder Kachel vorlesen. */
+function gelaendeFortschrittHTML(stand) {
+  const v = Math.round(stand.anteil * 100);
+  return `<div class="rf-gelaende rf-laeuft">
+    <p class="rf-laeuft-kopf"><span>Gelände- und Oberflächenhöhen werden geholt …</span>
+      <b>${v} %</b></p>
+    <div class="rf-balken" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+         aria-valuenow="${v}" aria-valuetext="${v} % – ${escapeHtml(stand.schritt)}"
+      ><i style="width:${v}%"></i></div>
+    <p class="rf-laeuft-schritt">${escapeHtml(stand.schritt)}</p>
+  </div>`;
+}
+
+/* Was der Kasten nach einem Ausfall sagen muss, ist nicht „Fehler“, sondern
+   woran es lag und was jetzt gilt: die Strecke rechnet weiter, nur das Gelände
+   ist unbeurteilt. Der Knopf steht dabei, weil der Ausfall meistens der Dienst
+   ist und der zweite Versuch kurz darauf durchgeht. */
+function gelaendeFehlerHTML(meldung) {
+  return `<div class="rf-gelaende rf-fehlgeschlagen" role="status">
+    <p class="rf-fehler-text">${escapeHtml(meldung)}</p>
+    <p class="rf-fehler-fuss">Höhen und Oberfläche kommen von fremden Diensten – ohne
+      Netzverbindung oder bei deren Überlastung bleibt das Gelände unbeurteilt. Die
+      übrigen Werte der Strecke sind davon nicht berührt.</p>
+    <button type="button" class="knopf klein" data-gelaende-erneut>Erneut versuchen</button>
+  </div>`;
 }
 
 /* Die knappste Stelle in Zahlen – das, was der Satz oben in Worte fasst. Sie
@@ -1446,6 +1562,21 @@ function profilBildHTML(u) {
       über das Profil fahren oder mit den Pfeiltasten gehen.</span></p>
     ${profilLegendeHTML()}
     <figcaption>${escapeHtml(profilVorbehalt(u.profil, u.quellen))}</figcaption></figure>`;
+}
+
+/* Der zweite Versuch nach einem Ausfall. Er beginnt beim Anfang und nicht beim
+   Rest: der gemerkte Ort wird vergessen, damit auch die Geländehöhen der
+   Aufbauplätze neu geholt werden – wer den Knopf drückt, hat den ganzen Abruf
+   gemeint. Gebunden wird wie das Ablesen nach jedem Neuaufbau der Anzeige. */
+function erneutBinden(wurzel, s, aktualisieren) {
+  const knopf = wurzel.querySelector('[data-gelaende-erneut]');
+  if (!knopf) return;
+  knopf.addEventListener('click', () => {
+    gelaendeFehler.delete(s.id);
+    hoehenStand.delete(s.id);
+    kachelfehlerVergessen();
+    gelaendeNachfuehren(s, aktualisieren);
+  });
 }
 
 /* Das Ablesen am Profil. Am Kartentisch wird auf eine Stelle gezeigt und
