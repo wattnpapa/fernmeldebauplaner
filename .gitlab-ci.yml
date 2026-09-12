@@ -1,0 +1,49 @@
+# Veröffentlichung auf GitLab Pages bei Open CoDE. Gegenstück zu
+# .github/workflows/release.yml, aber bewusst schmaler: Open CoDE ist Abbild,
+# nicht Erzeuger — hier entstehen weder Versionsnummern noch Tags noch Releases.
+#
+# Angestoßen wird nicht vom Branch, sondern vom Versions-Tag. Der Spiegel bringt
+# die Tags von GitHub mit, und ein Tag bezeichnet genau einen veröffentlichten
+# Stand. Hinge die Seite am Branch, ginge hier jeder Zwischenstand online, und
+# die Nummer stünde nicht zur Verfügung: sie steckt im Tag, nicht im Quelltext.
+stages: [deploy]
+
+pages:
+  stage: deploy
+  # Nur Dateien kopieren, kein Build: busybox aus alpine reicht, damit kein
+  # Paket nachgeladen werden muss, dessen Quelle im Lauf erreichbar sein müsste.
+  image: alpine:3.21
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^\d{4}\.\d{1,4}\.\d{1,4}$/
+    # Von Hand anstoßbar, etwa nach dem Einrichten der Seite. Dann fehlt die
+    # Nummer und es bleibt bei „Entwicklungsstand“ — richtig so, denn dieser
+    # Stand ist keiner, der als Release nachweisbar wäre.
+    - if: $CI_PIPELINE_SOURCE == "web"
+  script:
+    - |
+      # Ausgeliefert wird der Baum, wie er ist — dieselbe Festlegung wie bei
+      # GitHub Pages (dort `path: .`). Ausgenommen bleibt nur, was kein Teil der
+      # Seite ist: das Repository selbst und das Zielverzeichnis.
+      mkdir -p .ablage
+      for eintrag in * .[!.]*; do
+        case "$eintrag" in .git|.ablage) continue ;; esac
+        cp -a "$eintrag" .ablage/
+      done
+      mv .ablage public
+    - |
+      # Version wie auf GitHub erst beim Ausliefern eingesetzt, nicht im
+      # Repository. Der grep bricht ab, falls die Zeile einmal umbenannt wird —
+      # sonst behauptete die veröffentlichte Seite auf jedem Bauauftrag, sie sei
+      # ein Entwicklungsstand.
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        grep -q "^export const VERSION = " public/js/version.js
+        sed -i "s|^export const VERSION = .*|export const VERSION = '$CI_COMMIT_TAG';|" \
+          public/js/version.js
+        grep "^export const VERSION = " public/js/version.js
+      fi
+  # Die Änderungsdaten der Sitemap bleiben, wie sie im Repository stehen: die
+  # Sitemap nennt die Adressen von fmbauplaner.app, und die Suchmaschinen sollen
+  # weiter dorthin geführt werden. Ein zweiter Satz Daten hier würde nur zwei
+  # Wahrheiten erzeugen.
+  artifacts:
+    paths: [public]
