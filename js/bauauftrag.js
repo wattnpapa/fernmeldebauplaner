@@ -139,6 +139,11 @@ const STANDARD_LAGE = {
      Kennung eines Einsatzabschnitts, zieht allein dessen Inhalt den Ausschnitt
      auf – gedruckt wird trotzdem das ganze Lagebild. */
   ausschnittAbschnitt: '',
+  /* Dazu kann das Blatt die anderen Abschnitte auch ganz weglassen. Das
+     gemeinsame Lagebild – Führungsstelle, Bereitstellungsraum, alles ohne
+     Abschnitt – bleibt dabei stehen: die Abschnittsleitung braucht es, und es
+     gehört ihr so gut wie jeder anderen. */
+  nurAbschnitt: false,
   /* Jeder Streifen um die Karte lässt sich einzeln abräumen – alle fünf aus
      ergibt das nackte Kartenblatt, auf dem nur noch die Lage steht. */
   kopf: true, stammdaten: true, legende: true, kennzahlen: true, fuss: true
@@ -332,14 +337,12 @@ function oeffneDruckansicht(auftrag) {
   if (lage && opt.ausschnittAbschnitt && !abschnittById(store.projekt, opt.ausschnittAbschnitt)) {
     opt.ausschnittAbschnitt = '';
   }
-  const titel = auftragTitel(auftrag);
 
   const wurzel = document.createElement('div');
   wurzel.id = 'druck';
   wurzel.innerHTML = `
     <div class="druck-steuerung" role="group" aria-label="Druckeinstellungen">
-      <div class="ds-titel">${erzeugnis(auftrag)} · <b>${escapeHtml(titel)}</b>${
-        sammel || lage ? ` <span class="ds-umfang">${umfangText(auftrag)}</span>` : ''}</div>
+      <div class="ds-titel">${steuerTitelHTML(auftrag)}</div>
       <div class="ds-felder"></div>
       <div class="ds-tasten">
         <button class="knopf" data-akt="schliessen">Schließen</button>
@@ -396,7 +399,7 @@ function oeffneDruckansicht(auftrag) {
              nicht beim Drucken. Der Haken bleibt deshalb gesperrt, solange für
              keine Relaisstelle ein Befund vorliegt. */
           haken('Ausbreitungsflächen', 'relaisflaeche', opt, neuAufbau,
-            () => !opt.relais || !lageRelais(auftrag).some(befundLesen)),
+            () => !opt.relais || !lageRelais(lagekarteBlatt(auftrag, opt)).some(befundLesen)),
           /* Nimmt Name und Trassenlänge zusammen von der Karte – beide stehen
              in einem Schild, und wer die Namen loswerden will, will kein
              Schild mit einer nackten Zahl darin behalten. */
@@ -412,7 +415,13 @@ function oeffneDruckansicht(auftrag) {
              dort rückt es auf den Punkt und zeigt die Anlage. */
           ...(hatPunktzeichen(auftrag.strecken)
             ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau, () => !opt.strecken)] : []),
-          ...(ausschnittWaehlbar(auftrag) ? [ausschnittFeld(auftrag, opt, neuAufbau)] : []),
+          ...(ausschnittWaehlbar(auftrag)
+            ? [ausschnittFeld(auftrag, opt, neuAufbau),
+               /* Ohne gewählten Abschnitt gibt es nichts, worauf sich „nur
+                  dieser“ beziehen könnte – der Haken bleibt dann gesperrt. */
+               haken('Nur dieser Abschnitt', 'nurAbschnitt', opt, neuAufbau,
+                 () => !opt.ausschnittAbschnitt)]
+            : []),
           zoomFeld(opt, neuAufbau),
           strichFeld(opt, neuAufbau)
         ])
@@ -497,6 +506,9 @@ function oeffneDruckansicht(auftrag) {
   function neuAufbau() {
     speicherOptionen(profil, opt);
     felder.querySelectorAll('.ds-haken').forEach(h => h.aktualisieren && h.aktualisieren());
+    /* „Nur dieser Abschnitt“ macht aus dem Blatt der Planung das Blatt eines
+       Abschnitts – die Leiste nennt danach denselben Gegenstand wie das Blatt. */
+    if (lage) wurzel.querySelector('.ds-titel').innerHTML = steuerTitelHTML(lagekarteBlatt(auftrag, opt));
     formatHinweis.textContent = druckHinweisText(opt);
     if (masseFeld) {
       masseFeld.hidden = opt.format !== 'frei';
@@ -625,6 +637,40 @@ function grenzeMM(wert, bisher) {
 function ausschnittWaehlbar(auftrag) {
   return auftrag.modus === 'lage' && auftrag.umfang === 'projekt' &&
     (store.projekt.einsatzabschnitte || []).length > 0;
+}
+
+/** Der in der Leiste gewählte Einsatzabschnitt – oder `null`. */
+function gewaehlterAbschnitt(auftrag, opt) {
+  return ausschnittWaehlbar(auftrag) ? abschnittById(store.projekt, opt.ausschnittAbschnitt) : null;
+}
+
+/**
+ * Die Auswahl, die das Lageblatt zeigt.
+ *
+ * Mit „Nur dieser Abschnitt“ wird aus dem Blatt der ganzen Planung das Blatt
+ * eines Abschnitts – und zwar genau der Auftrag, den „Lagekarte“ am
+ * Einsatzabschnitt erzeugt. Deshalb stimmen Titel, Kopfdaten,
+ * Zeichenerklärung und Kennzahlen ohne weiteres Zutun mit dem überein, was auf
+ * der Karte steht: sie hängen alle an diesem einen Auftrag.
+ *
+ * Was ohne Abschnitt geplant ist, bleibt dabei auf dem Blatt – das ist die
+ * Regel des Abschnittsblattes überall sonst in der Anwendung, und das
+ * gemeinsame Lagebild gehört der Abschnittsleitung so gut wie jeder anderen.
+ */
+function lagekarteBlatt(auftrag, opt) {
+  const ea = gewaehlterAbschnitt(auftrag, opt);
+  if (!ea || !opt.nurAbschnitt) return auftrag;
+  return {
+    ...auftrag, abschnitt: ea, umfang: 'abschnitt',
+    strecken: streckenIm(store.projekt, ea.id).filter(st => st.punkte.length >= 2)
+  };
+}
+
+/** Erzeugnis, Gegenstand und Umfang in der Kopfzeile der Steuerleiste */
+function steuerTitelHTML(auftrag) {
+  const umfang = auftrag.modus === 'einzel' ? '' : umfangText(auftrag);
+  return `${erzeugnis(auftrag)} · <b>${escapeHtml(auftragTitel(auftrag))}</b>` +
+    (umfang ? ` <span class="ds-umfang">${escapeHtml(umfang)}</span>` : '');
 }
 
 function ausschnittFeld(auftrag, opt, aendern) {
@@ -920,23 +966,34 @@ function deckblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
  */
 function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
   const p = store.projekt;
+  /* Was das Blatt zeigt, und der Abschnitt, auf den es eingemittet ist. Beides
+     wird hier einmal bestimmt und weitergereicht: der Ausschnitt richtet sich
+     auch dann noch nach dem einen Abschnitt, wenn die anderen ohnehin schon
+     vom Blatt genommen sind – das gemeinsame Lagebild darf ihn nicht wieder
+     über die ganze Lage aufziehen. */
+  const blattauftrag = lagekarteBlatt(auftrag, opt);
+  const mitte = gewaehlterAbschnitt(auftrag, opt);
   const el = blatt(ziel, opt);
   el.classList.add('lageblatt');
   el.innerHTML =
     einstufungHTML(p) +
     (opt.kopf
-      ? blattkopfHTML(p, { titel: auftragTitel(auftrag), unter: umfangText(auftrag), doktyp: doktyp(auftrag) })
+      ? blattkopfHTML(p, {
+          titel: auftragTitel(blattauftrag), unter: umfangText(blattauftrag),
+          doktyp: doktyp(blattauftrag)
+        })
       : '') +
-    (opt.stammdaten ? sammelStammHTML(p, auftrag, opt) : '') +
+    (opt.stammdaten ? sammelStammHTML(p, blattauftrag, opt) : '') +
     kartenfeldHTML({ quelle: opt.fuss ? '' : kartenquelle(p, opt) }) +
-    (opt.legende ? lageLegendeHTML(auftrag, opt, sw, mass) : '') +
-    zonenLegendeHTML(auftrag, opt) +
-    (opt.kennzahlen && auftrag.strecken.length
-      ? sammelKennzahlenHTML(gesamtKennzahlen(auftrag.strecken)) : '') +
+    (opt.legende ? lageLegendeHTML(blattauftrag, opt, sw, mass) : '') +
+    zonenLegendeHTML(blattauftrag, opt) +
+    (opt.kennzahlen && blattauftrag.strecken.length
+      ? sammelKennzahlenHTML(gesamtKennzahlen(blattauftrag.strecken)) : '') +
     (opt.fuss ? fussHTML(p, opt) : '');
 
   kartenbau.push(() => {
-    const karte = baueLagekarte(el.querySelector('.karten-buehne'), auftrag, opt, mass, sw, karten);
+    const karte = baueLagekarte(el.querySelector('.karten-buehne'), blattauftrag, opt, mass, sw,
+      karten, mitte);
     massstabSchreiben(el, karte);
     return warteAufKacheln(karte, kachelfrist(mass)).then(() => massstabSchreiben(el, karte));
   });
@@ -1166,7 +1223,7 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
  * Trassen; hier wäre das falsch, denn eine Lagekarte kann aus Zeichen allein
  * bestehen, und ein Zeichen außerhalb der Trassen fiele sonst vom Blatt.
  */
-function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
+function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null) {
   const p = store.projekt;
   const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.25 });
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
@@ -1209,7 +1266,7 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
      „Eingemittet auf“.
      Die Flächen zählen dabei mit ihren Ecken, nicht nur mit der Mitte: ein
      Aufbauplatz von 25 m am Blattrand darf nicht halb abgeschnitten sein. */
-  const ecken = ausschnittEcken(auftrag, opt, { zeichen, flaechen, relaisstellen });
+  const ecken = ausschnittEcken(auftrag, opt, mitte, { zeichen, flaechen, relaisstellen });
   if (ecken.length) {
     const rand = kartenrand(mass, 55);
     const grenzen = L.latLngBounds(ecken);
@@ -1250,9 +1307,8 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten) {
  * jedem Abschnitt und zöge den Ausschnitt wieder über die ganze Lage auf,
  * womit die Einengung nichts mehr bewirkte.
  */
-function ausschnittEcken(auftrag, opt, teile) {
-  const gewaehlt = ausschnittWaehlbar(auftrag) ? (opt.ausschnittAbschnitt || '') : '';
-  const eigene = gewaehlt ? eigeneEcken(auftrag, opt, gewaehlt, teile) : [];
+function ausschnittEcken(auftrag, opt, mitte, teile) {
+  const eigene = mitte ? eigeneEcken(auftrag, opt, mitte.id, teile) : [];
   /* Ein Abschnitt, dem noch nichts zugeteilt ist, würde das Blatt leer
      lassen – dann gilt wieder die ganze Auswahl. */
   return eigene.length ? eigene : eigeneEcken(auftrag, opt, '', teile);
@@ -2473,12 +2529,14 @@ function drucken(auftrag, opt) {
 
   const alterTitel = document.title;
   const p = store.projekt;
-  /* Der eingeengte Ausschnitt gehört in den Dateinamen: dieselbe Planung
-     einmal je Einsatzabschnitt gedruckt ergäbe sonst viermal denselben
-     Vorschlag und im Ordner vier Dateien, die niemand unterscheidet. */
-  const mitte = ausschnittWaehlbar(auftrag) ? abschnittById(p, opt.ausschnittAbschnitt) : null;
+  /* Der Abschnitt gehört in den Dateinamen: dieselbe Planung einmal je
+     Einsatzabschnitt gedruckt ergäbe sonst viermal denselben Vorschlag und im
+     Ordner vier Dateien, die niemand unterscheidet. Zeigt das Blatt nur diesen
+     einen Abschnitt, ist er schon der Titel und steht nicht zweimal da. */
+  const blattauftrag = lagekarteBlatt(auftrag, opt);
+  const mitte = blattauftrag === auftrag ? gewaehlterAbschnitt(auftrag, opt) : null;
   document.title = [erzeugnis(auftrag),
-    p.kopf.auftragNr, auftragTitel(auftrag), mitte ? mitte.name : '', p.kopf.datum]
+    p.kopf.auftragNr, auftragTitel(blattauftrag), mitte ? mitte.name : '', p.kopf.datum]
     .filter(Boolean).join('_')
     .replace(/[^\wäöüÄÖÜß.\-_]+/g, '-')
     .replace(/-{2,}/g, '-')

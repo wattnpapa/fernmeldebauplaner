@@ -210,6 +210,10 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   ohne das Lagebild zu beschneiden: gezeichnet wird weiter die ganze Planung, die
   Nachbarschaft bleibt ringsum sichtbar. So entsteht aus einer Planung je Abschnitt
   ein eigenes Blatt; der Abschnitt steht dann in den Kopfdaten unter „Eingemittet auf“
+- **Nur dieser Abschnitt** nimmt dazu die anderen Abschnitte ganz vom Blatt. Was ohne
+  Abschnitt geplant ist, bleibt stehen – Führungsstelle und Bereitstellungsraum gehören
+  jedem Abschnitt. Titel, Kopfdaten, Zeichenerklärung und Kennzahlen folgen: das Blatt
+  ist dann die Lagekarte dieses Abschnitts
 - Auch die **Strecken** selbst lassen sich abschalten – für das Blatt eines
   Aufbauplatzes, auf dem nur Zeichen und Flächen stehen. Der Ausschnitt bleibt
   dabei derselbe wie mit Strecken: er umfasst immer die ganze Auswahl, damit die
