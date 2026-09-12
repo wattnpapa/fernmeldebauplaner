@@ -1,0 +1,61 @@
+# Spiegelt das Repository nach Open CoDE (gitlab.opencode.de), der Plattform für
+# Open Source der öffentlichen Verwaltung. GitHub bleibt die Arbeitskopie, Open
+# CoDE ist nur Abbild — dort wird nicht entwickelt.
+name: Spiegel Open CoDE
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  # Die Tags des Releases legt release.yml mit dem GITHUB_TOKEN an. Pushes mit
+  # diesem Token lösen absichtlich keine Workflows aus, der Tag käme also nie
+  # am Spiegel an. Deshalb hängt dieser Lauf zusätzlich hinten an der
+  # Veröffentlichung – dann ist der Tag da und wird mitgenommen.
+  workflow_run:
+    workflows: [Build & Release]
+    types: [completed]
+  workflow_dispatch:
+
+# Zwei gleichzeitige Spiegelläufe würden sich gegenseitig überholen und der
+# zweite könnte einen älteren Stand nachschieben. Abgebrochen wird nicht: ein
+# laufender Push darf zu Ende gehen, der nächste Lauf wartet und macht danach
+# dieselbe Arbeit noch einmal – schadlos, weil gespiegelt und nicht addiert wird.
+concurrency:
+  group: spiegel-opencode
+  cancel-in-progress: false
+
+jobs:
+  spiegeln:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH-Schlüssel und Hostschlüssel einrichten
+        env:
+          SSH_KEY: ${{ secrets.OPENCODE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Hostschlüssel fest eingetragen statt per ssh-keyscan geholt: ein
+          # Scan im Lauf würde jeden vorgesetzten Schlüssel klaglos annehmen
+          # und damit genau die Prüfung aushebeln, die er vortäuscht.
+          printf '%s\n' \
+            'gitlab.opencode.de ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJZv8TTjbbH1Sy+pq5ZiQdMJuNXWlFplsLycAjSiZH0/' \
+            > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Vollständige Kopie holen
+        run: |
+          # --mirror statt actions/checkout: gespiegelt werden alle Branches und
+          # Tags, nicht nur der auslösende Stand.
+          git clone --mirror \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+            spiegel.git
+
+      - name: Nach Open CoDE schieben
+        run: |
+          cd spiegel.git
+          # --mirror räumt auf der Gegenseite auch weg, was es hier nicht mehr
+          # gibt. Genau das ist gewollt: abweichende Stände auf Open CoDE wären
+          # kein Abbild mehr, sondern ein zweiter Entwicklungszweig.
+          git push --mirror "git@gitlab.opencode.de:oc000172112778/fernmeldebauplaner.git"
