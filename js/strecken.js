@@ -345,21 +345,35 @@ export function gesamtKennzahlen(strecken) {
     anzahl: strecken.length, trasse: 0, reserve: 0, bedarf: 0, trommeln: 0,
     gewicht: 0, gewichtVollstaendig: true,
     bauzeitStunden: 0, muffen: 0, querungen: 0, punkte: 0,
+    funkStrecken: 0, funkLaenge: 0,
     nachKabel: []
   };
   const je = new Map();
   for (const s of strecken) {
     const k = kennzahlen(s);
-    ges.trasse += k.trasse;
-    ges.reserve += k.reserve;
-    ges.bedarf += k.bedarf;
+    /* Die Funkstrecke bleibt aus Trassen- und Bedarfssumme heraus: beide Zahlen
+       werden gelesen, um Kabel zu bestellen und auf den Bauplatz zu fahren, und
+       durch die Luft geht kein Meter davon. Stünde ihre Luftlinie darin, wäre
+       die Bedarfssumme um genau diese Länge zu hoch – und dass ihr keine Trommel
+       gegenübersteht, fiele erst in der Aufstellung darunter auf. Ihre Länge
+       wird daneben mitgeführt, damit sie in der Aufstellung je Leitungsart und
+       in der Materialübersicht weiter erscheint. */
+    const funk = !!k.kabel.funk;
+    if (funk) {
+      ges.funkStrecken++;
+      ges.funkLaenge += k.trasse;
+    } else {
+      ges.trasse += k.trasse;
+      ges.reserve += k.reserve;
+      ges.bedarf += k.bedarf;
+      if (k.transportgewicht) ges.gewicht += k.transportgewicht;
+      else ges.gewichtVollstaendig = false;
+    }
     ges.trommeln += k.trommeln;
     ges.bauzeitStunden += k.bauzeitStunden;
     ges.muffen += k.muffen;
     ges.querungen += k.querungen;
     ges.punkte += k.punkte;
-    if (k.transportgewicht) ges.gewicht += k.transportgewicht;
-    else ges.gewichtVollstaendig = false;
 
     const eintrag = je.get(k.kabel.id) || { kabel: k.kabel, strecken: 0, bedarf: 0, trommeln: 0, gewicht: 0 };
     eintrag.strecken++;

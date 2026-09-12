@@ -292,11 +292,15 @@ export function zeichneStreckenListe() {
   liste.innerHTML = '';
 
   const ges = gesamtKennzahlen(p.strecken);
+  /* Trasse und Bedarf sind Kabellängen; die Funkstrecke steht in beiden nicht.
+     Der Hinweis hängt am Wert, weil sonst nur die Aufstellung darunter verrät,
+     warum die Zeilen sich nicht zur Gesamtzahl addieren. */
+  const ohneFunk = ges.funkStrecken ? ' title="ohne Funkstrecken – dort liegt kein Kabel"' : '';
   summe.innerHTML = p.strecken.length
     ? `<span><b>${p.strecken.length}</b> ${p.strecken.length === 1 ? 'Strecke' : 'Strecken'}</span>
        ${abschnitte.length ? `<span><b>${abschnitte.length}</b> ${abschnitte.length === 1 ? 'Abschnitt' : 'Abschnitte'}</span>` : ''}
-       <span>Trasse <b>${formatLaenge(ges.trasse)}</b></span>
-       <span>Bedarf <b>${formatLaenge(ges.bedarf)}</b></span>
+       <span${ohneFunk}>Trasse <b>${formatLaenge(ges.trasse)}</b></span>
+       <span${ohneFunk}>Bedarf <b>${formatLaenge(ges.bedarf)}</b></span>
        <span><b>${ges.trommeln}</b> ${ges.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>
        ${kabelSummeHTML(ges)}`
     : '';

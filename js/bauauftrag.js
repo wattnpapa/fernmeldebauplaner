@@ -1745,7 +1745,8 @@ function zonenLegendeHTML(auftrag, opt) {
 function sammelKennzahlenHTML(ges) {
   const kacheln = [
     ['Strecken', String(ges.anzahl), `${ges.punkte} Trassenpunkte`],
-    ['Trassenlänge', formatLaenge(ges.trasse), 'Summe aller Strecken'],
+    ['Trassenlänge', formatLaenge(ges.trasse),
+      ges.funkStrecken ? 'Summe der Kabelstrecken' : 'Summe aller Strecken'],
     ['Kabelbedarf', formatLaenge(ges.bedarf),
       ges.reserve > 0 ? `mit Bauzuschlag, einschl. ${meter(ges.reserve)} Reserve` : 'mit Bauzuschlag'],
     ['Trommeln', String(ges.trommeln), ges.gewicht
@@ -1812,7 +1813,8 @@ function verzeichnisZeilenHTML(auftrag, ges) {
   }
 
   zeilen.push(`<tr class="vz-summe">
-    <td></td><td colspan="4"><b>Summe</b> · ${streckenzahl(ges.anzahl)}</td>
+    <td></td><td colspan="4"><b>Summe</b> · ${streckenzahl(ges.anzahl)}${
+      ges.funkStrecken ? ' · Längen ohne Funkstrecken' : ''}</td>
     <td class="zahl"><b>${formatLaenge(ges.trasse)}</b></td>
     <td class="zahl"><b>${formatLaenge(ges.bedarf)}</b></td>
     <td class="zahl"><b>${ges.trommeln}</b></td>
@@ -1849,7 +1851,9 @@ function materialGesamtHTML(ges) {
     </table>
     <p class="tab-fussnote">Die Trommelzahl ist je Strecke aufgerundet: eine angebrochene
       Trommel bleibt bei ihrer Strecke. Ein Verteiler mitten auf der Strecke trennt das
-      Kabel – dahinter beginnt eine neue Trommel.${ges.gewichtVollstaendig ? ''
+      Kabel – dahinter beginnt eine neue Trommel.${ges.funkStrecken
+        ? ' Die Funkstrecke steht mit ihrer Luftlinie in der Aufstellung, nicht in der Summe:'
+          + ' bereitzustellen ist für sie kein Meter Kabel.' : ''}${ges.gewichtVollstaendig ? ''
         : ' Ein Transportgewicht steht nur bei den Leitungsarten, für die es hinterlegt ist.'}</p>
   </section>`;
 }
