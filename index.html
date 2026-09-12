@@ -68,6 +68,11 @@
            Hinweisbox, die schon eine Live-Region ist. -->
       <button type="button" id="speicherstatus" class="speicherstatus"
               title="Planung als Datei sichern (.json)">gespeichert</button>
+      <!-- Steht nur da, wenn eine Verbindung zu einem eigenen Speicher eingerichtet
+           ist. Ohne diese Anzeige glaubt der Nutzer, es sei übertragen, und es ist
+           es nicht – das wiegt schwerer als eine Kopfzeile mehr. -->
+      <button type="button" id="cloudstatus" class="speicherstatus cloudstatus"
+              title="Eigener Speicher" hidden></button>
     </div>
 
     <div class="kopf-tasten">
@@ -87,6 +92,8 @@
                   title="Eigene Planung (.json), GeoJSON sowie KML und KMZ aus Google Earth">Planung oder KML laden …</button>
           <button data-akt="teilen"
                   title="Erzeugt einen Link, der die Planung selbst enthält – ohne Server und ohne Konto">Planung als Link teilen …</button>
+          <button data-akt="speicher"
+                  title="Planungen zusätzlich in einem Ordner, in Dropbox, OneDrive, Nextcloud, S3 oder Google Drive ablegen">Eigener Speicher …</button>
           <hr>
           <button data-akt="sammel-pdf">Sammel-Bauauftrag aller Strecken (PDF) …</button>
           <button data-akt="lagekarte"
@@ -109,6 +116,7 @@
   <p class="speicherband" id="speicherband">
     <span class="sb-text">Diese Planung liegt nur in diesem Browser.</span>
     <span class="sb-stand" id="sb-stand"></span>
+    <span class="sb-stand sb-cloud" id="sb-cloud" hidden></span>
     <button type="button" class="knopf klein" id="sb-sichern">Als Datei sichern</button>
   </p>
 
@@ -211,6 +219,10 @@
                aria-labelledby="reiter-projekt" data-inhalt="projekt">
         <div class="feldgruppe" id="projekt-kopf"></div>
         <div class="feldgruppe" id="projekt-speicher"></div>
+        <!-- Wird von js/cloud-ui.js gefüllt, sobald die Anbindung nachgeladen ist.
+             Sie liegt nicht im Startweg: wer keinen eigenen Speicher eingerichtet
+             hat, soll für sie nichts bezahlen. -->
+        <div class="feldgruppe" id="projekt-cloud"></div>
         <div class="feldgruppe" id="projekt-ueber"></div>
       </section>
     </aside>

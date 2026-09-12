@@ -551,6 +551,26 @@ export function ladeAlle() {
   }
 }
 
+/**
+ * Eine Planung im Browserspeicher ablegen, ohne sie zu öffnen.
+ *
+ * Der Abgleich mit einem angebundenen Speicher braucht das: kommt von dort ein
+ * neuerer Stand einer Planung, an der gerade nicht gearbeitet wird, darf er
+ * still einziehen. Über `laden()` zu gehen hieße, dem Nutzer mitten in der
+ * Arbeit die Karte umzuschalten.
+ */
+export function projektAblegen(projekt) {
+  try {
+    const alle = ladeAlle();
+    alle[projekt.id] = projekt;
+    localStorage.setItem(KEY_PROJEKTE, JSON.stringify(alle));
+    return true;
+  } catch (e) {
+    console.error('Ablegen fehlgeschlagen', e);
+    return false;
+  }
+}
+
 export function projektListe() {
   return Object.values(ladeAlle())
     .map(p => ({

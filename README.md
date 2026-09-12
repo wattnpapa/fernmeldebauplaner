@@ -149,6 +149,25 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   nimmt sie mit auf
 - Nicht Bestandteil von Bauauftrag, Lagekarte, GeoJSON, GPX und KML
 
+**Eigener Speicher** (freiwillig, Datei → Eigener Speicher)
+- Planungen zusätzlich in einem Ablageort ablegen, der dem Nutzer gehört: ein Ordner
+  auf dem Gerät, Dropbox, OneDrive, Nextcloud oder anderes WebDAV, ein S3-kompatibler
+  Speicher oder Google Drive
+- Der Gerätespeicher bleibt die Wahrheit: gearbeitet wird immer lokal, hochgeladen
+  wird, wenn Netz da ist. Am Bauort gibt es keines – dort muss die Anwendung
+  vollständig arbeiten
+- Ein Ordner je Planung mit `planung.json` und den Lichtbildern einzeln daneben, im
+  Ordner `fmbauplaner.app`. Der Ordnername trägt Namen und Kennung; wer ihn umbenennt,
+  verliert die Planung nicht
+- Geschrieben wird nur gegen die zuletzt gesehene Marke der Datei. Hat ein zweites
+  Gerät dazwischen geschrieben, wird nicht zusammengeführt, sondern gefragt – und
+  keiner der beiden Stände geht dabei verloren
+- Ein sichtbarer Stand in der Kopfzeile: gesichert mit Uhrzeit, ausstehend, Fehler
+- Solange keine Verbindung eingerichtet ist, wird kein Modul eines Anbieters geladen
+  und nichts übertragen. Was übertragen wird und wer darüber entscheidet, steht im
+  Einrichtungsgang und in `datenschutz.html`; die Überlegungen dahinter in
+  [`CLOUD.md`](CLOUD.md)
+
 **Zeichengruppen** (freiwillig)
 - Taktische Zeichen zu benannten Gruppen mit eigener Farbe zusammenfassen –
   „Gefahrenstellen“, „Kräfte“, „Fernmeldemittel“
@@ -393,6 +412,7 @@ index.html            Grundgerüst der Oberfläche
 autor/index.html      Über den Autor (statische Seite)
 impressum.html        Anbieterkennzeichnung nach § 5 DDG
 datenschutz.html      Datenschutzerklärung
+cloud-rueckweg.html   Rückweg der Anmeldung an einem eigenen Speicher
 css/app.css           Oberfläche
 css/print.css         Bauauftrag und Lagekarte: Vorschau und Ausdruck
 css/seite.css         Statische Seiten außerhalb der Anwendung
@@ -424,6 +444,15 @@ js/bauauftrag.js      Druckdokumente: Bauauftrag und Lagekarte
 js/ui.js              Seitenleiste, Formulare, Dialoge
 js/io.js              Sichern und Laden, GeoJSON, GPX, CSV, KML
 js/kml.js             KML und KMZ mit Google Earth austauschen
+js/cloud.js           Eigener Speicher: Schnittstelle, Anbieter, Anmeldung
+js/abgleich.js        Abgleich mit dem eigenen Speicher: Marken, Warteschlange, Konflikte
+js/cloud-ui.js        Einrichten, Standanzeige, Konfliktdialog
+js/cloud-ordner.js    Rückseite: ein Ordner auf diesem Gerät
+js/cloud-dropbox.js   Rückseite: Dropbox
+js/cloud-onedrive.js  Rückseite: OneDrive über Microsoft Graph
+js/cloud-webdav.js    Rückseite: Nextcloud und anderes WebDAV
+js/cloud-s3.js        Rückseite: S3-kompatibler Speicher (Signatur von Hand)
+js/cloud-gdrive.js    Rückseite: Google Drive
 js/version.js         Stand der Anwendung (beim Veröffentlichen gesetzt)
 bilder/               Bilder der statischen Seiten
 fonts/                Roboto Slab Bold, die Beschriftungsschrift der Zeichen
@@ -435,6 +464,11 @@ LICENSE               EUPL-1.2
 Der Datenbestand liegt unter dem LocalStorage-Schlüssel `fbp.projekte.v1`, das zuletzt
 geöffnete Projekt unter `fbp.aktiv.v1`. `js/state.js` hebt ältere Dateien beim Laden
 über `migrieren()` auf das aktuelle Schema.
+
+Wer einen eigenen Speicher einrichtet, bekommt eine dritte Ablage dazu: die
+IndexedDB-Datenbank `fbp.cloud`. Darin stehen der Zugang zum Speicher und zu jeder
+abgelegten Datei die Marke, unter der sie zuletzt gesehen wurde. Ohne eingerichtete
+Verbindung gibt es sie nicht.
 
 Die Bilddaten liegen als einziger Bestand außerhalb: in der IndexedDB-Datenbank
 `fbp.bilder`, im Projekt steht zu jedem Bild nur der Eintrag mit Ort, Zeit und Maßen.
@@ -516,6 +550,14 @@ Planungsdaten bleiben auf dem Gerät: Sie liegen im `localStorage` des Browsers
 Lichtbilder in der IndexedDB-Datenbank `fbp.bilder`. Nichts davon wird übertragen –
 auch nicht der Aufnahmeort in den Bildern. Es gibt keinen Server, kein Konto und keine
 Cookies.
+
+Wer einen **eigenen Speicher** einrichtet, verschiebt diese Grenze bewusst und für
+sich allein: Von da an gehen Planung und Lichtbilder an den Anbieter, bei dem er selbst
+das Konto hat – unmittelbar aus seinem Browser dorthin, an diesem Angebot vorbei. Ohne
+eingerichtete Verbindung wird dafür weder ein Modul eines Anbieters geladen noch etwas
+übertragen. Die Entscheidung, ob dienstliche Planungen dort liegen dürfen, liegt beim
+Nutzer und seinem Ortsverband; der Einrichtungsgang sagt das, bevor etwas eingerichtet
+wird.
 
 Vier Verbindungen gehen nach außen; drei davon ohne Planungsinhalte, die vierte
 mit dem Verlauf einer Funkstrecke:

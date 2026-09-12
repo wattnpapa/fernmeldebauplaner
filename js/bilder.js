@@ -118,6 +118,30 @@ async function eineDatei(datei) {
   }
 }
 
+/**
+ * Ein Vorschaubild aus einem fertigen Lichtbild rechnen.
+ *
+ * Gebraucht wird das vom Abgleich: aus einem angebundenen Speicher kommt nur
+ * das große Bild zurück. Die Vorschau daneben zu übertragen verdoppelte die
+ * Zahl der Dateien in einem Ordner, in den auch Menschen hineinsehen – und
+ * ableiten lässt sie sich hier in einem Augenblick.
+ *
+ * @returns {Promise<Blob|null>} `null`, wenn das Bild nicht lesbar ist
+ */
+export async function vorschauErzeugen(blob) {
+  let quelle;
+  try { quelle = await createImageBitmap(blob); } catch (e) { return null; }
+  try {
+    /* Lage 1: das Bild ist beim Aufnehmen schon aufgerichtet worden – es kommt
+       aus derselben Verkleinerung, die `verkleinern` oben gemacht hat. */
+    return (await verkleinern(quelle, MINI_KANTE, MINI_GUETE, 1)).blob;
+  } catch (e) {
+    return null;
+  } finally {
+    quelle.close?.();
+  }
+}
+
 /** Der Dateiname ohne Endung als erste Beschriftung – „IMG_4711“ sagt mehr als nichts */
 const dateiname = name => String(name || '').replace(/\.[^.]+$/, '').slice(0, 60);
 

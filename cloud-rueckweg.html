@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anmeldung abgeschlossen – FMBauplaner</title>
+<!-- Keine Seite zum Lesen, sondern der Rückweg eines Anmeldefensters: sie hat
+     in keinem Verzeichnis etwas zu suchen und steht deshalb nicht in der
+     sitemap.xml. -->
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/seite.css">
+</head>
+<body>
+
+<main id="inhalt">
+  <h1>Anmeldung abgeschlossen</h1>
+  <p id="stand">Dieses Fenster schließt sich gleich von selbst.</p>
+  <p class="bild-text">Bleibt es stehen, kann es von Hand geschlossen werden – die
+     Anwendung läuft im Fenster dahinter weiter.</p>
+</main>
+
+<script>
+/* Der Anbieter schickt seine Antwort hierher zurück: den Autorisierungscode in
+   der Abfrage, bei Google die Anmeldemarke im Fragment. Diese Seite tut nichts
+   damit, sie reicht sie nur an das Fenster weiter, das sie geöffnet hat.
+
+   Warum überhaupt ein eigenes Fenster: Liefe die Anmeldung als Sprung der
+   ganzen Anwendung, wäre der halb gezeichnete Streckenzug fort, und die
+   Anmeldemarke stünde in derselben Adresszeile, über die sonst eine geteilte
+   Planung ankommt. Beides ist mit einem kleinen Fenster nicht zu bezahlen.
+
+   Die Antwort geht ausdrücklich an die eigene Herkunft und nicht an „*“ –
+   sonst könnte jede Seite, die dieses Fenster öffnet, die Marke mitlesen. */
+(function () {
+  var werte = location.search.replace(/^\?/, '');
+  var fragment = location.hash.replace(/^#/, '');
+  if (fragment) werte = werte ? werte + '&' + fragment : fragment;
+
+  /* Die Adresse wird sofort geräumt: Marke und Code haben im Verlauf des
+     Browsers nichts verloren. */
+  try { history.replaceState(null, '', location.pathname); } catch (e) { /* ohne Belang */ }
+
+  if (window.opener) {
+    try {
+      window.opener.postMessage({ art: 'fbp-cloud-rueckweg', werte: werte }, location.origin);
+    } catch (e) { /* dann bleibt das Fenster stehen und sagt es unten */ }
+    setTimeout(function () { window.close(); }, 400);
+  } else {
+    document.getElementById('stand').textContent =
+      'Dieses Fenster wurde nicht von der Anwendung geöffnet. Es kann geschlossen werden.';
+  }
+})();
+</script>
+
+</body>
+</html>

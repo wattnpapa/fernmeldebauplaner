@@ -6,7 +6,12 @@ betreiben muss – und warum das den Speicher im Gerät nicht ersetzt, sondern
 Quelltext zu beachten ist, steht in `CLAUDE.md`, die Zusage an den Nutzer in
 `datenschutz.html`.
 
-Stand September 2026: abgestimmt, noch nicht gebaut.
+Stand September 2026: gebaut. Die Schnittstelle liegt in `js/cloud.js`, der
+Abgleich in `js/abgleich.js`, die Oberfläche in `js/cloud-ui.js`, je eine
+Rückseite in `js/cloud-<anbieter>.js`. Geprüft wurden der Ordner auf dem Gerät,
+S3 und WebDAV gegen echte Gegenstellen; Dropbox, OneDrive und Google Drive sind
+nach ihren Schnittstellenbeschreibungen gebaut und am Konto noch nicht
+durchgespielt.
 
 ## Warum überhaupt
 
@@ -143,7 +148,9 @@ Zugangsschlüssel im Browser, und die Zahl der Nutzer, die einen Eimer
 einrichten, ist klein.
 
 **6. Google Drive**, zuletzt und mit Bedacht. Ohne Serveranteil gibt es kein
-Refresh-Token, die Anmeldung läuft also stündlich ab. Dazu kommen
+Refresh-Token, die Anmeldung läuft also stündlich ab – und der Weg, auf dem die
+Marke ankommt, gilt bei Google inzwischen als überholt; für eine neu
+eingerichtete Client-ID kann er abgelehnt werden. Dazu kommen
 Zustimmungsbildschirm, Verifizierung und jährliche Pflege. Der Google-Picker
 bliebe außen vor, weil er Code von `apis.google.com` nachlädt – die Anwendung
 legt ihren Ordner ohnehin selbst an.
@@ -160,12 +167,48 @@ legt ihren Ordner ohnehin selbst an.
   aufwendig und den Gewinn klein.
 - **Box, pCloud** – technisch unauffällig, treffen aber kaum einen Helfer.
 
+## Was beim Bauen dazugekommen ist
+
+Drei Dinge standen nicht im Papier und haben sich beim Bauen als nötig erwiesen.
+
+**Der allererste Abgleich fragt.** Liegt am Speicher schon eine Planung mit
+derselben Kennung, gibt es keine Marke, an der abzulesen wäre, wer von wem
+abstammt. Der Inhalt entscheidet: ist er derselbe, werden nur die Marken
+gemerkt; ist er ein anderer, stehen sich zwei Stände gegenüber, die nichts
+voneinander wissen – und das ist der Konfliktfall. Still zu übernehmen wäre
+hier der Griff, mit dem eine Anbindung Arbeit vernichtet.
+
+**Ein umgezogener Ordner ist kein zweites Gerät.** Wer seine Cloud aufräumt und
+den Ordner umbenennt oder verschiebt, gibt der Datei bei den meisten Anbietern
+eine neue Marke. Die Planung wird an ihrer Kennung wiedergefunden, die Marke
+stimmt trotzdem nicht mehr. Bevor deshalb zwei Geräte angenommen werden, wird
+der Änderungszeitpunkt verglichen: trägt der Stand am Speicher genau den, den
+dieses Gerät zuletzt hinaufgeschrieben hat, ist es die eigene Datei.
+
+**Nextcloud braucht eine zweite Kopfzeile.** Nicht nur die CORS-Freigabe, auch
+`X-Requested-With: XMLHttpRequest`. Ohne sie antwortet Nextcloud auf ein
+falsches App-Passwort mit `WWW-Authenticate: Basic`, und darauf bricht der
+Browser einen Abruf über Herkunftsgrenzen hinweg ab, statt die Antwort
+durchzureichen: Ein falsches Passwort käme als „Server nicht erreichbar“ an.
+Zur CORS-Freigabe gehört außerdem, dass `Authorization` ausgeschrieben in
+`Access-Control-Allow-Headers` steht – der Stern deckt sie nicht ab.
+
+## Was noch nicht getan ist
+
+Abgeglichen werden die Planungen, die auf diesem Gerät liegen. Eine Planung,
+die nur am Speicher liegt, wird nicht still angelegt: sie steht unter
+„Planungen am Speicher“ und kommt herüber, wenn der Nutzer sie öffnet. Und eine
+hier gelöschte Planung wird dort nicht gelöscht – was in einer fremden Cloud
+liegt, räumt ihr Eigentümer auf.
+
 ## Offene Punkte
 
 - Ob dienstliche Planungen des THW in einem privaten Cloudkonto liegen dürfen,
   ist keine technische Frage. Die Anwendung weist darauf hin und überlässt die
   Entscheidung dem Nutzer.
 - Was geschieht, wenn jemand eine Planung im Speicher löscht, die auf dem Gerät
-  noch offen ist – stiller Wiederaufbau oder Rückfrage.
+  noch offen ist. Gebaut ist vorerst der stille Wiederaufbau: er verliert nichts.
+  Wer den Ordner löscht, um Platz zu schaffen, findet ihn allerdings beim
+  nächsten Abgleich wieder vor.
 - Ob eine Planung an mehrere Speicher zugleich gebunden sein darf. Vorerst
   nein: eine Verbindung, ein Ort.

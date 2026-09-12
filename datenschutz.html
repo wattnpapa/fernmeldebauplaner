@@ -81,10 +81,12 @@
   <p>
     Alles, was du in den FMBauplaner eingibst – Strecken, Standorte, taktische Zeichen,
     Bezeichnungen, Angaben für den Bauauftrag – wird ausschließlich lokal in deinem Browser
-    verarbeitet und gespeichert. Es findet <b>keine Übertragung an einen Server</b> statt;
-    es gibt kein Benutzerkonto und keine Anmeldung. Eine Weitergabe erfolgt nur, wenn du
-    sie selbst veranlasst – als Datei (JSON-Sicherung, GeoJSON, GPX oder ein gedrucktes
-    bzw. als PDF gesichertes Bauauftragsblatt) oder als Link, siehe unten.
+    verarbeitet und gespeichert. An einen Server dieses Angebots findet
+    <b>keine Übertragung</b> statt; es gibt hier kein Benutzerkonto und keine Anmeldung.
+    Eine Weitergabe erfolgt nur, wenn du sie selbst veranlasst – als Datei (JSON-Sicherung,
+    GeoJSON, GPX oder ein gedrucktes bzw. als PDF gesichertes Bauauftragsblatt), als Link
+    oder über einen eigenen Speicher, den du selbst einrichtest. Die letzten beiden Wege
+    stehen weiter unten in diesem Abschnitt.
   </p>
   <p>
     Dasselbe gilt für <b>Lichtbilder</b>, die du einer Planung hinzufügst. Sie werden im
@@ -120,6 +122,33 @@
     entfernt die Anwendung das Fragment sofort aus der Adresszeile, damit die Planung nicht
     im Verlauf deines Browsers stehen bleibt – ein Browser mit Verlaufssynchronisierung
     würde sie sonst zu seinem Hersteller übertragen.
+  </p>
+
+  <p>
+    <b>Eigener Speicher.</b> Über „Datei → Eigener Speicher“ lässt sich eine Verbindung zu
+    einem Ablageort einrichten, der <b>dir</b> gehört: ein Ordner auf dem Gerät, Dropbox,
+    OneDrive, eine Nextcloud oder anderes WebDAV, ein S3-kompatibler Speicher oder Google
+    Drive. Solange keine Verbindung eingerichtet ist, ändert sich nichts – es wird dafür
+    weder ein Modul eines Anbieters geladen noch irgendetwas übertragen.
+  </p>
+  <p>
+    Ist eine Verbindung eingerichtet, überträgt die Anwendung die <b>vollständige Planung</b>
+    – Strecken, Koordinaten, taktische Zeichen, Bezeichnungen, Kopfdaten – sowie die
+    <b>Lichtbilder</b> an genau diesen Speicher, und sonst nirgendwohin. Der Betreiber
+    dieser Website bekommt davon nichts zu sehen: Die Übertragung läuft unmittelbar zwischen
+    deinem Browser und dem von dir gewählten Anbieter, bei dem <b>du</b> das Konto hast.
+    Für die dortige Verarbeitung gelten dessen eigene Bedingungen; verantwortlich ist die
+    einsetzende Stelle, nicht dieses Angebot. Ob dienstliche Planungen des THW in einem
+    privaten Cloudkonto liegen dürfen, ist keine technische Frage – dazu Nummer&nbsp;7.
+  </p>
+  <p>
+    Für den Zugang legt die Anwendung, je nach Anbieter, einen Zugangsschlüssel oder eine
+    Anmeldemarke im Speicher deines Browsers ab (Nummer&nbsp;6); beim Ordner auf dem Gerät
+    ist es die Freigabe des Ordners selbst. Die Verbindung lässt sich jederzeit über
+    denselben Weg trennen – dabei werden diese Angaben gelöscht. Die <b>bereits abgelegten
+    Dateien bleiben liegen</b>: Sie stehen in deinem Speicher, und sie dort zu löschen wie
+    auch den Zugriff der Anwendung auf dein Konto zu widerrufen, kannst nur du beim
+    Anbieter selbst.
   </p>
 
   <h2>4. Kartendienste</h2>
@@ -268,14 +297,17 @@
         <tr><td class="mono">fbp.druck.v1</td><td>Einstellungen für den Ausdruck des Bauauftrags</td></tr>
         <tr><td class="mono">skipgc</td><td>gesetzt, wenn du der Reichweitenmessung widersprochen hast</td></tr>
         <tr><td class="mono">fbp.bilder</td><td>die Lichtbilder der Planungen (IndexedDB, nicht localStorage)</td></tr>
+        <tr><td class="mono">fbp.cloud</td><td>nur bei eingerichtetem eigenem Speicher (Nummer&nbsp;3): der Zugang dorthin – Zugangsschlüssel oder Anmeldemarke, bzw. die Freigabe des gewählten Ordners – und zu jeder abgelegten Datei die Kennung ihres letzten Standes (IndexedDB)</td></tr>
       </tbody>
     </table>
   </div>
   <p>
     Diese Einträge sind für den ausdrücklich gewünschten Dienst technisch erforderlich
     (§&nbsp;25 Abs.&nbsp;2 Nr.&nbsp;2 TDDDG); eine Einwilligung ist dafür nicht nötig. Sie
-    werden nicht übertragen: kein Server, kein Zugriff durch Dritte, keine Kennung zur
-    Wiedererkennung. Löschen kannst du sie über „Gespeicherte Planungen“ in der Anwendung,
+    werden nicht an dieses Angebot übertragen: kein Server, kein Zugriff durch Dritte, keine
+    Kennung zur Wiedererkennung. Der Eintrag <span class="mono">fbp.cloud</span> entsteht
+    erst, wenn du selbst einen eigenen Speicher einrichtest, und verschwindet wieder, sobald
+    du die Verbindung trennst. Löschen kannst du sie über „Gespeicherte Planungen“ in der Anwendung,
     durch Löschen der Websitedaten im Browser oder – bei einer einzelnen Planung – über den
     Löschknopf in der Planungsliste. Bilddaten, auf die keine gespeicherte Planung mehr
     verweist, räumt die Anwendung beim nächsten Start von selbst weg.
@@ -307,8 +339,8 @@
 
   <h2>7. Eigene Verantwortung beim Einsatz</h2>
   <p>
-    Dass keine Cloud verwendet wird, ist aus Datenschutzsicht ein Vorteil, aber keine
-    vollständige Absicherung: Planungen können Einsatzorte, Objekte und Namen von
+    Dass von sich aus keine Cloud verwendet wird, ist aus Datenschutzsicht ein Vorteil, aber
+    keine vollständige Absicherung: Planungen können Einsatzorte, Objekte und Namen von
     Ansprechpartnern enthalten und liegen auf den verwendeten Geräten. Bei Verlust,
     Diebstahl, gemeinsam genutzten Rechnern oder ungeschützten Sicherungen entstehen deshalb
     trotzdem Risiken. Für diese Geräte und die dort gespeicherten Daten ist die einsetzende
@@ -321,6 +353,13 @@
     <li>Geräte nach Einsatz oder Übung kontrolliert löschen.</li>
     <li>Ausgedruckte Bauaufträge und exportierte Dateien nicht offen auslegen und nicht unverschlüsselt weiterleiten.</li>
     <li>Vorab klären, wer innerhalb der Organisation für die Datenverarbeitung verantwortlich ist.</li>
+    <li>
+      Bevor ein <b>eigener Speicher</b> (Nummer&nbsp;3) eingerichtet wird: mit dem
+      Ortsverband klären, ob dienstliche Planungen dort liegen dürfen. Ein privates
+      Cloudkonto ist dafür in aller Regel nicht der vorgesehene Ort, und die Entscheidung
+      darüber kann die Anwendung niemandem abnehmen. Auf einem geteilten Rechner gehört die
+      Verbindung nach der Arbeit getrennt.
+    </li>
     <li>
       Vor einer offiziellen Einführung diese Datenschutzerklärung und den
       <a href="https://github.com/wattnpapa/fernmeldebauplaner">offenen Quellcode</a> prüfen.

@@ -579,6 +579,7 @@ dateiMenu.addEventListener('click', e => {
     'export-json': () => planungSichern(),
     import: () => $('#datei-import').click(),
     teilen: teilenDialog,
+    speicher: () => speicherDialogOeffnen(),
     'sammel-pdf': () => oeffneSammeldruck(),
     lagekarte: () => oeffneLagekarte(),
     'export-geojson': () => io.geoJSONExportieren(),
@@ -1242,6 +1243,48 @@ modusAnzeigen();
 speicherstatusZeigen('ruhe');
 $('#btn-undo').disabled = true;
 $('#btn-redo').disabled = true;
+
+/* ---------------------------------------------------------------- Eigener Speicher
+
+   Die Anbindung an einen eigenen Speicher wird nachgeladen und liegt nicht im
+   Startweg. Wer keine Verbindung eingerichtet hat, bezahlt für sie nichts
+   außer diesem einen Abruf – und eine Rückseite eines Anbieters kommt erst
+   dazu, wenn wirklich eine Verbindung besteht. Dasselbe Vorgehen wie beim
+   HEIC-Entschlüsseler in `js/heic.js`.
+
+   Verzögert, damit der Kartenaufbau und die ersten Kacheln Vorrang haben:
+   über Mobilfunk am Bauort ist die Karte das, worauf jemand wartet. */
+let cloudModulLauf = null;
+function cloudModul() {
+  if (!cloudModulLauf) {
+    cloudModulLauf = Promise.all([import('./cloud-ui.js'), import('./abgleich.js')])
+      .then(([ui, abgleich]) => {
+        ui.cloudUiStarten();
+        ui.zeichneSpeicherAbschnitt();
+        /* Der Abschnitt im Reiter Projekt hängt an der geöffneten Planung und
+           wird von `zeichneProjektReiter()` nicht mitgezeichnet – er liegt in
+           einem eigenen Kasten, damit ui.js nichts von der Anbindung wissen
+           muss. Also hier nachführen. */
+        store.on((p, grund) => {
+          if (grund === 'geladen' || grund === 'import') ui.zeichneSpeicherAbschnitt();
+        });
+        return abgleich.abgleichStarten().then(() => ui);
+      });
+    cloudModulLauf.catch(e => {
+      cloudModulLauf = null;
+      console.error('Speicheranbindung nicht verfügbar', e);
+    });
+  }
+  return cloudModulLauf;
+}
+
+function speicherDialogOeffnen() {
+  cloudModul()
+    .then(ui => ui.speicherDialog())
+    .catch(() => hinweis('Die Speicheranbindung ließ sich nicht laden.', 'fehler'));
+}
+
+setTimeout(cloudModul, 1500);
 
 geteiltenLinkPruefen();
 
