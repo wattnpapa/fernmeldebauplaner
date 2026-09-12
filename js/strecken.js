@@ -398,38 +398,124 @@ export { kumuliert };
 
 const mitte = (a, b) => L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2);
 
-/* Wie weit das Streckenschild von der Trasse abrückt, in Bildschirmpunkten.
-   Gelesen wird am Bauplatz der Verlauf, nicht das Schild: auf eng geführten
-   Trassen lag es bisher auf der Linie und deckte den halben Bogen zu. Die
-   Stufen sind grob gehalten, weil das Schild im Druck mitwächst – eine feine
-   Abstufung wäre auf A1 nicht mehr zu unterscheiden. */
+/* Grundabstand des abgerückten Streckenschildes von der Trasse, in
+   Bildschirmpunkten. Gelesen wird am Bauplatz der Verlauf, nicht das Schild:
+   auf eng geführten Trassen lag es bisher auf der Linie und deckte den halben
+   Bogen zu. Der Wert ist nur der Ausgangspunkt – findet das Schild dort keinen
+   freien Platz, rückt die Suche unten weiter aus. */
 const SCHILD_ABSTAND = [0, 34, 70];
 
 const schildAbstand = o => SCHILD_ABSTAND[Number(o.beschriftungsabstand) || 0] || 0;
 
+/* Der Suchraum eines Schildes, in der Reihenfolge, in der gesucht wird: wo an
+   der Trasse es hängt (Anteil der Trassenlänge), wie weit es vom Lot abweichen
+   darf (Grad, nach beiden Seiten) und das Vielfache des Grundabstandes. Der
+   erste Eintrag jeder Liste ist die gewohnte Lage – weiter hinten wird nur
+   gegriffen, wenn dort etwas im Weg steht. */
+const SCHILD_STELLEN = [0.5, 0.38, 0.62, 0.26, 0.74, 0.14, 0.86];
+const SCHILD_DREHUNG = [0, 28, -28, 56, -56, 78, -78];
+const SCHILD_WEITEN = [1, 1.5, 2.1, 2.9, 4, 5.4];
+
+/* Luft rings um das Schild. Zwei Schilder, die sich mit der Kante berühren,
+   liest niemand als zwei. */
+const SCHILD_LUFT = 5;
+
+/* Was ein Fehler kostet. Am teuersten ist der Blattrand: ein Schild, das halb
+   über die Kante steht, ist im Ausdruck abgeschnitten und damit ganz weg. Eine
+   verdeckte Trasse wiegt schwerer als ein überlapptes Schild – das Schild lässt
+   sich noch erraten, der Verlauf unter ihm nicht. Die Abweichung von der
+   gewohnten Lage kostet wenig, aber genug, dass ein Schild ohne Not nicht
+   auswandert. */
+const KOST_RAND = 200;
+const KOST_TRASSE = 150;
+const KOST_MARKE = 80;
+const KOST_SCHILD = 95;
+const KOST_STIEL = 35;
+
+const imRechteck = (p, r) => p.x >= r.x && p.x <= r.x + r.breite &&
+                             p.y >= r.y && p.y <= r.y + r.hoehe;
+
+/** Gemeinsame Fläche zweier Rechtecke, 0 wenn sie sich nicht berühren */
+function ueberdeckung(a, b) {
+  const x = Math.min(a.x + a.breite, b.x + b.breite) - Math.max(a.x, b.x);
+  const y = Math.min(a.y + a.hoehe, b.y + b.hoehe) - Math.max(a.y, b.y);
+  return x > 0 && y > 0 ? x * y : 0;
+}
+
+/** Kreuzen sich die Strecken p1–p2 und p3–p4? */
+function kreuzt(p1, p2, p3, p4) {
+  const n = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
+  if (!n) return false;
+  const t = ((p3.x - p1.x) * (p4.y - p3.y) - (p3.y - p1.y) * (p4.x - p3.x)) / n;
+  const u = ((p3.x - p1.x) * (p2.y - p1.y) - (p3.y - p1.y) * (p2.x - p1.x)) / n;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+/** Läuft die Strecke a–b durch das Rechteck oder endet sie darin? */
+function strichSchneidet(a, b, r) {
+  if (imRechteck(a, r) || imRechteck(b, r)) return true;
+  const x2 = r.x + r.breite, y2 = r.y + r.hoehe;
+  const e1 = { x: r.x, y: r.y }, e2 = { x: x2, y: r.y },
+        e3 = { x: x2, y: y2 }, e4 = { x: r.x, y: y2 };
+  return kreuzt(a, b, e1, e2) || kreuzt(a, b, e2, e3) ||
+         kreuzt(a, b, e3, e4) || kreuzt(a, b, e4, e1);
+}
+
 /**
- * Richtung, in die das abgerückte Streckenschild ausschert: senkrecht zum
- * Abschnitt a–b, damit es neben der Linie steht und nicht auf ihr.
- *
- * Gerechnet wird in Bildschirmrichtung – Mercator streckt die Breite um
- * 1/cos φ, ein Lot aus rohen Gradabständen stünde nördlich von 50° sichtbar
- * schief –, aber ohne die Karte zu fragen: der Winkel hängt nicht von der
- * Zoomstufe ab, und das Schild entsteht auch schon, bevor der Ausschnitt der
- * Druckkarte steht.
+ * Die Stelle auf einem Linienzug beim gegebenen Anteil seiner Länge, samt der
+ * Richtung des Abschnitts, auf dem sie liegt. Gerechnet wird in Bildpunkten:
+ * senkrecht ist, was auf dem Blatt senkrecht aussieht, und nicht, was in
+ * Gradabständen senkrecht wäre – in Mercator ist das nicht dasselbe.
  */
-function schildRichtung(a, b) {
-  const dx = b.lng - a.lng;
-  const dy = -(b.lat - a.lat) / Math.max(0.05, Math.cos((a.lat + b.lat) / 2 * Math.PI / 180));
-  const laenge = Math.hypot(dx, dy);
-  if (!laenge) return { x: 0, y: -1 };
-  let x = -dy / laenge, y = dx / laenge;
-  /* Von den beiden Loten das nach oben zeigende: dort wird die Beschriftung
-     einer Linie gesucht. Läuft die Trasse selbst senkrecht, liegen beide Lote
-     waagerecht – dann fällt die Wahl nach rechts. Fest gewählt und nicht nach
-     freiem Platz: das Schild soll beim Neuzeichnen stehen bleiben und nicht
-     von einer Seite der Trasse auf die andere springen. */
-  if (Math.abs(y) < 0.2 ? x < 0 : y > 0) { x = -x; y = -y; }
-  return { x, y };
+function stelleAufZug(zug, anteil) {
+  const laengen = [];
+  let ges = 0;
+  for (let i = 1; i < zug.length; i++) {
+    const l = Math.hypot(zug[i].x - zug[i - 1].x, zug[i].y - zug[i - 1].y);
+    laengen.push(l); ges += l;
+  }
+  if (!laengen.length) return null;
+  let rest = ges * anteil;
+  for (let i = 0; i < laengen.length; i++) {
+    if (rest <= laengen[i] || i === laengen.length - 1) {
+      const l = laengen[i];
+      const t = l ? Math.min(1, rest / l) : 0;
+      const a = zug[i], b = zug[i + 1];
+      return {
+        x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t,
+        tx: l ? (b.x - a.x) / l : 1, ty: l ? (b.y - a.y) / l : 0
+      };
+    }
+    rest -= laengen[i];
+  }
+  return null;
+}
+
+/** Wie weit die Mitte eines Schildes in Richtung (vx, vy) bis an seine eigene
+ *  Kante hat – so weit reicht der Leitstrich nicht mehr. */
+function randAbstand(vx, vy, breite, hoehe) {
+  const x = Math.abs(vx) > 1e-6 ? (breite / 2) / Math.abs(vx) : Infinity;
+  const y = Math.abs(vy) > 1e-6 ? (hoehe / 2) / Math.abs(vy) : Infinity;
+  return Math.min(x, y);
+}
+
+/**
+ * Der Vergrößerungsfaktor der Druckkarte; am Bildschirm 1. Das Schild wächst
+ * im Ausdruck mit --karten-schrift mit, sein Abstand von der Trasse muss
+ * deshalb mitwachsen.
+ *
+ * Abgemessen an einem Klotz und nicht aus der Variablen gelesen: die steht als
+ * `calc(… * …)` in der Datei, und `getComputedStyle` gibt eigene Eigenschaften
+ * unausgerechnet heraus – aus „calc(1.51 * 2.83)“ wird keine Zahl.
+ */
+function kartenSchrift(karte) {
+  const klotz = document.createElement('div');
+  klotz.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;' +
+    'width:calc(100px * var(--karten-schrift, 1))';
+  karte.getContainer().appendChild(klotz);
+  const faktor = klotz.offsetWidth / 100;
+  klotz.remove();
+  return faktor > 0 ? faktor : 1;
 }
 
 /* Was aus der Trassenlänge den Kabelbedarf macht – auf Kartenschild und
@@ -459,6 +545,14 @@ export class StreckenLayer {
        dass dafür die ganze Karte neu entsteht. */
     this.zeichenGruppe = L.layerGroup().addTo(karte);
     this._zeichenAuftraege = [];
+    /* Was die Platzsuche der Streckenschilder braucht: die Schilder selbst und
+       alles, was sie nicht verdecken dürfen. Gefüllt wird beim Zeichnen. */
+    this._schilder = [];
+    this._linienzuege = [];
+    this._punktmarken = [];
+    this._schilderZoom = null;
+    this._schilderVersuche = 0;
+    this._schilderNachlauf = null;
     this.auswahl = null;        // Strecken-ID
     this.aktiverPunkt = null;   // Punkt-ID
     this.zeichenModus = null;   // Strecken-ID während des Zeichnens
@@ -485,8 +579,16 @@ export class StreckenLayer {
     this.strichbreite = opt.strichbreite || 1;
     this._vorschau = null;
     this._vorschauLabel = null;
-    this._zoomWaechter = () => this._kabelzeichenSetzen();
+    /* Beide hängen am Bildmaßstab und nicht an der Planung: die Kabelzeichen
+       wegen ihres Abstandes, die Schilder wegen der Platzsuche. Verschieben
+       ändert daran nichts – gerechnet wird in Kartenpunkten, die beim Ziehen
+       stehen bleiben. */
+    this._zoomWaechter = () => { this._kabelzeichenSetzen(); this._schilderSetzen(); };
     this.karte.on('zoomend', this._zoomWaechter);
+    /* Die Druckkarte setzt ihren Ausschnitt mit `fitBounds`, und das ändert
+       nicht immer die Zoomstufe – ohne `moveend` bliebe dort jedes Schild an
+       seinem vorläufigen Platz stehen. */
+    this.karte.on('moveend', this._zoomWaechter);
     this._bind();
   }
 
@@ -504,6 +606,8 @@ export class StreckenLayer {
       this.karte.off('mousemove', this._move);
     }
     this.karte.off('zoomend', this._zoomWaechter);
+    this.karte.off('moveend', this._zoomWaechter);
+    clearTimeout(this._schilderNachlauf);
     this.gruppe.remove();
     this.zeichenGruppe.remove();
   }
@@ -609,6 +713,11 @@ export class StreckenLayer {
     this.gruppe.clearLayers();
     this._vorschau = null; this._vorschauLabel = null;
     this._zeichenAuftraege = [];
+    this._schilder = [];
+    this._linienzuege = [];
+    this._punktmarken = [];
+    this._schilderZoom = null;
+    this._schilderVersuche = 0;
 
     for (const s of p.strecken) {
       if (this.nurStrecke && s.id !== this.nurStrecke) continue;
@@ -621,6 +730,7 @@ export class StreckenLayer {
       this._zeichneStrecke(s, o);
     }
     this._kabelzeichenSetzen();
+    this._schilderSetzen();
   }
 
   /**
@@ -671,6 +781,9 @@ export class StreckenLayer {
     const nebensache = this.hervorheben && s.id !== this.hervorheben;
     const pfad = s.punkte.map(pt => [pt.lat, pt.lng]);
     if (pfad.length >= 2) {
+      /* Für die Platzsuche der Schilder: jede gezeichnete Trasse zählt, auch
+         die blasse Nebenstrecke – verdeckt ist verdeckt. */
+      this._linienzuege.push(s.punkte);
       // weiße Kontrastfassung darunter
       if (st.fassung) {
         L.polyline(pfad, {
@@ -748,6 +861,7 @@ export class StreckenLayer {
            Bei ausgewählter Strecke greift der Haken nicht – was man ziehen
            können soll, muss man auch sehen. */
         if (o.zwischenpunkte === false && pt.art === 'punkt' && !gewaehlt) return;
+        this._punktmarken.push(pt);
         this._zeichnePunkt(s, pt, i, gewaehlt, o, st);
       });
     }
@@ -782,28 +896,14 @@ export class StreckenLayer {
          werden kann: der einzelne Punkt hat keine Richtung, sein Schild bleibt
          über ihm stehen. */
       const abstand = s.punkte.length >= 2 ? schildAbstand(o) : 0;
-      /* Das abgerückte Schild hängt an der Mitte der Trasse und nicht mehr am
-         mittleren Trassenpunkt: die Pfeilspitze soll auf der Linie sitzen und
-         nicht unter einer Punktmarke verschwinden. */
-      const kum = abstand ? kumuliert(s.punkte) : null;
-      const mittig = kum ? punktBeiLaenge(s.punkte, kum[kum.length - 1] / 2) : null;
-      const anker = mittig || s.punkte[Math.floor((s.punkte.length - 1) / 2)];
-      const seg = mittig ? Math.min(mittig.index, s.punkte.length - 2) : 0;
-      const r = mittig ? schildRichtung(s.punkte[seg], s.punkte[seg + 1]) : null;
-      /* Der Leitstrich trägt seinen Winkel selbst, das Schild die beiden
-         Richtungsanteile: gedreht werden darf nur der Strich – ein gedrehtes
-         Schild wäre auf dem Blatt nicht mehr waagerecht zu lesen. */
-      const fahne = r
-        ? `;--vx:${r.x.toFixed(3)};--vy:${r.y.toFixed(3)};--fahne:${abstand}px;` +
-          `--winkel:${(Math.atan2(r.y, r.x) * 180 / Math.PI).toFixed(1)}deg`
-        : '';
-      L.marker([anker.lat, anker.lng], {
+      const anker = s.punkte[Math.floor((s.punkte.length - 1) / 2)];
+      const marke = L.marker([anker.lat, anker.lng], {
         pane: 'fbp-labels', interactive: false,
         icon: L.divIcon({
           className: 'fbp-label',
-          html: `<span class="strecken-fahne" style="--farbe:${st.farbe}${fahne}">
-                   ${r ? '<i class="fahnen-stiel"></i>' : ''}
-                   <span class="strecken-mass${versatz}${r ? ' abgesetzt' : ''}${gewaehlt ? ' aktiv' : ''}">
+          html: `<span class="strecken-fahne" style="--farbe:${st.farbe}">
+                   ${abstand ? '<i class="fahnen-stiel"></i>' : ''}
+                   <span class="strecken-mass${versatz}${gewaehlt ? ' aktiv' : ''}">
                      <b>${escapeHtml(s.name)}</b>
                      <span class="wert">${formatLaenge(k.trasse)}</span>
                      ${k.zuschlag || k.reserve ? `<span class="zus">${bedarfsHerkunft(k)} → ${formatLaenge(k.bedarf)}</span>` : ''}
@@ -812,7 +912,195 @@ export class StreckenLayer {
           iconSize: null
         })
       }).addTo(this.gruppe);
+      /* Wohin das abgerückte Schild rückt, steht erst fest, wenn alle Strecken
+         gezeichnet sind und die Karte einen Maßstab hat – die Platzsuche läuft
+         deshalb hinterher über den ganzen Bestand. Bis dahin und ohne Abstand
+         bleibt es über seinem Ankerpunkt stehen. */
+      if (abstand) this._schilder.push({ marke, punkte: s.punkte, abstand });
     }
+  }
+
+  /**
+   * Sucht jedem abgerückten Streckenschild seinen Platz.
+   *
+   * Ein fester Versatz reicht dafür nicht: auf einer Lage mit sechzehn
+   * Strecken landet das Schild dann zwar neben seiner eigenen Trasse, aber auf
+   * der Nachbartrasse oder auf dem Schild daneben. Gesucht wird deshalb im
+   * Bildraum der fertigen Karte – Stelle an der Trasse, Richtung, Weite – und
+   * bewertet, was der Platz verdeckt. Gesetzt wird der günstigste; ist alles
+   * belegt, der am wenigsten schlechte. Ein Schild weniger wäre die
+   * schlechtere Lösung: der Name der Strecke gehört auf das Blatt.
+   *
+   * Die Schilder kommen in Zeichenreihenfolge dran und weichen einander in
+   * dieser Reihenfolge aus. Wer zuerst steht, steht gut – das ist willkürlich,
+   * aber gleichbleibend, und ein Schild, das bei jedem Neuzeichnen woanders
+   * steht, wäre auf dem Bildschirm nicht auszuhalten.
+   */
+  _schilderSetzen() {
+    const zoom = this.karte.getZoom();
+    if (!this._schilder.length || zoom === undefined) return;
+    /* Gerechnet wird in Kartenpunkten, und die stehen beim Ziehen still – nur
+       eine andere Zoomstufe (oder ein neuer Zeichenlauf) ergibt eine andere
+       Lage. Ohne diese Schranke liefe die Suche bei jedem Verschieben mit. */
+    if (this._schilderZoom === zoom) return;
+    const pkt = p => this.karte.latLngToLayerPoint(L.latLng(p.lat, p.lng));
+    const zuege = this._linienzuege.map(z => z.map(pkt));
+    const marken = this._punktmarken.map(pkt);
+    const faktor = kartenSchrift(this.karte);
+    const markeHalb = 11 * faktor;
+    const belegt = [];
+    let gesetzt = 0;
+    /* Das Blatt in Kartenpunkten. Auf der Druckkarte ist das die Kante, an der
+       der Ausdruck aufhört; am Bildschirm der Ausschnitt, den man gerade sieht
+       (und der beim Schieben nicht neu gesucht wird – siehe oben). */
+    const ecke = this.karte.containerPointToLayerPoint([0, 0]);
+    const groesse = this.karte.getSize();
+    const gegenecke = this.karte.containerPointToLayerPoint([groesse.x, groesse.y]);
+
+    for (const schild of this._schilder) {
+      const wurzel = schild.marke.getElement();
+      const fahne = wurzel && wurzel.querySelector('.strecken-fahne');
+      const kasten = fahne && fahne.querySelector('.strecken-mass');
+      if (!kasten) continue;
+      const breite = kasten.offsetWidth, hoehe = kasten.offsetHeight;
+      if (!breite || !hoehe) continue;
+      const zug = schild.punkte.map(pkt);
+      const grund = schild.abstand * faktor;
+      const reichweite = grund * 3.2 + Math.hypot(breite, hoehe);
+      let bestes = null;
+
+      for (let si = 0; si < SCHILD_STELLEN.length; si++) {
+        const stelle = stelleAufZug(zug, SCHILD_STELLEN[si]);
+        if (!stelle) continue;
+        /* Nur die Nachbarschaft wird geprüft. Ohne die Vorauswahl liefe die
+           Suche über jeden Abschnitt jeder Trasse – bei sechzehn Strecken und
+           hundert Anwärtern je Schild ist das die Rechnung, die das Zeichnen
+           spürbar macht. */
+        const nah = [];
+        for (const z of zuege) {
+          for (let i = 1; i < z.length; i++) {
+            const a = z[i - 1], b = z[i];
+            const x1 = Math.min(a.x, b.x), x2 = Math.max(a.x, b.x);
+            const y1 = Math.min(a.y, b.y), y2 = Math.max(a.y, b.y);
+            if (x1 - reichweite > stelle.x || x2 + reichweite < stelle.x) continue;
+            if (y1 - reichweite > stelle.y || y2 + reichweite < stelle.y) continue;
+            /* Mit den Grenzen des Abschnitts: die grobe Abfrage davor wirft in
+               der Schleife darunter neun von zehn Anwärtern weg, bevor die
+               genaue Schnittrechnung überhaupt anläuft. */
+            nah.push({ a, b, x1, x2, y1, y2 });
+          }
+        }
+
+        for (let wi = 0; wi < SCHILD_WEITEN.length; wi++) {
+          for (let di = 0; di < SCHILD_DREHUNG.length; di++) {
+            for (const seite of [1, -1]) {
+              const bogen = SCHILD_DREHUNG[di] * Math.PI / 180;
+              const lx = -stelle.ty * seite, ly = stelle.tx * seite;
+              const vx = lx * Math.cos(bogen) - ly * Math.sin(bogen);
+              const vy = lx * Math.sin(bogen) + ly * Math.cos(bogen);
+              const weite = grund * SCHILD_WEITEN[wi];
+              /* Je Achse die halbe eigene Kante dazu: so liegt die Kante des
+                 Schildes um `weite` von der Trasse ab und nicht seine Mitte. */
+              const dx = vx * (breite / 2 + weite), dy = vy * (hoehe / 2 + weite);
+              const zentrum = { x: stelle.x + dx, y: stelle.y + dy };
+              const feld = {
+                x: zentrum.x - breite / 2 - SCHILD_LUFT, y: zentrum.y - hoehe / 2 - SCHILD_LUFT,
+                breite: breite + 2 * SCHILD_LUFT, hoehe: hoehe + 2 * SCHILD_LUFT
+              };
+              /* Die gewohnte Lage ist der erste Anwärter; jede Abweichung
+                 kostet etwas. Nach unten weisende Schilder kosten extra: dort
+                 sucht niemand die Beschriftung einer Linie. */
+              let kosten = si * 7 + di * 5 + wi * 11 + (seite < 0 ? 2 : 0) + (vy > 0 ? 6 : 0);
+              /* Sobald ein Anwärter teurer ist als der beste bisher, braucht er
+                 nicht zu Ende gerechnet zu werden. Auf einer Lage mit zwei
+                 Dutzend Strecken macht das den Unterschied zwischen einem
+                 flüssigen und einem stockenden Neuzeichnen. */
+              const grenze = bestes ? bestes.kosten : Infinity;
+              if (kosten >= grenze) continue;
+              const fx2 = feld.x + feld.breite, fy2 = feld.y + feld.hoehe;
+              if (feld.x < ecke.x || feld.y < ecke.y ||
+                  fx2 > gegenecke.x || fy2 > gegenecke.y) kosten += KOST_RAND;
+              if (kosten >= grenze) continue;
+
+              for (const n of nah) {
+                if (n.x2 < feld.x || n.x1 > fx2 || n.y2 < feld.y || n.y1 > fy2) continue;
+                if (strichSchneidet(n.a, n.b, feld)) {
+                  kosten += KOST_TRASSE;
+                  if (kosten >= grenze) break;
+                }
+              }
+              if (kosten >= grenze) continue;
+
+              for (const q of marken) {
+                if (q.x < feld.x - markeHalb || q.x > fx2 + markeHalb) continue;
+                if (q.y < feld.y - markeHalb || q.y > fy2 + markeHalb) continue;
+                kosten += KOST_MARKE;
+                if (kosten >= grenze) break;
+              }
+              if (kosten >= grenze) continue;
+
+              for (const r of belegt) {
+                const u = ueberdeckung(feld, r);
+                if (u) kosten += KOST_SCHILD + u / 25;
+              }
+              if (kosten >= grenze) continue;
+
+              /* Der Leitstrich vom Schild zurück auf die Trasse. Geprüft wird
+                 er erst ab einem Viertel seiner Länge: an seinem Anfang liegt
+                 er auf der eigenen Trasse, dorthin zeigt er ja. */
+              const stiel = Math.hypot(dx, dy) - randAbstand(vx, vy, breite, hoehe);
+              const von = { x: stelle.x + vx * stiel * 0.25, y: stelle.y + vy * stiel * 0.25 };
+              const bis = { x: stelle.x + vx * stiel, y: stelle.y + vy * stiel };
+              const sx1 = Math.min(von.x, bis.x), sx2 = Math.max(von.x, bis.x);
+              const sy1 = Math.min(von.y, bis.y), sy2 = Math.max(von.y, bis.y);
+              for (const n of nah) {
+                if (n.x2 < sx1 || n.x1 > sx2 || n.y2 < sy1 || n.y1 > sy2) continue;
+                if (kreuzt(von, bis, n.a, n.b)) {
+                  kosten += KOST_STIEL;
+                  if (kosten >= grenze) break;
+                }
+              }
+              if (kosten >= grenze) continue;
+              for (const r of belegt) if (strichSchneidet(von, bis, r)) kosten += KOST_STIEL;
+
+              if (kosten < grenze) bestes = { kosten, stelle, feld, dx, dy, vx, vy, stiel };
+              if (bestes.kosten === 0) break;
+            }
+            if (bestes.kosten === 0) break;
+          }
+          if (bestes.kosten === 0) break;
+        }
+        if (bestes && bestes.kosten === 0) break;
+      }
+      if (!bestes) continue;
+
+      /* Das Schild hängt an seiner Marke, die Marke wandert auf die gewählte
+         Stelle der Trasse: so sitzt die Pfeilspitze auf der Linie, und Schild
+         und Strich rechnen von derselben Stelle aus. */
+      schild.marke.setLatLng(this.karte.layerPointToLatLng(
+        L.point(bestes.stelle.x, bestes.stelle.y)));
+      fahne.classList.add('abgesetzt');
+      fahne.style.setProperty('--dx', `${bestes.dx.toFixed(1)}px`);
+      fahne.style.setProperty('--dy', `${bestes.dy.toFixed(1)}px`);
+      fahne.style.setProperty('--laenge', `${Math.max(0, bestes.stiel).toFixed(1)}px`);
+      fahne.style.setProperty('--winkel',
+        `${(Math.atan2(bestes.vy, bestes.vx) * 180 / Math.PI).toFixed(1)}deg`);
+      belegt.push(bestes.feld);
+      gesetzt++;
+    }
+
+    /* Erst wenn wirklich etwas gesetzt wurde, gilt die Zoomstufe als erledigt.
+       Die Druckkarte hängt ihre Ebenen zurück, solange sie keinen Ausschnitt
+       hat – zum `moveend` des `fitBounds` steht das Schild als Auftrag schon
+       da, sein Kästchen im Baum aber noch nicht. Ohne den Nachlauf bliebe auf
+       dem Blatt jedes Schild an seinem Ankerpunkt kleben. */
+    if (gesetzt) { this._schilderZoom = zoom; return; }
+    if (this._schilderNachlauf || this._schilderVersuche >= 4) return;
+    this._schilderVersuche++;
+    this._schilderNachlauf = setTimeout(() => {
+      this._schilderNachlauf = null;
+      this._schilderSetzen();
+    }, 0);
   }
 
   /**

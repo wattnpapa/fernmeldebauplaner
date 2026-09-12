@@ -1165,28 +1165,25 @@ body.modus-aktiv .kartenoptionen { display: none; }
 }
 
 /* Das abgerückte Streckenschild. Die Hülle ist ein Punkt ohne Ausdehnung auf
-   dem Ankerpunkt der Trasse; Schild und Leitstrich hängen absolut daran, damit
-   beide von derselben Stelle aus rechnen. Der Weg zählt in Bildschirmpunkten
-   der Karte und wird mit --karten-schrift mitskaliert: im doppelt gerenderten
-   Druckbild wächst das Schild, ein fester Abstand ließe es dort wieder auf der
-   Trasse landen. */
-.strecken-fahne {
-  position: relative; width: 0; height: 0;
-  --weg: calc(var(--fahne, 0px) * var(--karten-schrift, 1));
-}
-/* Die Hälfte der eigenen Kante kommt zum Weg hinzu: gemessen wird bis zur
-   Schildkante, nicht bis zu seiner Mitte – sonst reichte der Leitstrich bei
-   einem breiten Schild nur bis unter dessen Schrift. */
-.strecken-fahne > .strecken-mass.abgesetzt {
+   der Trasse; Schild und Leitstrich hängen absolut daran und rechnen dadurch
+   von derselben Stelle aus. Wohin das Schild rückt, sucht die Platzsuche in
+   strecken.js im Bildraum der fertigen Karte aus – sie kennt die Maße des
+   Schildes und alles, was daneben liegt, und setzt --dx, --dy, --laenge und
+   --winkel in Kartenpunkten. Ohne sie (Karte noch ohne Ausschnitt) bleibt die
+   Klasse aus und das Schild steht über seinem Ankerpunkt wie eh und je. */
+.strecken-fahne { position: relative; width: 0; height: 0; }
+.strecken-fahne.abgesetzt > .strecken-mass {
   position: absolute; left: 0; top: 0;
-  transform: translate(calc(-50% + var(--vx, 0) * 50% + var(--vx, 0) * var(--weg)),
-                       calc(-50% + var(--vy, -1) * 50% + var(--vy, -1) * var(--weg))) !important;
+  transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px))) !important;
 }
 /* Leitstrich mit Pfeilspitze auf der Trasse. Gedreht wird der Strich, nicht das
-   Schild. Der weiße Saum ist ein Schatten und kein Filter – gefilterte Bereiche
+   Schild: ein gedrehtes Schild wäre auf dem Blatt nicht mehr waagerecht zu
+   lesen. Der weiße Saum ist ein Schatten und kein Filter – gefilterte Bereiche
    lässt Firefox beim Drucken weg (siehe map.js). */
-.fahnen-stiel {
-  position: absolute; left: 0; top: 0; height: 0; width: var(--weg);
+.fahnen-stiel { display: none; }
+.strecken-fahne.abgesetzt > .fahnen-stiel {
+  display: block;
+  position: absolute; left: 0; top: 0; height: 0; width: var(--laenge, 0px);
   border-top: calc(1.4px * var(--karten-schrift, 1)) solid var(--farbe, #333);
   transform-origin: 0 0; transform: rotate(var(--winkel, 0deg));
   box-shadow: 0 0 0 calc(1px * var(--karten-schrift, 1)) rgba(255,255,255,.8);

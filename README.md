@@ -22,9 +22,10 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 **Strecken planen**
 - Beliebig viele benannte Strecken, jede mit eigener Farbe
 - Teillängen an jedem Abschnitt und Name samt Gesamtlänge an der Strecke – dauerhaft sichtbar
-- Das Schild mit Name und Länge lässt sich senkrecht von der Trasse abrücken, ein Pfeil zeigt
-  zurück auf sie – auf eng geführten Trassen deckte es sonst den Verlauf zu (Kartenoptionen
-  und Druckdialog der Lagekarte)
+- Das Schild mit Name und Länge lässt sich von der Trasse abrücken: es sucht sich dann einen
+  freien Platz neben dem Verlauf, weicht den Nachbartrassen und den übrigen Schildern aus und
+  zeigt mit einem Pfeil zurück auf seine eigene Trasse (Kartenoptionen und Druckdialog der
+  Lagekarte)
 - Punktarten: Anfangspunkt, Trassenpunkt, Muffe, Verteiler, Querung, Mast, Kabelreserve, Endpunkt
 - Die Bezeichnung eines Punktes steht als Schild unter seiner Marke – auf der Karte, im
   Bauauftrag und auf der Lagekarte; abschaltbar über die Kartenoptionen und im Druckdialog
