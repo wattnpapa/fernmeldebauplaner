@@ -10,7 +10,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 11;
+export const SCHEMA = 12;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -109,7 +109,11 @@ export function neuesProjekt(name = 'Neue Planung') {
     ansicht: { lat: 51.1657, lng: 10.4515, zoom: 6, basemap: 'topplus' },
     optionen: {
       teillaengen: true, gesamtlaenge: true, punktnummern: true, punktnamen: true, gitter: false,
-      bilder: true, koordformat: 'mgrs', symbolgroesse: 1
+      bilder: true, koordformat: 'mgrs', symbolgroesse: 1,
+      /* Das Streckenschild steht von Haus aus an der Trasse: abgerückt
+         braucht es Platz, den eine Karte voller Strecken nicht überall hat.
+         Wer eine eng geführte Trasse plant, rückt es ab (0, 1 oder 2). */
+      beschriftungsabstand: 0
     },
     einsatzabschnitte: [],
     zeichengruppen: [],

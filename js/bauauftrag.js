@@ -130,6 +130,9 @@ const STANDARD_LAGE = {
   freiBreite: 900, freiHoehe: 600,
   strecken: true, zeichen: true, flaechen: true, relais: true, beschriftung: true, gitter: true,
   punktnummern: false, punktnamen: false, punktzeichen: true,
+  /* Das Schild steht auf dem Blatt an der Trasse, bis es jemand abrückt –
+     abgerückt braucht es Platz, den eine volle Lage nicht überall hat. */
+  beschriftungsabstand: '0',
   zoomVersatz: 0, strichstaerke: 1,
   /* Die gerechnete Ausbreitungsfläche ist auf dem Blatt von vornherein AUS.
      Sie ist kein Planungsinhalt, sondern ein Befund über nacktem Gelände, und
@@ -418,6 +421,12 @@ function oeffneDruckansicht(auftrag) {
              in einem Schild, und wer die Namen loswerden will, will kein
              Schild mit einer nackten Zahl darin behalten. */
           haken('Streckenbeschriftung', 'beschriftung', opt, neuAufbau, () => !opt.strecken),
+          /* Auf eng geführten Trassen deckte das Schild bisher den Verlauf zu,
+             den der Trupp auf dem Blatt sucht. Abgerückt steht es daneben und
+             ein Pfeil zeigt zurück auf seine Trasse. */
+          auswahl('Schild abgerückt', 'beschriftungsabstand',
+            [['0', 'an der Strecke'], ['1', 'abgerückt'], ['2', 'weit abgerückt']],
+            opt, neuAufbau, () => !opt.strecken || !opt.beschriftung),
           haken('Koordinatengitter', 'gitter', opt, neuAufbau),
           haken('Trassenpunkte', 'punktnummern', opt, neuAufbau, () => !opt.strecken),
           /* Die Bezeichnung hängt an der Punktmarke: ohne Trassenpunkte gibt es
@@ -565,17 +574,28 @@ function gruppe(titel, teile) {
   return el;
 }
 
-function auswahl(titel, schluessel, werte, opt, aendern) {
+function auswahl(titel, schluessel, werte, opt, aendern, sperre = null) {
   const el = document.createElement('label');
   el.className = 'ds-feld';
   el.innerHTML = `<span>${titel}</span>`;
   const sel = document.createElement('select');
   werte.forEach(([w, t]) => {
     const o = document.createElement('option');
-    o.value = w; o.textContent = t; o.selected = opt[schluessel] === w;
+    o.value = w; o.textContent = t; o.selected = String(opt[schluessel]) === w;
     sel.appendChild(o);
   });
   sel.onchange = () => { opt[schluessel] = sel.value; aendern(); };
+  /* Wie beim Haken: die Sperre kommt als Funktion, weil die Leiste nur einmal
+     gebaut wird. Der gewählte Wert bleibt dabei stehen und gilt wieder, sobald
+     der Oberhaken zurückkommt. */
+  if (sperre) {
+    el.aktualisieren = () => {
+      const gesperrt = !!sperre();
+      el.classList.toggle('gesperrt', gesperrt);
+      sel.disabled = gesperrt;
+    };
+    el.aktualisieren();
+  }
   el.appendChild(sel);
   return el;
 }
@@ -1272,7 +1292,11 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
   /* Teillängen und Punktnummern aller Strecken übereinander wären auf einem
      Blatt nicht mehr zu lesen – auf dem Deckblatt zählt, welche Strecke wo
      liegt und wie lang sie ist. */
-  sl.zeichne({ teillaengen: false, gesamtlaenge: true, punktnummern: false });
+  sl.zeichne({ teillaengen: false, gesamtlaenge: true, punktnummern: false,
+    /* Die Deckblattkarte hat keinen eigenen Schalter dafür: sie zeigt jede
+       Strecke der Sammlung mit Namen und Länge, und wie weit die Schilder
+       dabei abrücken, ist dieselbe Entscheidung wie auf der Arbeitskarte. */
+    beschriftungsabstand: p.optionen.beschriftungsabstand });
 
   if (opt.zeichen) {
     const zl = new ZeichenLayer(karte, {
@@ -1323,7 +1347,8 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null) {
     sl.zeichne({
       ...p.optionen, teillaengen: false,
       gesamtlaenge: !!opt.beschriftung, punktnummern: !!opt.punktnummern,
-      punktnamen: !!opt.punktnamen
+      punktnamen: !!opt.punktnamen,
+      beschriftungsabstand: opt.beschriftungsabstand
     });
   }
 

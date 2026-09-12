@@ -398,6 +398,40 @@ export { kumuliert };
 
 const mitte = (a, b) => L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2);
 
+/* Wie weit das Streckenschild von der Trasse abrückt, in Bildschirmpunkten.
+   Gelesen wird am Bauplatz der Verlauf, nicht das Schild: auf eng geführten
+   Trassen lag es bisher auf der Linie und deckte den halben Bogen zu. Die
+   Stufen sind grob gehalten, weil das Schild im Druck mitwächst – eine feine
+   Abstufung wäre auf A1 nicht mehr zu unterscheiden. */
+const SCHILD_ABSTAND = [0, 34, 70];
+
+const schildAbstand = o => SCHILD_ABSTAND[Number(o.beschriftungsabstand) || 0] || 0;
+
+/**
+ * Richtung, in die das abgerückte Streckenschild ausschert: senkrecht zum
+ * Abschnitt a–b, damit es neben der Linie steht und nicht auf ihr.
+ *
+ * Gerechnet wird in Bildschirmrichtung – Mercator streckt die Breite um
+ * 1/cos φ, ein Lot aus rohen Gradabständen stünde nördlich von 50° sichtbar
+ * schief –, aber ohne die Karte zu fragen: der Winkel hängt nicht von der
+ * Zoomstufe ab, und das Schild entsteht auch schon, bevor der Ausschnitt der
+ * Druckkarte steht.
+ */
+function schildRichtung(a, b) {
+  const dx = b.lng - a.lng;
+  const dy = -(b.lat - a.lat) / Math.max(0.05, Math.cos((a.lat + b.lat) / 2 * Math.PI / 180));
+  const laenge = Math.hypot(dx, dy);
+  if (!laenge) return { x: 0, y: -1 };
+  let x = -dy / laenge, y = dx / laenge;
+  /* Von den beiden Loten das nach oben zeigende: dort wird die Beschriftung
+     einer Linie gesucht. Läuft die Trasse selbst senkrecht, liegen beide Lote
+     waagerecht – dann fällt die Wahl nach rechts. Fest gewählt und nicht nach
+     freiem Platz: das Schild soll beim Neuzeichnen stehen bleiben und nicht
+     von einer Seite der Trasse auf die andere springen. */
+  if (Math.abs(y) < 0.2 ? x < 0 : y > 0) { x = -x; y = -y; }
+  return { x, y };
+}
+
 /* Was aus der Trassenlänge den Kabelbedarf macht – auf Kartenschild und
    Kurzhinweis in der Reihenfolge, in der gerechnet wird: erst der Zuschlag auf
    die Trasse, dann die Reserven obendrauf. Stünde dort weiter nur der
@@ -743,16 +777,37 @@ export class StreckenLayer {
     // Streckenname mit Gesamtlänge
     if (o.gesamtlaenge && pfad.length >= 1 && !nebensache) {
       const k = kennzahlen(s);
-      const anker = s.punkte[Math.floor((s.punkte.length - 1) / 2)];
       const versatz = s.punkte.length >= 2 ? '' : ' allein';
+      /* Abgerückt wird nur, wo es eine Trasse gibt, an der entlang gerückt
+         werden kann: der einzelne Punkt hat keine Richtung, sein Schild bleibt
+         über ihm stehen. */
+      const abstand = s.punkte.length >= 2 ? schildAbstand(o) : 0;
+      /* Das abgerückte Schild hängt an der Mitte der Trasse und nicht mehr am
+         mittleren Trassenpunkt: die Pfeilspitze soll auf der Linie sitzen und
+         nicht unter einer Punktmarke verschwinden. */
+      const kum = abstand ? kumuliert(s.punkte) : null;
+      const mittig = kum ? punktBeiLaenge(s.punkte, kum[kum.length - 1] / 2) : null;
+      const anker = mittig || s.punkte[Math.floor((s.punkte.length - 1) / 2)];
+      const seg = mittig ? Math.min(mittig.index, s.punkte.length - 2) : 0;
+      const r = mittig ? schildRichtung(s.punkte[seg], s.punkte[seg + 1]) : null;
+      /* Der Leitstrich trägt seinen Winkel selbst, das Schild die beiden
+         Richtungsanteile: gedreht werden darf nur der Strich – ein gedrehtes
+         Schild wäre auf dem Blatt nicht mehr waagerecht zu lesen. */
+      const fahne = r
+        ? `;--vx:${r.x.toFixed(3)};--vy:${r.y.toFixed(3)};--fahne:${abstand}px;` +
+          `--winkel:${(Math.atan2(r.y, r.x) * 180 / Math.PI).toFixed(1)}deg`
+        : '';
       L.marker([anker.lat, anker.lng], {
         pane: 'fbp-labels', interactive: false,
         icon: L.divIcon({
           className: 'fbp-label',
-          html: `<span class="strecken-mass${versatz}${gewaehlt ? ' aktiv' : ''}" style="--farbe:${st.farbe}">
-                   <b>${escapeHtml(s.name)}</b>
-                   <span class="wert">${formatLaenge(k.trasse)}</span>
-                   ${k.zuschlag || k.reserve ? `<span class="zus">${bedarfsHerkunft(k)} → ${formatLaenge(k.bedarf)}</span>` : ''}
+          html: `<span class="strecken-fahne" style="--farbe:${st.farbe}${fahne}">
+                   ${r ? '<i class="fahnen-stiel"></i>' : ''}
+                   <span class="strecken-mass${versatz}${r ? ' abgesetzt' : ''}${gewaehlt ? ' aktiv' : ''}">
+                     <b>${escapeHtml(s.name)}</b>
+                     <span class="wert">${formatLaenge(k.trasse)}</span>
+                     ${k.zuschlag || k.reserve ? `<span class="zus">${bedarfsHerkunft(k)} → ${formatLaenge(k.bedarf)}</span>` : ''}
+                   </span>
                  </span>`,
           iconSize: null
         })

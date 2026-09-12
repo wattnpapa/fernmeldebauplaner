@@ -508,6 +508,12 @@ for (const [sel, schluessel] of optionsFelder) {
   cb.checked = !!store.projekt.optionen[schluessel];
   cb.onchange = () => store.aendern(p => { p.optionen[schluessel] = cb.checked; }, 'option');
 }
+const schildAbstand = $('#opt-beschriftungsabstand');
+schildAbstand.value = String(store.projekt.optionen.beschriftungsabstand || 0);
+schildAbstand.onchange = () => store.aendern(p => {
+  p.optionen.beschriftungsabstand = Number(schildAbstand.value) || 0;
+}, 'option');
+
 const groesse = $('#opt-symbolgroesse');
 groesse.value = store.projekt.optionen.symbolgroesse || 1;
 groesse.oninput = () => store.aendern(p => { p.optionen.symbolgroesse = Number(groesse.value); }, 'option');
@@ -1190,6 +1196,7 @@ store.on((p, grund) => {
     setzeBasiskarte(karte, p.ansicht.basemap);
     optionsFelder.forEach(([sel, k]) => { $(sel).checked = !!p.optionen[k]; });
     groesse.value = p.optionen.symbolgroesse || 1;
+    schildAbstand.value = String(p.optionen.beschriftungsabstand || 0);
     if (grund === 'geladen' || grund === 'import') {
       karte.setView([p.ansicht.lat, p.ansicht.lng], p.ansicht.zoom);
       const alle = p.strecken.flatMap(s => s.punkte.map(x => [x.lat, x.lng]))

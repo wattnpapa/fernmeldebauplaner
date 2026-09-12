@@ -1163,6 +1163,40 @@ body.modus-aktiv .kartenoptionen { display: none; }
   border-radius: 5px; padding: 3px 8px; box-shadow: 0 2px 8px rgba(0,0,0,.22);
   transform: translate(-50%, -168%) !important;
 }
+
+/* Das abgerückte Streckenschild. Die Hülle ist ein Punkt ohne Ausdehnung auf
+   dem Ankerpunkt der Trasse; Schild und Leitstrich hängen absolut daran, damit
+   beide von derselben Stelle aus rechnen. Der Weg zählt in Bildschirmpunkten
+   der Karte und wird mit --karten-schrift mitskaliert: im doppelt gerenderten
+   Druckbild wächst das Schild, ein fester Abstand ließe es dort wieder auf der
+   Trasse landen. */
+.strecken-fahne {
+  position: relative; width: 0; height: 0;
+  --weg: calc(var(--fahne, 0px) * var(--karten-schrift, 1));
+}
+/* Die Hälfte der eigenen Kante kommt zum Weg hinzu: gemessen wird bis zur
+   Schildkante, nicht bis zu seiner Mitte – sonst reichte der Leitstrich bei
+   einem breiten Schild nur bis unter dessen Schrift. */
+.strecken-fahne > .strecken-mass.abgesetzt {
+  position: absolute; left: 0; top: 0;
+  transform: translate(calc(-50% + var(--vx, 0) * 50% + var(--vx, 0) * var(--weg)),
+                       calc(-50% + var(--vy, -1) * 50% + var(--vy, -1) * var(--weg))) !important;
+}
+/* Leitstrich mit Pfeilspitze auf der Trasse. Gedreht wird der Strich, nicht das
+   Schild. Der weiße Saum ist ein Schatten und kein Filter – gefilterte Bereiche
+   lässt Firefox beim Drucken weg (siehe map.js). */
+.fahnen-stiel {
+  position: absolute; left: 0; top: 0; height: 0; width: var(--weg);
+  border-top: calc(1.4px * var(--karten-schrift, 1)) solid var(--farbe, #333);
+  transform-origin: 0 0; transform: rotate(var(--winkel, 0deg));
+  box-shadow: 0 0 0 calc(1px * var(--karten-schrift, 1)) rgba(255,255,255,.8);
+}
+.fahnen-stiel::before {
+  content: ''; position: absolute; left: 0; top: 0;
+  border: calc(3.2px * var(--karten-schrift, 1)) solid transparent;
+  border-right-color: var(--farbe, #333);
+  transform: translate(-50%, -50%);
+}
 .strecken-mass b { font-size: 12px; color: #101820; }
 .strecken-mass .wert { font-size: 12.5px; font-weight: 700; color: var(--farbe); font-variant-numeric: tabular-nums; }
 .strecken-mass .zus { font-size: 11px; color: #59636f; font-variant-numeric: tabular-nums; }

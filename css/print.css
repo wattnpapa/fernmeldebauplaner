@@ -54,6 +54,10 @@ body.druckansicht { overflow: hidden; }
 /* Abhängiger Haken – bleibt sichtbar, damit die Leiste nicht springt, sagt
    aber durch Blässe, dass er erst mit seinem Oberhaken wieder greift. */
 .ds-haken.gesperrt { cursor: default; opacity: .45; }
+/* Dasselbe für ein abhängiges Auswahlfeld – der Schildabstand gilt erst, wenn
+   die Streckenbeschriftung überhaupt auf dem Blatt steht. */
+.ds-feld.gesperrt { opacity: .45; }
+.ds-feld.gesperrt select { cursor: not-allowed; }
 .ds-zoomtasten { display: flex; align-items: center; gap: 4px; }
 
 /* Freies Blattmaß: zwei Zahlen mit dem Malzeichen dazwischen, wie ein
