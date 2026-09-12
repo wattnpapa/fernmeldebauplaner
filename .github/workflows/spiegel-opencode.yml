@@ -36,6 +36,15 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          # Ein über die Weboberfläche eingefügtes Secret verliert leicht die
+          # Zeilenumbrüche des PEM-Blocks. Ohne diese Prüfung meldet erst der
+          # Push „Permission denied" und weist auf das Zugriffsrecht statt auf
+          # den verstümmelten Schlüssel.
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null || {
+            echo "::error::OPENCODE_SSH_KEY ist kein lesbarer privater Schlüssel." \
+                 "Secret aus der Datei setzen: gh secret set OPENCODE_SSH_KEY < ~/.ssh/opencode-spiegel"
+            exit 1
+          }
           # Hostschlüssel fest eingetragen statt per ssh-keyscan geholt: ein
           # Scan im Lauf würde jeden vorgesetzten Schlüssel klaglos annehmen
           # und damit genau die Prüfung aushebeln, die er vortäuscht.
