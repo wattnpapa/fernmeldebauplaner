@@ -200,6 +200,12 @@ export function streckeSichtbar(p, s) {
   return s.sichtbar !== false && abschnittZeigt(p, s);
 }
 
+/* Eine Auswahl mehrerer Abschnitte, wie sie der Ausdruck der Lagekarte trifft.
+   `null` heißt: keine Einschränkung. Der Eintrag `null` in der Menge meint das
+   gemeinsame Lagebild, also alles ohne Abschnitt – es ist dort eine Wahl für
+   sich und nicht an einen Abschnitt gebunden. */
+export const abschnittGewaehlt = (auswahl, x) => !auswahl || auswahl.has(x.abschnitt || null);
+
 /** Zeigt die Gruppe dieses Zeichens? Ohne Gruppe: immer. */
 export function zeichengruppeZeigt(p, z) {
   const g = zeichengruppeById(p, z.gruppe);

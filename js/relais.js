@@ -1,6 +1,6 @@
 // relais.js – Relaisstellen des BOS-Sprechfunks als Kartenmarke und Fläche
 
-import { store, neueRelaisstelle, relaisstelleSichtbar } from './state.js';
+import { store, neueRelaisstelle, relaisstelleSichtbar, abschnittGewaehlt } from './state.js';
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
 import { zeichneAusbreitung } from './map.js';
@@ -12,10 +12,14 @@ import { bosBandById, gegenstellenhoehe, gegenstelleById } from './bosfunk.js';
  * Steht wie bei den taktischen Zeichen außerhalb der Klasse, weil der Ausschnitt
  * der Lagekarte dieselbe Auswahl braucht, ohne sie zu zeichnen.
  */
-export function gezeichneteRelaisstellen(p, { nurAbschnitt, abschnittSchaltet = true } = {}) {
+export function gezeichneteRelaisstellen(p,
+  { nurAbschnitt, nurAbschnitte, abschnittSchaltet = true } = {}) {
   return (p.relaisstellen || []).filter(r => {
     if (r.sichtbar === false) return false;
-    const angefordert = !abschnittSchaltet && !!nurAbschnitt && r.abschnitt === nurAbschnitt;
+    if (!abschnittGewaehlt(nurAbschnitte, r)) return false;
+    /* Im Ausdruck gilt die Auswahl, nicht das Auge des Abschnitts – wie bei
+       Zeichen und Flächen; das eigene Auge der Stelle ist oben schon geprüft. */
+    const angefordert = !abschnittSchaltet;
     if (!angefordert && !relaisstelleSichtbar(p, r)) return false;
     return !(nurAbschnitt && r.abschnitt && r.abschnitt !== nurAbschnitt);
   });
@@ -138,6 +142,9 @@ export class RelaisLayer {
     this.aufZiel = opt.aufZiel || (() => {});
     this.sw = !!opt.sw;
     this.nurAbschnitt = opt.nurAbschnitt;
+    /* Wie bei Zeichen und Flächen: der Ausdruck der Lagekarte wählt mehrere
+       Abschnitte zugleich, `undefined` heißt alle. */
+    this.nurAbschnitte = opt.nurAbschnitte;
     this.abschnittSchaltet = opt.abschnittSchaltet !== false;
     /* Welche Flächen gerade liegen. Der Zustand gehört an die Ebene und nicht
        in die Seitenleiste: die wird bei jeder Änderung neu gebaut, die Fläche

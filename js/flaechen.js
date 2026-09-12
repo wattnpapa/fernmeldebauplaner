@@ -1,6 +1,6 @@
 // flaechen.js – Flächen mit festen Maßen auf der Karte: Fahrzeuge, Zelte, Aufbauplätze
 
-import { store, neueFlaeche, flaecheSichtbar } from './state.js';
+import { store, neueFlaeche, flaecheSichtbar, abschnittGewaehlt } from './state.js';
 import { escapeHtml } from './strecken.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
 
@@ -156,6 +156,9 @@ export class FlaechenLayer {
        Flächen des Abschnitts und die nicht zugeteilten; im Druck entscheidet
        die Auswahl und nicht das Auge des Abschnitts auf der Arbeitskarte. */
     this.nurAbschnitt = opt.nurAbschnitt;
+    /* Mehrere Abschnitte zugleich wählt der Ausdruck der Lagekarte; `undefined`
+       heißt auch hier: alle. */
+    this.nurAbschnitte = opt.nurAbschnitte;
     this.abschnittSchaltet = opt.abschnittSchaltet !== false;
     this._marker = new Map();
     /* Die Größe hängt am Zoom: nach jedem Zoomschritt werden die Figuren neu
@@ -229,7 +232,10 @@ export class FlaechenLayer {
     const p = store.projekt;
     return (p.flaechen || []).filter(f => {
       if (f.sichtbar === false) return false;
-      const angefordert = !this.abschnittSchaltet && !!this.nurAbschnitt && f.abschnitt === this.nurAbschnitt;
+      if (!abschnittGewaehlt(this.nurAbschnitte, f)) return false;
+      /* Im Ausdruck gilt die Auswahl, nicht das Auge des Abschnitts – wie bei
+         den Zeichen; das eigene Auge der Fläche ist oben schon geprüft. */
+      const angefordert = !this.abschnittSchaltet;
       if (!angefordert && !flaecheSichtbar(p, f)) return false;
       return !(this.nurAbschnitt && f.abschnitt && f.abschnitt !== this.nurAbschnitt);
     });

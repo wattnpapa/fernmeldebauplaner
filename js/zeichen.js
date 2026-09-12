@@ -1,6 +1,6 @@
 // zeichen.js – taktische Zeichen als Kartenmarker
 
-import { store, neuesZeichen, zeichenSichtbar, zeichengruppeZeigt } from './state.js';
+import { store, neuesZeichen, zeichenSichtbar, zeichengruppeZeigt, abschnittGewaehlt } from './state.js';
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
 
@@ -10,14 +10,20 @@ import { escapeHtml } from './strecken.js';
  * zeichnen: der Ausschnitt der Lagekarte muss die Zeichen einschließen, die
  * darauf erscheinen – und das ist dieselbe Auswahl, nicht eine ähnliche.
  */
-export function gezeichneteZeichen(p, { nurAbschnitt, abschnittSchaltet = true } = {}) {
+export function gezeichneteZeichen(p, { nurAbschnitt, nurAbschnitte, abschnittSchaltet = true } = {}) {
   return p.zeichen.filter(z => {
     if (z.sichtbar === false) return false;
+    if (!abschnittGewaehlt(nurAbschnitte, z)) return false;
     /* Die Zeichengruppe ist ein Filter des Lagebildes und gilt überall –
        auch auf dem Blatt eines eigens angeforderten Abschnitts. Wer die
        Gefahrenstellen ausblendet, will sie nicht im Druck wiederfinden. */
     if (!zeichengruppeZeigt(p, z)) return false;
-    const angefordert = !abschnittSchaltet && !!nurAbschnitt && z.abschnitt === nurAbschnitt;
+    /* Im Ausdruck entscheidet die Auswahl und nicht das Auge des Abschnitts
+       auf der Arbeitskarte – genau wie bei den Strecken, die dort nie danach
+       gefragt haben. Sonst fehlten auf einem Blatt die Zeichen eines
+       Abschnitts, dessen Trassen darauf stehen. Das eigene Auge des Zeichens
+       und das seiner Gruppe gelten weiter, die sind oben schon geprüft. */
+    const angefordert = !abschnittSchaltet;
     if (!angefordert && !zeichenSichtbar(p, z)) return false;
     return !(nurAbschnitt && z.abschnitt && z.abschnitt !== nurAbschnitt);
   });
@@ -38,6 +44,9 @@ export class ZeichenLayer {
        und die nicht zugeteilten: die gehören zum gemeinsamen Lagebild und
        fehlen sonst auf jedem Ausschnitt. `undefined` heißt: alle. */
     this.nurAbschnitt = opt.nurAbschnitt;
+    /* Der Ausdruck der Lagekarte wählt mehrere Abschnitte zugleich; `undefined`
+       heißt auch hier: alle. */
+    this.nurAbschnitte = opt.nurAbschnitte;
     /* Im Druck entscheidet die Auswahl, nicht der Augenschalter des Abschnitts
        auf der Arbeitskarte – aber nur für den gedruckten Abschnitt selbst,
        genau wie bei den Strecken. */

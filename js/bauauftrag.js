@@ -2,7 +2,9 @@
 //                 Sammelauftrag (A4/A3) und die Lagekarte der Führungsstelle
 //                 (bis A0 und in freiem Maß)
 
-import { store, punktartById, kabelById, VERLEGEARTEN, abschnittById, streckenIm } from './state.js';
+import {
+  store, punktartById, kabelById, VERLEGEARTEN, abschnittById, abschnittGewaehlt, streckenIm
+} from './state.js';
 import {
   StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen
 } from './strecken.js';
@@ -139,11 +141,11 @@ const STANDARD_LAGE = {
      Kennung eines Einsatzabschnitts, zieht allein dessen Inhalt den Ausschnitt
      auf – gedruckt wird trotzdem das ganze Lagebild. */
   ausschnittAbschnitt: '',
-  /* Dazu kann das Blatt die anderen Abschnitte auch ganz weglassen. Das
-     gemeinsame Lagebild – Führungsstelle, Bereitstellungsraum, alles ohne
-     Abschnitt – bleibt dabei stehen: die Abschnittsleitung braucht es, und es
-     gehört ihr so gut wie jeder anderen. */
-  nurAbschnitt: false,
+  /* Welche Einsatzabschnitte überhaupt auf das Blatt kommen, steht als Liste
+     der ABGEWÄHLTEN darin – `ohne` meint dabei alles, was keinem Abschnitt
+     zugeteilt ist. Andersherum, als Liste der gewählten, fehlte ein später
+     angelegter Abschnitt stillschweigend auf jedem Ausdruck. */
+  abschnitteAus: [],
   /* Jeder Streifen um die Karte lässt sich einzeln abräumen – alle fünf aus
      ergibt das nackte Kartenblatt, auf dem nur noch die Lage steht. */
   kopf: true, stammdaten: true, legende: true, kennzahlen: true, fuss: true
@@ -261,6 +263,7 @@ export function oeffneLagekarte(aid) {
 function lageZeichen(auftrag) {
   return gezeichneteZeichen(store.projekt, {
     nurAbschnitt: auftrag.abschnitt ? auftrag.abschnitt.id : undefined,
+    nurAbschnitte: auftrag.auswahl,
     abschnittSchaltet: false
   });
 }
@@ -279,13 +282,15 @@ function lageFlaechen(auftrag) {
   const p = store.projekt;
   const aid = auftrag.abschnitt ? auftrag.abschnitt.id : undefined;
   return (p.flaechen || []).filter(f =>
-    f.sichtbar !== false && !(aid && f.abschnitt && f.abschnitt !== aid));
+    f.sichtbar !== false && abschnittGewaehlt(auftrag.auswahl, f) &&
+    !(aid && f.abschnitt && f.abschnitt !== aid));
 }
 
 /** Und die Relaisstellen – dieselbe Auswahl, die auch die Kartenebene zeichnet. */
 function lageRelais(auftrag) {
   return gezeichneteRelaisstellen(store.projekt, {
     nurAbschnitt: auftrag && auftrag.abschnitt ? auftrag.abschnitt.id : undefined,
+    nurAbschnitte: auftrag ? auftrag.auswahl : undefined,
     abschnittSchaltet: false
   });
 }
@@ -336,6 +341,15 @@ function oeffneDruckansicht(auftrag) {
      würde den Ausschnitt auf nichts einengen. */
   if (lage && opt.ausschnittAbschnitt && !abschnittById(store.projekt, opt.ausschnittAbschnitt)) {
     opt.ausschnittAbschnitt = '';
+  }
+  /* Aus dem früheren Haken „Nur dieser Abschnitt“ wird die Abwahl aller
+     anderen – wer ihn gesetzt hatte, findet sein Blatt unverändert vor. */
+  if (lage && opt.nurAbschnitt) {
+    if (opt.ausschnittAbschnitt) {
+      opt.abschnitteAus = (store.projekt.einsatzabschnitte || [])
+        .map(a => a.id).filter(id => id !== opt.ausschnittAbschnitt);
+    }
+    delete opt.nurAbschnitt;
   }
 
   const wurzel = document.createElement('div');
@@ -415,13 +429,6 @@ function oeffneDruckansicht(auftrag) {
              dort rückt es auf den Punkt und zeigt die Anlage. */
           ...(hatPunktzeichen(auftrag.strecken)
             ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau, () => !opt.strecken)] : []),
-          ...(ausschnittWaehlbar(auftrag)
-            ? [ausschnittFeld(auftrag, opt, neuAufbau),
-               /* Ohne gewählten Abschnitt gibt es nichts, worauf sich „nur
-                  dieser“ beziehen könnte – der Haken bleibt dann gesperrt. */
-               haken('Nur dieser Abschnitt', 'nurAbschnitt', opt, neuAufbau,
-                 () => !opt.ausschnittAbschnitt)]
-            : []),
           zoomFeld(opt, neuAufbau),
           strichFeld(opt, neuAufbau)
         ])
@@ -448,6 +455,18 @@ function oeffneDruckansicht(auftrag) {
           zoomFeld(opt, neuAufbau),
           strichFeld(opt, neuAufbau)
         ]),
+    /* Die Einsatzabschnitte stehen für sich und nicht bei den Karteninhalten:
+       sie sagen nicht, wie das Blatt aussieht, sondern wessen Lage darauf
+       steht – und bei einer Planung mit fünf Abschnitten wäre die Gruppe
+       „Karte“ sonst nicht mehr zu überblicken. */
+    ...(ausschnittWaehlbar(auftrag) ? [gruppe('Einsatzabschnitte', [
+      ...(store.projekt.einsatzabschnitte || [])
+        .map(a => abschnittHaken(a.name, a.id, auftrag, opt, neuAufbau)),
+      /* Das gemeinsame Lagebild – Führungsstelle, Bereitstellungsraum – ist
+         keinem Abschnitt zugeteilt und deshalb eine Wahl für sich. */
+      abschnittHaken('Ohne Abschnitt', OHNE_ABSCHNITT, auftrag, opt, neuAufbau),
+      ausschnittFeld(auftrag, opt, neuAufbau)
+    ])] : []),
     lage
       /* In der Reihenfolge, in der die Streifen auf dem Blatt liegen –
          von der Titelzeile oben bis zur Fußzeile unten. */
@@ -505,7 +524,7 @@ function oeffneDruckansicht(auftrag) {
 
   function neuAufbau() {
     speicherOptionen(profil, opt);
-    felder.querySelectorAll('.ds-haken').forEach(h => h.aktualisieren && h.aktualisieren());
+    felder.querySelectorAll('.ds-feld').forEach(h => h.aktualisieren && h.aktualisieren());
     /* „Nur dieser Abschnitt“ macht aus dem Blatt der Planung das Blatt eines
        Abschnitts – die Leiste nennt danach denselben Gegenstand wie das Blatt. */
     if (lage) wurzel.querySelector('.ds-titel').innerHTML = steuerTitelHTML(lagekarteBlatt(auftrag, opt));
@@ -644,25 +663,53 @@ function gewaehlterAbschnitt(auftrag, opt) {
   return ausschnittWaehlbar(auftrag) ? abschnittById(store.projekt, opt.ausschnittAbschnitt) : null;
 }
 
+/** Sinnbild für „ohne Einsatzabschnitt“ in der gespeicherten Abwahl. */
+const OHNE_ABSCHNITT = 'ohne';
+
+/**
+ * Welche Einsatzabschnitte auf dem Blatt stehen – als Menge ihrer Kennungen,
+ * `null` darin für das gemeinsame Lagebild ohne Abschnitt. `null` als Ergebnis
+ * heißt: alle, dann greift überhaupt kein Filter und die Ebenen zeichnen wie
+ * eh und je.
+ */
+function abschnittAuswahl(auftrag, opt) {
+  if (!ausschnittWaehlbar(auftrag)) return null;
+  const aus = new Set(opt.abschnitteAus || []);
+  if (!aus.size) return null;
+  const alle = [...(store.projekt.einsatzabschnitte || []).map(a => a.id), null];
+  const drauf = alle.filter(k => !aus.has(k === null ? OHNE_ABSCHNITT : k));
+  return drauf.length === alle.length ? null : new Set(drauf);
+}
+
+/** Die Namen der gewählten Abschnitte für die Kopfdaten */
+function auswahlText(p, auswahl) {
+  const namen = (p.einsatzabschnitte || []).filter(a => auswahl && auswahl.has(a.id)).map(a => a.name);
+  if (auswahl && auswahl.has(null)) namen.push('ohne Abschnitt');
+  return namen.join(', ');
+}
+
 /**
  * Die Auswahl, die das Lageblatt zeigt.
  *
- * Mit „Nur dieser Abschnitt“ wird aus dem Blatt der ganzen Planung das Blatt
- * eines Abschnitts – und zwar genau der Auftrag, den „Lagekarte“ am
- * Einsatzabschnitt erzeugt. Deshalb stimmen Titel, Kopfdaten,
- * Zeichenerklärung und Kennzahlen ohne weiteres Zutun mit dem überein, was auf
- * der Karte steht: sie hängen alle an diesem einen Auftrag.
+ * Sind Abschnitte abgewählt, fällt alles weg, was zu ihnen gehört: Strecken,
+ * Zeichen, Flächen und Relaisstellen. Bleibt genau ein Abschnitt übrig, ist
+ * das Blatt seine Lagekarte – es bekommt denselben Auftrag, den „Lagekarte“
+ * am Einsatzabschnitt erzeugt, und damit stimmen Titel, Kopfdaten,
+ * Zeichenerklärung und Kennzahlen ohne weiteres Zutun mit der Karte überein.
  *
- * Was ohne Abschnitt geplant ist, bleibt dabei auf dem Blatt – das ist die
- * Regel des Abschnittsblattes überall sonst in der Anwendung, und das
- * gemeinsame Lagebild gehört der Abschnittsleitung so gut wie jeder anderen.
+ * Das gemeinsame Lagebild ohne Abschnitt ist eine Wahl für sich: es gehört
+ * jedem Abschnitt und bleibt deshalb stehen, bis es eigens abgewählt wird.
  */
 function lagekarteBlatt(auftrag, opt) {
-  const ea = gewaehlterAbschnitt(auftrag, opt);
-  if (!ea || !opt.nurAbschnitt) return auftrag;
+  const auswahl = abschnittAuswahl(auftrag, opt);
+  if (!auswahl) return auftrag;
+  const eigene = [...auswahl].filter(Boolean);
+  const einer = eigene.length === 1 ? abschnittById(store.projekt, eigene[0]) : null;
   return {
-    ...auftrag, abschnitt: ea, umfang: 'abschnitt',
-    strecken: streckenIm(store.projekt, ea.id).filter(st => st.punkte.length >= 2)
+    ...auftrag, auswahl,
+    strecken: auftrag.strecken.filter(st => auswahl.has(st.abschnitt || null)),
+    abschnitt: einer,
+    umfang: einer ? 'abschnitt' : (!eigene.length && auswahl.has(null)) ? 'ohne' : 'auswahl'
   };
 }
 
@@ -673,11 +720,35 @@ function steuerTitelHTML(auftrag) {
     (umfang ? ` <span class="ds-umfang">${escapeHtml(umfang)}</span>` : '');
 }
 
+/* Ein Abschnitt auf dem Blatt oder nicht. Gespeichert wird die Abwahl (siehe
+   `abschnitteAus`), angezeigt der gewohnte Haken: abgehakt heißt „steht
+   darauf“. */
+function abschnittHaken(titel, kennung, auftrag, opt, aendern) {
+  const el = document.createElement('label');
+  el.className = 'ds-feld ds-haken';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.onchange = () => {
+    const aus = new Set(opt.abschnitteAus || []);
+    if (cb.checked) aus.delete(kennung); else aus.add(kennung);
+    opt.abschnitteAus = [...aus];
+    const auswahl = abschnittAuswahl(auftrag, opt);
+    if (auswahl && !auswahl.size) {
+      hinweis('Ohne einen Abschnitt bleibt das Blatt leer.', 'warnung');
+    }
+    aendern();
+  };
+  el.append(cb, Object.assign(document.createElement('span'), { textContent: titel }));
+  el.aktualisieren = () => { cb.checked = !(opt.abschnitteAus || []).includes(kennung); };
+  el.aktualisieren();
+  return el;
+}
+
 function ausschnittFeld(auftrag, opt, aendern) {
   const el = document.createElement('label');
   el.className = 'ds-feld';
   el.title = 'Blattmitte und Maßstab richten sich allein nach dem Inhalt dieses ' +
-    'Einsatzabschnitts; gezeichnet wird weiter die ganze Lage.';
+    'Einsatzabschnitts; gezeichnet wird weiter alles, was auf dem Blatt steht.';
   el.innerHTML = '<span>Eingemittet auf</span>';
   const sel = document.createElement('select');
   const werte = [['', 'ganze Auswahl'],
@@ -698,6 +769,21 @@ function ausschnittFeld(auftrag, opt, aendern) {
     }
     aendern();
   };
+  /* Ein abgewählter Abschnitt steht nicht auf dem Blatt – auf ihn einzumitten
+     hieße, auf eine leere Stelle der Karte zu zeigen. Er scheidet deshalb aus
+     der Liste aus, und war er gewählt, gilt wieder die ganze Auswahl. */
+  el.aktualisieren = () => {
+    const auswahl = abschnittAuswahl(auftrag, opt);
+    [...sel.options].forEach(o => {
+      o.hidden = !!(o.value && auswahl && !auswahl.has(o.value));
+      o.disabled = o.hidden;
+    });
+    if (opt.ausschnittAbschnitt && auswahl && !auswahl.has(opt.ausschnittAbschnitt)) {
+      opt.ausschnittAbschnitt = '';
+    }
+    sel.value = opt.ausschnittAbschnitt || '';
+  };
+  el.aktualisieren();
   el.appendChild(sel);
   return el;
 }
@@ -1241,23 +1327,19 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null) {
     });
   }
 
+  const aid = auftrag.abschnitt ? auftrag.abschnitt.id : undefined;
   const zeichen = lageZeichen(auftrag);
   if (opt.zeichen) {
     const zl = new ZeichenLayer(karte, {
       interaktiv: false, sw, abschnittSchaltet: false,
-      nurAbschnitt: auftrag.abschnitt ? auftrag.abschnitt.id : undefined
+      nurAbschnitt: aid, nurAbschnitte: auftrag.auswahl
     });
     zl.zeichne(zeichenOptionen(p, mass));
   }
   const flaechen = lageFlaechen(auftrag);
-  if (opt.flaechen) {
-    flaechenEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined, opt);
-  }
+  if (opt.flaechen) flaechenEbene(karte, mass, sw, aid, opt, auftrag.auswahl);
   const relaisstellen = lageRelais(auftrag);
-  if (opt.relais) {
-    relaisEbene(karte, mass, sw, auftrag.abschnitt ? auftrag.abschnitt.id : undefined,
-      !!opt.relaisflaeche);
-  }
+  if (opt.relais) relaisEbene(karte, mass, sw, aid, !!opt.relaisflaeche, auftrag.auswahl);
 
   /* Der Ausschnitt umfasst alles, was zur Auswahl gehört – auch das, was
      gerade abgeschaltet ist. Sonst sprängen Maßstab und Mitte bei jedem Haken
@@ -1346,9 +1428,9 @@ function eigeneEcken(auftrag, opt, aid, teile = null) {
 /* Die Flächen erscheinen auf jeder Druckkarte nach derselben Abschnittsregel
    wie die Zeichen. Die Ebene hört selbst auf den Zoom – sie zeichnet nach dem
    fitBounds neu, ohne dass die Karte sie eigens anstoßen muss. */
-function flaechenEbene(karte, mass, sw, nurAbschnitt, opt) {
+function flaechenEbene(karte, mass, sw, nurAbschnitt, opt, nurAbschnitte) {
   const ebene = new FlaechenLayer(karte, {
-    interaktiv: false, sw, abschnittSchaltet: false, nurAbschnitt,
+    interaktiv: false, sw, abschnittSchaltet: false, nurAbschnitt, nurAbschnitte,
     /* Die Ebene bemisst mit diesem Faktor ausschließlich Striche – die
        gewählte Stärke geht deshalb hier gleich mit ein. */
     strichFaktor: strichFaktor(mass) * strichbreite(opt)
@@ -1365,9 +1447,9 @@ function flaechenEbene(karte, mass, sw, nurAbschnitt, opt) {
    Das Bild trägt seinen Alphakanal selbst und kommt ohne CSS-`filter` aus. Das
    ist kein Zufall, sondern die Bedingung, unter der Firefox den Seitenbereich
    überhaupt ausgibt (siehe `grauVariante` in map.js). */
-function relaisEbene(karte, mass, sw, nurAbschnitt, mitFlaeche) {
+function relaisEbene(karte, mass, sw, nurAbschnitt, mitFlaeche, nurAbschnitte) {
   const ebene = new RelaisLayer(karte, {
-    interaktiv: false, sw, abschnittSchaltet: false, nurAbschnitt
+    interaktiv: false, sw, abschnittSchaltet: false, nurAbschnitt, nurAbschnitte
   });
   if (mitFlaeche) {
     for (const r of gezeichneteRelaisstellen(store.projekt, ebene)) {
@@ -1598,7 +1680,7 @@ function sammelStammHTML(p, auftrag, opt = null) {
   /* Ist der Ausschnitt auf einen Abschnitt eingemittet, gehört das in die
      Kopfdaten: am Blatt hängt sonst nichts, woran sich die Stapel mehrerer
      Abschnitte derselben Planung auseinanderhalten ließen. */
-  const mitte = opt && ausschnittWaehlbar(auftrag)
+  const mitte = opt && auftrag.modus === 'lage' && !ea
     ? abschnittById(p, opt.ausschnittAbschnitt) : null;
   return stammFelderHTML([
     ['Einsatz / Übung', p.kopf.einsatz],
@@ -1606,8 +1688,13 @@ function sammelStammHTML(p, auftrag, opt = null) {
     ['Planung', p.name],
     ...(ea
       ? [['Einsatzabschnitt', ea.name], ['Leitung Einsatzabschnitt', ea.leiter]]
-      : [['Umfang', auftrag.umfang === 'ohne'
-          ? 'Strecken ohne Einsatzabschnitt' : 'alle Strecken der Planung']]),
+      /* Steht nur ein Teil der Abschnitte auf dem Blatt, gehören ihre Namen in
+         die Kopfdaten: „alle Strecken der Planung“ wäre dort schlicht
+         falsch, und der Leser hat nichts, woran er es merkt. */
+      : auftrag.umfang === 'auswahl'
+        ? [['Einsatzabschnitte', auswahlText(p, auftrag.auswahl)]]
+        : [['Umfang', auftrag.umfang === 'ohne'
+            ? 'Strecken ohne Einsatzabschnitt' : 'alle Strecken der Planung']]),
     ...(mitte ? [['Eingemittet auf', mitte.name]] : []),
     ['Erstellt von', p.kopf.ersteller]
   ]);
@@ -2538,7 +2625,8 @@ function drucken(auftrag, opt) {
      Ordner vier Dateien, die niemand unterscheidet. Zeigt das Blatt nur diesen
      einen Abschnitt, ist er schon der Titel und steht nicht zweimal da. */
   const blattauftrag = lagekarteBlatt(auftrag, opt);
-  const mitte = blattauftrag === auftrag ? gewaehlterAbschnitt(auftrag, opt) : null;
+  const eingemittet = gewaehlterAbschnitt(auftrag, opt);
+  const mitte = eingemittet && blattauftrag.abschnitt !== eingemittet ? eingemittet : null;
   document.title = [erzeugnis(auftrag),
     p.kopf.auftragNr, auftragTitel(blattauftrag), mitte ? mitte.name : '', p.kopf.datum]
     .filter(Boolean).join('_')

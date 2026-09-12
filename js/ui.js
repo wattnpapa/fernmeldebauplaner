@@ -3902,16 +3902,21 @@ export function hilfeDialog() {
            Zeichen und Flächen allein. Der Ausschnitt bleibt dabei unverändert:
            er umfasst immer die ganze Auswahl, gleich was gerade abgeschaltet
            ist, damit die Blätter einer Lage deckungsgleich übereinander liegen.
-           Gibt es Einsatzabschnitte, engt <b>Eingemittet auf</b> Blattmitte und
-           Maßstab auf einen von ihnen ein – gezeichnet wird weiter die ganze
-           Lage, die Nachbarschaft bleibt also ringsum zu sehen. Einmal je
+           Gibt es Einsatzabschnitte, steht in der Gruppe <b>Einsatzabschnitte</b>
+           je Abschnitt ein Haken, dazu <b>Ohne Abschnitt</b> für alles, was
+           keinem zugeteilt ist – Führungsstelle, Bereitstellungsraum, das
+           gemeinsame Lagebild. Abgehakt heißt: steht auf dem Blatt. So lässt
+           sich jede Zusammenstellung drucken, ein Abschnitt allein ebenso wie
+           zwei benachbarte. Bleibt genau einer übrig, wird das Blatt seine
+           Lagekarte: Titel, Kopfdaten, Zeichenerklärung und Kennzahlen gehen
+           mit. Die Augen der Abschnitte auf der Arbeitskarte reden dabei nicht
+           mehr mit – gedruckt wird, was hier angehakt ist.
+           <b>Eingemittet auf</b> engt zusätzlich Blattmitte und Maßstab auf
+           einen der gewählten Abschnitte ein, ohne etwas von der Karte zu
+           nehmen: die Nachbarschaft bleibt ringsum zu sehen. Einmal je
            Abschnitt gedruckt, ergibt das den Satz Blätter für die
            Abschnittsleitungen; welcher gemeint ist, steht in den Kopfdaten.
-           <b>Nur dieser Abschnitt</b> nimmt die anderen dann auch von der Karte;
-           was ohne Abschnitt geplant ist, bleibt stehen. Titel, Kopfdaten,
-           Zeichenerklärung und Kennzahlen gehen mit – das Blatt ist damit die
-           Lagekarte dieses Abschnitts, der Ausschnitt bleibt beim Umschalten
-           stehen, so dass sich die Blätter weiter decken. Stehen bleiben nur zwei Angaben: die Einstufung,
+           Stehen bleiben nur zwei Angaben: die Einstufung,
            die auf jedes Blatt gehört, und die Nennung der Kartengrundlage – sie
            rückt ohne Fußzeile in die Kartenecke, weil die Lizenz sie verlangt.</p>
         <p>Formate sind <b>A4 bis A0</b> und ein <b>freies Maß</b> in Millimetern – für
