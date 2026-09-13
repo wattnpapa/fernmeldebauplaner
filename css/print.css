@@ -2,46 +2,59 @@
 
 #druck {
   position: fixed; inset: 0; z-index: 3000; background: #55606e;
-  display: flex; flex-direction: column;
+  display: flex;
 }
 body.druckansicht { overflow: hidden; }
 
 /* ---------------------------------------------------------------- Steuerleiste */
 
-/* Zwei Spalten: links steht, was gedruckt wird und wie – rechts, dass gedruckt
-   wird. Als Reihe nebeneinander brachen die Gruppen sonst unter die Überschrift
-   und ließen Titel und Tasten frei im Raum stehen. */
+/* Eine Spalte neben dem Blatt statt einer Leiste darüber. Quer über dem Blatt
+   brachen die Gruppen je nach Fensterbreite um, jede weitere Zeile nahm der
+   Vorschau Höhe – gerade den Querformaten, die sie am nötigsten brauchen –,
+   und mit jedem Einsatzabschnitt wurde die Leiste breiter. Untereinander
+   verträgt die Liste beliebig viele Einträge, und abhängige Haken können
+   eingerückt unter ihrem Oberhaken stehen. */
 .druck-steuerung {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "titel tasten" "felder tasten";
-  gap: 8px 16px; align-items: end;
-  padding: 8px 14px; background: var(--flaeche); border-bottom: 1px solid var(--linie);
+  flex: 0 0 272px; display: flex; flex-direction: column; min-height: 0;
+  background: var(--flaeche); border-right: 1px solid var(--linie);
   box-shadow: var(--schatten); z-index: 2;
 }
 .ds-titel {
-  grid-area: titel; align-self: center; font-size: 14px; font-weight: 600;
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 12px 14px 10px; border-bottom: 1px solid var(--linie);
+  font-size: 14px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere;
 }
+/* Nur die Einstellungen scrollen – Titel und Druckknopf bleiben stehen, auch
+   bei einer Planung mit zwölf Einsatzabschnitten. */
 .ds-felder {
-  grid-area: felder; display: flex; align-items: center; gap: 10px 22px;
-  flex-wrap: wrap; min-width: 0;
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 16px; padding: 12px 14px 16px;
 }
 
-/* Drei benannte Gruppen statt neun Bedienelementen in einer Reihe. Getrennt
-   werden sie durch Abstand und ihre Überschrift, nicht durch eine Linie: die
-   Gruppen brechen je nach Fensterbreite um, und eine Trennlinie stünde dann
-   am Zeilenanfang statt zwischen zwei Gruppen. */
-.ds-gruppe { display: flex; align-items: center; gap: 9px; min-width: 0; }
+/* Bewusst nicht zuklappbar: am Bauort soll niemand erst eine Klappe suchen,
+   um die Strecken vom Blatt zu nehmen. */
+.ds-gruppe { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 /* Gruppentitel wie in der Seitenleiste (.gruppen-titel) – dasselbe Programm,
    dieselbe Überschrift. */
 .ds-gruppen-titel {
   font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: .6px; color: var(--text-schwach); white-space: nowrap;
 }
-.ds-gruppen-felder { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; }
+.ds-gruppen-felder, .ds-unter { display: flex; flex-direction: column; gap: 3px; }
+/* Die Linie am Rand zeigt, wie weit die Abhängigkeit reicht – bei zwei
+   Ebenen unter „Strecken“ reicht die Einrückung allein dafür nicht. */
+.ds-unter { margin-left: 6px; padding-left: 13px; border-left: 1px solid var(--linie); }
 
-.ds-feld { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-schwach); }
+.ds-feld {
+  display: flex; align-items: center; gap: 6px; min-height: 26px;
+  font-size: 12px; color: var(--text-schwach);
+}
+/* Nachgeben soll das Auswahlfeld, nicht sein Name – „Eingemittet auf“ in
+   zwei Zeilen las sich wie zwei Einstellungen. */
+.ds-feld > span:first-child { white-space: nowrap; }
+/* Name links, Wert rechtsbündig: so stehen die Auswahlfelder einer Gruppe
+   untereinander statt je nach Länge ihres Namens versetzt. */
 .ds-feld select {
+  margin-left: auto; min-width: 0; max-width: 64%;
   padding: 4px 6px; border: 1px solid var(--linie-stark); border-radius: var(--radius-klein);
   background: var(--flaeche); font-size: 12px; color: var(--text);
 }
@@ -58,16 +71,16 @@ body.druckansicht { overflow: hidden; }
    die Streckenbeschriftung überhaupt auf dem Blatt steht. */
 .ds-feld.gesperrt { opacity: .45; }
 .ds-feld.gesperrt select { cursor: not-allowed; }
-.ds-zoomtasten { display: flex; align-items: center; gap: 4px; }
+.ds-zoomtasten { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 
 /* Freies Blattmaß: zwei Zahlen mit dem Malzeichen dazwischen, wie ein
    Papierformat geschrieben wird. */
-.ds-massefelder { display: flex; align-items: center; gap: 4px; }
+.ds-massefelder { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 /* Breit genug für vier Ziffern neben dem Zahlenpfeil des Browsers – „1200“
    darf nicht abgeschnitten werden, sonst steht dort ein anderes Maß, als
    gedruckt wird. */
 .ds-massefelder input {
-  width: 9ch; padding: 4px 5px; border: 1px solid var(--linie-stark);
+  width: 8ch; padding: 4px 5px; border: 1px solid var(--linie-stark);
   border-radius: var(--radius-klein); background: var(--flaeche);
   font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums;
 }
@@ -76,18 +89,21 @@ body.druckansicht { overflow: hidden; }
 
 /* Strichstärke: kurzer Regler mit dem Prozentwert daneben. Der Wert hat einen
    festen Platz, sonst rückte die halbe Gruppe beim Ziehen hin und her. */
-.ds-strich input[type="range"] { width: 96px; accent-color: var(--thw); }
+.ds-strich input[type="range"] { flex: 1 1 60px; width: auto; min-width: 0; accent-color: var(--thw); }
 .ds-strichwert {
   min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600;
 }
-.ds-tasten { grid-area: tasten; display: flex; align-items: flex-end; gap: 8px; }
+/* Der Druckknopf zuoberst, „Schließen“ darunter: am Fuß der Spalte ist der
+   Knopf, der das Blatt erzeugt, der erste, den das Auge nach den
+   Einstellungen trifft. */
+.ds-tasten {
+  display: flex; flex-direction: column-reverse; gap: 8px;
+  padding: 10px 14px 12px; border-top: 1px solid var(--linie);
+}
 
 /* Umfang des Sammelauftrags neben seinem Titel – die Zahl, an der zu erkennen
    ist, wie dick das Dokument wird. */
-.ds-umfang {
-  font-weight: 500; color: var(--text-schwach); font-size: 12px;
-  padding-left: 6px; border-left: 1px solid var(--linie); margin-left: 6px;
-}
+.ds-umfang { display: block; font-weight: 500; color: var(--text-schwach); font-size: 12px; }
 
 /* Der Formathinweis steht am Druckknopf, nicht in der Kurzanleitung: der
    Druckdialog des Browsers kennt die oben gewählten Einstellungen nicht. */
@@ -98,37 +114,36 @@ body.druckansicht { overflow: hidden; }
   font-size: 11.5px; line-height: 1.35; color: var(--text-schwach); text-align: center;
 }
 
-/* Schmales Fenster: Titel, Einstellungen und Tasten untereinander, und jede
-   Gruppe unter ihrer eigenen Überschrift statt daneben.
+/* Die Fläche rechts neben der Spalte. Die Lupe richtet sich an ihr aus und
+   nicht am ganzen Fenster, sonst stünde sie neben der Blattmitte. */
+/* `min-height: 0`, weil ein Flex-Kind sonst so hoch wird wie sein Inhalt: im
+   schmalen Fenster drückten die 41 Blätter eines Sammelauftrags die
+   Einstellungen darüber auf null zusammen, statt selbst zu scrollen. */
+.druck-flaeche { flex: 1; min-width: 0; min-height: 0; position: relative; display: flex; }
 
-   Alle Einstellungen bleiben sichtbar – am Bauort soll niemand erst eine Klappe
-   suchen. Damit sie trotzdem nicht die halbe Bildfläche einnehmen, stehen die
-   Gruppen nebeneinander in einem Raster statt untereinander, und die Tasten
-   teilen sich eine Zeile. Was hier an Höhe gespart wird, bekommt das Blatt. */
+/* Schmales Fenster: Für eine Spalte neben dem Blatt ist kein Platz. Die
+   Einstellungen rücken über das Blatt, bekommen aber höchstens gut zwei
+   Fünftel der Höhe und scrollen darin – alle bleiben erreichbar, ohne erst
+   eine Klappe zu suchen, und das Blatt behält den Rest. Die Gruppen stehen
+   nebeneinander in einem Raster, die Tasten teilen sich eine Zeile. */
 @media (max-width: 780px) {
+  #druck { flex-direction: column; }
   .druck-steuerung {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "titel" "felder" "tasten";
-    gap: 6px 12px; padding: 6px 10px;
+    flex: 0 1 auto; max-height: 44vh;
+    border-right: 0; border-bottom: 1px solid var(--linie);
   }
+  .ds-titel { padding: 6px 10px; }
   .ds-felder {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-    align-items: start; gap: 8px 14px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    align-items: start; gap: 10px 14px; padding: 8px 10px;
   }
-  .ds-gruppe { flex-direction: column; align-items: flex-start; gap: 2px; }
-  .ds-gruppen-felder { gap: 2px 12px; }
-  /* Regler und Name nebeneinander sind breiter, als eine Rasterspalte hergibt –
-     die Spalte wüchse über das Fenster hinaus und nähme die Haken daneben mit.
-     Der Name rückt deshalb über den Regler, und der Regler gibt nach. */
-  .ds-strich { flex-wrap: wrap; width: 100%; }
-  .ds-strich > span:first-child { flex-basis: 100%; }
-  .ds-strich input[type="range"] { flex: 1 1 60px; width: auto; min-width: 0; }
+  .ds-feld { min-height: 24px; }
   /* „Schließen“ neben dem Druckknopf, der Formathinweis darunter über die
      ganze Breite: nebeneinander umbrach er und kostete mehr Höhe, als die
      Zeile einspart. */
   .ds-tasten {
     display: grid; grid-template-columns: auto minmax(0, 1fr);
-    align-items: center; gap: 4px 8px;
+    align-items: center; gap: 4px 8px; padding: 6px 10px;
   }
   .ds-drucken { display: contents; }
   .ds-drucken .knopf { white-space: nowrap; }
@@ -911,7 +926,7 @@ body.druckansicht { overflow: hidden; }
      leere Seite. */
   body.druckansicht #app, body.druckhinweis #app { display: none !important; }
 
-  #druck { position: static; display: block; background: #fff; }
+  #druck, .druck-flaeche { position: static; display: block; background: #fff; }
   .druck-buehne { display: block; overflow: visible; padding: 0; background: #fff; }
   /* Maßstab und Randausgleich der Vorschau gehören nicht aufs Papier. Der
      Rand steht inline am Dokument (passeVorschauAn) und muss deshalb mit

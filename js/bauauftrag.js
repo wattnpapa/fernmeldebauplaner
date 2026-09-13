@@ -369,17 +369,20 @@ function oeffneDruckansicht(auftrag) {
         </div>
       </div>
     </div>
-    <div class="druck-buehne"><div class="druck-doku"></div></div>
-    <p class="druck-lupe" hidden></p>`;
+    <div class="druck-flaeche">
+      <div class="druck-buehne"><div class="druck-doku"></div></div>
+      <p class="druck-lupe" hidden></p>
+    </div>`;
   document.body.appendChild(wurzel);
   document.body.classList.add('druckansicht');
 
-  /* Neun gleichrangige Bedienelemente in einer Reihe waren nicht zu überblicken.
-     Sie stehen jetzt in benannten Gruppen, die sich am Ergebnis orientieren:
-     im Sammeldruck zuerst, welche Blätter überhaupt entstehen, dann das Papier,
-     was auf dem Kartenblatt liegt, und was das Datenblatt füllt – jeder seiner
-     Abschnitte einzeln, und jeder von ihnen erzeugt für sich das zweite
-     Blatt. */
+  /* Die Einstellungen stehen in benannten Gruppen, geordnet nach den Fragen,
+     die man sich beim Drucken stellt: im Sammeldruck zuerst, welche Blätter
+     überhaupt entstehen, dann das Papier, wessen Lage auf dem Blatt steht, was
+     auf der Karte liegt, wie sie aussieht, und was das Datenblatt oder der
+     Blattrand trägt. Inhalt und Darstellung waren früher eine Gruppe „Karte“ –
+     Haken, Auswahlfeld, Tasten und Regler brachen darin je nach Fensterbreite
+     an anderer Stelle um. */
   const felder = wurzel.querySelector('.ds-felder');
   if (sammel) {
     felder.appendChild(gruppe('Blätter', [
@@ -403,43 +406,63 @@ function oeffneDruckansicht(auftrag) {
       ausrichtungFeld,
       auswahl('Farbe', 'farbe', [['farbe', 'Farbe'], ['sw', 'Schwarz-Weiß']], opt, neuAufbau)
     ]),
+    /* Die Einsatzabschnitte stehen für sich und nicht bei den Karteninhalten:
+       sie sagen nicht, wie das Blatt aussieht, sondern wessen Lage darauf
+       steht. Deshalb auch vor den Inhalten – erst die Wahl des Abschnitts
+       entscheidet, welche Strecken und Relaisstellen es überhaupt gibt. */
+    ...(ausschnittWaehlbar(auftrag) ? [gruppe('Einsatzabschnitte', [
+      ...(store.projekt.einsatzabschnitte || [])
+        .map(a => abschnittHaken(a.name, a.id, auftrag, opt, neuAufbau)),
+      /* Das gemeinsame Lagebild – Führungsstelle, Bereitstellungsraum – ist
+         keinem Abschnitt zugeteilt und deshalb eine Wahl für sich. */
+      abschnittHaken('Ohne Abschnitt', OHNE_ABSCHNITT, auftrag, opt, neuAufbau),
+      ausschnittFeld(auftrag, opt, neuAufbau)
+    ])] : []),
+    /* Was an einem anderen Haken hängt, steht eingerückt darunter. Verstreut
+       in der Reihe sah man nur ein blasses Feld, nicht, woran es hängt. */
     lage
-      ? gruppe('Karte', [
+      ? gruppe('Auf der Karte', [
           /* Ohne die Strecken bestimmen Zeichen und Flächen den Ausschnitt
              allein – so entsteht das Kartenblatt eines Platzes, ohne dass die
              Trassen den Ausschnitt aufziehen. */
           haken('Strecken', 'strecken', opt, neuAufbau),
+          unter([
+            /* Nimmt Name und Trassenlänge zusammen von der Karte – beide
+               stehen in einem Schild, und wer die Namen loswerden will, will
+               kein Schild mit einer nackten Zahl darin behalten. */
+            haken('Streckenbeschriftung', 'beschriftung', opt, neuAufbau, () => !opt.strecken),
+            unter([
+              /* Auf eng geführten Trassen deckte das Schild den Verlauf zu,
+                 den der Trupp auf dem Blatt sucht. Abgerückt steht es daneben
+                 und ein Pfeil zeigt zurück auf seine Trasse. */
+              auswahl('Schild', 'beschriftungsabstand',
+                [['0', 'an der Strecke'], ['1', 'abgerückt'], ['2', 'weit abgerückt']],
+                opt, neuAufbau, () => !opt.strecken || !opt.beschriftung)
+            ]),
+            haken('Trassenpunkte', 'punktnummern', opt, neuAufbau, () => !opt.strecken),
+            /* Die Bezeichnung hängt an der Punktmarke: ohne Trassenpunkte gibt
+               es nichts, worunter sie stehen könnte. */
+            unter([
+              haken('Punktbezeichnungen', 'punktnamen', opt, neuAufbau,
+                () => !opt.strecken || !opt.punktnummern)
+            ]),
+            /* Hängt allein an den Strecken, nicht an den Trassenpunkten: das
+               Zeichen des Verteilers steht auch auf dem Blatt ohne Punktmarken –
+               dort rückt es auf den Punkt und zeigt die Anlage. */
+            ...(hatPunktzeichen(auftrag.strecken)
+              ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau, () => !opt.strecken)] : [])
+          ]),
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
           haken('Flächen', 'flaechen', opt, neuAufbau),
           haken('Relaisstellen', 'relais', opt, neuAufbau),
           /* Nur was gerechnet ist, kann gedruckt werden – die Fläche entsteht
              nicht beim Drucken. Der Haken bleibt deshalb gesperrt, solange für
              keine Relaisstelle ein Befund vorliegt. */
-          haken('Ausbreitungsflächen', 'relaisflaeche', opt, neuAufbau,
-            () => !opt.relais || !lageRelais(lagekarteBlatt(auftrag, opt)).some(befundLesen)),
-          /* Nimmt Name und Trassenlänge zusammen von der Karte – beide stehen
-             in einem Schild, und wer die Namen loswerden will, will kein
-             Schild mit einer nackten Zahl darin behalten. */
-          haken('Streckenbeschriftung', 'beschriftung', opt, neuAufbau, () => !opt.strecken),
-          /* Auf eng geführten Trassen deckte das Schild bisher den Verlauf zu,
-             den der Trupp auf dem Blatt sucht. Abgerückt steht es daneben und
-             ein Pfeil zeigt zurück auf seine Trasse. */
-          auswahl('Schild abgerückt', 'beschriftungsabstand',
-            [['0', 'an der Strecke'], ['1', 'abgerückt'], ['2', 'weit abgerückt']],
-            opt, neuAufbau, () => !opt.strecken || !opt.beschriftung),
-          haken('Koordinatengitter', 'gitter', opt, neuAufbau),
-          haken('Trassenpunkte', 'punktnummern', opt, neuAufbau, () => !opt.strecken),
-          /* Die Bezeichnung hängt an der Punktmarke: ohne Trassenpunkte gibt es
-             nichts, worunter sie stehen könnte. */
-          haken('Punktbezeichnungen', 'punktnamen', opt, neuAufbau,
-            () => !opt.strecken || !opt.punktnummern),
-          /* Hängt allein an den Strecken, nicht an den Trassenpunkten: das
-             Zeichen des Verteilers steht auch auf dem Blatt ohne Punktmarken –
-             dort rückt es auf den Punkt und zeigt die Anlage. */
-          ...(hatPunktzeichen(auftrag.strecken)
-            ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau, () => !opt.strecken)] : []),
-          zoomFeld(opt, neuAufbau),
-          strichFeld(opt, neuAufbau)
+          unter([
+            haken('Ausbreitungsflächen', 'relaisflaeche', opt, neuAufbau,
+              () => !opt.relais || !lageRelais(lagekarteBlatt(auftrag, opt)).some(befundLesen))
+          ]),
+          haken('Koordinatengitter', 'gitter', opt, neuAufbau)
         ])
       : gruppe('Kartenblatt', [
           haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
@@ -460,22 +483,9 @@ function oeffneDruckansicht(auftrag) {
           haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
           haken('Flächen', 'flaechen', opt, neuAufbau),
           haken('Relaisstellen', 'relais', opt, neuAufbau),
-          haken('Koordinatengitter', 'gitter', opt, neuAufbau),
-          zoomFeld(opt, neuAufbau),
-          strichFeld(opt, neuAufbau)
+          haken('Koordinatengitter', 'gitter', opt, neuAufbau)
         ]),
-    /* Die Einsatzabschnitte stehen für sich und nicht bei den Karteninhalten:
-       sie sagen nicht, wie das Blatt aussieht, sondern wessen Lage darauf
-       steht – und bei einer Planung mit fünf Abschnitten wäre die Gruppe
-       „Karte“ sonst nicht mehr zu überblicken. */
-    ...(ausschnittWaehlbar(auftrag) ? [gruppe('Einsatzabschnitte', [
-      ...(store.projekt.einsatzabschnitte || [])
-        .map(a => abschnittHaken(a.name, a.id, auftrag, opt, neuAufbau)),
-      /* Das gemeinsame Lagebild – Führungsstelle, Bereitstellungsraum – ist
-         keinem Abschnitt zugeteilt und deshalb eine Wahl für sich. */
-      abschnittHaken('Ohne Abschnitt', OHNE_ABSCHNITT, auftrag, opt, neuAufbau),
-      ausschnittFeld(auftrag, opt, neuAufbau)
-    ])] : []),
+    gruppe('Darstellung', [zoomFeld(opt, neuAufbau), strichFeld(opt, neuAufbau)]),
     lage
       /* In der Reihenfolge, in der die Streifen auf dem Blatt liegen –
          von der Titelzeile oben bis zur Fußzeile unten. */
@@ -571,6 +581,15 @@ function gruppe(titel, teile) {
   box.className = 'ds-gruppen-felder';
   teile.forEach(x => box.appendChild(x));
   el.appendChild(box);
+  return el;
+}
+
+/** Eingerückter Block unter dem Haken, an dem seine Felder hängen. Die Sperre
+ *  tragen weiter die Felder selbst – der Block zeigt nur die Zugehörigkeit. */
+function unter(teile) {
+  const el = document.createElement('div');
+  el.className = 'ds-unter';
+  teile.forEach(x => el.appendChild(x));
   return el;
 }
 
