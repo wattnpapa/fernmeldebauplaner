@@ -1642,6 +1642,20 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .hinweisbox.warnung { background: var(--warnung); }
 .hinweisbox[hidden] { display: none; }
 
+/* Die Breite steht fest, solange die Arbeit läuft: „Bild 9 von 12“ und
+   „Bild 10 von 12“ sind verschieden lang, und eine mitatmende Pille lenkt
+   mehr ab, als der Balken mitteilt. */
+.hinweisbox.fortschritt { width: min(300px, 88vw); }
+.fortschritt-text { display: block; font-variant-numeric: tabular-nums; }
+.fortschritt-balken {
+  display: block; height: 4px; margin: 7px 0 1px; border-radius: 2px;
+  background: rgba(255,255,255,.22); overflow: hidden;
+}
+.fortschritt-balken i {
+  display: block; height: 100%; width: 0; background: #fff; border-radius: inherit;
+  transition: width var(--zeit-zustand) var(--weg);
+}
+
 /* Die Meldung kommt von unten herauf, dorthin, wo sie steht – und sie geht
    schneller, als sie kam. Was gelesen ist, soll nicht noch eine halbe Sekunde
    im Bild stehen; ein schlagartiges Verschwinden dagegen liest sich wie ein

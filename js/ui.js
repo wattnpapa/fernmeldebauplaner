@@ -88,6 +88,37 @@ export function hinweis(text, art = 'info') {
   }, art === 'fehler' ? 6000 : 3200);
 }
 
+/**
+ * Eine laufende Arbeit in derselben Pille zeigen wie die Meldungen – mit Balken
+ * und ohne Frist. Eine Übernahme von zwanzig Bildern dauert länger als jede
+ * Meldung stehen bleibt; verschwände die Ankündigung vorher, sähe es aus, als
+ * sei nichts geschehen. Die abschließende Meldung über `hinweis()` ersetzt sie.
+ *
+ * @param {number} anteil zwischen 0 und 1
+ */
+export function fortschritt(text, anteil) {
+  const box = document.getElementById('hinweisbox');
+  clearTimeout(hinweisTimer);
+  clearTimeout(hinweisWeg);
+  let balken = box.querySelector('.fortschritt-balken');
+  /* Beim ersten Stand wird die Pille aufgebaut und läuft ein; die folgenden
+     Stände rücken nur Text und Balken weiter, sonst zuckte sie bei jedem Bild. */
+  if (!balken || box.hidden || box.classList.contains('geht')) {
+    box.innerHTML = '<span class="fortschritt-text"></span>' +
+      '<span class="fortschritt-balken" role="progressbar" aria-valuemin="0" aria-valuemax="100">' +
+      '<i></i></span>';
+    box.className = 'hinweisbox info fortschritt';
+    box.hidden = false;
+    void box.offsetWidth;
+    box.classList.add('an');
+    balken = box.querySelector('.fortschritt-balken');
+  }
+  const prozent = Math.round(Math.max(0, Math.min(1, anteil)) * 100);
+  box.querySelector('.fortschritt-text').textContent = text;
+  balken.setAttribute('aria-valuenow', String(prozent));
+  balken.firstChild.style.width = prozent + '%';
+}
+
 // ---------------------------------------------------------------- Dialog
 
 /* Wer den Dialog geöffnet hat, bekommt den Fokus beim Schließen zurück. Bei
@@ -3508,11 +3539,12 @@ export function bildAnsehen(b) {
 export async function bilderUebernehmen(dateien) {
   const anzahl = Array.from(dateien || []).length;
   if (!anzahl) return;
-  hinweis(anzahl === 1 ? 'Bild wird übernommen …' : `${anzahl} Bilder werden übernommen …`);
 
   let ergebnis;
   try {
-    ergebnis = await bilderAufnehmen(dateien);
+    ergebnis = await bilderAufnehmen(dateien, ({ nr, anteil }) => fortschritt(
+      anzahl === 1 ? 'Bild wird übernommen …' : `Bild ${nr} von ${anzahl} wird übernommen …`,
+      anteil));
   } catch (e) {
     return hinweis('Bilder konnten nicht übernommen werden: ' + e.message, 'fehler');
   }

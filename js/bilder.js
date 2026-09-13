@@ -41,17 +41,26 @@ export function passendeMasse(b, maxBreite, maxHoehe) {
  * der Eintrag in die Planung kommt – sonst zeigte die Karte einen Punkt, hinter
  * dem nichts steht.
  *
+ * @param {(stand: {nr: number, anzahl: number, anteil: number}) => void} [aufFortschritt]
  * @returns {Promise<{angenommen: object[], ohneOrt: number, abgewiesen: object[]}>}
  */
-export async function bilderAufnehmen(dateien) {
+export async function bilderAufnehmen(dateien, aufFortschritt = null) {
   const angenommen = [], abgewiesen = [];
+  const liste = Array.from(dateien || []);
   let ohneOrt = 0;
 
   laufend++;
   try {
-    for (const datei of Array.from(dateien || [])) {
+    for (const [i, datei] of liste.entries()) {
+      /* Der Anteil rückt auch innerhalb einer Datei vor: bei einem einzelnen
+         HEIC-Bild stünde der Balken sonst bis zum Schluss auf null. */
+      const melden = async teil => {
+        if (!aufFortschritt) return;
+        aufFortschritt({ nr: i + 1, anzahl: liste.length, anteil: (i + teil) / liste.length });
+        await zeichnenLassen();
+      };
       try {
-        const b = await eineDatei(datei);
+        const b = await eineDatei(datei, melden);
         if (b.lat === null) ohneOrt++;
         angenommen.push(b);
       } catch (e) {
@@ -73,7 +82,18 @@ export async function bilderAufnehmen(dateien) {
 let laufend = 0;
 export const uebernahmeLaeuft = () => laufend > 0;
 
-async function eineDatei(datei) {
+/* Entschlüsseln und Verkleinern halten den Hauptfaden. Ohne einen gezeichneten
+   Rahmen dazwischen käme die Fortschrittsanzeige erst an, wenn die Arbeit, die
+   sie ankündigt, schon vorbei ist. Die Frist daneben ist nicht verzichtbar: in
+   einem Tab im Hintergrund zeichnet der Browser keine Rahmen, und die Übernahme
+   bliebe stehen, bis jemand zurückkommt. */
+const zeichnenLassen = () => new Promise(weiter => {
+  requestAnimationFrame(() => setTimeout(weiter, 0));
+  setTimeout(weiter, 100);
+});
+
+async function eineDatei(datei, melden) {
+  await melden(0);
   const kopf = await datei.slice(0, EXIF_FENSTER).arrayBuffer();
   /* Erkannt wird am Inhalt, nicht an Endung oder gemeldetem Typ: für eine aus
      dem Ordner gezogene HEIC-Datei gibt Chrome oft gar keinen Typ an. */
@@ -84,6 +104,7 @@ async function eineDatei(datei) {
      dort reicht das Fenster nicht, und die Datei wird ohnehin ganz gebraucht. */
   const ganz = heic ? await datei.arrayBuffer() : null;
   const exif = exifLesen(ganz || kopf);
+  await melden(0.15);
 
   let quelle, vomDecoder = false;
   try {
@@ -101,8 +122,10 @@ async function eineDatei(datei) {
        richtet ebenfalls auf: libheif wendet die Drehung des Containers (`irot`)
        beim Entschlüsseln an. */
     const lage = (vomDecoder || browserDreht(quelle, exif)) ? 1 : exif.ausrichtung;
+    await melden(vomDecoder ? 0.6 : 0.35);
     const gross = await verkleinern(quelle, MAX_KANTE, GUETE, lage);
     const mini  = await verkleinern(quelle, MINI_KANTE, MINI_GUETE, lage);
+    await melden(0.9);
     const b = neuesBild({
       lat: exif.lat, lng: exif.lng,
       aufgenommen: exif.aufgenommen,
