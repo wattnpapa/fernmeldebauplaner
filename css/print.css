@@ -913,7 +913,12 @@ body.druckansicht { overflow: hidden; }
 
   #druck { position: static; display: block; background: #fff; }
   .druck-buehne { display: block; overflow: visible; padding: 0; background: #fff; }
-  .druck-doku { transform: none !important; display: block; gap: 0; }
+  /* Maßstab und Randausgleich der Vorschau gehören nicht aufs Papier. Der
+     Rand steht inline am Dokument (passeVorschauAn) und muss deshalb mit
+     !important weichen: ein negativer rechter Rand macht das Dokument breiter
+     als die Seite, und Chrome/Edge verkleinern es dann und schieben das Blatt
+     links über den Papierrand. */
+  .druck-doku { transform: none !important; margin: 0 !important; display: block; gap: 0; }
 
   .blatt {
     box-shadow: none; margin: 0; border: 0;
