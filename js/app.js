@@ -21,8 +21,9 @@ import {
   zeichneFlaechenListe, flaechenPalette,
   zeichneRelaisListe, relaisZielAntwort, ueberdeckungUmschalten,
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis,
-  abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen
+  abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen, zeichneBauListe
 } from './ui.js';
+import { baustrecke, baustreckeSetzen } from './baudoku.js';
 import {
   bauauftragOffen, schliesseBauauftrag, entferneSeitenformat, oeffneSammeldruck, oeffneLagekarte
 } from './bauauftrag.js';
@@ -41,7 +42,17 @@ const sl = new StreckenLayer(karte, {
     zl.auswahl = null; fl.auswahl = null; rl.auswahl = null;
     fl.zeichne(); rl.zeichne(); zeichneSeite();
   },
-  aufAenderung: () => aktualisiereKennzahlen()
+  aufAenderung: () => aktualisiereKennzahlen(),
+  /* Die gebaute Trasse gehört auf die Arbeitskarte – auch im Planungsmodus:
+     der Planer soll sehen, was draußen entstanden ist, ohne erst umzuschalten.
+     Die Druckkarten in `bauauftrag.js` bekommen sie nicht; sie zeigen den
+     Auftrag. */
+  mitIst: true,
+  aufIstPunkt: (s, pt) => {
+    if (!pt) return;
+    modusAnzeigen();
+    hinweis(`Aufgenommen: ${toMGRS(pt.lat, pt.lng, 5)}`);
+  }
 });
 
 const zl = new ZeichenLayer(karte, {
@@ -100,7 +111,12 @@ const gl = new GitterLayer(karte);
 
 initUI({
   karte, sl, zl, bl, fl, rl, weiterzeichnen, zeichenSetzen, flaecheSetzen, relaisSetzen,
-  zurKarte, bildOrtSetzen, aufAenderung: () => {}
+  zurKarte, bildOrtSetzen, aufAenderung: () => {},
+  /* Die Seitenleiste startet im Baumodus einen Setzmodus („Punkt auf der
+     Karte“). Die Modusleiste hängt an der Werkzeugleiste und wird deshalb von
+     hier aus geführt – ohne diesen Weg bliebe sie beim Setzen aus, und schmal
+     stünde am Bauort kein Bedienelement mehr da. */
+  modusAnzeigen: () => modusAnzeigen()
 });
 
 // Der Stand steht dauerhaft im Kopf: Wer zu einem gedruckten Bauauftrag
@@ -224,15 +240,32 @@ function modusAnzeigen() {
   /* Die Zielwahl zählt als Relaismodus: auch sie wartet auf einen Kartenklick,
      und das Werkzeug muss zeigen, dass der nächste Klick vergeben ist. */
   const relais = !!rl.setzModus || !!rl.zielModus;
+  const istSetzen = !!sl.istSetzModus;
   $('#wz-strecke').classList.toggle('aktiv', zeichnet);
   $('#wz-zeichen').classList.toggle('aktiv', setzt);
   $('#wz-flaeche').classList.toggle('aktiv', flaecht);
   $('#wz-relais').classList.toggle('aktiv', relais);
   // schmal weicht die Werkzeugleiste der Modusleiste – beide sitzen unten
-  document.body.classList.toggle('modus-aktiv', zeichnet || setzt || flaecht || relais);
+  document.body.classList.toggle('modus-aktiv',
+    zeichnet || setzt || flaecht || relais || istSetzen);
 
   const box = $('#zeichen-hinweis');
-  box.hidden = !zeichnet;
+  /* Die Modusleiste muss auch beim Setzen eines Ist-Punktes stehen: schmal
+     nimmt `body.modus-aktiv` die Werkzeugleiste vom Schirm, und ohne diese
+     Leiste bliebe am Bauort kein einziges Bedienelement übrig – kein Weg
+     zurück außer der Esc-Taste, die es dort nicht gibt. */
+  box.hidden = !zeichnet && !istSetzen;
+  if (istSetzen) {
+    const s = store.strecke(sl.istSetzModus.sid);
+    box.querySelector('.zh-text').innerHTML =
+      `<b>${escapeHtml(s ? s.name : '')}</b> – auf die Karte tippen, wo der Punkt
+       wirklich liegt.`;
+    box.querySelector('[data-akt="fertig"]').hidden = true;
+    box.querySelector('[data-akt="zurueck"]').hidden = true;
+    return;
+  }
+  box.querySelector('[data-akt="fertig"]').hidden = false;
+  box.querySelector('[data-akt="zurueck"]').hidden = false;
   if (zeichnet) {
     const s = store.strecke(sl.zeichenModus);
     const n = s ? s.punkte.length : 0;
@@ -249,6 +282,10 @@ function modusAnzeigen() {
 
 $('#zeichen-hinweis').addEventListener('click', e => {
   const akt = e.target.dataset.akt;
+  if (akt === 'abbruch' && sl.istSetzModus) {
+    sl.beendeIstSetzen();
+    return modusAnzeigen();
+  }
   if (akt === 'zurueck') { sl.letztenPunktZurueck(); modusAnzeigen(); }
   if (akt === 'fertig') zeichnenBeenden(false);
   if (akt === 'abbruch') zeichnenBeenden(true);
@@ -629,6 +666,11 @@ function umfangText(p) {
   if ((p.flaechen || []).length) teile.push(zahlwort(p.flaechen.length, 'Fläche', 'Flächen'));
   if ((p.relaisstellen || []).length)
     teile.push(zahlwort(p.relaisstellen.length, 'Relaisstelle', 'Relaisstellen'));
+  /* Die Baudokumentation gehört in die Aufzählung, sobald es eine gibt: Ein
+     Link, der die Rückmeldung eines Trupps trägt, meldete sonst „Noch nichts
+     gezeichnet“ – und der Empfänger verwürfe ihn als leer. */
+  const istPunkte = (p.strecken || []).reduce((n, s) => n + (s.bau?.punkte || []).length, 0);
+  if (istPunkte) teile.push(`Baudokumentation mit ${zahlwort(istPunkte, 'Ist-Punkt', 'Ist-Punkten')}`);
   return teile.join(' · ') || 'Noch nichts gezeichnet';
 }
 
@@ -927,6 +969,81 @@ function zurKarte() {
   if (window.matchMedia('(max-width: 900px)').matches) ansichtSetzen(true);
 }
 
+// ------------------------------------------------- Planungsmodus / Baumodus
+
+/* Zwei Modi, eine Anwendung, ein Datenbestand. Der Baumodus blendet weg, was
+   am Bauort niemand braucht, und zeigt den Reiter, an dem dort gearbeitet wird.
+
+   Umgeschaltet statt ergänzt: zu siebt wurde die Reiterreihe breiter als ein
+   320-px-Fenster (siehe den Kommentar in css/app.css). So stehen nie mehr als
+   sechs Reiter da – im Baumodus sogar nur drei.
+
+   „Strecken“ bleibt auch im Baumodus stehen: dort steht der Bauauftrag mit
+   Querungsauflagen und Fundstellen, und genau danach wird am Bauplatz
+   gesucht. */
+const REITER_BAU = new Set(['bau', 'strecken', 'projekt']);
+const KEY_MODUS = 'fbp.modus.v1';
+
+/* Der Modus überlebt das Neuladen. Das ist kein Beiwerk: am Bauort wird die
+   Seite neu geladen, weil das Netz weg war oder der Browser den Reiter
+   weggeräumt hat, und wer dann im Planungsmodus landet, sucht erst einmal.
+   Er liegt außerhalb der Planung – er ist eine Einstellung dieses Geräts und
+   gehört weder in den Undo-Stapel noch in eine geteilte Datei. */
+let baumodus = (() => {
+  try { return localStorage.getItem(KEY_MODUS) === 'bau'; } catch (e) { return false; }
+})();
+
+/* Nur beim allerersten Anwenden wird der Reiter erzwungen – danach ist der
+   offene Reiter die Wahl des Nutzers und bleibt, wo er ist. */
+let erstesAnwenden = true;
+
+function modusAnwenden() {
+  document.body.classList.toggle('baumodus', baumodus);
+  const schalter = $('#btn-modus');
+  schalter.textContent = baumodus ? 'Planung' : 'Baumodus';
+  schalter.setAttribute('aria-pressed', String(baumodus));
+  schalter.title = baumodus
+    ? 'Zurück zur Planung'
+    : 'Dokumentieren, was am Bauort gebaut wurde';
+  document.querySelectorAll('.reiter button').forEach(b => {
+    b.hidden = baumodus ? !REITER_BAU.has(b.dataset.reiter) : b.dataset.reiter === 'bau';
+  });
+  /* Steht der offene Reiter im neuen Modus nicht mehr da, wäre die
+     Seitenleiste leer und der wandernde tabindex zeigte auf einen Knopf, den
+     es nicht gibt. Beim Start im Baumodus gilt dasselbe für „Strecken“: der
+     Reiter ist dort zwar erlaubt, aber nach einem Neuladen am Bauort – Netz
+     weg, Reiter vom Browser weggeräumt – stünde die Planungsliste da und nicht
+     die Bauliste, obwohl der Modus richtig wiederhergestellt ist. */
+  const offen = document.querySelector('.reiter button.aktiv');
+  if (!offen || offen.hidden) reiterWechseln(baumodus ? 'bau' : 'strecken');
+  else if (baumodus && erstesAnwenden) reiterWechseln('bau');
+  erstesAnwenden = false;
+}
+
+function modusUmschalten() {
+  /* Hinter dem gedruckten Blatt wird nicht umgeschaltet: der Bauauftrag liegt
+     über der Anwendung, und ein Moduswechsel dahinter beendete still einen
+     Setzmodus, wechselte den Reiter und meldete etwas, das niemand sieht.
+     Dieselbe Sperre haben alle Tastenkürzel (siehe unten). */
+  if (bauauftragOffen()) return;
+  baumodus = !baumodus;
+  try { localStorage.setItem(KEY_MODUS, baumodus ? 'bau' : 'planung'); }
+  catch (e) { /* ohne Vermerk beginnt der nächste Start in der Planung */ }
+  /* Ein laufender Setzmodus gehört dem verlassenen Modus: der nächste Klick
+     auf die Karte täte sonst etwas, das zur gezeigten Oberfläche nicht passt. */
+  zeichnenBeenden(true);
+  zl.beendeSetzen(); fl.beendeSetzen(); rl.beendeSetzen(); bl.beendeSetzen();
+  sl.beendeIstSetzen();
+  modusAnwenden();
+  reiterWechseln(baumodus ? 'bau' : 'strecken');
+  modusAnzeigen();
+  hinweis(baumodus
+    ? 'Baumodus: festhalten, was gebaut wurde. Die Planung bleibt unangetastet.'
+    : 'Planungsmodus.');
+}
+
+$('#btn-modus').onclick = modusUmschalten;
+
 function reiterWechseln(name) {
   document.querySelectorAll('.reiter button').forEach(b => {
     const an = b.dataset.reiter === name;
@@ -951,7 +1068,10 @@ document.querySelector('.reiter').addEventListener('keydown', e => {
   const schritt = { ArrowRight: 1, ArrowLeft: -1, Home: 0, End: 0 };
   if (!(e.key in schritt)) return;
   e.preventDefault();
-  const knoepfe = [...document.querySelectorAll('.reiter button')];
+  /* Nur die sichtbaren Reiter: im Baumodus sind die Planungsreiter weg, und
+     der Fokus dürfte nicht auf einem Knopf landen, den niemand sieht. */
+  const knoepfe = [...document.querySelectorAll('.reiter button')].filter(b => !b.hidden);
+  if (!knoepfe.length) return;
   let i = knoepfe.findIndex(b => b.classList.contains('aktiv'));
   if (e.key === 'Home') i = 0;
   else if (e.key === 'End') i = knoepfe.length - 1;
@@ -982,6 +1102,7 @@ document.addEventListener('keydown', e => {
       dateiKnopf.focus();
       return;
     }
+    if (sl.istSetzModus) { sl.beendeIstSetzen(); return modusAnzeigen(); }
     if (sl.zeichenModus) return zeichnenBeenden(true);
     if (zl.setzModus) { zl.beendeSetzen(); return modusAnzeigen(); }
     if (fl.setzModus) { fl.beendeSetzen(); return modusAnzeigen(); }
@@ -1110,6 +1231,7 @@ function zeichneSeite() {
   zeichneFlaechenListe();
   zeichneRelaisListe();
   zeichneBilderListe();
+  zeichneBauListe();
   zeichneProjektReiter();
 }
 
@@ -1246,6 +1368,7 @@ setTimeout(bilderAufraeumenWennRuhig, 4000);
 window.fbp = { store, karte, sl, zl, fl, bl, gl };
 
 zeichneAlles();
+modusAnwenden();
 modusAnzeigen();
 speicherstatusZeigen('ruhe');
 $('#btn-undo').disabled = true;

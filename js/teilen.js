@@ -16,7 +16,7 @@
 
 import {
   SCHEMA, neuesProjekt, neueStrecke, neuerPunkt, neuesZeichen, neueFlaeche, neuesBild,
-  neueRelaisstelle
+  neueRelaisstelle, neuerBau, neuerBauabschnitt, neuerIstPunkt, bauBegonnen, id as neueKennung
 } from './state.js';
 
 /* Kennung der Linkfassung, nicht des Datenschemas: sie sagt, wie das Fragment
@@ -80,6 +80,97 @@ function kennungen(liste, praefix) {
 
 const verweis = (karte, wert) => (wert && karte.get(wert)) || undefined;
 
+// ------------------------------------------------------ Baudokumentation
+
+/* Die Baudokumentation verweist auf Trassenpunkte – `sollPunkt` sagt, welchen
+   geplanten Punkt ein Ist-Punkt bestätigt. Genau diese Kennungen reisen aber
+   nicht mit: `verschlanken` wirft sie weg, weil sie ein Achtel der Länge
+   kosten, und der Empfänger vergibt neue.
+
+   Aufgelöst wird deshalb über die STELLE in der Punktliste. Sie ist im Link
+   sicher, weil Absender und Empfänger dieselbe Liste in derselben Reihenfolge
+   haben – anders als im laufenden Betrieb, wo Umkehren, Löschen und Einfügen
+   die Nummern verschieben und deshalb die Kennung gilt. Die Umrechnung ist
+   mechanisch und lebt hier im Codec, nicht im Datenmodell. */
+
+const stelleVon = (liste, kennung) => {
+  const i = (liste || []).findIndex(x => x && x.id === kennung);
+  return i >= 0 ? i : undefined;
+};
+
+function bauVerschlanken(s) {
+  if (!bauBegonnen(s)) return undefined;
+  const bau = s.bau;
+  const vorgabeBau = neuerBau();
+  const raus = entruempeln(bau, vorgabeBau);
+  delete raus.abschnitte;
+  delete raus.punkte;
+
+  if (bau.abschnitte.length) {
+    raus.abschnitte = bau.abschnitte.map((a, i) => {
+      /* Verglichen wird gegen die Vorgabe AN DIESER STELLE: Name und Farbe des
+         Bauabschnitts hängen an seiner Nummer, und `bauNormalisieren()` in
+         `state.js` stellt beide aus derselben Nummer wieder her. Sie müssen
+         deshalb – anders als bei der Strecke – nicht mitreisen. */
+      const weg = entruempeln(a, neuerBauabschnitt({ abschnitte: new Array(i) }));
+      delete weg.id;
+      weg.vonPunkt = stelleVon(s.punkte, a.vonPunkt);
+      weg.bisPunkt = stelleVon(s.punkte, a.bisPunkt);
+      if (weg.vonPunkt === undefined) delete weg.vonPunkt;
+      if (weg.bisPunkt === undefined) delete weg.bisPunkt;
+      return weg;
+    });
+  }
+  if (bau.punkte.length) {
+    raus.punkte = bau.punkte.map(pt => {
+      /* Verglichen wird gegen einen LEEREN Ist-Punkt an derselben Stelle, nicht
+         gegen diesen: eine Vorgabe, die aus dem Eintrag selbst gebaut wird, ist
+         ihm in jedem Feld gleich – Herkunft, Genauigkeit, Punktart und
+         Bezeichnung fielen dann sämtlich als „Vorgabewert“ heraus, und beim
+         Empfänger stünde jede Peilung als auf der Karte getippt da. Derselbe
+         Fallstrick wie bei den Lichtbildern weiter unten.
+
+         `zeit` bleibt in jedem Fall stehen: `neuerIstPunkt` setzt sie aus der
+         Uhr, sie wäre also nie gleich – und ohne sie fiele die Uhrzeit weg, die
+         am Bauort mitgeschrieben wurde. */
+      const weg = entruempeln(pt, neuerIstPunkt(pt.lat, pt.lng), ['zeit']);
+      delete weg.id;
+      weg.sollPunkt = stelleVon(s.punkte, pt.sollPunkt);
+      weg.abschnitt = stelleVon(bau.abschnitte, pt.abschnitt);
+      if (weg.sollPunkt === undefined) delete weg.sollPunkt;
+      if (weg.abschnitt === undefined) delete weg.abschnitt;
+      return { ...weg, lat: rund(pt.lat), lng: rund(pt.lng) };
+    });
+  }
+  return raus;
+}
+
+/* Die Gegenrichtung, vor `migrieren()`: die Stellen werden wieder Kennungen.
+   Dafür bekommen Trassenpunkte und Bauabschnitte hier schon ihre Kennung –
+   `migrieren()` übernimmt sie dann (`id: pt.id || id()`), statt eine zweite zu
+   vergeben, auf die niemand mehr verweist. */
+function bauAuffuellen(objekt) {
+  for (const s of objekt.strecken || []) {
+    if (!s || !s.bau || typeof s.bau !== 'object') continue;
+    const punkte = Array.isArray(s.punkte) ? s.punkte : [];
+    punkte.forEach(pt => { if (pt && !pt.id) pt.id = neueKennung(); });
+    const abschnitte = Array.isArray(s.bau.abschnitte) ? s.bau.abschnitte : [];
+    abschnitte.forEach(a => { if (a && !a.id) a.id = neueKennung(); });
+    const punktKennung = i => (Number.isInteger(i) && punkte[i] ? punkte[i].id : null);
+    const abschnittKennung = i => (Number.isInteger(i) && abschnitte[i] ? abschnitte[i].id : null);
+    abschnitte.forEach(a => {
+      a.vonPunkt = punktKennung(a.vonPunkt);
+      a.bisPunkt = punktKennung(a.bisPunkt);
+    });
+    for (const pt of (Array.isArray(s.bau.punkte) ? s.bau.punkte : [])) {
+      if (!pt) continue;
+      pt.sollPunkt = punktKennung(pt.sollPunkt);
+      pt.abschnitt = abschnittKennung(pt.abschnitt);
+    }
+  }
+  return objekt;
+}
+
 /**
  * Eine Planung auf das eindampfen, was der Empfänger nicht selbst herstellen
  * kann. Das Ergebnis trägt dieselben Schlüsselnamen wie das Projekt, nur
@@ -135,6 +226,11 @@ export function verschlanken(projekt) {
          die einmal getroffene Wahl nicht verlieren), im Link haben sie aber
          nichts zu suchen – dort füllt sie das leere Formular wieder auf. */
       if (!s.kabeltyp || s.kabeltyp !== 'richtfunk') delete raus.richtfunk;
+      /* Die Baudokumentation reist mit – sie ist der Rückweg des Trupps zum
+         Planer und der einzige Inhalt, den es nur einmal gibt: die Planung
+         lässt sich nachzeichnen, eine Aufnahme vom Bauort nicht. */
+      const bau = bauVerschlanken(s);
+      if (bau) raus.bau = bau; else delete raus.bau;
       raus.punkte = (s.punkte || []).map(pt => {
         const p1 = entruempeln(pt, neuerPunkt(pt.lat, pt.lng));
         delete p1.id;
@@ -317,7 +413,10 @@ export async function planungAusFragment(fragment = location.hash) {
      Browserspeicher überschriebe. Der Dateiweg vergibt aus demselben Grund
      eine neue Kennung (`jsonUebernehmen` in `io.js`). */
   delete objekt.id;
-  return objekt;
+  /* Die Verweise der Baudokumentation stehen im Link als Stelle in der
+     Punktliste und müssen wieder Kennungen werden, bevor `migrieren()`
+     darüberläuft – danach wären die Stellen nicht mehr aufzulösen. */
+  return bauAuffuellen(objekt);
 }
 
 /** Den Kartenausschnitt aus dem Fragment holen, oder `null`. */

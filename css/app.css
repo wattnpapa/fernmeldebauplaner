@@ -1670,6 +1670,152 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   transition: opacity var(--zeit-tipp) ease-in, transform var(--zeit-tipp) ease-in;
 }
 
+/* ---------------------------------------------------------------- Baudokumentation
+
+   Der Baumodus wird woanders bedient als die Planung: mit Handschuh, bei
+   Tageslicht, einhändig, oft im Stehen. Was hier größer wird, wird es deshalb
+   unabhängig vom Zeigergerät – der `pointer: coarse`-Block deckt das Tablet ab,
+   aber der Truppführer prüft dieselbe Liste auch am Rechner, und die Griffe
+   sollen dort nicht anders liegen.
+
+   Umgeschaltet wird über `body.baumodus`, wie `body.modus-aktiv` und
+   `body.seite-zu` auch. Ausgeblendet statt entfernt: der Zustand der
+   Planungsansicht bleibt beim Verlassen des Modus derselbe. */
+
+.modus-schalter { font-weight: 650; }
+.modus-schalter[aria-pressed="true"] {
+  background: var(--warnung-auf-blau-flaeche);
+  border-color: var(--warnung-auf-blau-linie);
+  color: var(--warnung-auf-blau);
+}
+
+/* Im Baumodus wird nicht geplant: die vier Zeichenwerkzeuge gehen vom Schirm,
+   Koordinate und Standort bleiben – beide werden am Bauort gebraucht. */
+body.baumodus #wz-strecke,
+body.baumodus #wz-zeichen,
+body.baumodus #wz-flaeche,
+body.baumodus #wz-relais { display: none; }
+
+/* Die gebaute Trasse auf der Karte: gefüllt, wo der geplante Punkt hohl ist.
+   Kein Schlagschatten – Firefox gibt Seitenbereiche mit CSS-`filter` beim
+   Drucken nicht aus, und was auf der Arbeitskarte anders aussähe als auf dem
+   Blatt, führte beim Vergleich in die Irre. */
+.fbp-istpunkt {
+  display: block; width: 14px; height: 14px; margin: 2px; border-radius: 50%;
+  background: var(--farbe, #333); border: 2.5px solid #fff;
+  box-shadow: 0 0 0 1px rgba(16,32,56,.45);
+}
+
+.bau-wahl { margin: 0; }
+.bau-wahl select { font-weight: 650; }
+
+/* Die Kopfzahlen: geplant, gebaut, Unterschied. Drei Spalten, damit der
+   Unterschied neben den Zahlen steht, aus denen er entsteht. */
+.bau-zahlen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.bz {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 7px 8px; border: 1px solid var(--linie); border-radius: var(--radius-klein);
+  background: var(--flaeche-2);
+}
+.bz-titel { font-size: 11px; color: var(--text-schwach); }
+.bz-wert { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.bz.bz-merken { background: var(--warnung-flaeche); border-color: var(--warnung-linie); }
+.bz.bz-merken .bz-wert { color: var(--warnung-tief); }
+
+.bau-stand select { font-weight: 650; }
+.bau-abw { color: var(--warnung-tief); }
+
+/* Bauabschnitte – die Aufteilung einer Strecke unter mehrere Trupps */
+.ba-eintrag {
+  border: 1px solid var(--linie); border-left: 4px solid var(--farbe, var(--thw));
+  border-radius: var(--radius-klein); padding: 8px; margin-bottom: 8px;
+  background: var(--flaeche);
+}
+.ba-kopf { display: flex; align-items: center; gap: 8px; }
+.ba-marke {
+  flex: 1; display: flex; flex-direction: column; gap: 1px;
+  text-align: left; border: 1px solid var(--linie-stark); background: var(--flaeche);
+  border-radius: var(--radius-klein); padding: 7px 10px; min-height: 44px;
+  font: inherit; color: var(--text); cursor: pointer;
+}
+.ba-name { font-weight: 650; }
+/* Der Zustand steht als Wort da und nicht nur in der Farbe: am Bauort gibt es
+   keinen `title`, und ein Knopf, den niemand als Knopf erkennt, wird nicht
+   gedrückt – dann trägt kein einziger aufgenommener Punkt seinen Trupp. */
+.ba-zustand { font-size: 11px; font-weight: 400; color: var(--text-schwach); }
+.ba-marke.aktiv .ba-zustand { color: rgba(255,255,255,.85); }
+/* Der aktive Abschnitt ist der, dem neue Punkte zugeschlagen werden. Das ist
+   ein Zustand mit Folgen und bekommt deshalb die Bedienfarbe, nicht nur einen
+   Rahmen. */
+.ba-marke.aktiv { background: var(--thw); border-color: var(--thw); color: #fff; }
+/* `min-width: 0` an beiden Stellen: ein Rasterfeld ist von Haus aus so breit
+   wie sein Inhalt, und ein Eingabefeld bringt eine Mindestbreite mit, die auf
+   dem Telefon breiter ist als die halbe Spalte. Ohne das liefe die rechte
+   Spalte aus dem Fenster. */
+.ba-felder { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.ba-felder .feld { margin: 0; min-width: 0; }
+.ba-felder input, .ba-felder select { min-width: 0; width: 100%; }
+
+/* Die Punktliste – das Stück, an dem am Bauort gearbeitet wird */
+.bp-zeile {
+  border: 1px solid var(--linie); border-left: 4px solid var(--farbe, var(--thw));
+  border-radius: var(--radius-klein); padding: 8px; margin-bottom: 8px;
+  background: var(--flaeche);
+}
+.bp-zeile.bestaetigt { background: var(--flaeche-2); }
+.bp-kopf { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bp-nr {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 26px; padding: 0 5px; border-radius: 50%;
+  background: var(--thw-blass); color: var(--text-blau);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.bp-zeile.bestaetigt .bp-nr { background: var(--gut); color: #fff; }
+.bp-art { font-weight: 600; }
+.bp-name { color: var(--text-schwach); }
+.bp-karte { margin-left: auto; }
+.bp-befund { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 7px; }
+.bp-befund span {
+  font-size: 11.5px; padding: 3px 7px; border-radius: 999px;
+  background: var(--thw-blass); color: var(--text-blau);
+}
+.bp-haken { background: var(--gut) !important; color: #fff !important; font-weight: 650; }
+.bp-abweichung {
+  background: var(--warnung-flaeche) !important; color: var(--warnung-tief) !important;
+  font-weight: 650;
+}
+.bp-trupp-wahl { margin-top: 8px; }
+.bp-felder { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.bp-felder .feld, .bp-bemerkung { margin: 8px 0 0; min-width: 0; }
+.bp-felder input, .bp-felder select { min-width: 0; width: 100%; }
+.bau-untertitel { margin: 14px 0 8px; font-size: 13px; color: var(--text-schwach); }
+.bau-zuschlag { margin: 0 0 8px; }
+
+/* Die drei Griffe. Sie sind die einzigen Knöpfe der Anwendung, die auch mit
+   der Maus auf Handschuhmaß stehen: an ihnen hängt die Aufnahme, und ein
+   Fehlgriff kostet einen Punkt an der falschen Stelle. */
+.bau-tasten { margin-top: 8px; gap: 8px; }
+.knopf.bau-taste {
+  min-height: 46px; padding: 11px 13px; font-size: 13.5px; font-weight: 600;
+  flex: 1 1 auto;
+}
+
+.bau-abwliste { margin: 0 0 10px; padding-left: 18px; }
+.bau-abwliste li { margin-bottom: 3px; }
+.bau-warnung {
+  margin: 10px 0 0; padding: 8px 10px; border-radius: var(--radius-klein);
+  background: var(--warnung-flaeche); border: 1px solid var(--warnung-linie);
+  color: var(--warnung-tief); font-weight: 600;
+}
+
+/* Der Baustand in der Streckenliste des Planungsmodus – die Antwort auf
+   „woran wird draußen gerade gearbeitet“ */
+.eintrag-zeile.bau-zeile { color: var(--text-blau); }
+.bz-marke {
+  padding: 2px 7px; border-radius: 999px; background: var(--gut); color: #fff;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+}
+
 /* ---------------------------------------------------------------- Schmale Fenster */
 
 @media (max-width: 900px) {
@@ -1688,6 +1834,13 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   .kopf-tasten { gap: 4px; }
   .kopf-tasten .knopf { padding: 7px 9px; }
   .projektname { min-width: 120px; }
+  /* Der Name der Planung darf nicht unter die Knöpfe rutschen. Ohne diese
+     Zeile schrumpft sein Kasten unter den eigenen Mindestwert, das Feld läuft
+     aus ihm heraus und legt sich über den Moduswechsel – seit die Kopfzeile
+     fünf Knöpfe trägt, passen beide nebeneinander nicht mehr in 390 px.
+     `min-content` hält den Kasten auf der Breite seines Inhalts; die Kopfzeile
+     bricht dann um, wozu ihr `flex-wrap` da ist. */
+  .kopf-projekt { min-width: min-content; }
   /* Der Sicherungsstand steht schmal im Band darunter – dort in ganzen Worten
      statt als Punkt, den niemand deuten kann. */
   .speicherstatus { display: none; }

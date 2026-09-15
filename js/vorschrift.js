@@ -26,6 +26,16 @@ export const QUELLEN = {
     kurz: 'Meb Sicherheit',
     lang: 'Merkblatt „Sicherheitsbestimmungen bei Kabelbau (IuK-Netze)“, ' +
           'THW Aus- und Fortbildungszentrum, Version 1.0, Stand 07/26'
+  },
+  /* Das ältere der beiden THW-Hefte. Es steht hier nicht wegen seiner Bauwerte –
+     die sind im Handbuch von 2026 fortgeschrieben –, sondern wegen des Ablaufs
+     am Bauort: Baumeldung, abschnittsweiser Bau, die Technische Fernmeldeskizze
+     und die Übernahmemessungen sind dort beschrieben und sonst nirgends. Der
+     Baumodus beruft sich darauf. */
+  ffk: {
+    kurz: 'Hdb Feldfernkabelbau',
+    lang: 'Handbuch für den Feldfernkabelbau (einschließlich Verbindungs- und ' +
+          'Anschlusskabel), Bundesanstalt Technisches Hilfswerk, 2003'
   }
 };
 

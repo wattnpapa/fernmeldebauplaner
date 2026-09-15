@@ -21,6 +21,7 @@
 <link rel="modulepreload" href="js/state.js">
 <link rel="modulepreload" href="js/teilen.js">
 <link rel="modulepreload" href="js/strecken.js">
+<link rel="modulepreload" href="js/baudoku.js">
 <link rel="modulepreload" href="js/symbols.js">
 <link rel="modulepreload" href="js/zeichen.js">
 <link rel="modulepreload" href="js/flaechen.js">
@@ -76,6 +77,12 @@
     </div>
 
     <div class="kopf-tasten">
+      <!-- Der Umschalter steht vorn und nicht im Datei-Menü: am Bauort wird er
+           mit dem Handschuh getroffen, und wer dort in die Planungsansicht
+           gerät, muss in einem Griff zurück. Die Beschriftung nennt das Ziel,
+           nicht den Zustand – sonst liest sich der Knopf als Anzeige. -->
+      <button class="knopf modus-schalter" id="btn-modus" aria-pressed="false"
+              title="Zwischen Planung und Baudokumentation umschalten">Baumodus</button>
       <button class="knopf" id="btn-hilfe" title="Kurzanleitung" aria-label="Kurzanleitung">?</button>
       <button class="knopf" id="btn-undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">↶</button>
       <button class="knopf" id="btn-redo" title="Wiederholen (Strg+Umschalt+Z)" aria-label="Wiederholen">↷</button>
@@ -152,6 +159,14 @@
                 aria-controls="inhalt-bilder" data-reiter="bilder">Bilder</button>
         <button role="tab" id="reiter-projekt" aria-selected="false" tabindex="-1"
                 aria-controls="inhalt-projekt" data-reiter="projekt">Planung</button>
+        <!-- Der siebte Reiter steht nur im Baumodus da, und dort stehen die
+             Planungsreiter nicht: zu siebt wurde die Reiterreihe auf einem
+             320-px-Fenster breiter als das Fenster, und der letzte Reiter war
+             mit dem Finger nicht mehr zu treffen. Umgeschaltet statt ergänzt –
+             so bleiben es nie mehr als sechs. -->
+        <button role="tab" id="reiter-bau" aria-selected="false" tabindex="-1"
+                aria-controls="inhalt-bau" data-reiter="bau"
+                aria-label="Baudokumentation" hidden>Bau</button>
       </nav>
 
       <section class="reiter-inhalt aktiv" role="tabpanel" id="inhalt-strecken"
@@ -213,6 +228,17 @@
         </div>
         <div class="summe" id="bilder-summe"></div>
         <div class="liste" id="bilder-liste"></div>
+      </section>
+
+      <section class="reiter-inhalt" role="tabpanel" id="inhalt-bau"
+               aria-labelledby="reiter-bau" data-inhalt="bau">
+        <div class="seite-kopf">
+          <label class="feld bau-wahl"><span class="feld-titel">Diese Strecke wird gebaut</span>
+            <select id="bau-strecke"></select>
+          </label>
+        </div>
+        <div class="summe" id="bau-summe"></div>
+        <div class="liste" id="bau-liste"></div>
       </section>
 
       <section class="reiter-inhalt" role="tabpanel" id="inhalt-projekt"

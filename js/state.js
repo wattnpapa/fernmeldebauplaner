@@ -10,7 +10,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 12;
+export const SCHEMA = 13;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -68,6 +68,32 @@ export const FARBEN = [
   '#0097a7', '#c2185b', '#5d4037', '#455a64', '#afb42b'
 ];
 
+/* Wie weit der Bau dieser Strecke ist. Die vier Stufen folgen dem Ablauf des
+   Handbuchs Feldfernkabelbau: gebaut wird gemeldet (3.5), übergeben ist die
+   Leitung erst, wenn die Übernahmemessungen abgeschlossen sind – deshalb sind
+   „gebaut“ und „übergeben“ zwei Stufen und nicht eine. */
+export const BAUSTAENDE = [
+  { id: 'offen',      name: 'noch nicht begonnen', kurz: 'offen' },
+  { id: 'laeuft',     name: 'im Bau',              kurz: 'im Bau' },
+  { id: 'gebaut',     name: 'gebaut',              kurz: 'gebaut' },
+  { id: 'uebergeben', name: 'übergeben',           kurz: 'übergeben' }
+];
+
+/* Woher die Koordinate eines Ist-Punktes stammt. Die drei sind unterschiedlich
+   genau – der Standort des Geräts auf etwa 5 bis 10 m unter freiem Himmel,
+   unter Bewuchs deutlich schlechter –, und wer später eine Abweichung von 15 m
+   beurteilt, muss wissen, ob sie gemessen oder getippt ist.
+
+   „Standort“ und nicht „Peilung“: eine Peilung ist im Fernmeldebau die
+   Richtung in Grad, mit der eine Antenne ausgerichtet wird (siehe
+   `js/missweisung.js`). Für die Ortung durch das Gerät sagt der Bestand
+   durchweg „Standort“ – am Werkzeug, in der Meldung und im Datenschutz. */
+export const ISTQUELLEN = [
+  { id: 'plan',     name: 'wie geplant bestätigt',  kurz: 'Plan' },
+  { id: 'standort', name: 'Standort des Geräts',    kurz: 'Standort' },
+  { id: 'karte',    name: 'auf der Karte gesetzt',  kurz: 'Karte' }
+];
+
 /* Früher wurde das Feldfernkabel zusätzlich als eigener Typ „FK 2×2“ geführt.
    Beides ist dasselbe Kabel, der alte Schlüssel bleibt nur als Verweis erhalten. */
 export const KABEL_ALIAS = { fk4: 'ffk' };
@@ -84,6 +110,8 @@ const kabelById = id => {
 };
 export { kabelById };
 export const punktartById = id => PUNKTARTEN.find(p => p.id === id) || PUNKTARTEN[1];
+export const baustandById = id => BAUSTAENDE.find(b => b.id === id) || BAUSTAENDE[0];
+export const istquelleById = id => ISTQUELLEN.find(q => q.id === id) || ISTQUELLEN[2];
 
 export function id() {
   return 'x' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
@@ -252,7 +280,11 @@ export function neueStrecke(projekt) {
     trupp: '',
     bemerkung: '',
     sichtbar: true,
-    punkte: []
+    punkte: [],
+    /* Was der Trupp am Bauort festgehalten hat. `null`, solange niemand im
+       Baumodus etwas eingetragen hat – eine leere Struktur in jeder Planung
+       verlängerte Speicher, Undo-Abzug und Link, ohne etwas auszusagen. */
+    bau: null
   };
 }
 
@@ -268,6 +300,78 @@ export function neuerPunkt(lat, lng, art = 'punkt') {
     reserve: null
   };
 }
+
+/* Die Baudokumentation einer Strecke: was der Trupp am Bauort tatsächlich
+   gebaut hat. Sie liegt NEBEN der Planung, nicht an ihrer Stelle – der
+   Soll-Verlauf in `strecke.punkte` bleibt unangetastet. Ohne diese Trennung
+   wäre die Abweichung nach dem ersten Antippen verschwunden, und genau die
+   schuldet der Truppführer dem S 6 (Hdb Feldfernkabelbau, 1.3.2).
+
+   `material`, `meldungen` und `pruefung` stehen von Anfang an im Bauplan
+   (BAUDOKU.md) und bleiben zunächst leer: sie jetzt anzulegen kostet nichts –
+   der Codec in `teilen.js` wirft weg, was der Vorgabe entspricht – und spart
+   der nächsten Stufe eine zweite Schemaerhöhung. */
+export function neuerBau() {
+  return {
+    stand: 'offen',
+    abschnitte: [],
+    punkte: [],
+    material: [],
+    meldungen: [],
+    pruefung: null,
+    abweichung: ''
+  };
+}
+
+/* Ein Bauabschnitt teilt EINE Strecke unter mehreren Trupps auf – der
+   Regelfall beim längeren Bau: zwei Trupps bauen von beiden Enden aufeinander
+   zu und treffen sich in der Mitte (Hdb Feldfernkabelbau, 3.6). Nicht zu verwechseln
+   mit dem Einsatzabschnitt, der die ganze Planung in Zuständigkeiten gliedert.
+
+   Anfang und Ende stehen als Punkt-KENNUNG und nicht als Punktnummer: Umkehren
+   der Richtung, Löschen und Einfügen verschieben die Nummern, und der
+   Bauabschnitt zeigte danach auf eine andere Stelle der Trasse. */
+export function neuerBauabschnitt(bau) {
+  const n = (bau.abschnitte || []).length;
+  return {
+    id: id(),
+    name: `Bauabschnitt ${n + 1}`,
+    trupp: '',
+    fuehrer: '',
+    vonPunkt: null,
+    bisPunkt: null,
+    beginn: '',
+    ende: '',
+    farbe: FARBEN[n % FARBEN.length]
+  };
+}
+
+/* Ein Punkt der gebauten Trasse. `sollPunkt` hält die Kennung des geplanten
+   Punktes, den er bestätigt – der einzige Weg, „Punkt 7 liegt 40 m weiter
+   westlich“ von „hier kam ein Punkt dazu“ zu unterscheiden. Über die
+   Entfernung zu raten geht bei eng gesetzten Punkten daneben. */
+export function neuerIstPunkt(lat, lng, o = {}) {
+  return {
+    id: id(),
+    lat, lng,
+    art: PUNKTARTEN.some(a => a.id === o.art) ? o.art : 'punkt',
+    name: o.name || '',
+    bemerkung: '',
+    abschnitt: o.abschnitt || null,
+    sollPunkt: o.sollPunkt || null,
+    quelle: ISTQUELLEN.some(q => q.id === o.quelle) ? o.quelle : 'karte',
+    /* Nur die Ortung durch das Gerät bringt eine Genauigkeit mit. Bei den anderen
+       beiden
+       bliebe eine Zahl eine Behauptung. */
+    genauigkeit: Number.isFinite(o.genauigkeit) ? Math.round(o.genauigkeit) : null,
+    zeit: o.zeit || new Date().toISOString()
+  };
+}
+
+/** Trägt diese Strecke überhaupt eine Baudokumentation? */
+export const bauBegonnen = s => !!(s && s.bau &&
+  ((s.bau.punkte || []).length || (s.bau.abschnitte || []).length ||
+   s.bau.stand !== 'offen' || s.bau.abweichung));
 
 export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
   return {
@@ -631,8 +735,13 @@ export function istGehaltvoll(p) {
   /* Eine einzelne Relaisstelle zählt schon: hinter ihr steht eine Erkundung des
      Standorts und eine Entscheidung über die Masthöhe, und beides ist nicht in
      zwei Minuten wiederhergestellt. */
+  /* Und die Baudokumentation zählt von der ersten Zeile an: sie ist am Bauort
+     entstanden und dort nicht zu wiederholen. Eine Planung, deren ganzer Wert
+     die Dokumentation eines fertigen Baus ist, liefe sonst ohne Mahnband und
+     ohne Nachfrage beim Schließen des Fensters. */
   return punkte >= 4 || (p.zeichen || []).length >= 3 || (p.bilder || []).length >= 2 ||
-    (p.flaechen || []).length >= 2 || (p.relaisstellen || []).length >= 1;
+    (p.flaechen || []).length >= 2 || (p.relaisstellen || []).length >= 1 ||
+    p.strecken.some(bauBegonnen);
 }
 
 /* Farben und Artkennungen aus fremden Planungen werden auf ihre erlaubte Form
@@ -644,6 +753,50 @@ export function istGehaltvoll(p) {
    geladene Datei ebenso wie der geteilte Link. */
 const farbeOderVorgabe = (wert, vorgabe) =>
   /^#[0-9a-f]{3,8}$/i.test(String(wert ?? '')) ? wert : vorgabe;
+
+/* Der Bau-Block kommt aus derselben Fremde wie alles andere: aus einer Datei,
+   einem Link oder dem angebundenen Speicher. Er wird deshalb als WEISSLISTE
+   wieder aufgebaut und nicht durchgereicht – wie die Einsatzabschnitte und die
+   Zeichengruppen, aus demselben Grund: `bau.punkte[].art` landet unmaskiert in
+   einem Klassennamen und `bau.abschnitte[].farbe` in einem `style`-Attribut.
+   Ein präparierter Wert bräche dort aus dem Attribut aus.
+
+   Was hier nicht bekannt ist, fällt weg. Eine spätere Fassung, die ein Feld
+   ergänzt, trägt es hier nach – das ist der Preis der Weißliste und billiger
+   als die Lücke. */
+function bauNormalisieren(roh) {
+  if (!roh || typeof roh !== 'object') return null;
+  const v = neuerBau();
+  const abschnitte = (Array.isArray(roh.abschnitte) ? roh.abschnitte : []).map((a, i) => ({
+    id: a.id || id(),
+    name: String(a.name || `Bauabschnitt ${i + 1}`),
+    trupp: String(a.trupp || ''),
+    fuehrer: String(a.fuehrer || ''),
+    vonPunkt: a.vonPunkt || null,
+    bisPunkt: a.bisPunkt || null,
+    beginn: String(a.beginn || ''),
+    ende: String(a.ende || ''),
+    farbe: farbeOderVorgabe(a.farbe, FARBEN[i % FARBEN.length])
+  }));
+  const punkte = (Array.isArray(roh.punkte) ? roh.punkte : [])
+    .filter(pt => Number.isFinite(pt?.lat) && Number.isFinite(pt?.lng))
+    .map(pt => ({
+      ...neuerIstPunkt(pt.lat, pt.lng, pt),
+      id: pt.id || id(),
+      bemerkung: String(pt.bemerkung || ''),
+      zeit: String(pt.zeit || '')
+    }));
+  return {
+    ...v,
+    stand: BAUSTAENDE.some(b => b.id === roh.stand) ? roh.stand : 'offen',
+    abschnitte,
+    punkte,
+    material: Array.isArray(roh.material) ? roh.material : [],
+    meldungen: Array.isArray(roh.meldungen) ? roh.meldungen : [],
+    pruefung: roh.pruefung && typeof roh.pruefung === 'object' ? roh.pruefung : null,
+    abweichung: String(roh.abweichung || '')
+  };
+}
 
 /** Ältere/fremde Projektdateien auf das aktuelle Schema heben */
 export function migrieren(p) {
@@ -708,7 +861,11 @@ export function migrieren(p) {
         punkte: (s.punkte || []).map(pt => ({
           ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id(),
           art: PUNKTARTEN.some(a => a.id === pt.art) ? pt.art : 'punkt'
-        }))
+        })),
+        /* Schema 13 hat die Baudokumentation eingeführt. Ältere Stände bringen
+           sie nicht mit und öffnen ohne sie – eine Planung, an der noch nicht
+           gebaut wurde, sieht genauso aus wie vorher. */
+        bau: bauNormalisieren(s.bau)
       };
     }),
     // Die Zeichen kamen früher aus einem selbst gezeichneten Satz mit eigenen
@@ -778,6 +935,23 @@ export function migrieren(p) {
   // Auge mehr erreicht.
   const gruppen = new Set(out.zeichengruppen.map(g => g.id));
   out.zeichen.forEach(z => { if (!gruppen.has(z.gruppe)) z.gruppe = null; });
+  /* Und dieselbe Regel innerhalb der Baudokumentation. Ein `sollPunkt`, der auf
+     einen inzwischen gelöschten Trassenpunkt zeigt, wäre keine Bestätigung
+     mehr, sondern eine falsche: der Ist-Punkt gälte als „wie geplant“, ohne
+     dass es den Plan dazu noch gibt. Er wird dann zum eigenständigen Punkt. */
+  out.strecken.forEach(s => {
+    if (!s.bau) return;
+    const eigene = new Set(s.punkte.map(pt => pt.id));
+    const abschnitte = new Set(s.bau.abschnitte.map(a => a.id));
+    s.bau.punkte.forEach(pt => {
+      if (!eigene.has(pt.sollPunkt)) pt.sollPunkt = null;
+      if (!abschnitte.has(pt.abschnitt)) pt.abschnitt = null;
+    });
+    s.bau.abschnitte.forEach(a => {
+      if (!eigene.has(a.vonPunkt)) a.vonPunkt = null;
+      if (!eigene.has(a.bisPunkt)) a.bisPunkt = null;
+    });
+  });
   return out;
 }
 

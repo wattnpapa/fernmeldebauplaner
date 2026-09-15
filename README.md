@@ -252,6 +252,27 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   bei der doppelten (≈ 190 dpi), auf A0 werden es gut 100 dpi – mehr zeichnet kein
   Browser mehr in einem Bild
 
+**Baumodus: festhalten, was gebaut wurde**
+- Umschalter in der Kopfzeile zwischen Planung und Baudokumentation. Im Baumodus stehen
+  nur die drei Reiter, die am Bauort gebraucht werden; die Zeichenwerkzeuge gehen vom
+  Schirm, Koordinate und Standort bleiben
+- Zu jedem geplanten Trassenpunkt drei Griffe: **wie geplant** bestätigen, **hier**
+  aus dem Standort des Geräts übernehmen oder **auf der Karte** antippen, wo er wirklich liegt.
+  An jedem aufgenommenen Punkt steht, woher seine Koordinate stammt und wie genau sie ist
+- Zusätzliche Punkte, die der Plan nicht kennt – ein Mast, der gestellt werden musste,
+  eine Muffe, die dazukam
+- **Bauabschnitte:** bauen zwei Trupps aufeinander zu, bekommt jeder seinen Abschnitt mit
+  Trupp, Truppführer, Baubeginn und Bauende; an jedem aufgenommenen Punkt steht dann, wer
+  ihn gebaut hat
+- Die gebaute Trasse liegt auf der Karte neben der geplanten: durchgezogen und kräftig,
+  während die Planung zur feinen Punktreihe zurücktritt. Weicht ein Punkt um mehr als 25 m
+  ab, zieht eine Linie zum geplanten Ort
+- Baustand je Strecke (noch nicht begonnen, im Bau, gebaut, übergeben), geplante gegen
+  gebaute Länge und ein Feld für die Meldung an den S 6
+- **Die Planung bleibt unangetastet.** Das Ist liegt daneben, nicht an seiner Stelle –
+  nur so bleibt die Abweichung nachweisbar. Die drei gedruckten Erzeugnisse zeigen
+  weiterhin den Auftrag
+
 **Austausch mit anderen Werkzeugen**
 - Planung als `.json` sichern und laden
 - **Planung als Link teilen:** ein Link, der die Planung selbst enthält – gepackt im
@@ -259,6 +280,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   einzelner Einsatzabschnitt oder nur der Kartenausschnitt. Eine Längenampel warnt,
   bevor ein Link so lang wird, dass Mailprogramme ihn umbrechen; Lichtbilder reisen
   nicht mit. Der Empfänger sieht erst, was ankommt, und entscheidet dann
+- Die Baudokumentation reist auf allen Wegen mit – Datei, Link und eigener Speicher.
+  So schickt der Zugführer dem Truppführer dessen Einsatzabschnitt und bekommt zurück,
+  was daraus geworden ist
 - KML und KMZ aus Google Earth laden: Pfade werden Strecken, Ortsmarken taktische Zeichen
 - Zurück nach Google Earth als KML (ganze Planung oder eine Strecke), gegliedert
   nach Einsatzabschnitten
@@ -292,6 +316,12 @@ Orthophotos der Landesvermessungen (DOP 20 cm, alle 16 Länder).
 anklicken, mit Doppelklick oder `Enter` abschließen. Punkte lassen sich anschließend
 verschieben; die gestrichelten Griffe zwischen zwei Punkten fügen beim Ziehen einen
 Zwischenpunkt ein.
+
+**Baudokumentation:** In der Kopfzeile auf „Baumodus“ schalten. Im Reiter „Bau“ oben
+die Strecke wählen, an der gebaut wird; darunter steht jeder geplante Punkt mit seinen
+drei Griffen. Der Modus bleibt über das Neuladen erhalten – am Bauort bricht die
+Verbindung ab, und wer danach wieder in der Planung landete, sucht erst einmal.
+Zurück geht es über denselben Knopf, der dann „Planung“ heißt.
 
 **Einsatzabschnitte:** Im Reiter „Strecken“ über „+ Einsatzabschnitt“ einen anlegen.
 Die Zuteilung steht in jeder geöffneten Strecke, in jedem geöffneten taktischen Zeichen
@@ -427,6 +457,7 @@ js/strom.js           Querschnitt von Stromleitungen aus Last und Länge
 js/map.js             Leaflet-Karte und Basiskarten
 js/gitter.js          UTM-Kilometergitter (UTMREF/MGRS) auf Karte und Bauauftrag
 js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
+js/baudoku.js         Baudokumentation: Ist-Trasse, Bauabschnitte, Abweichung
 js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
 js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
@@ -460,14 +491,14 @@ js/cloud-gdrive.js    Rückseite: Google Drive
 js/version.js         Stand der Anwendung (beim Veröffentlichen gesetzt)
 bilder/               Bilder der statischen Seiten
 fonts/                Roboto Slab Bold, die Beschriftungsschrift der Zeichen
-scripts/              Zeichen holen und prüfen (siehe unten)
+scripts/              Zeichen holen und prüfen, Baumodus im Browser durchspielen
 vendor/               Leaflet 1.9.4, mgrs 2.1.0, libheif 1.19.8 (siehe LIZENZEN.md)
 LICENSE               EUPL-1.2
 ```
 
 Der Datenbestand liegt unter dem LocalStorage-Schlüssel `fbp.projekte.v1`, das zuletzt
-geöffnete Projekt unter `fbp.aktiv.v1`. `js/state.js` hebt ältere Dateien beim Laden
-über `migrieren()` auf das aktuelle Schema.
+geöffnete Projekt unter `fbp.aktiv.v1`, der zuletzt gewählte Modus unter `fbp.modus.v1`.
+`js/state.js` hebt ältere Dateien beim Laden über `migrieren()` auf das aktuelle Schema.
 
 Wer einen eigenen Speicher einrichtet, bekommt eine dritte Ablage dazu: die
 IndexedDB-Datenbank `fbp.cloud`. Darin stehen der Zugang zum Speicher und zu jeder
@@ -499,6 +530,28 @@ node scripts/zeichen-pruefen.mjs
 
 `.github/workflows/taktische-zeichen.yml` erledigt beides montags von selbst,
 committet nur bei grüner Prüfung und stößt anschließend ein Release an.
+
+### Den Baumodus durchspielen
+
+Die Baudokumentation entsteht am Bauort, auf einem Gerät, das beim Entwickeln
+niemand in der Hand hat. Was dort schiefgeht, merkt sonst erst der Trupp – und
+der hat die Aufnahme dann schon verloren. Für diesen Teil gibt es deshalb eine
+Prüfung, die die Anwendung wirklich bedient:
+
+```bash
+node scripts/baumodus-pruefen.mjs
+```
+
+Sie startet einen Webserver und einen Chromium, legt eine Strecke an, schaltet
+in den Baumodus, nimmt Punkte auf allen drei Wegen auf – samt vorgetäuschtem
+Gerätestandort –, lädt die Seite neu, schickt die Planung durch den Link und
+zurück und prüft, dass die gebaute Trasse auf keinem der drei Druckerzeugnisse
+landet.
+
+Auch das kommt ohne Fremdpaket aus: Node bringt seit Fassung 22 einen
+`WebSocket` mit, und damit lässt sich das DevTools-Protokoll des Browsers
+unmittelbar sprechen. Der Prüfstand steht in `scripts/pruefstand.mjs`; einen
+anderen Browser nimmt er über `CHROMIUM=/pfad/zum/chromium` entgegen.
 
 ---
 

@@ -438,7 +438,8 @@ function fassung(titel, u) {
     u.zeichen && `${u.zeichen} Zeichen`,
     u.flaechen && `${u.flaechen} ${u.flaechen === 1 ? 'Fläche' : 'Flächen'}`,
     u.relaisstellen && `${u.relaisstellen} Relais`,
-    u.bilder && `${u.bilder} ${u.bilder === 1 ? 'Bild' : 'Bilder'}`
+    u.bilder && `${u.bilder} ${u.bilder === 1 ? 'Bild' : 'Bilder'}`,
+    u.istPunkte && `${u.istPunkte} Ist-Punkte`
   ].filter(Boolean);
   return `<div class="konflikt-fassung">
             <b>${escapeHtml(titel)}</b>

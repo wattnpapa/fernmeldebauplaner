@@ -2,6 +2,9 @@
 
 import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText } from './geo.js';
 import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar } from './state.js';
+import {
+  istPunkte, sollZuIst, istPunktSetzen, sollPunktGeloescht, ABWEICHUNG_SCHWELLE
+} from './baudoku.js';
 import { auslegung, querschnittText } from './strom.js';
 import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf,
          kabelreserve } from './vorschrift.js';
@@ -556,6 +559,15 @@ export class StreckenLayer {
     this.auswahl = null;        // Strecken-ID
     this.aktiverPunkt = null;   // Punkt-ID
     this.zeichenModus = null;   // Strecken-ID während des Zeichnens
+    /* Die gebaute Trasse liegt neben der geplanten. Sie ist ausdrücklich
+       abzuschalten und nicht von selbst da: die drei Druckerzeugnisse zeigen
+       den Auftrag, und eine zweite Linie darin hätte weder einen Eintrag in
+       der Zeichenerklärung noch ein eigenes Strichmuster für den
+       Schwarz-Weiß-Druck. Das gedruckte Blatt der Baudokumentation ist ein
+       eigenes und kommt später. */
+    this.mitIst = !!opt.mitIst;
+    this.istSetzModus = null;   // { sid, sollPunkt, art } während „Punkt setzen“
+    this.aufIstPunkt = opt.aufIstPunkt || (() => {});
     this.aufAuswahl = opt.aufAuswahl || (() => {});
     this.aufAenderung = opt.aufAenderung || (() => {});
     this.sw = !!opt.sw;                       // Schwarz-Weiß-Druck
@@ -632,7 +644,15 @@ export class StreckenLayer {
   letztenPunktZurueck() {
     const s = store.strecke(this.zeichenModus);
     if (!s || !s.punkte.length) return;
-    store.aendern(() => { s.punkte.pop(); this._artenAktualisieren(s); }, 'strecke');
+    store.aendern(() => {
+      const weg = s.punkte.pop();
+      /* Auch dieser Weg nimmt einen geplanten Punkt aus der Trasse. Bliebe der
+         Verweis darauf stehen, gälte eine Aufnahme weiter als „wie geplant“
+         für einen Punkt, den es nicht mehr gibt: sie verschwände aus der
+         Bauliste, während der Kopf sie weiter als bestätigt zählt. */
+      if (weg) sollPunktGeloescht(s, weg.id);
+      this._artenAktualisieren(s);
+    }, 'strecke');
   }
 
   /* Öffentlich, nicht nur Klickfolge: die Koordinatensuche fügt beim Zeichnen
@@ -648,7 +668,40 @@ export class StreckenLayer {
     return true;
   }
 
+  // ------------------------------------------------------------ Ist-Punkt setzen
+
+  /* Der dritte Weg zum Ist-Punkt: antippen, wo er wirklich liegt. Die beiden
+     anderen – den geplanten bestätigen und die Gerätepeilung übernehmen –
+     brauchen die Karte nicht und laufen über die Liste. */
+  starteIstSetzen(sid, o = {}) {
+    this.istSetzModus = { sid, sollPunkt: o.sollPunkt || null, art: o.art || 'punkt',
+                          abschnitt: o.abschnitt || null };
+    this.auswahl = sid;
+    L.DomUtil.addClass(this.karte.getContainer(), 'modus-zeichnen');
+    this.zeichne();
+  }
+
+  beendeIstSetzen() {
+    if (!this.istSetzModus) return;
+    this.istSetzModus = null;
+    L.DomUtil.removeClass(this.karte.getContainer(), 'modus-zeichnen');
+    this.zeichne();
+  }
+
   _kartenKlick(e) {
+    if (this.istSetzModus) {
+      const m = this.istSetzModus;
+      const s = store.strecke(m.sid);
+      if (!s) return this.beendeIstSetzen();
+      let neu = null;
+      store.aendern(() => {
+        neu = istPunktSetzen(s, e.latlng.lat, e.latlng.lng,
+          { sollPunkt: m.sollPunkt, art: m.art, abschnitt: m.abschnitt, quelle: 'karte' });
+      }, 'bau');
+      this.beendeIstSetzen();
+      this.aufIstPunkt(s, neu);
+      return;
+    }
     if (!this.zeichenModus) return;
     if (!store.strecke(this.zeichenModus)) return this.beendeZeichnen();
     this.punktAnfuegen(e.latlng.lat, e.latlng.lng);
@@ -780,22 +833,31 @@ export class StreckenLayer {
     const st = this._stil(s);
     const nebensache = this.hervorheben && s.id !== this.hervorheben;
     const pfad = s.punkte.map(pt => [pt.lat, pt.lng]);
+    /* Liegt daneben eine gebaute Trasse, tritt die geplante zurück: sie wird
+       zur feinen Punktreihe, damit auf einen Blick zu sehen ist, welche der
+       beiden Linien das Gelände beschreibt und welche den Auftrag. Geändert
+       wird dabei nur die Darstellung – die Planung selbst bleibt, wie sie ist. */
+    const gebaut = this.mitIst && istPunkte(s).length > 0;
+    const sollSt = gebaut
+      ? { ...st, breite: Math.max(2, st.breite - 1.5), deckkraft: st.deckkraft * 0.6,
+          strich: '1 7', fassung: 0 }
+      : st;
     if (pfad.length >= 2) {
       /* Für die Platzsuche der Schilder: jede gezeichnete Trasse zählt, auch
          die blasse Nebenstrecke – verdeckt ist verdeckt. */
       this._linienzuege.push(s.punkte);
       // weiße Kontrastfassung darunter
-      if (st.fassung) {
+      if (sollSt.fassung) {
         L.polyline(pfad, {
-          pane: 'fbp-strecken', color: '#ffffff', weight: st.fassung,
+          pane: 'fbp-strecken', color: '#ffffff', weight: sollSt.fassung,
           opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false
         }).addTo(this.gruppe);
       }
 
       const linie = L.polyline(pfad, {
-        pane: 'fbp-strecken', color: st.farbe, weight: st.breite,
-        opacity: st.deckkraft, lineCap: 'round', lineJoin: 'round',
-        dashArray: st.strich,
+        pane: 'fbp-strecken', color: sollSt.farbe, weight: sollSt.breite,
+        opacity: sollSt.deckkraft, lineCap: 'round', lineJoin: 'round',
+        dashArray: sollSt.strich,
         interactive: this.interaktiv, bubblingMouseEvents: false
       }).addTo(this.gruppe);
       if (this.interaktiv) {
@@ -866,6 +928,8 @@ export class StreckenLayer {
       });
     }
 
+    this._zeichneIst(s, o, st);
+
     // Einfügegriffe zwischen den Punkten
     if (this.interaktiv && gewaehlt && !this.zeichenModus && s.punkte.length >= 2) {
       for (let i = 1; i < s.punkte.length; i++) {
@@ -918,6 +982,78 @@ export class StreckenLayer {
          bleibt es über seinem Ankerpunkt stehen. */
       if (abstand) this._schilder.push({ marke, punkte: s.punkte, abstand });
     }
+  }
+
+  /**
+   * Die gebaute Trasse neben die geplante legen.
+   *
+   * Unterschieden wird über den Strich und nicht über die Farbe: die Farbe
+   * gehört der Strecke und hält zwölf Trassen auf einem Blatt auseinander –
+   * sie noch einmal für Soll gegen Ist zu vergeben, hieße zwischen zwei
+   * Aussagen zu wählen. Das Ist ist deshalb durchgezogen und kräftig, das Soll
+   * wird daneben zur feinen Punktreihe: was liegt, ist die stärkere Linie.
+   *
+   * Kein `filter`, kein `mix-blend-mode` und kein Schlagschatten – aus
+   * demselben Grund wie überall hier: Firefox gibt Seitenbereiche damit beim
+   * Drucken nicht aus (siehe `css/print.css`).
+   */
+  _zeichneIst(s, o, st) {
+    if (!this.mitIst) return;
+    const ist = istPunkte(s);
+    if (!ist.length) return;
+    const pfad = ist.map(pt => [pt.lat, pt.lng]);
+
+    if (pfad.length >= 2) {
+      /* Nur die gebauten Trassen kommen in die Platzsuche der Streckenschilder.
+         Das hält die Rechnung klein – gebaut ist immer nur ein Teil der
+         Planung – und deckt trotzdem den Fall ab, für den sie da ist: ein
+         Schild, das quer über der Linie liegt, die der Trupp aufgenommen hat. */
+      this._linienzuege.push(ist);
+      L.polyline(pfad, {
+        pane: 'fbp-strecken', color: '#ffffff', weight: (st.fassung || 8) + 1,
+        opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false
+      }).addTo(this.gruppe);
+      L.polyline(pfad, {
+        pane: 'fbp-strecken', color: st.farbe, weight: st.breite + 1.5,
+        opacity: 1, lineCap: 'round', lineJoin: 'round',
+        interactive: false, className: 'fbp-ist-linie'
+      }).addTo(this.gruppe);
+    }
+
+    for (const pt of ist) {
+      /* Die Abweichung wird gezeichnet und nicht nur gerechnet: eine Zahl in
+         der Liste sagt „40 m“, die Verbindungslinie sagt, wohin. Unterhalb der
+         Schwelle bleibt sie weg – die Streuung der Gerätepeilung selbst als
+         Abweichung zu zeigen, machte die Karte unruhig und die Meldung wertlos. */
+      const soll = sollZuIst(s, pt);
+      if (soll && distanz(soll, pt) >= ABWEICHUNG_SCHWELLE) {
+        L.polyline([[soll.lat, soll.lng], [pt.lat, pt.lng]], {
+          pane: 'fbp-strecken', color: '#b45309', weight: 2, opacity: 0.9,
+          dashArray: '3 4', interactive: false
+        }).addTo(this.gruppe);
+      }
+      L.marker([pt.lat, pt.lng], {
+        pane: 'fbp-griffe', interactive: this.interaktiv, keyboard: false,
+        icon: L.divIcon({
+          className: 'fbp-punkt-icon',
+          html: `<span class="fbp-istpunkt" style="--farbe:${st.farbe}"></span>`,
+          iconSize: [18, 18], iconAnchor: [9, 9]
+        })
+      }).addTo(this.gruppe)
+        .bindTooltip(() => this._istTooltip(s, pt),
+          { direction: 'top', className: 'fbp-tooltip', offset: [0, -8] });
+    }
+  }
+
+  _istTooltip(s, pt) {
+    const soll = sollZuIst(s, pt);
+    const art = punktartById(pt.art);
+    const abw = soll ? distanz(soll, pt) : null;
+    return `<b>Gebaut</b> – ${escapeHtml(art.name)}` +
+      (pt.name ? `<br>${escapeHtml(pt.name)}` : '') +
+      (abw !== null ? `<br>${escapeHtml(formatLaenge(abw))} vom geplanten Punkt`
+                    : '<br>zusätzlich zur Planung') +
+      (pt.bemerkung ? `<br>${escapeHtml(pt.bemerkung)}` : '');
   }
 
   /**

@@ -30,6 +30,13 @@ Wird das Datenschema erweitert, gehört die Umsetzung älterer Stände in
 `migrieren()` und `SCHEMA` wird hochgezählt — im `localStorage` der Nutzer
 liegen echte Planungen, die weiter zu öffnen sein müssen.
 
+**Soll und Ist sind zweierlei.** Seit Schema 13 trägt jede Strecke neben der
+Planung einen `bau`-Block: was der Trupp am Bauort wirklich gebaut hat. Der
+geplante Verlauf in `strecke.punkte` wird davon nie angefasst — die Abweichung
+zwischen beiden ist das, was der Truppführer melden muss und der Planer
+braucht. Wer am Baumodus arbeitet, liest `BAUDOKU.md`; dort stehen die
+Festlegungen samt der verworfenen Wege.
+
 ## Sprache und Schreibweise
 
 Alles ist deutsch: Bezeichner, Kommentare, Oberflächentexte, Commit-Betreffs.
@@ -120,6 +127,22 @@ node scripts/zeichen-pruefen.mjs
 ```
 
 Prüft, ob der Bestand vollständig ist und sich jedes Zeichen rendern lässt.
+
+Nach jeder Änderung am Baumodus oder an dem, was er anfasst (`js/baudoku.js`,
+`strecke.bau` in `js/state.js`, die Ist-Ebene in `js/strecken.js`, der Codec in
+`js/teilen.js`):
+
+```bash
+node scripts/baumodus-pruefen.mjs
+```
+
+Fährt die Anwendung in einem echten Chromium: legt eine Strecke an, schaltet um,
+nimmt Punkte auf allen drei Wegen auf, lädt neu, schickt die Planung durch den
+Link und zurück und prüft, dass die gebaute Trasse auf keinem der drei
+Druckerzeugnisse landet. Der Prüfstand steht in `scripts/pruefstand.mjs` und
+kommt ohne Fremdpaket aus – Node bringt seit 22 einen `WebSocket` mit, und damit
+lässt sich das DevTools-Protokoll unmittelbar sprechen. Einen anderen Browser
+nimmt er über `CHROMIUM=…` entgegen.
 
 Vor jedem Abschluss: Konsole auf Fehler ansehen, Undo/Redo und das Neuladen der
 Seite durchspielen (der Zustand muss den `localStorage` überleben), und bei

@@ -272,12 +272,20 @@
 
   <h2>5. Standortbestimmung</h2>
   <p>
-    Über die Schaltfläche für den eigenen Standort fragt die Anwendung die Ortungsfunktion
-    deines Geräts ab (Standort-Schnittstelle des Browsers). Der Browser holt dazu zuvor deine
-    Erlaubnis. Die ermittelte Position wird nur in der Karte angezeigt und – wenn du sie
-    übernimmst – in deiner lokal gespeicherten Planung abgelegt. Sie wird nicht an dieses
-    Angebot oder an Dritte übermittelt. Wie dein Gerät den Standort ermittelt, richtet sich
-    nach dem Betriebssystem und dem Browser.
+    An zwei Stellen fragt die Anwendung die Ortungsfunktion deines Geräts ab
+    (Standort-Schnittstelle des Browsers): über die Schaltfläche für den eigenen Standort
+    und im Baumodus über „Punkt hier“, mit dem ein Fernmeldebautrupp am Bauort festhält,
+    wo er tatsächlich gebaut hat. Der Browser holt dazu zuvor deine Erlaubnis.
+  </p>
+  <p>
+    Die ermittelte Position wird in der Karte angezeigt und – wenn du sie übernimmst – in
+    deiner lokal gespeicherten Planung abgelegt; im Baumodus ist genau das der Zweck, und
+    dort wird neben der Koordinate auch ihre Genauigkeit und der Zeitpunkt der Aufnahme
+    festgehalten. Sie wird nicht an dieses Angebot oder an Dritte übermittelt. Gibst du die
+    Planung selbst weiter – als Datei, als Link oder über einen eigenen Speicher –, gehen
+    diese Angaben mit; das ist dieselbe Weitergabe, die du für den Rest der Planung
+    entscheidest. Wie dein Gerät den Standort ermittelt, richtet sich nach dem
+    Betriebssystem und dem Browser.
   </p>
 
   <h2>6. Speicherung im Endgerät und Reichweitenmessung</h2>
@@ -295,6 +303,7 @@
         <tr><td class="mono">fbp.aktiv.v1</td><td>welche Planung zuletzt geöffnet war</td></tr>
         <tr><td class="mono">fbp.dateisicherung.v1</td><td>Zeitpunkt der letzten Dateisicherung je Planung</td></tr>
         <tr><td class="mono">fbp.druck.v1</td><td>Einstellungen für den Ausdruck des Bauauftrags</td></tr>
+        <tr><td class="mono">fbp.modus.v1</td><td>ob zuletzt im Planungs- oder im Baumodus gearbeitet wurde</td></tr>
         <tr><td class="mono">skipgc</td><td>gesetzt, wenn du der Reichweitenmessung widersprochen hast</td></tr>
         <tr><td class="mono">fbp.bilder</td><td>die Lichtbilder der Planungen (IndexedDB, nicht localStorage)</td></tr>
         <tr><td class="mono">fbp.cloud</td><td>nur bei eingerichtetem eigenem Speicher (Nummer&nbsp;3): der Zugang dorthin – Zugangsschlüssel oder Anmeldemarke, bzw. die Freigabe des gewählten Ordners – und zu jeder abgelegten Datei die Kennung ihres letzten Standes (IndexedDB)</td></tr>

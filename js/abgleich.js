@@ -471,7 +471,11 @@ const umfang = p => ({
   flaechen: (p.flaechen || []).length,
   relaisstellen: (p.relaisstellen || []).length,
   bilder: (p.bilder || []).length,
-  punkte: (p.strecken || []).reduce((n, s) => n + (s.punkte || []).length, 0)
+  punkte: (p.strecken || []).reduce((n, s) => n + (s.punkte || []).length, 0),
+  /* Zwei Stände, die sich nur in der Baudokumentation unterscheiden, sind
+     nicht gleich groß. Ohne diese Zeile stünden im Konfliktdialog zwei
+     scheinbar identische Planungen, zwischen denen niemand entscheiden kann. */
+  istPunkte: (p.strecken || []).reduce((n, s) => n + ((s.bau && s.bau.punkte) || []).length, 0)
 });
 
 /**

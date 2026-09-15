@@ -7,15 +7,17 @@ Papier hält die Entscheidung und ihre Begründung fest; was am Quelltext zu
 beachten ist, steht in `CLAUDE.md`, die Zusage an den Nutzer in
 `datenschutz.html`, die beiden Wege nach draußen in `TEILEN.md` und `CLOUD.md`.
 
-Stand: entschieden, noch nicht gebaut.
+Stand: Stufe 1 gebaut – Datenmodell, Umschalter, Bauabschnitte, Ist-Punkte auf
+drei Wegen, die gebaute Trasse auf der Karte und der Rückweg über Datei, Link
+und Speicher. Die Stufen 2 bis 6 stehen aus.
 
 ## Warum überhaupt
 
 Das Werkzeug endet heute mit dem gedruckten Bauauftrag. Was danach passiert,
 verlässt es: der Truppführer fertigt nach Bauende die Technische
 Fernmeldeskizze für den Kabelbau an – „durch Einzeichnen der befohlenen
-Angaben in eine Karte, Planpause oder Handskizze“ (Hdb Feldfernkabelbau
-1.3.2), und sie verbleibt beim Trupp (3.5). Der Planer bekommt eine
+Angaben in eine Karte, Planpause oder Handskizze“ (Hdb Feldfernkabelbau, 1.3.2),
+und sie verbleibt beim Trupp (3.5). Der Planer bekommt eine
 Baumeldung über Funk und sonst nichts. Was wirklich liegt, wie viel Material
 verbaut wurde und wo die Trasse vom Plan abweicht, steht am Ende auf Papier in
 einem Fahrzeug.
@@ -81,9 +83,10 @@ Fehlen.
 ```
 strecke.bau = {
   stand:      'offen' | 'laeuft' | 'gebaut' | 'uebergeben',
-  abschnitte: [ { id, name, trupp, fuehrer, vonNr, bisNr, beginn, ende } ],
+  abschnitte: [ { id, name, trupp, fuehrer, vonPunkt, bisPunkt,
+                  beginn, ende, farbe } ],
   punkte:     [ { id, lat, lng, art, name, bemerkung,
-                  abschnitt, sollPunkt, quelle, zeit } ],
+                  abschnitt, sollPunkt, quelle, genauigkeit, zeit } ],
   material:   [ { artikel, menge, abschnitt, bemerkung } ],
   meldungen:  [ { zeit, text, abschnitt } ],
   pruefung:   { stamm: [ … ], uebergabeAn, uebergabeZeit, uebergabeName },
@@ -91,7 +94,16 @@ strecke.bau = {
 }
 ```
 
-Zwei Felder tragen mehr, als sie aussehen:
+Drei Felder tragen mehr, als sie aussehen:
+
+**`vonPunkt` und `bisPunkt`** sind Punkt-KENNUNGEN und keine Punktnummern. Im
+ersten Entwurf standen dort Nummern; das hätte nicht gehalten. Drei Griffe im
+Bestand numerieren um – „Richtung umkehren“ und das Löschen eines Punktes in
+`js/ui.js`, der Einfügegriff in `js/strecken.js` –, und der Bauabschnitt hätte
+danach auf eine andere Stelle der Trasse gezeigt, ohne dass jemand etwas an ihm
+geändert hat. Im Link ist es umgekehrt: dort reisen die Kennungen nicht mit,
+und der Codec rechnet sie in die Stelle in der Punktliste um und wieder zurück
+(`js/teilen.js`). Innen die Kennung, im Transport die Stelle.
 
 **`sollPunkt`** hält die Kennung des geplanten Punktes, den dieser Ist-Punkt
 bestätigt. Er ist der einzige Weg, „Punkt 7 liegt 40 m weiter westlich“ von
@@ -99,7 +111,7 @@ bestätigt. Er ist der einzige Weg, „Punkt 7 liegt 40 m weiter westlich“ von
 über die Entfernung, und der rät bei eng gesetzten Punkten falsch.
 
 **`quelle`** sagt, woher die Koordinate stammt: `plan` (geplanter Punkt
-bestätigt), `standort` (aus der Gerätepeilung übernommen) oder `karte` (auf
+bestätigt), `standort` (vom Gerät geortet) oder `karte` (auf
 der Karte angetippt). Die drei sind unterschiedlich genau – der Standort auf
 etwa 5 bis 10 m unter freiem Himmel, deutlich schlechter unter Bewuchs. Wer
 später eine Abweichung von 15 m beurteilt, muss wissen, ob sie gemessen oder
@@ -111,7 +123,7 @@ Drei Handgriffe, mehr nicht:
 
 - **Geplanten Punkt bestätigen** – der Regelfall. Der Punkt wird in der Liste
   angetippt, die Koordinate aus dem Plan übernommen.
-- **Punkt hier** – die Gerätepeilung wird als Ist-Punkt übernommen.
+- **Punkt hier** – der Standort des Geräts wird als Ist-Punkt übernommen.
 - **Punkt auf der Karte** – antippen, wo er wirklich liegt.
 
 **Kein GPS-Mitschnitt.** Er stand im Entwurf und ist gefallen: er erzeugt bei
@@ -142,10 +154,12 @@ neben den Bedarf stellen, den `bauauftrag.js` schon rechnet.
 | Erdung | Schrauberder, Erdungsleitung (in m), Erdungsschiene, Erdungsverbinder, Erdungsverbinderschraube, Erdstecker, Erdungszwinge |
 | frei | sonstiges, mehrzeilig |
 
-Die drei Spalten des Blattes werden als **je ein Bauabschnitt** gedeutet – das
-ist die Lesart, die zum Mehr-Trupp-Fall passt und zu der Zeile
-„Erdungsleitung“, die in jeder Spalte nach einer Länge fragt. Diese Deutung
-steht unter Vorbehalt (siehe „Offen“).
+**Die drei Spalten des Blattes werden nicht nachgebaut.** Auf Papier sind sie
+der Platz für drei Baustrecken nebeneinander; digital gibt es diesen Zwang
+nicht – jede Strecke hat ihren eigenen Bogen, und wo mehrere Trupps an einer
+bauen, trägt jede Zeile ihren Bauabschnitt. Eine Spalte, die nur deshalb da
+ist, weil das Papier drei nebeneinander tragen musste, wäre ein leeres Feld
+mehr, das am Bauort jemand mit dem Handschuh treffen muss.
 
 Wo die Planung eine Zahl hergibt – Kabelbedarf, Trommeln, Muffen, Querungen –,
 steht sie als Soll neben dem Ist. Vorbelegt wird das Eingabefeld **nicht**:
@@ -266,8 +280,12 @@ den Rest nicht aufhalten soll.
 
 ## Umsetzung in Stufen
 
-1. `bau`-Block, Schemaerhöhung, Umschalter Planungsmodus / Baumodus,
-   Bauabschnitte und Trupps, Ist-Punkte auf drei Wegen.
+1. ~~`bau`-Block, Schemaerhöhung, Umschalter Planungsmodus / Baumodus,
+   Bauabschnitte und Trupps, Ist-Punkte auf drei Wegen.~~ **Gebaut.**
+   Datenmodell in `js/state.js` (Schema 13, Weißliste `bauNormalisieren()`),
+   Fachlogik in `js/baudoku.js`, Liste in `js/ui.js`, Ist-Ebene der Karte in
+   `js/strecken.js` hinter der Option `mitIst`, Codec in `js/teilen.js`.
+   Geprüft mit `node scripts/baumodus-pruefen.mjs`.
 2. Materialliste mit Katalog und Soll-Gegenüberstellung, Baumeldungen,
    Messungen und Übergabe.
 3. Baumeldung als Link und Datei zurück; Einspielen beim Planer mit Vorschau;
@@ -290,7 +308,7 @@ Die Stufen 1 bis 3 sind am Schreibtisch prüfbar, Stufe 4 nur am Gerät.
 | Mehrere Trupps | Bauabschnitte je Strecke, jede Eintragung trägt ihren Abschnitt |
 | Erfassung des Verlaufs | bestätigen, „Punkt hier“, antippen – kein Mitschnitt |
 | Änderungsrecht des Trupps | unbegrenzt, auch neue Strecken |
-| Materialliste | fester Katalog nach dem Extranet-Blatt, Soll daneben, nicht vorbelegt |
+| Materialliste | fester Katalog nach dem Extranet-Blatt, Soll daneben, nicht vorbelegt; die drei Spalten des Papierbogens entfallen |
 | Rückweg | Baumeldung als Link oder Datei, nur die `bau`-Blöcke |
 | Zusammenführen | ja, abschnittsweise ersetzend, mit Vorschau; Kollision fragt |
 | Offline | Service Worker plus Kachelvorrat, vor dem ersten Einsatz |
@@ -299,8 +317,6 @@ Die Stufen 1 bis 3 sind am Schreibtisch prüfbar, Stufe 4 nur am Gerät.
 
 ## Offen
 
-- **Die drei Spalten der Materialliste.** Hier als „je Bauabschnitt“ gedeutet.
-  Stimmt das nicht, ändert sich das Formular, nicht das Datenmodell.
 - **Die Fundstelle des Materialblattes.** Für `js/vorschrift.js` fehlen
   genauer Titel und Stand der im THW-Extranet veröffentlichten Fassung; ohne
   sie steht dort eine Quelle, die am Bauort niemand nachschlagen kann.
