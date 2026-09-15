@@ -1723,6 +1723,19 @@ body.baumodus #wz-relais { display: none; }
 .bz.bz-merken .bz-wert { color: var(--warnung-tief); }
 
 .bau-stand select { font-weight: 650; }
+
+/* Der Kachelvorrat. Die Zahl vor dem Knopfdruck ist das Wesentliche: wer am
+   Bauort feststellt, dass der Vorrat zu klein war, kann ihn nicht nachholen. */
+.vorrat-umfang { margin: 0 0 8px; }
+.vorrat-stand { margin: 8px 0; }
+.vorrat-warnung { color: var(--warnung-tief); }
+/* Was der Kartenanbieter beim Mitnehmen sieht, steht abgesetzt und nicht als
+   vierter Satz im Fließtext darüber: es ist eine Einschränkung und keine
+   Erläuterung. */
+.vorrat-hinweis {
+  margin: 8px 0 0; padding: 8px 10px; border-radius: var(--radius-klein);
+  background: var(--flaeche-2); border-left: 3px solid var(--linie-stark);
+}
 .bau-abw { color: var(--warnung-tief); }
 
 /* Bauabschnitte – die Aufteilung einer Strecke unter mehrere Trupps */

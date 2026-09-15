@@ -49,7 +49,11 @@ import {
   pruefeQuerungen, schonEingetragen, QUERUNGS_QUELLE,
   befundLesen as querungsbefund, befundText as querungsbefundText
 } from './querungspruefung.js';
-import { zeichneFunksicht } from './map.js';
+import { zeichneFunksicht, basiskarteById } from './map.js';
+import {
+  umfang as kachelUmfang, vorladen as kachelVorladen, bestand as kachelBestand,
+  leeren as kachelVorratLeeren, HOECHSTENS as KACHEL_HOECHSTENS, PUFFER, ZOOM_VON, ZOOM_BIS
+} from './kacheln.js';
 import {
   BOS_BAENDER, GEGENSTELLEN, bosBandById, gegenstelleById, gegenstellenhoehe,
   strahlermasse, strahlerText, sichtweite, funkhorizont, GEGENGEWICHT_HINWEIS
@@ -3663,16 +3667,21 @@ export function zeichneBauListe() {
   };
 
   liste.innerHTML = '';
-  if (!p.strecken.length) {
+  if (!p.strecken.length || !s) {
     summe.innerHTML = '';
     liste.appendChild(el('div', 'leer',
       `<p><b>Noch keine Strecke in dieser Planung.</b></p>
        <p>Der Baumodus schreibt fest, was an einer geplanten Strecke gebaut wurde.
        Ohne Planung gibt es nichts zu dokumentieren – im Planungsmodus eine
        Strecke zeichnen oder eine Planung laden.</p>`));
+    /* Der Vorratsblock bleibt trotzdem stehen. Sonst wäre „Vorrat löschen“
+       genau dann unerreichbar, wenn es darauf ankommt: wer seine Planung
+       gelöscht hat und die mitgenommenen Kacheln loswerden will, stünde vor
+       einem leeren Reiter – und die Zusage in `datenschutz.html`, dass sich der
+       Vorrat hier wegräumen lässt, wäre nicht eingelöst. */
+    liste.appendChild(kartenvorratBlock(null));
     return;
   }
-  if (!s) { summe.innerHTML = ''; return; }
 
   const k = baukennzahlen(s);
   summe.innerHTML =
@@ -3684,6 +3693,7 @@ export function zeichneBauListe() {
       : '');
 
   liste.appendChild(baukopfBlock(s, k));
+  liste.appendChild(kartenvorratBlock(s));
   liste.appendChild(bauabschnittBlock(s));
   liste.appendChild(bauPunktBlock(s));
   liste.appendChild(bauSchlussBlock(s, k));
@@ -3699,6 +3709,161 @@ function merkeFeld(el, marke) {
   const ein = el.querySelector('input,select,textarea');
   if (ein) ein.dataset.bauFeld = marke;
   return el;
+}
+
+/* Rund 20 kB je Kachel – ab einem Megabyte wird in MB gerechnet, darunter
+   bliebe eine fünfstellige Kilobytezahl stehen, die niemand liest. */
+const mengenText = bytes => bytes >= 1024 * 1024
+  ? `${(bytes / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })}\u00a0MB`
+  : `${Math.round(bytes / 1024)}\u00a0kB`;
+
+/* Der laufende Abruf steht modulweit und nicht im Block: die Liste wird bei
+   jeder Änderung an der Planung neu gebaut, und ein Griff, der dabei verloren
+   geht, lässt sich nicht mehr abbrechen – der Abruf liefe im Hintergrund bis
+   zum Deckel weiter, während der Knopf schon wieder Bereitschaft meldet. */
+let vorratLaeuft = null;
+
+/* Der Kachelvorrat. Er steht im Baumodus und nicht in den Kartenoptionen:
+   geholt wird er vor dem Ausrücken, und wer ihn braucht, ist schon hier.
+
+   Ohne ihn ist der Baumodus am Bauort blind – die Anwendung startet dank des
+   Wächters in `sw.js` zwar ohne Netz, aber die Karte bliebe grau, und
+   „antippen, wo der Punkt wirklich liegt“ ginge ins Leere. */
+function kartenvorratBlock(s) {
+  const box = el('div', 'feldgruppe bau-vorrat');
+  box.appendChild(el('h3', 'gruppen-titel', 'Karte für den Bauort mitnehmen'));
+
+  const umfangZeile = el('p', 'klein vorrat-umfang');
+  const standZeile = el('p', 'klein vorrat-stand');
+  const basis = basiskarteById(store.projekt.ansicht.basemap);
+  box.appendChild(umfangZeile);
+
+  const punkteFuer = alles => {
+    const strecken = alles ? store.projekt.strecken : (s ? [s] : []);
+    return strecken.flatMap(st => [...(st.punkte || []), ...istPunkte(st)]);
+  };
+  let allesMitnehmen = !s;
+  let bisZoom = ZOOM_BIS;
+
+  if (s) {
+    box.appendChild(feld('Umfang', 'diese', w => { allesMitnehmen = w === 'alle'; umfangZeigen(); }, {
+      typ: 'select',
+      werte: [['diese', 'nur diese Strecke'], ['alle', 'alle Strecken der Planung']]
+    }));
+  }
+  /* Die Feinheit ist eine echte Entscheidung und kein Feinschliff: über der
+     obersten mitgenommenen Stufe bleibt die Karte am Bauort grau, und der
+     FMBauplaner lässt bis Stufe 22 zoomen – beim Einmessen einer Muffe wird
+     genau dorthin gezoomt. Eine Stufe mehr kostet dabei das Vierfache. */
+  box.appendChild(feld('Feinheit', String(ZOOM_BIS), w => { bisZoom = Number(w); umfangZeigen(); }, {
+    typ: 'select',
+    werte: [[String(ZOOM_BIS), `bis Stufe ${ZOOM_BIS} – Häuser erkennbar`],
+            [String(ZOOM_BIS + 1), `bis Stufe ${ZOOM_BIS + 1} – viermal so viele Kacheln`]]
+  }));
+
+  function umfangZeigen() {
+    const punkte = punkteFuer(allesMitnehmen);
+    if (!punkte.length) {
+      umfangZeile.innerHTML = 'Ohne Trassenpunkte gibt es keinen Ausschnitt zum Mitnehmen.';
+      return;
+    }
+    const u = kachelUmfang(punkte, { zoomBis: bisZoom });
+    umfangZeile.innerHTML =
+      `<b>${escapeHtml(basis.name)}</b> entlang der Trasse, ${PUFFER}&nbsp;m beiderseits, ` +
+      `Zoomstufen ${ZOOM_VON} bis ${bisZoom}: ` +
+      `etwa <b>${u.anzahl.toLocaleString('de-DE')} Kacheln</b> (geschätzt ${escapeHtml(mengenText(u.bytes))})` +
+      (u.ausgelassen
+        ? `. <b class="vorrat-warnung">${u.ausgelassen.toLocaleString('de-DE')} Kacheln bleiben liegen</b> – ` +
+          `mehr als ${KACHEL_HOECHSTENS.toLocaleString('de-DE')} werden nicht geholt.`
+        : '.') +
+      `<br>Feiner als Stufe ${bisZoom} bleibt die Karte am Bauort leer.`;
+  }
+  umfangZeigen();
+
+  const tasten = el('div', 'tastenreihe bau-tasten');
+  const holen = knopf(vorratLaeuft ? 'Abbrechen' : '↓ Karte holen', () => {
+    if (vorratLaeuft) { vorratLaeuft.abbrechen(); return; }
+    const punkte = punkteFuer(allesMitnehmen);
+    if (!punkte.length) return hinweis('Diese Strecke hat noch keine Trassenpunkte.', 'warnung');
+    /* Nicht jede Karte darf mitgenommen werden – siehe das Kennzeichen
+       `vorrat` in `js/map.js`. Die Meldung nennt den Ausweg, weil der Nutzer
+       ihn sonst suchen müsste. */
+    if (!basis.vorrat) {
+      return hinweis(`„${basis.name}“ lässt sich nicht mitnehmen: ihre Nutzungs-` +
+        'bedingungen erlauben kein Vorabladen. In den Kartenoptionen auf eine ' +
+        'Karte des BKG wechseln – TopPlusOpen oder basemap.de.', 'warnung');
+    }
+    holen.textContent = 'Abbrechen';
+    vorratLaeuft = kachelVorladen(basis.url, basis.id, punkte, {
+      zoomBis: bisZoom,
+      beiFortschritt: (fertig, gesamt) =>
+        fortschritt(`Karte wird geholt … ${fertig} von ${gesamt} Kacheln`, fertig / gesamt)
+    });
+    vorratLaeuft.lauf.then(e => {
+      vorratLaeuft = null;
+      holen.textContent = '↓ Karte holen';
+      if (e.speicherVoll) {
+        hinweis(`Das Gerät ist voll – ${e.geholt} Kacheln liegen da, der Rest fehlt. ` +
+          'Platz schaffen und noch einmal holen.', 'fehler');
+      } else {
+        hinweis(e.abgebrochen
+          ? `Abgebrochen – ${e.geholt} Kacheln liegen im Gerät.`
+          : `Karte mitgenommen: ${e.geholt} Kacheln, ${mengenText(e.bytes)}` +
+            (e.fehler ? ` · ${e.fehler} nicht zu bekommen` : ''),
+          e.fehler && !e.geholt ? 'fehler' : 'info');
+      }
+      standZeigen();
+    }).catch(f => {
+      vorratLaeuft = null;
+      holen.textContent = '↓ Karte holen';
+      hinweis('Karte konnte nicht geholt werden: ' + f.message, 'fehler');
+    });
+  }, 'bau-taste primaer');
+  tasten.append(holen, knopf('Vorrat löschen', () => {
+    kachelVorratLeeren().then(() => { hinweis('Kachelvorrat gelöscht'); standZeigen(); })
+      .catch(f => hinweis('Löschen fehlgeschlagen: ' + f.message, 'fehler'));
+  }, 'klein'));
+  box.appendChild(tasten);
+  box.appendChild(standZeile);
+
+  function standZeigen() {
+    kachelBestand().then(b => {
+      if (!b.anzahl) { standZeile.innerHTML = 'Noch nichts im Gerät.'; return; }
+      /* Welche Karte im Vorrat liegt, gehört dazu: der Vorrat hängt an der
+         Kartenwahl, und wer nach dem Holen die Karte wechselt, steht am Bauort
+         vor einer grauen Fläche, während hier ein stattlicher Bestand steht. */
+      const namen = b.karten.map(id => basiskarteById(id).name);
+      const passt = b.karten.includes(basis.id);
+      standZeile.innerHTML =
+        `Im Gerät: <b>${b.anzahl.toLocaleString('de-DE')} Kacheln</b> ` +
+        `(${escapeHtml(mengenText(b.bytes))})` +
+        (namen.length ? ` für ${escapeHtml(namen.join(', '))}` : '') + '.' +
+        (passt ? '' : ` <b class="vorrat-warnung">Die eingestellte Karte „${escapeHtml(basis.name)}“ ` +
+          'ist nicht dabei – am Bauort bliebe sie leer.</b>');
+    });
+  }
+  standZeigen();
+
+  box.appendChild(el('p', 'klein',
+    'Geholt wird nur der Korridor der Trasse, mit Bedacht und gedeckelt: die ' +
+    'Nutzungsbedingungen der Kartenanbieter untersagen das massenhafte ' +
+    'Vorabladen, und wer dort auffällt, steht am Ende ganz ohne Karte da. ' +
+    'Mitnehmen lassen sich deshalb nur die Karten des BKG. Die Karte im ' +
+    'Bauauftrag und auf der Lagekarte bleibt ohne Netz leer – sie wird in ' +
+    'Graustufen gezeichnet, und die sind nicht im Vorrat. Das Blatt kommt aus ' +
+    'der Unterkunft mit.'));
+  /* Beim Betrachten sieht der Anbieter den Ausschnitt, in dem gearbeitet wird.
+     Beim Vorladen sieht er mehr: die Kacheln kommen in einem Zug und liegen in
+     einem schmalen Band – und dieses Band ist die Trasse, auf Kachelbreite
+     gerundet. Das ist ein Unterschied, den der Nutzer vor dem Knopfdruck
+     kennen muss und nicht danach. */
+  box.appendChild(el('p', 'klein vorrat-hinweis',
+    'Der Kartenanbieter sieht dabei mehr als beim gewöhnlichen Betrachten: die ' +
+    'Kacheln kommen in einem Zug und liegen in einem schmalen Band. Daraus ist ' +
+    'der Verlauf der Trasse auf einige hundert Meter genau abzulesen – nicht ' +
+    'ihre Punkte, aber ihr Weg; und wo Ist-Punkte aufgenommen sind, zählen die ' +
+    'mit. Wer das nicht möchte, nimmt die Karte nicht mit und baut ohne sie.'));
+  return box;
 }
 
 /* Kopf: der Baustand und die Zahlen, die ihn stützen. Der Stand ist ein

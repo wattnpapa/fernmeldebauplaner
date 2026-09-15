@@ -40,6 +40,12 @@ pages:
         sed -i "s|^export const VERSION = .*|export const VERSION = '$CI_COMMIT_TAG';|" \
           public/js/version.js
         grep "^export const VERSION = " public/js/version.js
+        # Derselbe Stempel in den Offline-Wächter: er benennt damit seinen
+        # Speicher, und der Browser erkennt einen neuen Wächter am Inhalt der
+        # Datei. Ohne das bliebe der Bauplatz auf dem Stand des ersten Aufrufs.
+        grep -q "^const STAND = " public/sw.js
+        sed -i "s|^const STAND = .*|const STAND = '$CI_COMMIT_TAG';|" public/sw.js
+        grep "^const STAND = " public/sw.js
       fi
   # Die Änderungsdaten der Sitemap bleiben, wie sie im Repository stehen: die
   # Sitemap nennt die Adressen von fmbauplaner.app, und die Suchmaschinen sollen

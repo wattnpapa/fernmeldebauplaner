@@ -48,10 +48,14 @@
       <b>Kartenkacheln</b>, die dein Browser bei den Kartenanbietern abruft, die
       <b>Höhen- und Oberflächendaten</b> für Geländehöhe und Streckenprüfung
       (beides Abschnitt 4), und ein <b>Zählimpuls</b> beim Aufruf der Anwendung
-      (Abschnitt 6), dem du unten widersprechen kannst. Eine Ausnahme von der Regel
-      „nur der Ausschnitt, nie die Position“ gibt es: für die Hindernisprüfung einer
-      Funkstrecke und für die Querungsprüfung einer Kabeltrasse geht deren
-      <b>Verlauf</b> an die Overpass-API – siehe Abschnitt 4.
+      (Abschnitt 6), dem du unten widersprechen kannst. Von der Regel „nur der
+      Ausschnitt, nie die Position“ gibt es <b>drei Ausnahmen</b>: für die
+      Hindernisprüfung einer Funkstrecke und für die Querungsprüfung einer Kabeltrasse
+      geht deren <b>Verlauf</b> an die Overpass-API, und wer im Baumodus die
+      <b>Karte für den Bauort mitnimmt</b>, holt die Kacheln entlang der Trasse in
+      einem Zug – daraus ist ihr Weg beim Kartenanbieter auf einige hundert Meter
+      genau abzulesen. Alle drei stehen in Abschnitt 4, alle drei geschehen nur auf
+      deinen Knopfdruck oder unterbleiben, wenn du sie nicht auslöst.
     </p>
   </div>
 
@@ -243,13 +247,15 @@
     Funksichtfläche. Sie verraten wie die Kartenkacheln nur den Ausschnitt, nicht die
     genaue Position – eine Kachel deckt auf unserer Breite rund 6 km ab und ist damit
     gröber als jede Kartenkachel, die im selben Ausschnitt ohnehin geladen wird.
+    Für das Mitnehmen der Karte gilt das nicht – dazu die Ausnahme weiter unten.
     Für das Oberflächenmodell gilt dasselbe, nur noch gröber: dort wird eine Kachel
     von einem Breiten- mal einem Längengrad angefragt, also rund 110 km mal 70 km.
   </p>
   <p>
-    <b>Eine Ausnahme, und sie ist wichtig:</b> An zwei Stellen geht der <b>Verlauf
-    einer geplanten Strecke</b> an die Overpass-API. Das ist nicht nur ein
-    Kartenausschnitt, das sind die geplanten Orte.
+    <b>Drei Ausnahmen, und sie sind wichtig:</b> An zwei Stellen geht der <b>Verlauf
+    einer geplanten Strecke</b> an die Overpass-API, und beim Mitnehmen der Karte
+    zeichnet die Folge der Kachelanfragen ihren Weg nach. Das ist nicht nur ein
+    Kartenausschnitt.
   </p>
   <ul>
     <li>Sobald eine <b>Funkstrecke</b> zwei Aufbauplätze hat, fragt die Anwendung von
@@ -262,12 +268,23 @@
       Umspannwerke ab, die die Trasse kreuzen oder daneben liegen. Übertragen werden
       dabei die umschließenden Rechtecke des Trassenverlaufs. Ohne diesen Knopfdruck
       geschieht nichts.</li>
+    <li>Wer im Baumodus auf ausdrücklichen Knopfdruck die <b>Karte für den Bauort
+      mitnimmt</b>, holt die Kartenkacheln entlang der Trasse in einem Zug. Für den
+      Kartenanbieter sieht das anders aus als gewöhnliches Betrachten: die Anfragen
+      kommen gebündelt und liegen in einem schmalen Band, und aus diesem Band ist der
+      <b>Verlauf der Trasse auf einige hundert Meter genau</b> abzulesen – nicht ihre
+      Punkte, aber ihr Weg. Übertragen werden dabei nur die Kachelnummern; die Planung
+      selbst geht nicht hinaus. Ohne diesen Knopfdruck geschieht nichts, und wer es
+      nicht möchte, baut ohne mitgenommene Karte.</li>
   </ul>
   <p>
-    Ein Konto, eine Kennung oder einen Namen überträgt die Anfrage in beiden Fällen
-    nicht, und was zurückkommt, wird nicht gespeichert – es geht in den Befund zu
-    dieser einen Strecke ein und ist mit dem nächsten Neuladen fort. Es gelten die
-    Nutzungs- und Datenschutzbedingungen des jeweiligen Anbieters.
+    Ein Konto, eine Kennung oder einen Namen überträgt keine dieser Anfragen. Was von
+    der Overpass-API zurückkommt, wird nicht gespeichert – es geht in den Befund zu
+    dieser einen Strecke ein und ist mit dem nächsten Neuladen fort. Die
+    <b>mitgenommenen Kartenkacheln dagegen bleiben im Gerät</b>, bis du sie im
+    Baumodus mit „Vorrat löschen“ wegräumst oder die Websitedaten löschst; das ist
+    ihr Zweck. Es gelten die Nutzungs- und Datenschutzbedingungen des jeweiligen
+    Anbieters.
   </p>
 
   <h2>5. Standortbestimmung</h2>
@@ -281,7 +298,11 @@
     Die ermittelte Position wird in der Karte angezeigt und – wenn du sie übernimmst – in
     deiner lokal gespeicherten Planung abgelegt; im Baumodus ist genau das der Zweck, und
     dort wird neben der Koordinate auch ihre Genauigkeit und der Zeitpunkt der Aufnahme
-    festgehalten. Sie wird nicht an dieses Angebot oder an Dritte übermittelt. Gibst du die
+    festgehalten. Sie wird nicht an dieses Angebot oder an Dritte übermittelt. <b>Eine
+    Einschränkung:</b> Nimmst du danach die Karte für den Bauort mit, umfasst der
+    Ausschnitt auch die Umgebung der aufgenommenen Punkte – der Kartenanbieter erfährt
+    dadurch, in welchem Band gearbeitet wurde, nicht aber die Punkte selbst
+    (Abschnitt&nbsp;4, dritte Ausnahme). Gibst du die
     Planung selbst weiter – als Datei, als Link oder über einen eigenen Speicher –, gehen
     diese Angaben mit; das ist dieselbe Weitergabe, die du für den Rest der Planung
     entscheidest. Wie dein Gerät den Standort ermittelt, richtet sich nach dem
@@ -292,8 +313,10 @@
   <p>
     Es werden <b>keine Cookies</b> gesetzt. Die Anwendung legt ihre Daten aber im lokalen
     Speicher (localStorage) deines Browsers ab, weil sie ohne Server arbeitet und die Arbeit
-    sonst bei jedem Neuladen verloren wäre. Hinzu kommt der Bildspeicher (IndexedDB), in dem
-    die Lichtbilder liegen – für den localStorage sind sie zu groß:
+    sonst bei jedem Neuladen verloren wäre. Hinzu kommen zwei IndexedDB-Datenbanken – für
+    die Lichtbilder und für die mitgenommenen Kartenkacheln, beide für den localStorage zu
+    groß – und der Cache&nbsp;Storage, in dem die Dateien der Anwendung selbst liegen, damit
+    sie am Bauort ohne Netz startet:
   </p>
   <div class="tabellen-huelle">
     <table>
@@ -306,6 +329,8 @@
         <tr><td class="mono">fbp.modus.v1</td><td>ob zuletzt im Planungs- oder im Baumodus gearbeitet wurde</td></tr>
         <tr><td class="mono">skipgc</td><td>gesetzt, wenn du der Reichweitenmessung widersprochen hast</td></tr>
         <tr><td class="mono">fbp.bilder</td><td>die Lichtbilder der Planungen (IndexedDB, nicht localStorage)</td></tr>
+        <tr><td class="mono">fbp.kacheln</td><td>die für den Bauort mitgenommenen Kartenkacheln (IndexedDB). Die Datenbank wird angelegt, sobald die Karte das erste Mal erscheint – sie bleibt leer, bis du im Baumodus „Karte holen“ drückst, und lässt sich dort mit „Vorrat löschen“ wieder wegräumen</td></tr>
+        <tr><td class="mono">fbp-&lt;Stand&gt;</td><td>die Dateien der Anwendung selbst – Seite, Stilblätter, Programmteile (Cache&nbsp;Storage des Browsers). Sie liegen dort, damit die Anwendung am Bauort ohne Netz startet; Planungsdaten stehen nicht darin</td></tr>
         <tr><td class="mono">fbp.cloud</td><td>nur bei eingerichtetem eigenem Speicher (Nummer&nbsp;3): der Zugang dorthin – Zugangsschlüssel oder Anmeldemarke, bzw. die Freigabe des gewählten Ordners – und zu jeder abgelegten Datei die Kennung ihres letzten Standes (IndexedDB)</td></tr>
       </tbody>
     </table>

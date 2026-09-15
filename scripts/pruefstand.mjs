@@ -51,9 +51,21 @@ const TYPEN = {
   '.txt':  'text/plain; charset=utf-8'
 };
 
-/** Statischer Server über dem Projektbaum. Liefert den Port, auf dem er hört. */
+/**
+ * Statischer Server über dem Projektbaum. Liefert den Port, auf dem er hört.
+ *
+ * `netzAus()` weist eingehende Verbindungen ab, statt sie zu beantworten. Das
+ * ist der einzige Weg, „kein Netz“ EHRLICH zu prüfen: die Abschaltung über das
+ * DevTools-Protokoll (`seite.ohneNetz()`) gilt nur für das Ziel, auf dem sie
+ * gesetzt wird – der Service Worker ist ein eigenes Ziel und behält sein Netz.
+ * Eine Prüfung, die sich darauf verlässt, bestätigt auch einen Wächter, der
+ * gar nichts aus dem Speicher liefert. Beides zusammen ergibt erst das Bild:
+ * der Server schweigt, und die Seite weiß, dass sie offline ist.
+ */
 export async function starteServer(wurzel, port = 0) {
+  let netz = true;
   const server = createServer(async (anfrage, antwort) => {
+    if (!netz) { anfrage.socket.destroy(); return; }
     /* Der Pfad wird normalisiert, bevor er an die Platte geht: ein `..` in der
        Adresse dürfte sonst aus dem Projektbaum heraus lesen. Der Prüfstand
        läuft nur lokal, aber ein Server, der das nicht tut, wandert irgendwann
@@ -75,8 +87,18 @@ export async function starteServer(wurzel, port = 0) {
       antwort.writeHead(404, { 'Content-Type': 'text/plain' }).end('nicht gefunden');
     }
   });
+  /* Auch die Verbindung selbst wird abgewiesen und nicht erst die Anfrage:
+     ein Browser, der eine offene Verbindung vorfindet und dann nichts hört,
+     wartet – ein abgewiesener Verbindungsversuch schlägt sofort fehl, so wie
+     am Bauort. */
+  server.on('connection', verbindung => { if (!netz) verbindung.destroy(); });
   await new Promise(fertig => server.listen(port, '127.0.0.1', fertig));
-  return { port: server.address().port, schliessen: () => new Promise(f => server.close(f)) };
+  return {
+    port: server.address().port,
+    netzAus: () => { netz = false; },
+    netzAn: () => { netz = true; },
+    schliessen: () => new Promise(f => server.close(f))
+  };
 }
 
 // ---------------------------------------------------------------- Browser
@@ -229,7 +251,18 @@ async function neueSeite(befehl, horcher) {
       await seite.warteAuf('document.readyState === "complete"', 20000);
     },
 
+    /* Gewöhnliches Neuladen, kein hartes: ein hartes umgeht den Service Worker
+       vollständig – damit wäre gerade das nicht zu prüfen, wofür er da ist.
+       Den Zwischenspeicher des Browsers braucht es dafür nicht: der eigene
+       Server schickt zu jeder Datei `Cache-Control: no-store`. */
     async neuLaden() {
+      await an('Page.reload');
+      await seite.warteAufLaden();
+    },
+
+    /** Neu laden und dabei den Wächter umgehen – für den Fall, dass wirklich
+     *  der Server gefragt werden soll */
+    async hartNeuLaden() {
       await an('Page.reload', { ignoreCache: true });
       await seite.warteAufLaden();
     },
@@ -332,6 +365,31 @@ async function neueSeite(befehl, horcher) {
       await an('Input.dispatchKeyEvent', { type: 'keyDown', key: taste, windowsVirtualKeyCode: 0 });
       await an('Input.dispatchKeyEvent', { type: 'keyUp', key: taste });
       await seite.ruhe();
+    },
+
+    /* Das Netz abschalten, ohne den Server anzuhalten. Nur so ist zu prüfen,
+       was am Bauort wirklich geschieht: der Browser kennt die Adresse, kommt
+       aber nicht hin. Ein angehaltener Server sähe von außen ähnlich aus,
+       ließe aber offen, ob der Browser oder der Server geantwortet hat. */
+    async netz(eingeschaltet) {
+      await an('Network.enable');
+      await an('Network.emulateNetworkConditions', {
+        offline: !eingeschaltet, latency: 0, downloadThroughput: -1, uploadThroughput: -1
+      });
+    },
+    ohneNetz() { return seite.netz(false); },
+    mitNetz() { return seite.netz(true); },
+
+    /** Wartet, bis ein Service Worker die Seite führt */
+    async warteAufWaechter(frist = 15000) {
+      await seite.warteAuf('!!navigator.serviceWorker.controller', frist);
+    },
+
+    /** Den Dateizwischenspeicher des Browsers leeren – ohne das beantwortet er
+     *  auch ohne Netz noch aus eigenem Vorrat, und die Prüfung bewiese nichts */
+    async zwischenspeicherLeeren() {
+      await an('Network.enable');
+      await an('Network.clearBrowserCache');
     },
 
     /** Den Gerätestandort festsetzen – sonst ist „Punkt hier“ nicht prüfbar */

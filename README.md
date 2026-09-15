@@ -273,6 +273,18 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   nur so bleibt die Abweichung nachweisbar. Die drei gedruckten Erzeugnisse zeigen
   weiterhin den Auftrag
 
+**Ohne Netz**
+- Die Anwendung startet ohne Verbindung. Nach dem ersten Aufruf mit Netz liegt sie im
+  Gerät und lässt sich am Bauort öffnen, als wäre sie installiert – ohne Installation
+- **Karte mitnehmen:** Im Baumodus holt „Karte holen“ vor dem Ausrücken die Kacheln
+  entlang der Trasse ins Gerät. Eine 5 km lange Trasse kostet rund 270 Kacheln, gut
+  5 MB; der Umfang steht vor dem Knopfdruck da, der Vorrat lässt sich wieder löschen
+- Geholt wird nur der Korridor der Trasse, gedeckelt und gedrosselt: die
+  Nutzungsbedingungen der Kartenanbieter untersagen massenhaftes Vorabladen. Was der
+  Anbieter dabei sieht, steht im Klartext über dem Knopf und in `datenschutz.html`
+- Planungen, Bilder und Baudokumentation liegen ohnehin im Gerät – ohne Netz fehlt
+  nur, was von außen kommt: neue Kartenkacheln, Höhendaten, Querungsprüfung
+
 **Austausch mit anderen Werkzeugen**
 - Planung als `.json` sichern und laden
 - **Planung als Link teilen:** ein Link, der die Planung selbst enthält – gepackt im
@@ -458,6 +470,7 @@ js/map.js             Leaflet-Karte und Basiskarten
 js/gitter.js          UTM-Kilometergitter (UTMREF/MGRS) auf Karte und Bauauftrag
 js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
 js/baudoku.js         Baudokumentation: Ist-Trasse, Bauabschnitte, Abweichung
+js/kacheln.js         Kartenkacheln für den Bauort mitnehmen (IndexedDB)
 js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
 js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
 js/zeichen.js         Taktische Zeichen auf der Karte
@@ -489,9 +502,12 @@ js/cloud-webdav.js    Rückseite: Nextcloud und anderes WebDAV
 js/cloud-s3.js        Rückseite: S3-kompatibler Speicher (Signatur von Hand)
 js/cloud-gdrive.js    Rückseite: Google Drive
 js/version.js         Stand der Anwendung (beim Veröffentlichen gesetzt)
+sw.js                 Offline-Wächter: legt ab, was die Anwendung lädt
 bilder/               Bilder der statischen Seiten
 fonts/                Roboto Slab Bold, die Beschriftungsschrift der Zeichen
-scripts/              Zeichen holen und prüfen, Baumodus im Browser durchspielen
+scripts/              Zeichen holen und prüfen; Baumodus und Offline-Betrieb im Browser
+                      durchspielen (pruefstand.mjs, baumodus-pruefen.mjs,
+                      offline-pruefen.mjs)
 vendor/               Leaflet 1.9.4, mgrs 2.1.0, libheif 1.19.8 (siehe LIZENZEN.md)
 LICENSE               EUPL-1.2
 ```
@@ -499,17 +515,23 @@ LICENSE               EUPL-1.2
 Der Datenbestand liegt unter dem LocalStorage-Schlüssel `fbp.projekte.v1`, das zuletzt
 geöffnete Projekt unter `fbp.aktiv.v1`, der zuletzt gewählte Modus unter `fbp.modus.v1`.
 `js/state.js` hebt ältere Dateien beim Laden über `migrieren()` auf das aktuelle Schema.
+Die Lichtbilder liegen in der IndexedDB `fbp.bilder`, die mitgenommenen Kartenkacheln
+in `fbp.kacheln`, die Dateien der Anwendung selbst im Cache Storage unter `fbp-<Stand>`.
 
 Wer einen eigenen Speicher einrichtet, bekommt eine dritte Ablage dazu: die
 IndexedDB-Datenbank `fbp.cloud`. Darin stehen der Zugang zum Speicher und zu jeder
 abgelegten Datei die Marke, unter der sie zuletzt gesehen wurde. Ohne eingerichtete
 Verbindung gibt es sie nicht.
 
-Die Bilddaten liegen als einziger Bestand außerhalb: in der IndexedDB-Datenbank
-`fbp.bilder`, im Projekt steht zu jedem Bild nur der Eintrag mit Ort, Zeit und Maßen.
-Der Grund steht im Kopf von `js/bildspeicher.js` – ein Lichtbild sprengt das
-5-MB-Kontingent des `localStorage`, und der Undo-Stapel legt bis zu 60 Abzüge der
-Planung ab. Bilddaten ohne Planung räumt der nächste Start weg.
+Außerhalb des `localStorage` liegen drei Bestände. Die **Bilddaten** in der
+IndexedDB-Datenbank `fbp.bilder` – im Projekt steht zu jedem Bild nur der Eintrag mit
+Ort, Zeit und Maßen; der Grund steht im Kopf von `js/bildspeicher.js`: ein Lichtbild
+sprengt das 5-MB-Kontingent des `localStorage`, und der Undo-Stapel legt bis zu 60
+Abzüge der Planung ab. Bilddaten ohne Planung räumt der nächste Start weg. Die
+**mitgenommenen Kartenkacheln** in `fbp.kacheln`, aus demselben Grund und mit einem
+eigenen Knopf zum Wegräumen. Und die **Dateien der Anwendung selbst** im Cache Storage
+unter `fbp-<Stand>`, damit sie am Bauort ohne Netz startet; Planungsdaten stehen darin
+nicht.
 
 ### Taktische Zeichen auffrischen
 
@@ -548,7 +570,17 @@ Gerätestandort –, lädt die Seite neu, schickt die Planung durch den Link und
 zurück und prüft, dass die gebaute Trasse auf keinem der drei Druckerzeugnisse
 landet.
 
-Auch das kommt ohne Fremdpaket aus: Node bringt seit Fassung 22 einen
+Und ob die Anwendung wirklich ohne Netz läuft:
+
+```bash
+node scripts/offline-pruefen.mjs
+```
+
+Dieser Lauf schaltet das Netz im Browser ab – nicht den Server –, lädt neu und
+prüft, dass die Anwendung startet, dass sich eine Strecke anlegen lässt und dass
+eine abgelegte Kachel aus dem Vorrat zurückkommt.
+
+Beide kommen ohne Fremdpaket aus: Node bringt seit Fassung 22 einen
 `WebSocket` mit, und damit lässt sich das DevTools-Protokoll des Browsers
 unmittelbar sprechen. Der Prüfstand steht in `scripts/pruefstand.mjs`; einen
 anderen Browser nimmt er über `CHROMIUM=/pfad/zum/chromium` entgegen.
@@ -603,8 +635,9 @@ gültige Dienstvorschrift maßgeblich.
 ## Datenschutz
 
 Planungsdaten bleiben auf dem Gerät: Sie liegen im `localStorage` des Browsers
-(`fbp.projekte.v1`, `fbp.aktiv.v1`, `fbp.dateisicherung.v1`, `fbp.druck.v1`), die
-Lichtbilder in der IndexedDB-Datenbank `fbp.bilder`. Nichts davon wird übertragen –
+(`fbp.projekte.v1`, `fbp.aktiv.v1`, `fbp.dateisicherung.v1`, `fbp.druck.v1`,
+`fbp.modus.v1`), die Lichtbilder in der IndexedDB-Datenbank `fbp.bilder`, die
+mitgenommenen Kartenkacheln in `fbp.kacheln`. Nichts davon wird übertragen –
 auch nicht der Aufnahmeort in den Bildern. Es gibt keinen Server, kein Konto und keine
 Cookies.
 
@@ -637,8 +670,13 @@ mit dem Verlauf einer Funkstrecke:
 - **Querungen entlang einer Kabeltrasse** – Freileitungen, Bahnstrecken und
   Umspannwerke – holt derselbe Dienst, aber erst auf ausdrücklichen Knopfdruck. Auch
   dabei geht der Verlauf der Trasse hinaus, als Folge umschließender Rechtecke.
-  Zusammen mit der Hindernisabfrage sind das die einzigen Anfragen, die die geplanten
-  Orte selbst verraten; `datenschutz.html` sagt das ausdrücklich.
+- **Karte für den Bauort mitnehmen** – auf Knopfdruck im Baumodus. Die Kacheln entlang
+  der Trasse kommen in einem Zug und liegen in einem schmalen Band; daraus ist ihr Weg
+  beim Kartenanbieter auf einige hundert Meter genau abzulesen. Übertragen werden dabei
+  nur Kachelnummern, nicht die Planung. Mitnehmen lassen sich deshalb auch nur die
+  Karten des BKG, deren Lizenz das Vervielfältigen erlaubt.
+  Diese drei Anfragen sind die einzigen, die etwas über die geplanten Orte verraten;
+  `datenschutz.html` sagt das ausdrücklich.
 
 - **Reichweitenmessung** mit [GoatCounter](https://www.goatcounter.com/): ein anonymer
   Zählimpuls beim Aufruf der Anwendung, ohne Cookie und ohne geräteübergreifende

@@ -24,6 +24,12 @@ Nach außen gehen ausschließlich Karten- und Höhenkacheln sowie der GoatCounte
 Eine Änderung, die etwas anderes überträgt, ist ein Bruch mit der Zusage in
 `datenschutz.html` und braucht eine ausdrückliche Entscheidung.
 
+Auch die ART der Abfrage zählt dazu, nicht nur ihr Inhalt: das Mitnehmen der
+Karte holt dieselben Kacheln wie das Betrachten, aber gebündelt und in einem
+schmalen Band — und daraus ist der Trassenverlauf abzulesen. Solche Fälle
+stehen in `datenschutz.html` unter den Ausnahmen und gehören dort hin, bevor
+sie gebaut werden.
+
 **Zustand nur über `state.js`.** Änderungen am Projekt laufen durch
 `store.aendern(…)`, sonst greifen Undo, Speicherstand und Neuzeichnen nicht.
 Wird das Datenschema erweitert, gehört die Umsetzung älterer Stände in
@@ -52,11 +58,14 @@ Englisch sind nur Web-APIs und die wenigen eingebürgerten Begriffe (`escapeHtml
 - **Fachbegriffe des Fernmeldebaus verwenden**, nicht umschreiben: Trasse,
   Muffe, Endverzweiger, Kabelreserve, Bauzuschlag, Trommellänge, Verlegeleistung.
   Fachliche Werte und Regeln stehen in `js/vorschrift.js`, jeweils mit
-  Gliederungsnummer als Fundstelle — am Bauort wird nach der Nummer gesucht. Zwei
-  Quellen liegen dort nebeneinander: die KatS-Dv 861 von 1990 und das
+  Gliederungsnummer als Fundstelle — am Bauort wird nach der Nummer gesucht. Vier
+  Quellen liegen dort nebeneinander: die KatS-Dv 861 von 1990, das
   THW-Ausbildungshandbuch Kabelbau von 2026 samt Merkblatt Sicherheits-
-  bestimmungen. Jedes Datum trägt deshalb `quelle` neben `fundstelle`; ausgegeben
-  wird beides über `fundstelleText()`, nie ein fest verdrahtetes Vorschriftskürzel.
+  bestimmungen und das Handbuch für den Feldfernkabelbau von 2003 — auf Letzteres
+  beruft sich der Baumodus, weil Baumeldung, abschnittsweiser Bau und
+  Übernahmemessung nur dort beschrieben sind. Jedes Datum trägt deshalb `quelle`
+  neben `fundstelle`; ausgegeben wird beides über `fundstelleText()`, nie ein fest
+  verdrahtetes Vorschriftskürzel.
 
 ## Code-Stil
 
@@ -82,6 +91,7 @@ Englisch sind nur Web-APIs und die wenigen eingebürgerten Begriffe (`escapeHtml
 | `js/zeichen-daten.js` | Erzeugt. Nie von Hand ändern — `python3 scripts/taktische-zeichen-holen.py` |
 | `fonts/roboto-slab-bold.woff` | Ebenso erzeugt, kommt aus demselben Skript |
 | `js/version.js` | Im Repository steht `Entwicklungsstand`. Nie eine Nummer eintragen; die setzt der Workflow beim Veröffentlichen |
+| `sw.js` | Ebenso: `const STAND = 'Entwicklungsstand'`. Die Zeile nie umbenennen — an ihr hängt die Ersetzung im Workflow, und ohne sie teilen sich alle Stände einen Speicher |
 | `sitemap.xml` | Neue Seite heißt: Adresse hier eintragen. `lastmod` nicht von Hand pflegen – das setzt der Workflow je Seite aus dem Git-Datum |
 | `CNAME`, `.nojekyll` | Gehören zu GitHub Pages, nicht anfassen |
 | `vendor/` | Fremdcode unverändert, Änderungen gehören nach oben ins Projekt |
@@ -120,6 +130,16 @@ Wegen der ES-Module reicht ein Doppelklick auf `index.html` nicht. Für die
 Browser-Vorschau ist lokal ein Eintrag `fmbauplaner` auf Port 8123 in
 `.claude/launch.json` hinterlegt; das Verzeichnis ist nicht versioniert.
 
+**Der Offline-Wächter beantwortet beim Entwickeln die Anfragen.** Seit `sw.js`
+dazugekommen ist, liefert der Speicher aus, was beim letzten Einrichten geholt
+wurde — eine geänderte Datei erscheint erst, wenn ein neuer Wächter eingerichtet
+ist, und das geschieht erst, wenn alle Fenster der Seite zu waren. Wer eine
+Änderung sucht, die nicht ankommt, sucht sonst an der falschen Stelle. Zwei
+Auswege: in den Entwicklerwerkzeugen unter *Anwendung → Service Workers* den
+Haken *Update on reload* setzen (dann gilt jede Änderung sofort), oder dort
+*Unregister* drücken. Ein hartes Neuladen (Umschalt+Neu laden) umgeht den
+Wächter ebenfalls — aber nur für diesen einen Aufruf.
+
 Nach dem Auffrischen der taktischen Zeichen:
 
 ```bash
@@ -139,7 +159,19 @@ node scripts/baumodus-pruefen.mjs
 Fährt die Anwendung in einem echten Chromium: legt eine Strecke an, schaltet um,
 nimmt Punkte auf allen drei Wegen auf, lädt neu, schickt die Planung durch den
 Link und zurück und prüft, dass die gebaute Trasse auf keinem der drei
-Druckerzeugnisse landet. Der Prüfstand steht in `scripts/pruefstand.mjs` und
+Druckerzeugnisse landet.
+
+Nach jeder Änderung am Offline-Weg (`sw.js`, `js/kacheln.js`, die Kachelebene in
+`js/map.js`, die Registrierung in `js/app.js`):
+
+```bash
+node scripts/offline-pruefen.mjs
+```
+
+Schaltet das Netz im Browser ab und prüft, dass die Anwendung trotzdem startet.
+Eine Warnung dazu: `Page.reload` mit `ignoreCache` umgeht den Service Worker
+vollständig — wer im Prüfstand hart neu lädt, prüft genau das nicht, wofür der
+Wächter da ist. Der Prüfstand steht in `scripts/pruefstand.mjs` und
 kommt ohne Fremdpaket aus – Node bringt seit 22 einen `WebSocket` mit, und damit
 lässt sich das DevTools-Protokoll unmittelbar sprechen. Einen anderen Browser
 nimmt er über `CHROMIUM=…` entgegen.

@@ -1416,6 +1416,55 @@ function speicherDialogOeffnen() {
 
 setTimeout(cloudModul, 1500);
 
+/* ---------------------------------------------------------------- Ohne Netz
+
+   Der Wächter in `sw.js` legt ab, was die Anwendung lädt, und liefert es
+   wieder aus, wenn keine Verbindung da ist. Registriert wird er spät und über
+   einen relativen Pfad: spät, weil er für den ersten Aufbau der Seite nichts
+   beiträgt; relativ, weil die Seite auch in einem Unterverzeichnis laufen muss.
+
+   `updateViaCache: 'none'` nimmt den Wächter selbst vom HTTP-Zwischenspeicher
+   aus. Ohne das kann der Browser ihn bis zu einem Tag lang aus dem eigenen
+   Speicher beantworten – ein neuer Stand käme dann erst am Folgetag an. */
+function waechterEinrichten() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+    .then(anmeldung => {
+      /* Ein neuer Stand übernimmt die laufende Seite nicht – sonst träfe die
+         alte Oberfläche auf neu nachgeladene Module. Dass er bereitsteht, muss
+         der Nutzer erfahren: die Nummer im Blattfuß jedes Bauauftrags ist die
+         des Standes, mit dem gearbeitet wird. */
+      /* Nicht „beim nächsten Laden“: ohne `skipWaiting` übernimmt der neue
+         Stand erst, wenn keine Seite mehr am alten hängt – ein Neuladen im
+         selben Reiter genügt dafür nicht. Wer der falschen Ansage folgt, lädt
+         neu, arbeitet weiter auf dem alten Stand und bekommt die Meldung
+         wieder. Die Nummer im Blattfuß jedes Bauauftrags ist die des Standes,
+         mit dem gearbeitet wird; sie muss stimmen. */
+      const melden = () => hinweis(
+        'Ein neuer Stand des FMBauplaners steht bereit. Er gilt, sobald alle Fenster ' +
+        'dieser Seite geschlossen waren – ein Neuladen allein genügt nicht.');
+      if (anmeldung.waiting && navigator.serviceWorker.controller) melden();
+      anmeldung.addEventListener('updatefound', () => {
+        const neuer = anmeldung.installing;
+        if (!neuer) return;
+        neuer.addEventListener('statechange', () => {
+          /* `controller` unterscheidet die erste Einrichtung von einer
+             Auffrischung: beim ersten Mal ist der Stand der, der gerade läuft,
+             und eine Meldung darüber wäre sinnlos. */
+          if (neuer.state === 'installed' && navigator.serviceWorker.controller) melden();
+        });
+      });
+    })
+    .catch(e => {
+      /* Ohne Wächter läuft alles wie bisher, nur eben nicht ohne Netz. Im
+         privaten Fenster und über `file://` ist er gesperrt – das ist kein
+         Fehler, den der Nutzer beheben könnte. */
+      console.warn('Offline-Wächter nicht eingerichtet', e);
+    });
+}
+if (document.readyState === 'complete') waechterEinrichten();
+else window.addEventListener('load', waechterEinrichten);
+
 geteiltenLinkPruefen();
 
 /* Wer den Link in ein Fenster einfügt, in dem die Anwendung schon läuft, ändert

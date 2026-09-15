@@ -97,6 +97,16 @@ jobs:
           sed -i "s|^export const VERSION = .*|export const VERSION = '$BUILD_VERSION';|" js/version.js
           grep "^export const VERSION = " js/version.js
 
+          # Derselbe Stempel in den Offline-Wächter. Er benennt damit seinen
+          # Speicher, und weil sich die Datei dadurch ändert, merkt der Browser
+          # überhaupt erst, dass es einen neuen Stand gibt: ein Service Worker
+          # wird an seinem Inhalt erkannt, nicht am Datum. Bliebe die Zeile
+          # stehen, liefen alle Stände in einem Speicher zusammen und der
+          # Bauplatz bekäme auf ewig den von vorgestern.
+          grep -q "^const STAND = " sw.js
+          sed -i "s|^const STAND = .*|const STAND = '$BUILD_VERSION';|" sw.js
+          grep "^const STAND = " sw.js
+
       - name: Änderungsdaten in die Sitemap schreiben
         run: |
           # Wie bei der Version: nur im Arbeitsverzeichnis des Laufs. Im

@@ -1,8 +1,24 @@
 // map.js – Leaflet-Karte, Basiskarten, Panes
 
+import { kachelHolen } from './kacheln.js';
+
+/* `vorrat: true` heißt: diese Karte darf für den Bauort mitgenommen werden.
+   Es steht nur an den Ebenen des BKG. Deren Lizenz – dl-de/by-2-0 – erlaubt
+   Vervielfältigung ausdrücklich. OpenStreetMap untersagt das Vorabladen in
+   seiner Tile Usage Policy dagegen ebenso ausdrücklich (dort ist von mehr als
+   250 Kacheln ab Zoomstufe 13 die Rede, und ein üblicher Vorrat liegt
+   darüber), OpenTopoMap und die HOT-Kacheln liegen auf gespendeten Servern mit
+   derselben Haltung, und für die Esri-Dienste gilt das Zwischenspeichern nach
+   deren Nutzungsbedingungen als unzulässig. Eine Karte ohne dieses Kennzeichen
+   wird nicht vorgeladen – die Anwendung sagt das und schlägt den Wechsel vor.
+
+   Wer hier ein Kennzeichen ergänzt, prüft vorher die Bedingungen des Anbieters
+   und trägt sie in `LIZENZEN.md` nach. Wer es weglässt, spart dem Anbieter
+   nichts, sondern verlagert den Preis nur auf alle anderen Nutzer. */
 export const BASISKARTEN = [
   {
     id: 'topplus',
+    vorrat: true,
     name: 'TopPlusOpen (BKG)',
     grau: false,
     url: 'https://sgx.geodatenzentrum.de/wmts_topplus_open/tile/1.0.0/web/default/WEBMERCATOR/{z}/{y}/{x}.png',
@@ -11,6 +27,7 @@ export const BASISKARTEN = [
   },
   {
     id: 'topplus_grau',
+    vorrat: true,
     name: 'TopPlusOpen grau (BKG)',
     grau: true,
     url: 'https://sgx.geodatenzentrum.de/wmts_topplus_open/tile/1.0.0/web_grau/default/WEBMERCATOR/{z}/{y}/{x}.png',
@@ -19,6 +36,7 @@ export const BASISKARTEN = [
   },
   {
     id: 'topplus_light',
+    vorrat: true,
     name: 'TopPlusOpen hell (BKG)',
     grau: false,
     url: 'https://sgx.geodatenzentrum.de/wmts_topplus_open/tile/1.0.0/web_light/default/WEBMERCATOR/{z}/{y}/{x}.png',
@@ -80,6 +98,7 @@ export const BASISKARTEN = [
   },
   {
     id: 'basemapde',
+    vorrat: true,
     name: 'basemap.de (BKG)',
     grau: false,
     /* Kachelmatrix GLOBAL_WEBMERCATOR, nicht DE_EPSG_3857_ADV: die AdV-Matrix ist
@@ -92,6 +111,7 @@ export const BASISKARTEN = [
   },
   {
     id: 'basemapde_grau',
+    vorrat: true,
     name: 'basemap.de grau (BKG)',
     grau: true,
     url: 'https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_grau/default/GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png',
@@ -254,6 +274,75 @@ export function setzeVorrang(karte, bereich) {
   griffe.style.zIndex = vorn ? GRIFFE_UEBER_BILDERN : GRIFFE_UNTEN;
 }
 
+/* Eine Kachelebene, die erst im Vorrat des Geräts nachsieht und nur dann ins
+   Netz geht, wenn dort nichts liegt.
+
+   Warum in der Seite und nicht im Service Worker: der Vorrat liegt in
+   IndexedDB, und ein Service Worker, der ihn mitliest, müsste dieselbe
+   Datenbank ein zweites Mal öffnen und bei jeder Schemaänderung nachgezogen
+   werden. Hier steht die Entscheidung dort, wo auch die Karte steht.
+
+   Die Blob-Adresse wird erst freigegeben, wenn Leaflet die Kachel wieder
+   abräumt (`tileunload`) oder ihren Abruf abbricht (`tileabort`), und
+   ausdrücklich NICHT schon beim Laden des Bildes.
+   Ein geladenes Bild zeigt zwar weiter, was es decodiert hat – aber nicht
+   verlässlich: beim Drucken wird die Karte neu gerastert, und eine tote Adresse
+   liefert dann eine leere Fläche. Das gedruckte Blatt ist das Erzeugnis dieser
+   Anwendung; ein Bauauftrag mit weißen Löchern in der Karte wäre der schlechteste
+   denkbare Tausch gegen etwas Arbeitsspeicher. */
+function vorratsEbene(url, optionen) {
+  const Ebene = L.TileLayer.extend({
+    createTile(koordinaten, fertig) {
+      const bild = document.createElement('img');
+      bild.alt = '';
+      const adresse = this.getTileUrl(koordinaten);
+      L.DomEvent.on(bild, 'load', () => fertig(null, bild));
+      L.DomEvent.on(bild, 'error', () => fertig(new Error('Kachel nicht verfügbar'), bild));
+      kachelHolen(adresse).then(blob => {
+        /* Abgeräumt, bevor der Vorrat geantwortet hat. Dann darf hier nichts
+           mehr geschehen: eine Blob-Adresse wäre ein Leck, das niemand mehr
+           freigibt, und ein `src` aus dem Netz hebelte Leaflets Abbruch aus –
+           beim Zoomen und beim Sammeldruck verwirft Leaflet laufend Kacheln,
+           und jede davon zöge sonst nachträglich doch ihren Abruf. */
+        if (bild._fbpWeg) return;
+        if (blob) {
+          bild._fbpBlobAdresse = URL.createObjectURL(blob);
+          bild.src = bild._fbpBlobAdresse;
+        } else {
+          /* `crossOrigin` gilt nur für den Weg übers Netz: bei einer
+             Blob-Adresse ist es ohne Wirkung und bei manchen Browsern hinderlich. */
+          if (this.options.crossOrigin) bild.crossOrigin = this.options.crossOrigin;
+          bild.src = adresse;
+        }
+      }).catch(() => {
+        if (bild._fbpWeg) return;
+        if (this.options.crossOrigin) bild.crossOrigin = this.options.crossOrigin;
+        bild.src = adresse;
+      });
+      return bild;
+    }
+  });
+  const ebene = new Ebene(url, optionen);
+  /* Leaflet lässt eine Kachel auf zwei Wegen fallen: `tileunload` beim Abräumen
+     einer fertigen, `tileabort` beim Zoomen einer, die noch lädt – dort löscht
+     `_abortLoading` sie aus `_tiles`, ohne `tileunload` zu feuern. Nur beide
+     zusammen erreichen jede erzeugte Adresse. Und die Marke muss auch dann
+     fallen, wenn der Vorrat noch gar nicht geantwortet hat: sonst legt die
+     laufende Lesung gleich darauf eine Adresse an, die niemand mehr freigibt. */
+  const wegraeumen = e => {
+    const bild = e.tile;
+    if (!bild) return;
+    bild._fbpWeg = true;
+    if (bild._fbpBlobAdresse) {
+      URL.revokeObjectURL(bild._fbpBlobAdresse);
+      bild._fbpBlobAdresse = null;
+    }
+  };
+  ebene.on('tileunload', wegraeumen);
+  ebene.on('tileabort', wegraeumen);
+  return ebene;
+}
+
 export function setzeBasiskarte(karte, id) {
   const def = basiskarteById(id);
   if (karte._fbpBasis) {
@@ -263,13 +352,20 @@ export function setzeBasiskarte(karte, id) {
     karte.removeLayer(karte._fbpBasis);
   }
   if (karte._fbpDopQuelle) { karte.off('moveend', karte._fbpDopQuelle); karte._fbpDopQuelle = null; }
-  karte._fbpBasis = def.dop ? dopBuendel(karte, def) : L.tileLayer(def.url, {
+  karte._fbpBasis = def.dop ? dopBuendel(karte, def) : vorratsEbene(def.url, {
     attribution: def.attribution,
     maxZoom: MAX_ZOOM,
     maxNativeZoom: def.maxZoom,
-    subdomains: def.url.includes('{s}') ? 'abc' : [],
+    /* Nur ein Unterserver statt der üblichen drei: die drei Buchstaben sind ein
+       Erbe von HTTP/1.1 und seiner Grenze von sechs Verbindungen je Gegenstelle;
+       über HTTP/2 bringen sie nichts mehr. Dem Vorrat ist die Wahl gleich –
+       Leaflet greift den Buchstaben fest über |x+y| mod Anzahl heraus, jede
+       Kachel liegt also ohnehin nur unter einer Adresse –, aber das eine `a`
+       ist dasselbe, das `kacheladresse()` in `kacheln.js` einsetzt. */
+    subdomains: def.url.includes('{s}') ? 'a' : [],
     crossOrigin: 'anonymous',
-    className: 'fbp-basis'
+    className: 'fbp-basis',
+    kartenId: def.id
   });
   karte._fbpBasis.addTo(karte);
   karte._fbpBasisId = id;

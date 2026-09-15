@@ -7,9 +7,11 @@ Papier hält die Entscheidung und ihre Begründung fest; was am Quelltext zu
 beachten ist, steht in `CLAUDE.md`, die Zusage an den Nutzer in
 `datenschutz.html`, die beiden Wege nach draußen in `TEILEN.md` und `CLOUD.md`.
 
-Stand: Stufe 1 gebaut – Datenmodell, Umschalter, Bauabschnitte, Ist-Punkte auf
-drei Wegen, die gebaute Trasse auf der Karte und der Rückweg über Datei, Link
-und Speicher. Die Stufen 2 bis 6 stehen aus.
+Stand: Stufen 1 und 4 gebaut. Stufe 1 – Datenmodell, Umschalter,
+Bauabschnitte, Ist-Punkte auf drei Wegen, die gebaute Trasse auf der Karte und
+der Rückweg über Datei, Link und Speicher. Stufe 4 – die Anwendung startet ohne
+Netz, und die Karte lässt sich für den Bauort mitnehmen. Damit ist der Baumodus
+draußen brauchbar. Die Stufen 2, 3, 5 und 6 stehen aus.
 
 ## Warum überhaupt
 
@@ -222,15 +224,45 @@ ist der einzige Weg. Es wäre der erste im Projekt.
 
 **Der Kartenausschnitt muss mitgenommen werden können.** Vor dem Ausrücken
 holt die Anwendung die Kacheln entlang der Trasse und legt sie in IndexedDB,
-wie `bildspeicher.js` es mit den Lichtbildern tut. Überschlägig für eine
-5 km lange Trasse mit 300 m Puffer, Zoom 13 bis 18: einige hundert Kacheln,
-Größenordnung 3 bis 5 MB. Das ist zu messen, bevor es zugesagt wird.
+wie `bildspeicher.js` es mit den Lichtbildern tut.
 
-Das Vorladen berührt die Zusage in `datenschutz.html`: es fragt beim
-Kartenanbieter gezielt die Kacheln entlang der geplanten Trasse ab, statt wie
-bisher nur die des betrachteten Ausschnitts. Der Verlauf selbst geht nicht
-hinaus, die Gegend, in der gebaut wird, schon – sichtbarer als heute. Das
-gehört in den Dialog und in `datenschutz.html`.
+Gemessen mit `js/kacheln.js`, gerade Trasse, 300 m Puffer:
+
+| Trasse | Zoom 13–17 | Zoom 13–18 | Zoom 12–16 |
+|---|---|---|---|
+| 2 km | 146 Kacheln ≈ 2,9 MB | 425 ≈ 8,3 MB | 75 ≈ 1,5 MB |
+| 5 km | 271 Kacheln ≈ 5,3 MB | 829 ≈ 16,2 MB | 123 ≈ 2,4 MB |
+| 10 km | 470 Kacheln ≈ 9,2 MB | 1 505 ≈ 29,4 MB | 192 ≈ 3,8 MB |
+| 20 km | 896 Kacheln ≈ 17,5 MB | 2 894 ≈ 56,5 MB | 354 ≈ 6,9 MB |
+
+Der Überschlag von 3 bis 5 MB für die übliche Trasse hat gehalten. Vorgabe ist
+Zoom 13 bis 17; Stufe 18 vervierfacht die Zahl und zeigt nichts, was am
+Bauplatz jemand braucht. Abgetastet wird der Linienzug und nicht sein
+umschließendes Rechteck – bei einer quer über die Karte laufenden Trasse ist
+das der Unterschied zwischen 6 km² Korridor und 100 km² Rechteck.
+
+**Der Vorrat hält die Karte, mit der gearbeitet wird – und nur die.** Der
+Bauauftrag zeichnet die Graustufenvariante (`grauVariante()` in `js/map.js`),
+und das sind andere Adressen. Wer am Bauort ein Blatt am Schirm aufschlägt,
+sieht die Karte darin deshalb leer. Das ist hingenommen: am Bauplatz wird nicht
+gedruckt, das Blatt kommt aus der Unterkunft mit. Den doppelten Vorrat bezahlte
+sonst der Kachelserver.
+
+**Die Menge ist gedeckelt, und zwar nicht aus Sparsamkeit.** Die
+Nutzungsbedingungen von OpenStreetMap untersagen das massenhafte Vorabladen
+ausdrücklich. Ein Werkzeug, das auf Knopfdruck zehntausend Kacheln zieht, wird
+ausgesperrt – und dann steht der ganze FMBauplaner ohne Karte da, nicht nur der
+Vorrat. Deshalb 2 000 Kacheln als Obergrenze, vier Abrufe nebeneinander und
+eine Pause dazwischen.
+
+Das Vorladen berührt die Zusage in `datenschutz.html`, und beim Bauen hat sich
+gezeigt, dass der erste Entwurf dieses Absatzes die Sache beschönigt hat. Es
+stimmt nicht, dass nur „die Gegend“ hinausgeht: die Kacheln kommen in einem Zug
+und liegen in einem schmalen Band, und dieses Band **ist** die Trasse, auf
+Kachelbreite gerundet – bei Zoom 17 rund 190 m (nachgerechnet mit
+`kachelMeter()`). Der Anbieter kann daraus den Weg ablesen, nicht die Punkte. Das steht jetzt so in `datenschutz.html` unter
+den Ausnahmen, neben den beiden Overpass-Abfragen, und ebenso im Klartext über
+dem Knopf. Wer es nicht will, baut ohne mitgenommene Karte.
 
 ## Die Baudokumentation als viertes Blatt
 
@@ -290,9 +322,12 @@ den Rest nicht aufhalten soll.
    Messungen und Übergabe.
 3. Baumeldung als Link und Datei zurück; Einspielen beim Planer mit Vorschau;
    Zusammenführen mehrerer Trupps.
-4. Offline: Service Worker und Kachelvorrat. **Vor dieser Stufe ist der
-   Baumodus nur mit Netz brauchbar** – sie ist die Bedingung für den ersten
-   echten Einsatz, nicht eine Verbesserung danach.
+4. ~~Offline: Service Worker und Kachelvorrat.~~ **Gebaut.** Der Wächter in
+   `sw.js` legt ab, was die Anwendung lädt – keine Dateiliste, die jemand
+   nachpflegen müsste –, der Vorrat liegt in `js/kacheln.js`, und die Karte
+   liest ihn über `vorratsEbene()` in `js/map.js`. Geprüft mit
+   `node scripts/offline-pruefen.mjs`, das das Netz im Browser wirklich
+   abschaltet.
 5. Druckerzeugnis Baudokumentation, alle vier Formate.
 6. Lichtbilder: Aufnahme am Punkt, Speicher, Rückweg.
 
@@ -320,4 +355,8 @@ Die Stufen 1 bis 3 sind am Schreibtisch prüfbar, Stufe 4 nur am Gerät.
 - **Die Fundstelle des Materialblattes.** Für `js/vorschrift.js` fehlen
   genauer Titel und Stand der im THW-Extranet veröffentlichten Fassung; ohne
   sie steht dort eine Quelle, die am Bauort niemand nachschlagen kann.
-- **Die Größe des Kachelvorrats.** Überschlagen, nicht gemessen.
+- **Wie lange der Vorrat liegen bleibt.** Er wird nie von selbst abgeräumt.
+  Nach einem halben Jahr liegen die Kacheln von zehn Baustellen im Gerät, und
+  niemand weiß mehr, welche wozu gehörten. Ein Vorrat je Planung – oder eine
+  Verfallszeit – wäre der nächste Schritt; bis dahin gibt es den Knopf
+  „Vorrat löschen“.

@@ -428,6 +428,9 @@ try {
     fehler.length ? `Fehler in der Konsole: ${fehler.map(f => f.text).join(' | ')}`
                   : 'Kein Fehler und keine Ausnahme');
 } catch (e) {
+  /* Ein abgebrochener Lauf ist ein durchgefallener: ohne diese Zeile stünde
+     am Ende „Prüfung bestanden“, obwohl die Hälfte nie gelaufen ist. */
+  b.pruefe(false, 'Lauf abgebrochen: ' + e.message);
   console.error('\nLauf abgebrochen:', e.message);
   await seite.bildschirmfoto(join(WURZEL, 'pruefung-abbruch.png')).catch(() => {});
   process.exitCode = 1;
