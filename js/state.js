@@ -817,17 +817,50 @@ export function istGehaltvoll(p) {
 const farbeOderVorgabe = (wert, vorgabe) =>
   /^#[0-9a-f]{3,8}$/i.test(String(wert ?? '')) ? wert : vorgabe;
 
-/* Der Bau-Block kommt aus derselben Fremde wie alles andere: aus einer Datei,
-   einem Link oder dem angebundenen Speicher. Er wird deshalb als WEISSLISTE
-   wieder aufgebaut und nicht durchgereicht – wie die Einsatzabschnitte und die
-   Zeichengruppen, aus demselben Grund: `bau.punkte[].art` landet unmaskiert in
-   einem Klassennamen und `bau.abschnitte[].farbe` in einem `style`-Attribut.
-   Ein präparierter Wert bräche dort aus dem Attribut aus.
+/**
+ * Doppelte Materialzeilen zu einer zusammenziehen.
+ *
+ * Eine Katalogzeile gibt es je Bauabschnitt genau einmal – darauf beruht die
+ * Addition über mehrere Trupps, für die der feste Katalog überhaupt da ist
+ * (`MATERIALKATALOG` in `vorschrift.js`). Zwei Wege brechen das trotzdem: das
+ * Löschen eines Bauabschnitts hängt seine Zeilen auf „ohne Abschnitt“ um, wo
+ * schon eine gleiche stehen kann, und eine fremde Datei kann von Hause aus
+ * doppelte tragen. Die zweite Zeile wäre danach über die Oberfläche nicht mehr
+ * erreichbar – `materialzeile()` findet immer nur die erste –, zählte in der
+ * Summe aber mit und reiste in Datei und Link weiter. Der Bogen zeigte dann
+ * eine andere Menge, als der Trupp meldet.
+ *
+ * Die freie Zeile ist ausgenommen: sie darf mehrfach vorkommen, und zwei
+ * verschiedene Gegenstände unter „Sonstiges“ zusammenzuziehen wäre der
+ * schlimmere Fehler.
+ */
+export function materialZusammenfassen(material) {
+  const raus = [];
+  const platz = new Map();
+  for (const z of material || []) {
+    const katalog = materialById(z.artikel);
+    if (katalog && katalog.mehrfach) { raus.push(z); continue; }
+    const schluessel = z.artikel + '\u0000' + (z.abschnitt || '');
+    const erste = platz.get(schluessel);
+    if (!erste) { platz.set(schluessel, z); raus.push(z); continue; }
+    /* Zwei „nichts eingetragen“ bleiben nichts – eine 0 daraus zu machen hiesse
+       „nachweislich nichts verbraucht“, und das hat niemand behauptet. */
+    if (Number.isFinite(z.menge)) {
+      erste.menge = Number.isFinite(erste.menge) ? erste.menge + z.menge : z.menge;
+    }
+    /* Von Hand geschriebene Bemerkungen gehen nicht verloren, auch nicht die
+       der zweiten Zeile. */
+    if (z.bemerkung && z.bemerkung !== erste.bemerkung) {
+      erste.bemerkung = erste.bemerkung ? erste.bemerkung + ' · ' + z.bemerkung : z.bemerkung;
+    }
+  }
+  return raus;
+}
 
-   Was hier nicht bekannt ist, fällt weg. Eine spätere Fassung, die ein Feld
-   ergänzt, trägt es hier nach – das ist der Preis der Weißliste und billiger
-   als die Lücke. */
-const mengeOderNichts = roh => {
+/* Was als Menge gelten darf. Nicht nur in der Weißliste gebraucht: die
+   Oberfläche prüft mit derselben Funktion, sonst schriebe sie Werte in die
+   Planung, die das nächste Laden still wieder herauswirft. */
+export const mengeOderNichts = roh => {
   if (roh === null || roh === undefined || roh === '') return null;
   const n = Number(roh);
   return Number.isFinite(n) && n >= 0 ? n : null;
@@ -854,6 +887,16 @@ function pruefungNormalisieren(roh) {
   };
 }
 
+/* Der Bau-Block kommt aus derselben Fremde wie alles andere: aus einer Datei,
+   einem Link oder dem angebundenen Speicher. Er wird deshalb als WEISSLISTE
+   wieder aufgebaut und nicht durchgereicht – wie die Einsatzabschnitte und die
+   Zeichengruppen, aus demselben Grund: `bau.punkte[].art` landet unmaskiert in
+   einem Klassennamen und `bau.abschnitte[].farbe` in einem `style`-Attribut.
+   Ein präparierter Wert bräche dort aus dem Attribut aus.
+
+   Was hier nicht bekannt ist, fällt weg. Eine spätere Fassung, die ein Feld
+   ergänzt, trägt es hier nach – das ist der Preis der Weißliste und billiger
+   als die Lücke. */
 function bauNormalisieren(roh) {
   if (!roh || typeof roh !== 'object') return null;
   const v = neuerBau();
@@ -881,7 +924,7 @@ function bauNormalisieren(roh) {
     stand: BAUSTAENDE.some(b => b.id === roh.stand) ? roh.stand : 'offen',
     abschnitte,
     punkte,
-    material: (Array.isArray(roh.material) ? roh.material : []).map(z => ({
+    material: materialZusammenfassen((Array.isArray(roh.material) ? roh.material : []).map(z => ({
       ...neueMaterialzeile(z?.artikel, z),
       id: z?.id || id(),
       /* Eine Menge, die keine Zahl ist, wird zu „nichts eingetragen“ und nicht
@@ -891,7 +934,7 @@ function bauNormalisieren(roh) {
          verbaut wurde sie jedenfalls nicht. */
       menge: mengeOderNichts(z?.menge),
       bemerkung: String(z?.bemerkung || '')
-    })),
+    }))),
     meldungen: (Array.isArray(roh.meldungen) ? roh.meldungen : []).map(m => ({
       ...neueBaumeldung(m),
       id: m?.id || id(),
@@ -1055,6 +1098,14 @@ export function migrieren(p) {
       if (!eigene.has(a.vonPunkt)) a.vonPunkt = null;
       if (!eigene.has(a.bisPunkt)) a.bisPunkt = null;
     });
+    /* Material und Meldungen tragen dieselbe Zuordnung. Ein Verweis ins Leere
+       machte die Zeile unsichtbar – der Bogen zeigt je Abschnitt, und zu einem
+       Abschnitt, den es nicht gibt, gehört kein Bogen –, während sie in der
+       Summe mitzählte. Danach kann eine Zeile doppelt auf „ohne Abschnitt“
+       liegen, deshalb gleich wieder zusammenziehen. */
+    s.bau.material.forEach(z => { if (!abschnitte.has(z.abschnitt)) z.abschnitt = null; });
+    s.bau.meldungen.forEach(m => { if (!abschnitte.has(m.abschnitt)) m.abschnitt = null; });
+    s.bau.material = materialZusammenfassen(s.bau.material);
   });
   return out;
 }

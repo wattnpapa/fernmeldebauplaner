@@ -7,7 +7,7 @@ import {
   streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar, bilderBelegung, bildmarkenAn,
   flaechenIm, flaecheSichtbar, relaisstellenIm, relaisstelleSichtbar,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id, neuerPunkt,
-  BAUSTAENDE, baustandById
+  BAUSTAENDE, baustandById, mengeOderNichts
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
 import {
@@ -70,7 +70,7 @@ import {
   sollPunktGeloescht, bauUmkehren, bauBegonnen, baustandKurz, baustrecke, baustreckeSetzen,
   quelleText, uhrzeit, ABWEICHUNG_SCHWELLE,
   materialzeilen, materialzeile, materialSetzen, materialFreiAnlegen, materialZeileLoeschen,
-  materialSumme, materialSoll, materialName,
+  materialSumme, materialSoll, baumeldungen,
   baumeldungAnlegen, baumeldungLoeschen, meldungenNachZeit,
   pruefungSichern, pruefzeilen, pruefzeileAnlegen, pruefzeileLoeschen
 } from './baudoku.js';
@@ -832,8 +832,7 @@ function streckenKarte(s) {
          im Programm, die eine ganze auf einmal wegnimmt. */
       inhalt: `<p>Soll <b>${escapeHtml(s.name)}</b> mit ${s.punkte.length} Punkten wirklich gelöscht werden?</p>
                ${bauBegonnen(s) ? `<p class="bau-warnung">Dabei geht auch die Baudokumentation
-                 dieser Strecke verloren: ${istPunkte(s).length} am Bauort aufgenommene
-                 ${istPunkte(s).length === 1 ? 'Punkt' : 'Punkte'}.</p>` : ''}
+                 dieser Strecke verloren: ${escapeHtml(bauUmfangText(s))}.</p>` : ''}
                <p class="klein">Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
       fuss: [
         { text: 'Abbrechen' },
@@ -3701,8 +3700,13 @@ export function zeichneBauListe() {
   liste.appendChild(kartenvorratBlock(s));
   liste.appendChild(bauabschnittBlock(s));
   liste.appendChild(bauPunktBlock(s));
-  liste.appendChild(bauMaterialBlock(s, k));
+  /* Die Baumeldungen stehen VOR dem Materialnachweis, obwohl der Ablauf
+     andersherum liest. Der Grund ist der Daumen: gemeldet wird laufend, nach
+     jeder Kabellänge, der Bogen wird einmal am Ende gefüllt. Hinter dem
+     Materialnachweis läge der Griff „Meldung jetzt“ rund tausend Bildpunkte
+     tief im Blatt – genau der Griff, der am häufigsten gebraucht wird. */
   liste.appendChild(bauMeldungBlock(s));
+  liste.appendChild(bauMaterialBlock(s, k));
   liste.appendChild(bauSchlussBlock(s, k));
   liste.appendChild(bauUebergabeBlock(s, k));
 
@@ -4213,6 +4217,23 @@ function bauSchlussBlock(s, k) {
   return box;
 }
 
+/* Was an einer Strecke an Baudokumentation hängt, in einem Satzteil. Gebraucht
+   beim Löschen: „0 aufgenommene Punkte“ stimmte zwar, verschwieg aber den
+   gefüllten Materialbogen, die Meldungen und die Übergabe – und die sind am
+   Bauort entstanden und nicht zu wiederholen. */
+function bauUmfangText(s) {
+  const teile = [];
+  const zaehl = (n, ein, viele) => { if (n) teile.push(`${n} ${n === 1 ? ein : viele}`); };
+  zaehl(istPunkte(s).length, 'aufgenommener Punkt', 'aufgenommene Punkte');
+  zaehl(materialzeilen(s).length, 'Materialzeile', 'Materialzeilen');
+  zaehl(baumeldungen(s).length, 'Baumeldung', 'Baumeldungen');
+  zaehl(pruefzeilen(s).length, 'geprüfter Stamm', 'geprüfte Stämme');
+  const u = s.bau && s.bau.pruefung;
+  if (u && (u.uebergabeAn || u.uebergabeZeit)) teile.push('die Übergabe');
+  if (s.bau && s.bau.abweichung) teile.push('die Meldung an den S 6');
+  return teile.length ? teile.join(', ') : 'der begonnene Bogen';
+}
+
 // --------------------------------------------------- Materialnachweis
 
 /* Der Bogen des Bautrupps: was wirklich verbaut wurde. Alle Katalogzeilen
@@ -4262,6 +4283,24 @@ function bauMaterialBlock(s, k) {
     (z.abschnitt || null) === abschnittId);
   for (const z of frei) box.appendChild(freieMaterialZeile(s, z));
 
+  /* Die freien Zeilen der ÜBRIGEN Bauabschnitte stehen nur als Hinweis da.
+     Eine Katalogzeile verrät sich über die Fußnote „über alle Abschnitte“;
+     eine freie hat keine Zeile, in der das stünde, und wäre sonst vom Bogen
+     verschwunden, während sie in Datei und Link weiterreist. */
+  const fremd = materialzeilen(s).filter(z => z.artikel === 'sonstiges' &&
+    (z.abschnitt || null) !== abschnittId);
+  if (fremd.length) {
+    const wo = z => {
+      const a = bauabschnittById(s, z.abschnitt);
+      return a ? a.name : 'ohne Bauabschnitt';
+    };
+    box.appendChild(el('p', 'klein',
+      `Anderswo eingetragen: ` + fremd.map(z =>
+        `${escapeHtml(z.bemerkung || 'ohne Bezeichnung')} ` +
+        `(${escapeHtml(wo(z))}${Number.isFinite(z.menge) ? ', ' + z.menge : ''})`
+      ).join(', ') + '.'));
+  }
+
   const tasten = el('div', 'tastenreihe');
   tasten.appendChild(knopf('+ Zeile', () => {
     store.aendern(() => materialFreiAnlegen(s, abschnittId), 'bau');
@@ -4277,32 +4316,43 @@ function bauMaterialBlock(s, k) {
 function materialFeld(s, eintrag, abschnittId, soll, summe) {
   const zeile = materialzeile(s, eintrag.id, abschnittId);
   const wert = zeile && Number.isFinite(zeile.menge) ? zeile.menge : '';
-  const f = feld(eintrag.name, wert, w => {
+  /* Die Fussnote steht NEBEN dem Feld und nicht in ihm: `.feld-einheit` hängt
+     absolut am unteren Rand des Labels, und ein weiteres Kind darin schöbe die
+     Einheit aus dem Eingabefeld heraus nach unten. */
+  const rahmen = el('div', 'mat-zeile');
+  rahmen.appendChild(feld(eintrag.name, wert, w => {
     schreib(() => materialSetzen(s, eintrag.id, abschnittId, w));
-  }, { typ: 'number', min: 0, step: 1, einheit: eintrag.einheit });
+  }, { typ: 'number', min: 0, step: 1, einheit: eintrag.einheit }));
 
   const fuss = [];
   if (soll && soll.artikel === eintrag.id) {
-    fuss.push(`Bedarf laut Planung ${escapeHtml(formatLaenge(soll.menge))}`);
+    /* In der Einheit der Zeile und nicht über `formatLaenge()`: das Feld
+       darüber nimmt Meter, und „542,37 km“ daneben verleitete dazu, 542 zu
+       tippen. Gerundet wird auf ganze Meter – der Bedarf ist eine Schätzung
+       mit Bauzuschlag, Nachkommastellen täuschten Genauigkeit vor. */
+    fuss.push(`Bedarf laut Planung ${materialMengeText(Math.round(soll.menge), eintrag.einheit)}`);
   }
   /* Die Summe über alle Bauabschnitte steht nur dann daneben, wenn sie etwas
      anderes sagt als das Feld darüber – sonst wiederholte sie es. */
   if (summe && summe.has(eintrag.id) && summe.get(eintrag.id) !== wert) {
     fuss.push(`über alle Abschnitte ${materialMengeText(summe.get(eintrag.id), eintrag.einheit)}`);
   }
-  if (fuss.length) f.appendChild(el('span', 'mat-fuss', fuss.join(' · ')));
-  return f;
+  if (fuss.length) rahmen.appendChild(el('span', 'mat-fuss', escapeHtml(fuss.join(' · '))));
+  return rahmen;
 }
 
 /* Eine freie Zeile: Bezeichnung, Menge, und der Griff zum Löschen. Sie trägt
    ihre Bezeichnung in der Bemerkung – der Katalog kennt sie ja nicht. */
 function freieMaterialZeile(s, z) {
-  const rahmen = el('div', 'mat-frei');
+  const rahmen = el('div', 'mat-freizeile');
   rahmen.appendChild(feld('Bezeichnung', z.bemerkung,
     w => schreib(() => { z.bemerkung = w; }),
     { platzhalter: 'was im Katalog fehlt' }));
+  /* Dieselbe Prüfung wie bei einer Katalogzeile, nur an der Zeile statt am
+     Artikel: eine negative Menge schriebe sich hier sonst ungeprüft in die
+     Planung und fiele beim nächsten Laden still wieder heraus. */
   rahmen.appendChild(feld('Menge', Number.isFinite(z.menge) ? z.menge : '',
-    w => schreib(() => { z.menge = (w === '' ? null : Number(w)); }),
+    w => schreib(() => { z.menge = mengeOderNichts(w); }),
     { typ: 'number', min: 0 }));
   const weg = el('button', 'mini-knopf gefahr', '✕');
   weg.title = 'Zeile löschen';
@@ -4399,12 +4449,18 @@ function bauUebergabeBlock(s, k) {
 
   const u = k.uebergabe;
   const felder = el('div', 'bu-felder');
-  felder.appendChild(feld('Übergeben an', u.an,
-    w => schreib(() => { pruefungSichern(s).uebergabeAn = w; }),
-    { platzhalter: 'Einheit, für die gebaut wurde' }));
-  felder.appendChild(feld('Zeitpunkt', u.zeit,
-    w => schreib(() => { pruefungSichern(s).uebergabeZeit = w; }),
-    { typ: 'datetime-local' }));
+  /* Empfänger und Zeitpunkt zeichnen die Liste neu: an ihnen hängt die
+     Warnung darunter. Über `schreib()` geschrieben (Grund „formular“) bliebe
+     sie stehen, bis etwas anderes einen Neuaufbau auslöst – der Truppführer
+     trüge die Übergabe ein und sähe nicht, dass ein Stamm noch offen ist.
+     Der Fokus wird über die Marke gerettet, sonst wäre kein Feld in einem Zug
+     zu tippen. */
+  felder.appendChild(merkeFeld(feld('Übergeben an', u.an,
+    w => store.aendern(() => { pruefungSichern(s).uebergabeAn = w; }, 'bau'),
+    { platzhalter: 'Einheit, für die gebaut wurde' }), 'uebergabe-an'));
+  felder.appendChild(merkeFeld(feld('Zeitpunkt', u.zeit,
+    w => store.aendern(() => { pruefungSichern(s).uebergabeZeit = w; }, 'bau'),
+    { typ: 'datetime-local' }), 'uebergabe-zeit'));
   felder.appendChild(feld('Übergeben durch', u.durch,
     w => schreib(() => { pruefungSichern(s).uebergabeName = w; }),
     { platzhalter: 'Truppführer' }));
@@ -4458,7 +4514,7 @@ function pruefZeile(s, z) {
   felder.appendChild(feld('Prüfer', z.pruefer, w => schreib(() => { z.pruefer = w; }), {}));
   zeile.appendChild(felder);
 
-  const fuss = el('div', 'pz-fuss');
+  const fuss = el('div', 'pz-abschluss');
   fuss.appendChild(el('span', 'klein', escapeHtml(uhrzeit(z.zeit) || '')));
   const weg = el('button', 'mini-knopf gefahr', '✕');
   weg.title = 'Stamm löschen';

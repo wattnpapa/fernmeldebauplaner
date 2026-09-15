@@ -166,10 +166,18 @@ bauen, trägt jede Zeile ihren Bauabschnitt. Eine Spalte, die nur deshalb da
 ist, weil das Papier drei nebeneinander tragen musste, wäre ein leeres Feld
 mehr, das am Bauort jemand mit dem Handschuh treffen muss.
 
-Wo die Planung eine Zahl hergibt – Kabelbedarf, Trommeln, Muffen, Querungen –,
-steht sie als Soll neben dem Ist. Vorbelegt wird das Eingabefeld **nicht**:
-eine vorausgefüllte Menge, die niemand ändert, ist keine Dokumentation,
-sondern eine Abschrift des Plans.
+Wo die Planung eine Zahl hergibt, steht sie als Soll neben dem Ist. Das ist
+genau **eine** Zeile: die Kabelart dieser Strecke, mit dem Bedarf aus
+`kennzahlen()` einschließlich Bauzuschlag und Reserve. Trommeln, Muffen und
+Querungen rechnet die Planung zwar auch – nur hat der Katalog dafür keine
+Zeile, sie werden nicht als Material nachgewiesen. Für Bauhaken, Abspannringe,
+Erder und Anschlussleisten rechnet sie gar nichts; dort steht nichts daneben,
+und das ist Absicht.
+
+Vorbelegt wird das Eingabefeld **nicht**: eine vorausgefüllte Menge, die
+niemand ändert, ist keine Dokumentation, sondern eine Abschrift des Plans. Und
+das Soll steht in der Einheit der Zeile – das Feld nimmt Meter, „542,37 km“
+daneben verleitete dazu, 542 zu tippen.
 
 Die Werte gehören nach `js/vorschrift.js` mit `quelle` und `fundstelle` wie
 alles Fachliche dort. Beides ist noch nachzutragen (siehe „Offen“).

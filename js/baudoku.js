@@ -17,10 +17,10 @@
 import {
   store, neuerBau, neuerBauabschnitt, neuerIstPunkt, baustandById, istquelleById,
   neueMaterialzeile, neueBaumeldung, neuePruefzeile, neuePruefung,
-  bauBegonnen, pruefungGehaltvoll
+  materialZusammenfassen, bauBegonnen, pruefungGehaltvoll
 } from './state.js';
 import { distanz, streckenlaenge } from './geo.js';
-import { MATERIALKATALOG, materialById, PRUEFART_JE_KABEL } from './vorschrift.js';
+import { MATERIALKATALOG, PRUEFART_JE_KABEL } from './vorschrift.js';
 
 export { bauBegonnen, pruefungGehaltvoll };
 
@@ -174,9 +174,13 @@ export function bauabschnittLoeschen(strecke, aid) {
   bau.punkte.forEach(pt => { if (pt.abschnitt === aid) pt.abschnitt = null; });
   /* Materialzeilen und Meldungen hängen an derselben Zuordnung. Bliebe sie
      stehen, zählte `materialSumme()` weiter Mengen zu einem Abschnitt, den es
-     nicht mehr gibt – und am Bogen fehlten sie, weil kein Abschnitt sie zeigt. */
+     nicht mehr gibt – und am Bogen fehlten sie, weil kein Abschnitt sie zeigt.
+     Die freigewordenen Zeilen können jetzt auf eine gleiche treffen, die schon
+     ohne Abschnitt dastand; sie werden deshalb gleich zusammengezogen. Sonst
+     zeigte der Bogen die erste und rechnete mit beiden. */
   (bau.material || []).forEach(z => { if (z.abschnitt === aid) z.abschnitt = null; });
   (bau.meldungen || []).forEach(m => { if (m.abschnitt === aid) m.abschnitt = null; });
+  bau.material = materialZusammenfassen(bau.material || []);
 }
 
 /**
@@ -414,9 +418,6 @@ export function uebergabestand(strecke) {
     durch: (pr && pr.uebergabeName) || ''
   };
 }
-
-/** Die Bezeichnung einer Katalogzeile, fuer Liste und Blatt */
-export const materialName = artikel => (materialById(artikel) || {}).name || artikel;
 
 // ---------------------------------------------------------------- Kennzahlen
 

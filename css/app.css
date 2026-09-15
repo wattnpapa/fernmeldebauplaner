@@ -1826,17 +1826,24 @@ body.baumodus #wz-relais { display: none; }
    Beschriftung, deshalb stehen die Zahlen in einer Flucht (tabular-nums) und
    sind größer als die Bezeichnung darüber. */
 .mat-raster { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mat-zeile { min-width: 0; }
 .mat-raster .feld { margin: 0; min-width: 0; }
 .mat-raster input { min-width: 0; width: 100%; font-variant-numeric: tabular-nums; }
 /* Das Soll steht unter dem Feld und nicht darin: eine vorbelegte Menge, die
-   niemand ändert, wäre eine Abschrift des Plans und keine Dokumentation. */
+   niemand ändert, wäre eine Abschrift des Plans und keine Dokumentation. Und
+   ausserhalb des Labels, weil `.feld-einheit` absolut an dessen unterem Rand
+   hängt – ein weiteres Kind darin schöbe die Einheit aus dem Feld heraus. */
 .mat-fuss { display: block; margin-top: 2px; font-size: 11px; color: var(--text-schwach); }
-.mat-frei {
+/* Nicht `.mat-frei`: den Namen trägt seit je der Kasten für handschriftliche
+   Nachträge im gedruckten Bauauftrag (`js/bauauftrag.js`, gestylt in
+   `css/print.css`). Beide Blätter hängen im selben Dokument, ein `display:
+   grid` hier risse dort die Schreiblinien aus der Reihe. */
+.mat-freizeile {
   display: grid; grid-template-columns: 1fr 90px auto; gap: 8px; align-items: end;
   margin-bottom: 8px;
 }
-.mat-frei .feld { margin: 0; min-width: 0; }
-.mat-frei input { min-width: 0; width: 100%; }
+.mat-freizeile .feld { margin: 0; min-width: 0; }
+.mat-freizeile input { min-width: 0; width: 100%; }
 
 /* Die Baumeldungen als Zeitschiene: die Uhrzeit steht vorn und in fester
    Breite, damit die Spalte beim Überfliegen eine Kante hat. */
@@ -1863,7 +1870,9 @@ body.baumodus #wz-relais { display: none; }
 .pz-felder .feld, .bu-felder .feld { margin: 0; min-width: 0; }
 .pz-felder input, .pz-felder select,
 .bu-felder input, .bu-felder select { min-width: 0; width: 100%; }
-.pz-fuss { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+/* `.pz-abschluss` und nicht `.pz-fuss`: den Namen trägt schon die Fusszeile
+   der Punktliste weiter oben in dieser Datei. */
+.pz-abschluss { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
 .bu-felder { margin-top: 10px; }
 
 /* Der Baustand in der Streckenliste des Planungsmodus – die Antwort auf

@@ -46,7 +46,7 @@ async function taste(bereich, beschriftung) {
  *  Katalogs ist Sache von `vorschrift.js` und nicht dieser Pruefung. */
 async function materialFeld(bezeichnung, wert) {
   const ok = await seite.auswerten(`
-    const f = [...document.querySelectorAll('.bau-material .mat-raster .feld')]
+    const f = [...document.querySelectorAll('.bau-material .mat-zeile')]
       .find(x => x.querySelector('.feld-titel').textContent === ${JSON.stringify(bezeichnung)});
     if (!f) return 'keine Zeile';
     const e = f.querySelector('input');
@@ -236,8 +236,8 @@ try {
   /* Alle Katalogzeilen sind zu sehen, auch die leeren: der Bogen ist eine
      Abhakliste. Wer am Bauort eine Zeile sucht, die erst erscheint, wenn etwas
      drinsteht, sucht vergeblich. */
-  b.pruefe(await seite.anzahl('.bau-material .mat-raster .feld') >= 20,
-    `Alle Katalogzeilen stehen da (${await seite.anzahl('.bau-material .mat-raster .feld')})`);
+  b.pruefe(await seite.anzahl('.bau-material .mat-zeile') >= 20,
+    `Alle Katalogzeilen stehen da (${await seite.anzahl('.bau-material .mat-zeile')})`);
   b.gleich(await bau('bau.material.length'), 0, 'Gespeichert ist davon noch nichts');
 
   await materialFeld('Feldkabel FKb', 1450);
@@ -249,13 +249,13 @@ try {
 
   b.abschnitt('Das Soll steht neben dem Ist, aber nicht darin');
   const fuss = await seite.auswerten(`
-    const f = [...document.querySelectorAll('.bau-material .mat-raster .feld')]
+    const f = [...document.querySelectorAll('.bau-material .mat-zeile')]
       .find(x => x.querySelector('.feld-titel').textContent === 'Feldkabel FKb');
     return f ? (f.querySelector('.mat-fuss')?.textContent || '') : null;`);
   b.pruefe(/Bedarf laut Planung/.test(fuss || ''),
     `Die Kabelzeile nennt den Bedarf aus der Planung (${fuss})`);
   const ohneSoll = await seite.auswerten(`
-    const f = [...document.querySelectorAll('.bau-material .mat-raster .feld')]
+    const f = [...document.querySelectorAll('.bau-material .mat-zeile')]
       .find(x => x.querySelector('.feld-titel').textContent === 'Ankerpfahl');
     return f ? (f.querySelector('.mat-fuss')?.textContent || '') : null;`);
   b.gleich(ohneSoll, '', 'Wo die Planung nichts rechnet, steht auch kein Soll');
@@ -274,12 +274,62 @@ try {
   b.gleich(await bau('bau.material.length'), 2, 'Die freie Zeile steht in der Planung');
   b.gleich(await bau("bau.material.filter(z => z.artikel === 'sonstiges').length"), 1,
     'Und trägt den Artikel „Sonstiges“');
-  await seite.schreibe('.bau-material .mat-frei input', 'Kabelbrücke, geliehen');
+  await seite.schreibe('.bau-material .mat-freizeile input', 'Kabelbrücke, geliehen');
   await seite.warteAuf(
     "window.fbp.store.projekt.strecken[0].bau.material" +
     ".some(z => z.bemerkung === 'Kabelbrücke, geliehen')", 3000);
   b.pruefe(true, 'Die Bezeichnung wird geschrieben');
 
+
+  b.abschnitt('Ein gelöschter Bauabschnitt lässt keine doppelte Materialzeile zurück');
+  /* Der Fall, der die Summe verfälscht: eine Menge steht ohne Bauabschnitt da,
+     eine zweite desselben Artikels im Abschnitt. Wird der Abschnitt gelöscht,
+     treffen beide auf „ohne Abschnitt“. Ungezogen zeigte der Bogen die erste
+     und rechnete mit beiden – der Trupp sähe eine andere Zahl, als er meldet. */
+  const doppelt = await seite.auswerten(`
+    const st = await import('./js/state.js');
+    const bd = await import('./js/baudoku.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    let vorher, nachher, angezeigt;
+    window.fbp.store.aendern(() => {
+      const bau = bd.bauSichern(s);
+      bau.material = [];
+      const a = bd.bauabschnittAnlegen(s);
+      bd.materialSetzen(s, 'ffkb', null, 400);
+      bd.materialSetzen(s, 'ffkb', a.id, 350);
+      vorher = bd.materialSumme(s).get('ffkb');
+      bd.bauabschnittLoeschen(s, a.id);
+      nachher = bd.materialSumme(s).get('ffkb');
+      angezeigt = bd.materialzeile(s, 'ffkb', null).menge;
+    }, 'bau');
+    const zeilen = s.bau.material.filter(z => z.artikel === 'ffkb').length;
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return { vorher, nachher, angezeigt, zeilen };`);
+  b.gleich(doppelt.vorher, 750, 'Vor dem Löschen zählt die Summe beide Zeilen');
+  b.gleich(doppelt.zeilen, 1, 'Danach steht nur noch eine Zeile da');
+  b.gleich(doppelt.nachher, 750, 'Die Summe bleibt dieselbe – nichts geht verloren');
+  b.gleich(doppelt.angezeigt, 750, 'Und der Bogen zeigt, womit gerechnet wird');
+
+  b.abschnitt('Das Soll steht in der Einheit des Feldes');
+  /* Ein Feld, das Meter nimmt, und „542,37 km“ darunter: wer das liest, tippt
+     542. Deshalb steht das Soll in derselben Einheit wie die Zeile. */
+  const sollText = await seite.auswerten(`
+    const f = [...document.querySelectorAll('.bau-material .mat-zeile')]
+      .find(x => x.querySelector('.feld-titel').textContent === 'Feldkabel FKb');
+    return f ? (f.querySelector('.mat-fuss')?.textContent || '') : null;`);
+  b.pruefe(/ m\b/.test(sollText || ''),
+    `Der Bedarf steht in Metern (${sollText})`);
+  b.pruefe(!/km/.test(sollText || ''), 'Und nicht in Kilometern');
+  const einheitDrin = await seite.auswerten(`
+    const f = [...document.querySelectorAll('.bau-material .mat-zeile')]
+      .find(x => x.querySelector('.feld-titel').textContent === 'Feldkabel FKb');
+    const e = f.querySelector('.feld-einheit');
+    const i = f.querySelector('input');
+    return e.getBoundingClientRect().bottom <= i.getBoundingClientRect().bottom + 1;`);
+  b.pruefe(einheitDrin === true,
+    'Die Einheit steht im Eingabefeld und nicht darunter neben der Fußnote');
   // ------------------------------------------------------------ Baumeldungen
 
   b.abschnitt('Baumeldungen als Zeitschiene');
@@ -303,9 +353,25 @@ try {
   b.gleich(await bau('bau.pruefung.staemme.length'), 1, 'Ein Stamm');
   b.gleich(await bau('bau.pruefung.staemme[0].bestanden'), null,
     '„Noch offen“ und nicht „durchgefallen“ – das ist der Unterschied am Bauort');
-  /* Die Pruefart folgt der Kabelart: Feldkabel wird gemessen (3.5). */
+  /* Die Strecke fuehrt Feldkabel (FK 1x2). Das Handbuch nennt in 3.5 nur
+     Feldfernkabel (Messung) sowie Verbindungs- und Anschlusskabel
+     (Sprechprobe); fuer Feldkabel steht dort nichts, es gilt also der
+     Ersatzwert. Genau das wird hier geprueft – und darunter die Tabelle
+     selbst, damit die Zuordnung nicht unbemerkt verschwinden kann. */
   b.gleich(await bau('bau.pruefung.staemme[0].art'), 'messung',
-    'Die Prüfart kommt aus der Kabelart der Strecke');
+    'Wo das Handbuch nichts nennt, schlägt die Messung vor');
+  const zuordnung = await seite.auswerten(`
+    const v = await import('./js/vorschrift.js');
+    return { ffk: v.PRUEFART_JE_KABEL.ffk, ak: v.PRUEFART_JE_KABEL.ak,
+             vk: v.PRUEFART_JE_KABEL.vk, fk2: v.PRUEFART_JE_KABEL.fk2 || null,
+             arten: v.PRUEFARTEN.map(a => a.id).join(',') };`);
+  b.gleich(zuordnung.ffk, 'messung', 'Feldfernkabel wird gemessen (3.5)');
+  b.gleich(zuordnung.ak, 'sprechprobe', 'Anschlusskabel wird besprochen (3.5)');
+  b.gleich(zuordnung.vk, 'sprechprobe', 'Verbindungskabel ebenso (3.5)');
+  b.gleich(zuordnung.fk2, null,
+    'Für Feldkabel nennt das Handbuch nichts – und hier steht auch nichts');
+  b.gleich(zuordnung.arten, 'messung,sprechprobe,uebernahme',
+    'Drei Prüfarten, alle drei aus 3.5');
 
   const ergebnisWahl = '.pz-zeile .pz-felder .feld:nth-child(3) select';
   await seite.waehle(ergebnisWahl, 'nein');
@@ -604,6 +670,33 @@ try {
       `const m = await import('./js/bauauftrag.js'); m.schliesseBauauftrag(); return true;`);
     await seite.ruhe();
   }
+
+  b.abschnitt('Der Baumodus stylt die übrigen Blätter nicht um');
+  /* Der Bauauftrag haengt als `#druck` in DASSELBE Dokument wie die
+     Seitenleiste, und `css/app.css` gilt fuer beide. Ein Klassenname, den der
+     Baumodus neu vergibt und den es dort schon gibt, aendert also stillschweigend
+     ein gedrucktes Blatt. Genau das ist passiert: `.mat-frei` traegt seit je der
+     Kasten fuer handschriftliche Nachtraege im Bauauftrag. Geprueft wird deshalb
+     am gerechneten Stil und nicht am Quelltext. */
+  await seite.auswerten(`
+    const m = await import('./js/bauauftrag.js');
+    m.oeffneBauauftrag(window.fbp.store.projekt.strecken[0].id); return true;`);
+  await seite.warteAuf('!!document.querySelector("#druck .mat-frei")', 20000);
+  const druckstil = await seite.auswerten(`
+    const k = document.querySelector('#druck .mat-frei');
+    const st = getComputedStyle(k);
+    const linien = k.querySelector('.mf-linien');
+    return { anzeige: st.display,
+             linienBreit: linien ? linien.getBoundingClientRect().width : 0,
+             kastenBreit: k.getBoundingClientRect().width };`);
+  b.gleich(druckstil.anzeige, 'block',
+    'Der Kasten für handschriftliche Nachträge bleibt ein Block');
+  b.pruefe(druckstil.linienBreit > druckstil.kastenBreit * 0.7,
+    `Die Schreiblinien laufen über die volle Breite (${Math.round(druckstil.linienBreit)} ` +
+    `von ${Math.round(druckstil.kastenBreit)} px)`);
+  await seite.auswerten(
+    `const m = await import('./js/bauauftrag.js'); m.schliesseBauauftrag(); return true;`);
+  await seite.ruhe();
 
   b.abschnitt('Die übrigen Ausgabewege laufen weiter');
   for (const [name, ruf] of [
