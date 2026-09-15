@@ -426,6 +426,24 @@ try {
     'Die Griffe sind mindestens 44 px hoch');
   b.pruefe(await seite.auswerten('document.documentElement.scrollWidth <= window.innerWidth + 1'),
     'Die Seite rollt nicht waagerecht');
+  /* Jedes Raster einzeln, nicht nur die Seite als ganze: ein Raster, das aus
+     dem Fenster läuft, bekommt oft eine eigene Rollleiste, und die Seite
+     darüber bleibt dann ruhig. Genau so fällt am Bauort die rechte Spalte
+     eines Feldes unter den Daumen.
+
+     Acht Bildpunkte Spielraum, und zwar aus einem bestimmten Grund: bei
+     Bedienung mit dem Finger erweitert `.mini-knopf` seine Trefferfläche über
+     ein `::after` mit `inset: -4px` nach allen Seiten. Das steht absichtlich
+     über dem Rand des Knopfes und ist kein Überlauf des Rasters. Ein
+     Schwellenwert von einem Bildpunkt meldete deshalb jede Zeile mit einem
+     Löschgriff. */
+  const ueberbreit = await seite.auswerten(`
+    return [...document.querySelectorAll('#bau-liste .feldgruppe, #bau-liste [class*="raster"], ' +
+      '#bau-liste .ba-felder, #bau-liste .bp-felder, #bau-liste .pz-felder, ' +
+      '#bau-liste .bu-felder, #bau-liste .mat-freizeile, #bau-liste .bm-zeile')]
+      .filter(e => e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 8)
+      .map(e => e.className + ' (' + e.scrollWidth + '/' + e.clientWidth + ')').join(' | ');`);
+  b.gleich(ueberbreit, '', 'Kein Feldraster im Baumodus läuft aus dem Fenster');
   await seite.breit(1440, 900);
 
   // ------------------------------------------------------------ Zurück in die Planung
