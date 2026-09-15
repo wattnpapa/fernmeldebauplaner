@@ -12,6 +12,7 @@ import { bandById, funkstrecke, azimutText } from './richtfunk.js';
 import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
 import { querungsartById, bauweiseById, querungsMinuten } from './vorschrift.js';
 import { kmlLesen, kmlSchreiben, kmlAusKMZ, istKMZ, alsText } from './kml.js';
+import { istBaumeldung, alsBaumeldung } from './teilen.js';
 import { alsDatenUrls, ausDatei as bilderAusDatei } from './bildspeicher.js';
 import { flaechenEcken, flaechenTitel, flaechenartById, masseText } from './flaechen.js';
 import { relaisTitel, relaisKurz } from './relais.js';
@@ -209,10 +210,27 @@ export async function abschnittExportieren(aid) {
 }
 
 /**
+ * Eine Baumeldung als Datei sichern – der Rückweg vom Bauort.
+ *
+ * Nur die `bau`-Blöcke, keine Lichtbilder, keine Planung. Der Weg über die
+ * Datei steht neben dem über den Link, weil am Bauort beides vorkommt: wo ein
+ * Netz ist, geht der Link; wo keines ist, geht die Datei über den Stick oder
+ * das Fahrzeug – und sie kennt keine Längengrenze.
+ */
+export function baumeldungExportieren(strecken) {
+  const p = store.projekt;
+  const meldung = alsBaumeldung(p, strecken);
+  if (!meldung.strecken.length) return false;
+  herunterladen(JSON.stringify(meldung, null, 2),
+    dateiname(['Baumeldung', p.name, p.kopf?.datum], 'json'));
+  return true;
+}
+
+/**
  * Nimmt eine Datei entgegen und erkennt am Inhalt, was darin steht: eine eigene
  * Planung, GeoJSON, KML oder ein gepacktes KMZ. Die Endung entscheidet bewusst
  * nicht mit – Dateien aus fremden Werkzeugen tragen oft eine andere.
- * @returns {Promise<{projekt: object, meldung: string}>}
+ * @returns {Promise<{projekt: object, meldung: string}|{baumeldung: object}>}
  */
 export async function projektImportieren(datei) {
   let puffer;
@@ -230,6 +248,12 @@ export async function projektImportieren(datei) {
 async function jsonUebernehmen(inhalt, dateiname) {
   const roh = JSON.parse(inhalt);
   if (roh.type === 'FeatureCollection') return geoJSONUebernehmen(roh);
+  /* Eine Baumeldung trägt zwar `strecken`, ist aber keine Planung: sie wird in
+     eine vorhandene EINGESPIELT und nicht geöffnet. Ohne diese Abzweigung
+     machte `migrieren()` eine leere Planung daraus – mit Strecken ohne Punkte,
+     ohne Kopf und ohne Karte –, und der Bogen des Trupps wäre verloren. Wer sie
+     einspielt, entscheidet die Oberfläche; hier wird nur erkannt. */
+  if (istBaumeldung(roh)) return { baumeldung: roh, dateiname };
   if (!roh.strecken && !roh.zeichen && !roh.flaechen) throw new Error('Keine Planungsdaten in der Datei gefunden.');
   /* Erst die Bilddaten in den Bildspeicher, dann die Planung öffnen: sonst
      stünden für einen Augenblick Bildpunkte auf der Karte, hinter denen nichts

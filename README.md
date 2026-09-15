@@ -307,6 +307,14 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Die Baudokumentation reist auf allen Wegen mit – Datei, Link und eigener Speicher.
   So schickt der Zugführer dem Truppführer dessen Einsatzabschnitt und bekommt zurück,
   was daraus geworden ist
+- **Baumeldung zurück:** Der Truppführer schickt aus dem Baumodus einen Link oder eine
+  Datei mit dem, was gebaut wurde – ohne die Planung, die der Planer schon hat. Eine
+  Strecke mit Bauabschnitt, Punkt, Materialbogen und Prüfzeile wiegt darin rund 400
+  Zeichen
+- Beim Planer wird sie **mit Vorschau eingespielt**: welche Strecke, welcher
+  Bauabschnitt, von welchem Trupp, und was dabei weicht. Zusammengeführt wird nichts –
+  eine Meldung ersetzt genau die Bauabschnitte, die sie nennt, und rührt die geplante
+  Trasse nicht an. Zwei Trupps an einer Strecke nehmen einander deshalb nichts weg
 - KML und KMZ aus Google Earth laden: Pfade werden Strecken, Ortsmarken taktische Zeichen
 - Zurück nach Google Earth als KML (ganze Planung oder eine Strecke), gegliedert
   nach Einsatzabschnitten
@@ -340,6 +348,12 @@ Orthophotos der Landesvermessungen (DOP 20 cm, alle 16 Länder).
 anklicken, mit Doppelklick oder `Enter` abschließen. Punkte lassen sich anschließend
 verschieben; die gestrichelten Griffe zwischen zwei Punkten fügen beim Ziehen einen
 Zwischenpunkt ein.
+
+**Baumeldung zurückschicken:** Im Baumodus ganz unten unter „Baumeldung an den
+Planer“ – als Link oder als Datei. Sie geht über alle Strecken, an denen dieser
+Trupp gearbeitet hat, nicht nur über die gerade gewählte. Der Planer öffnet sie
+wie einen geteilten Link oder über „Datei → Planung oder KML laden“ und bekommt
+die Vorschau.
 
 **Baudokumentation:** In der Kopfzeile auf „Baumodus“ schalten. Im Reiter „Bau“ oben
 die Strecke wählen, an der gebaut wird; darunter steht jeder geplante Punkt mit seinen
@@ -486,6 +500,8 @@ js/gitter.js          UTM-Kilometergitter (UTMREF/MGRS) auf Karte und Bauauftrag
 js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
 js/baudoku.js         Baudokumentation: Ist-Trasse, Bauabschnitte, Material,
                       Baumeldungen, Prüfung und Übergabe, Abweichung
+js/baumeldung.js      Der Rückweg vom Bauort: eine fremde Meldung einordnen
+                      und abschnittsweise einspielen
 js/kacheln.js         Kartenkacheln für den Bauort mitnehmen (IndexedDB)
 js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
 js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
@@ -584,8 +600,8 @@ Sie startet einen Webserver und einen Chromium, legt eine Strecke an, schaltet
 in den Baumodus, nimmt Punkte auf allen drei Wegen auf – samt vorgetäuschtem
 Gerätestandort –, füllt den Materialnachweis, setzt eine Baumeldung, prüft die
 Leitungsstämme und übergibt, lädt die Seite neu, schickt die Planung durch den
-Link und zurück und prüft, dass die gebaute Trasse auf keinem der drei
-Druckerzeugnisse landet. Eine präparierte Datei läuft dabei gegen die Weißliste
+Link und zurück, lässt zwei Trupps getrennt zurückmelden und einspielen und
+prüft, dass die gebaute Trasse auf keinem der drei Druckerzeugnisse landet. Eine präparierte Datei läuft dabei gegen die Weißliste
 in `migrieren()` – ein erfundener Artikel, eine negative Menge, eine Prüfart,
 die es nicht gibt.
 

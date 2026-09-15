@@ -1875,6 +1875,24 @@ body.baumodus #wz-relais { display: none; }
 .pz-abschluss { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
 .bu-felder { margin-top: 10px; }
 
+/* Die Vorschau einer eingegangenen Baumeldung. Sie ist der einzige Empfang,
+   der etwas überschreibt – deshalb steht je Strecke nicht nur, was kommt,
+   sondern auch, was dabei weicht. */
+.meldung-liste { margin-top: 10px; }
+.mv-zeile {
+  border: 1px solid var(--linie); border-radius: var(--radius-klein);
+  padding: 10px; margin-bottom: 8px; background: var(--flaeche);
+}
+.mv-zeile.kollision { border-color: var(--warnung-linie); }
+.mv-kopf { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.mv-zeile .feld { margin: 8px 0 0; min-width: 0; }
+.mv-zeile select { width: 100%; min-width: 0; }
+.mv-ersetzt { margin: 8px 0 0; font-size: 12px; color: var(--warnung-tief); }
+.meldung-link textarea {
+  width: 100%; min-width: 0; font-family: var(--mono);
+  font-size: 12px; word-break: break-all;
+}
+
 /* Der Baustand in der Streckenliste des Planungsmodus – die Antwort auf
    „woran wird draußen gerade gearbeitet“ */
 .eintrag-zeile.bau-zeile { color: var(--text-blau); }

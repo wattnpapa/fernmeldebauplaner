@@ -26,6 +26,12 @@ import {
    und wird an dieser Stelle unterschieden, statt alte Links zu brechen. */
 export const KENNUNG_PLANUNG = 'p1.';
 export const KENNUNG_AUSSCHNITT = 'k1.';
+/* Der Rückweg. Eine Baumeldung ist keine Planung – sie trägt nur, was am
+   Bauort entstanden ist –, und der Empfänger muss das VOR dem Öffnen wissen:
+   eine Planung wird übernommen oder danebengelegt, eine Baumeldung wird in eine
+   vorhandene Planung eingespielt. Dieselbe Kennung für beides zwänge ihn, das
+   am Inhalt zu raten. */
+export const KENNUNG_MELDUNG = 'm1.';
 
 /* Ab wann ein Link unhandlich wird. Nicht der Browser ist die Grenze – der
    trägt weit mehr –, sondern die Mailprogramme: sie brechen lange Zeilen um,
@@ -429,12 +435,32 @@ export function ausschnittAlsLink(ansicht) {
   return eigeneAdresse() + '#' + KENNUNG_AUSSCHNITT + teile.join(',');
 }
 
+/**
+ * Wie es um die Länge eines Links steht – für die Ampel neben dem Feld.
+ *
+ * Steht hier und nicht in der Oberfläche, weil die Grenzen hier stehen und weil
+ * zwei Stellen sie brauchen: der Planungslink und die Baumeldung. Zwei Kopien
+ * derselben Schwelle liefen früher oder später auseinander.
+ */
+export function laengenUrteil(laenge) {
+  const z = `Der Link ist ${laenge.toLocaleString('de-DE')} Zeichen lang`;
+  if (laenge <= LAENGE_UNBEDENKLICH)
+    return { klasse: 'gut', text: `${z} – unbedenklich, den trägt jeder Weg.` };
+  if (laenge <= LAENGE_GRENZE)
+    return { klasse: 'knapp',
+      text: `${z} – über einen Messenger sicher; in E-Mails brechen ihn manche Programme um.` };
+  return { klasse: 'zuviel',
+    text: `${z} – zu lang für einen verlässlichen Versand. Lieber einen einzelnen ` +
+      `Einsatzabschnitt teilen oder die Planung als Datei schicken.` };
+}
+
 // ---------------------------------------------------------------- Link lesen
 
 /** Was steckt im Fragment? `null`, wenn nichts für uns dabei ist. */
 export function artDesFragments(fragment = location.hash) {
   const roh = String(fragment || '').replace(/^#/, '');
   if (roh.startsWith(KENNUNG_PLANUNG)) return 'planung';
+  if (roh.startsWith(KENNUNG_MELDUNG)) return 'meldung';
   if (roh.startsWith(KENNUNG_AUSSCHNITT)) return 'ausschnitt';
   return null;
 }
@@ -470,6 +496,82 @@ export async function planungAusFragment(fragment = location.hash) {
      Punktliste und müssen wieder Kennungen werden, bevor `migrieren()`
      darüberläuft – danach wären die Stellen nicht mehr aufzulösen. */
   return bauAuffuellen(objekt);
+}
+
+// ------------------------------------------------------- Baumeldung
+
+/* Der Rückweg vom Bauort. Hin geht die Planung, zurück geht eine Baumeldung:
+   nur die `bau`-Blöcke der Strecken, an denen dieser Trupp gearbeitet hat.
+   Das hält sie klein – Ist-Punkte, Materialzeilen und Meldungen wiegen
+   weniger als die Planung, die hingeschickt wurde.
+
+   ZUGEORDNET WIRD ÜBER DEN NAMEN DER STRECKE, nicht über eine Kennung. Das ist
+   keine Bequemlichkeit, sondern die einzige Möglichkeit: `verschlanken()` wirft
+   die Streckenkennungen weg, weil sie ein Achtel der Länge kosten, und
+   `planungAusFragment()` löscht sogar die Projektkennung, damit eine empfangene
+   Planung keine gleichnamige im Browserspeicher überschreibt. Die Planung beim
+   Trupp trägt also andere Kennungen als die beim Planer, und zwar von Anfang an.
+   Was beide Seiten teilen, ist der Name – der reist mit (`IMMER` weiter oben).
+   Der Empfänger bekommt die Zuordnung deshalb zur Ansicht vorgelegt und kann
+   sie ändern; geraten wird nur der Vorschlag.
+
+   Mitgeschickt wird außerdem die ZAHL DER GEPLANTEN PUNKTE. Die Verweise der
+   Baudokumentation stehen als Stelle in der Punktliste (siehe oben), und die
+   stimmen nur, solange der Plan derselbe ist. Hat der Planer inzwischen einen
+   Punkt eingefügt, sagt die Zahl das – und der Empfänger sieht in der Vorschau,
+   dass Bestätigungen ins Leere zeigen könnten, statt sie stillschweigend auf
+   den falschen Punkt zu legen. */
+
+export function alsBaumeldung(projekt, strecken) {
+  const gemeldet = (strecken || []).filter(bauBegonnen);
+  return {
+    fassung: 1,
+    planung: projekt.name || '',
+    gemeldet: new Date().toISOString(),
+    strecken: gemeldet.map(s => ({
+      name: s.name,
+      sollPunkte: (s.punkte || []).length,
+      bau: bauVerschlanken(s)
+    }))
+  };
+}
+
+/** Eine Baumeldung als Link. Wirft, wenn der Browser nicht packen kann. */
+export async function meldungAlsLink(projekt, strecken) {
+  if (!kannPacken())
+    throw new Error('Dieser Browser kann keine Links erzeugen – Baumeldung als Datei sichern.');
+  return eigeneAdresse() + '#' + KENNUNG_MELDUNG +
+    await packen(JSON.stringify(alsBaumeldung(projekt, strecken)));
+}
+
+/** Ist dieses Objekt eine Baumeldung? Gilt für den Datei- wie den Linkweg. */
+export const istBaumeldung = o => !!(o && typeof o === 'object' &&
+  o.fassung === 1 && Array.isArray(o.strecken) && !o.kopf && !o.ansicht &&
+  o.strecken.every(m => m && typeof m === 'object' && typeof m.name === 'string' && m.bau));
+
+/**
+ * Die Baumeldung aus dem Fragment holen – roh, noch nicht zugeordnet.
+ *
+ * Die Verweise bleiben absichtlich Stellen und werden NICHT wie bei der
+ * Planung gleich zu Kennungen: aufzulösen sind sie erst an der Strecke, der
+ * der Empfänger die Meldung zuordnet, und die steht hier noch nicht fest.
+ */
+export async function baumeldungAusFragment(fragment = location.hash) {
+  const roh = String(fragment || '').replace(/^#/, '');
+  if (!roh.startsWith(KENNUNG_MELDUNG)) return null;
+  if (!kannPacken())
+    throw new Error('Dieser Browser kann geteilte Links nicht lesen – ' +
+      'bitte die Baumeldung als Datei anfordern.');
+  let objekt;
+  try {
+    objekt = JSON.parse(await entpacken(roh.slice(KENNUNG_MELDUNG.length)));
+  } catch (e) {
+    if (e.zuGross) throw e;
+    throw new Error('Der Link ist unvollständig oder beschädigt – ' +
+      'oft hat ihn ein Mailprogramm umgebrochen.');
+  }
+  if (!istBaumeldung(objekt)) throw new Error('Der Link enthält keine Baumeldung.');
+  return objekt;
 }
 
 /** Den Kartenausschnitt aus dem Fragment holen, oder `null`. */

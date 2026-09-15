@@ -74,6 +74,10 @@ import {
   baumeldungAnlegen, baumeldungLoeschen, meldungenNachZeit,
   pruefungSichern, pruefzeilen, pruefzeileAnlegen, pruefzeileLoeschen
 } from './baudoku.js';
+import {
+  vorschlag, truppText, befund, einspielen, berichtText
+} from './baumeldung.js';
+import { meldungAlsLink, laengenUrteil } from './teilen.js';
 import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
@@ -3709,6 +3713,7 @@ export function zeichneBauListe() {
   liste.appendChild(bauMaterialBlock(s, k));
   liste.appendChild(bauSchlussBlock(s, k));
   liste.appendChild(bauUebergabeBlock(s, k));
+  liste.appendChild(bauRueckwegBlock(s));
 
   if (marke) {
     const wieder = liste.querySelector(`[data-bau-feld="${CSS.escape(marke)}"]`);
@@ -4522,6 +4527,208 @@ function pruefZeile(s, z) {
   fuss.appendChild(weg);
   zeile.appendChild(fuss);
   return zeile;
+}
+
+// ---------------------------------------------------- Baumeldung schicken
+
+/* Der Rückweg. Er steht im Baumodus ganz unten, weil er ans Ende des Bauens
+   gehört – und er steht dort auch dann, wenn an dieser Strecke noch gar nichts
+   aufgenommen ist: die Meldung geht über ALLE Strecken, an denen der Trupp
+   gearbeitet hat, nicht nur über die gerade gewählte. Ein Trupp, der drei
+   Strecken gebaut hat, soll nicht drei Meldungen schicken müssen. */
+function bauRueckwegBlock(s) {
+  const box = el('div', 'feldgruppe bau-rueckweg');
+  box.appendChild(el('h3', 'gruppen-titel', 'Baumeldung an den Planer'));
+
+  const alle = (store.projekt.strecken || []).filter(bauBegonnen);
+  if (!alle.length) {
+    box.appendChild(el('p', 'klein',
+      'Sobald etwas aufgenommen ist, lässt sich von hier zurückmelden, was gebaut wurde.'));
+    return box;
+  }
+
+  box.appendChild(el('p', 'klein',
+    `Zurück geht nur, was am Bauort entstanden ist – die Baudokumentation von ` +
+    `<b>${alle.length} ${alle.length === 1 ? 'Strecke' : 'Strecken'}</b> ` +
+    `(${escapeHtml(alle.map(x => x.name).join(', '))}). Die Planung selbst reist nicht ` +
+    `mit: der Planer hat sie schon, und ohne sie bleibt die Meldung klein genug für ` +
+    `einen Link.`));
+
+  const tasten = el('div', 'tastenreihe bau-tasten');
+  tasten.appendChild(knopf('Als Link', () => meldungAlsLinkZeigen(alle), 'klein primaer bau-taste'));
+  tasten.appendChild(knopf('Als Datei', () => {
+    if (io.baumeldungExportieren(alle)) hinweis('Baumeldung als Datei gesichert');
+  }, 'klein bau-taste'));
+  box.appendChild(tasten);
+  void s;
+  return box;
+}
+
+/* Der Link steht in einem Feld und wird nicht stillschweigend in die
+   Zwischenablage gelegt: am Bauort ist oft kein Mailprogramm zur Hand, und der
+   Truppführer diktiert ihn dann über Funk ab – dafür muss er ihn sehen. */
+function meldungAlsLinkZeigen(strecken) {
+  const box = el('div', 'meldung-link');
+  const feldLink = document.createElement('textarea');
+  feldLink.readOnly = true;
+  feldLink.rows = 3;
+  feldLink.value = 'wird erzeugt …';
+  box.appendChild(feldLink);
+  const ampel = el('p', 'teilen-ampel', '');
+  box.appendChild(ampel);
+  box.appendChild(el('p', 'klein',
+    'Der Planer öffnet den Link und bekommt eine Vorschau, bevor etwas eingespielt wird.'));
+
+  dialog({
+    titel: 'Baumeldung als Link',
+    inhalt: box,
+    breit: true,
+    fuss: [
+      { text: 'Kopieren', tun: () => {
+        const wert = feldLink.value;
+        if (!wert || wert.startsWith('wird erzeugt')) return false;
+        feldLink.select();
+        const lauf = navigator.clipboard?.writeText(wert);
+        if (!lauf) {
+          hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler');
+          return false;
+        }
+        lauf.then(() => hinweis('Baumeldung kopiert'))
+          .catch(() => hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler'));
+        return false;
+      } },
+      { text: 'Schließen', primaer: true }
+    ]
+  });
+
+  meldungAlsLink(store.projekt, strecken).then(link => {
+    if (!box.isConnected) return;
+    feldLink.value = link;
+    /* Dieselbe Ampel wie beim Planungslink, aus derselben Quelle: nicht der
+       Browser ist die Grenze, sondern die Mailprogramme – sie brechen lange
+       Zeilen um, und ein umgebrochener Link kommt beim Planer kaputt an. */
+    const u = laengenUrteil(link.length);
+    ampel.className = 'teilen-ampel ' + u.klasse;
+    ampel.textContent = u.text;
+  }).catch(e => {
+    if (!box.isConnected) return;
+    feldLink.value = '';
+    hinweis(e.message, 'fehler');
+  });
+}
+
+// ---------------------------------------------------- Baumeldung empfangen
+
+/**
+ * Was der Trupp zurückschickt – vor dem Einspielen zur Ansicht.
+ *
+ * Eine Baumeldung ist die einzige Datei und der einzige Link, die etwas
+ * ÜBERSCHREIBEN: eine Planung wird danebengelegt, eine Baumeldung tritt an die
+ * Stelle dessen, was beim Planer an diesen Bauabschnitten hängt. Deshalb sieht
+ * er zuerst, was ankommt, wem es zugeordnet wird und was dabei weicht – und
+ * kann die Zuordnung ändern, bevor irgendetwas geschrieben wird.
+ */
+export function baumeldungDialog(meldung, herkunft) {
+  const p = store.projekt;
+  const zuordnung = (meldung.strecken || []).map(m => {
+    const v = vorschlag(p, m.name);
+    return v ? v.id : null;
+  });
+
+  const box = el('div', 'meldung-vorschau');
+  const trupp = truppText(meldung);
+  const zeit = meldung.gemeldet ? zeitpunkt(meldung.gemeldet) : '';
+  const kopf = el('div', '');
+  kopf.innerHTML =
+    `<p>Über ${escapeHtml(herkunft === 'Datei' ? 'die Datei' : 'den Link')} kommt eine
+        <b>Baumeldung</b> herein${trupp ? ` von <b>${escapeHtml(trupp)}</b>` : ''}${
+        zeit ? `, gemeldet ${escapeHtml(zeit)}` : ''}.</p>` +
+    /* Der Name der Planung reist als Text mit, nicht als Kennung – die gibt es
+       auf beiden Seiten nicht gemeinsam (siehe `baumeldung.js`). Stimmt er
+       nicht, ist das ein Hinweis und keine Sperre: der Planer kann die Planung
+       zwischenzeitlich umbenannt haben. */
+    (meldung.planung && meldung.planung !== p.name
+      ? `<p class="bau-warnung">Die Meldung nennt die Planung
+           „${escapeHtml(meldung.planung)}“ – offen ist „${escapeHtml(p.name)}“.
+           Zuordnung unten prüfen.</p>`
+      : '') +
+    `<p class="klein"><b>Zusammengeführt wird nichts.</b> Eine Baumeldung ersetzt
+        genau die Bauabschnitte, die sie nennt; die geplante Trasse bleibt
+        unangetastet.</p>`;
+  box.appendChild(kopf);
+
+  const liste = el('div', 'meldung-liste');
+  box.appendChild(liste);
+
+  const zeichne = () => {
+    const befunde = befund(p, meldung, zuordnung);
+    liste.innerHTML = '';
+    befunde.forEach((b, i) => {
+      const zeile = el('div', 'mv-zeile' + (b.kollision.length ? ' kollision' : ''));
+      const bringt = [
+        b.istPunkte && `${b.istPunkte} ${b.istPunkte === 1 ? 'Punkt' : 'Punkte'}`,
+        b.materialzeilen && `${b.materialzeilen} ${b.materialzeilen === 1 ? 'Materialzeile' : 'Materialzeilen'}`,
+        b.meldungen && `${b.meldungen} ${b.meldungen === 1 ? 'Baumeldung' : 'Baumeldungen'}`
+      ].filter(Boolean).join(' · ');
+      zeile.innerHTML =
+        `<div class="mv-kopf"><b>${escapeHtml(b.name)}</b>
+           <span class="klein">${escapeHtml(bringt || 'nichts')}</span></div>` +
+        `<p class="klein">${b.ganzeStrecke
+          ? 'Ohne Bauabschnitt – die Meldung gilt für die ganze Strecke.'
+          : 'Bauabschnitte: ' + escapeHtml(b.abschnitte.join(', '))}</p>`;
+
+      const wahl = feld('Einspielen in', b.ziel ? b.ziel.id : '', wert => {
+        zuordnung[i] = wert || null;
+        zeichne();
+      }, { typ: 'select', werte: [['', '– nicht einspielen –']]
+        .concat((p.strecken || []).map(s => [s.id, s.name])) });
+      zeile.appendChild(wahl);
+
+      if (!b.ziel) {
+        zeile.appendChild(el('p', 'klein',
+          'Keine Strecke dieses Namens – oder mehrere. Von Hand zuordnen oder auslassen.'));
+      } else {
+        if (b.ersetzt) {
+          zeile.appendChild(el('p', 'mv-ersetzt',
+            `Dabei weichen ${b.ersetzt} hier schon aufgenommene ` +
+            `${b.ersetzt === 1 ? 'Punkt' : 'Punkte'}.`));
+        }
+        if (b.kollision.length) {
+          zeile.appendChild(el('p', 'bau-warnung',
+            `An ${b.kollision.length === 1 ? 'dem Bauabschnitt' : 'den Bauabschnitten'} ` +
+            `${escapeHtml(b.kollision.map(a => a.name).join(', '))} hängt hier schon eine ` +
+            'Aufnahme. Sie wird ersetzt und nicht verschmolzen – wenn zwei Trupps ' +
+            'denselben Abschnitt gemeldet haben, vorher die ältere Meldung sichern.'));
+        }
+        if (b.planAbweicht) {
+          zeile.appendChild(el('p', 'bau-warnung',
+            'Die geplante Trasse hat seit der Übergabe an den Trupp eine andere Zahl ' +
+            'von Punkten. Bestätigungen, die sich nicht sicher zuordnen lassen, werden ' +
+            'gelöst – die aufgenommenen Punkte bleiben stehen.'));
+        }
+      }
+      liste.appendChild(zeile);
+    });
+  };
+  zeichne();
+
+  dialog({
+    titel: 'Baumeldung eingegangen',
+    inhalt: box,
+    breit: true,
+    fuss: [
+      { text: 'Verwerfen' },
+      { text: 'Einspielen', primaer: true, tun: () => {
+        let bericht;
+        store.aendern(pr => { bericht = einspielen(pr, meldung, zuordnung); }, 'meldung');
+        ctx.sl.zeichne();
+        zeichneStreckenListe();
+        zeichneBauListe();
+        hinweis(berichtText(bericht) +
+          (bericht.uebersprungen ? ` – ${bericht.uebersprungen} ausgelassen` : ''));
+      } }
+    ]
+  });
 }
 
 // ---------------------------------------------------------------- Projekt

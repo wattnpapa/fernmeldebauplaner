@@ -544,6 +544,184 @@ try {
     return kopie.strecken[0].bau ? kopie.strecken[0].bau.punkte.length : 0;`);
   b.gleich(ueberDatei, 4, 'Die Sicherungsdatei trägt die Aufnahme');
 
+  // ------------------------------------------------------------ Rückweg
+
+  b.abschnitt('Zwei Trupps melden zurück, ohne einander zu überschreiben');
+  /* Der Fall, für den die Bauabschnitte da sind: zwei Trupps bauen an einer
+     Strecke aufeinander zu (Hdb Feldfernkabelbau, 3.6) und melden getrennt.
+     Die zweite Meldung darf die erste nicht wegnehmen – sonst wäre die Arbeit
+     eines Trupps verloren, und zwar unbemerkt. */
+  const zweiTrupps = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const bm = await import('./js/baumeldung.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+
+    /* Trupp Nord baut und meldet. */
+    let meldungNord;
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const a = bd.bauabschnittAnlegen(s);
+      a.name = 'Nord'; a.trupp = '1. FmTr';
+      bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng,
+        { sollPunkt: s.punkte[0].id, quelle: 'plan', abschnitt: a.id });
+      bd.materialSetzen(s, 'fkb', a.id, 400);
+      bd.baumeldungAnlegen(s, 'Nord: erste Länge verbaut', a.id);
+    }, 'bau');
+    meldungNord = JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s])));
+
+    /* Trupp Süd baut am selben Auftrag, kennt Nord aber nicht. */
+    let meldungSued;
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const a = bd.bauabschnittAnlegen(s);
+      a.name = 'Süd'; a.trupp = '2. FmTr';
+      const letzter = s.punkte[s.punkte.length - 1];
+      bd.istPunktSetzen(s, letzter.lat, letzter.lng,
+        { sollPunkt: letzter.id, quelle: 'plan', abschnitt: a.id });
+      bd.materialSetzen(s, 'fkb', a.id, 350);
+    }, 'bau');
+    meldungSued = JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s])));
+
+    /* Beim Planer steht noch nichts. */
+    window.fbp.store.aendern(() => { s.bau = null; }, 'bau');
+    const ordnung = [s.id];
+    window.fbp.store.aendern(pr => bm.einspielen(pr, meldungNord, ordnung), 'meldung');
+    const nachNord = {
+      abschnitte: bd.bauabschnitte(s).map(a => a.name).join(','),
+      punkte: bd.istPunkte(s).length,
+      material: bd.materialSumme(s).get('fkb')
+    };
+    window.fbp.store.aendern(pr => bm.einspielen(pr, meldungSued, ordnung), 'meldung');
+    const nachBeiden = {
+      abschnitte: bd.bauabschnitte(s).map(a => a.name).sort().join(','),
+      punkte: bd.istPunkte(s).length,
+      material: bd.materialSumme(s).get('fkb'),
+      truppe: bd.bauabschnitte(s).map(a => a.trupp).sort().join(','),
+      meldungen: bd.baumeldungen(s).length
+    };
+
+    /* Und derselbe Weg noch einmal: eine zweite Meldung zu DEMSELBEN Abschnitt
+       muss als Kollision gemeldet werden, nicht stillschweigend verschmelzen. */
+    const befundWieder = bm.befund(p, meldungNord, ordnung);
+    const kollision = befundWieder[0].kollision.map(a => a.name).join(',');
+
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return { nachNord, nachBeiden, kollision,
+             gemeldetNord: meldungNord.strecken.length,
+             truppNord: bm.truppText(meldungNord) };`);
+
+  b.gleich(zweiTrupps.gemeldetNord, 1, 'Die Meldung trägt genau die bebaute Strecke');
+  b.gleich(zweiTrupps.truppNord, '1. FmTr', 'Und nennt den Trupp, der gemeldet hat');
+  b.gleich(zweiTrupps.nachNord.abschnitte, 'Nord', 'Nach der ersten Meldung steht Nord da');
+  b.gleich(zweiTrupps.nachNord.material, 400, 'Mit seinem Material');
+  b.gleich(zweiTrupps.nachBeiden.abschnitte, 'Nord,Süd',
+    'Nach der zweiten stehen beide da – die erste ist nicht weggenommen');
+  b.gleich(zweiTrupps.nachBeiden.punkte, 2, 'Beide aufgenommenen Punkte sind da');
+  b.gleich(zweiTrupps.nachBeiden.material, 750, 'Und beide Materialmengen addieren sich');
+  b.gleich(zweiTrupps.nachBeiden.truppe, '1. FmTr,2. FmTr', 'Jeder Abschnitt trägt seinen Trupp');
+  b.gleich(zweiTrupps.nachBeiden.meldungen, 1, 'Die Baumeldung von Nord steht noch da');
+  b.gleich(zweiTrupps.kollision, 'Nord',
+    'Eine zweite Meldung zum selben Abschnitt wird als Kollision gemeldet');
+
+  b.abschnitt('Die Baumeldung reist durch den Link');
+  const rundMeldung = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const a = bd.bauabschnittAnlegen(s);
+      a.name = 'Nord'; a.trupp = '1. FmTr';
+      bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng,
+        { sollPunkt: s.punkte[0].id, quelle: 'standort', genauigkeit: 7, abschnitt: a.id });
+      bd.materialSetzen(s, 'fkb', a.id, 400);
+      bd.pruefzeileAnlegen(s);
+    }, 'bau');
+    const link = await t.meldungAlsLink(p, [s]);
+    const zurueck = await t.baumeldungAusFragment('#' + link.split('#')[1]);
+    const vorher = t.alsBaumeldung(p, [s]);
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return {
+      laenge: link.length,
+      istMeldung: t.istBaumeldung(zurueck),
+      strecken: zurueck.strecken.length,
+      name: zurueck.strecken[0].name,
+      sollPunkte: zurueck.strecken[0].sollPunkte,
+      quelle: zurueck.strecken[0].bau.punkte[0].quelle,
+      genauigkeit: zurueck.strecken[0].bau.punkte[0].genauigkeit,
+      material: JSON.stringify(zurueck.strecken[0].bau.material),
+      materialVorher: JSON.stringify(vorher.strecken[0].bau.material),
+      pruefung: !!zurueck.strecken[0].bau.pruefung
+    };`);
+  b.pruefe(rundMeldung.istMeldung, 'Der Link wird als Baumeldung erkannt');
+  b.gleich(rundMeldung.strecken, 1, 'Eine Strecke kommt an');
+  b.gleich(rundMeldung.quelle, 'standort', 'Die Herkunft der Koordinate bleibt');
+  b.gleich(rundMeldung.genauigkeit, 7, 'Samt Genauigkeit');
+  b.gleich(rundMeldung.material, rundMeldung.materialVorher, 'Der Materialbogen reist mit');
+  b.pruefe(rundMeldung.pruefung, 'Die Prüfzeilen reisen mit');
+  b.pruefe(rundMeldung.laenge < 2000,
+    `Die Meldung ist deutlich kürzer als die Planung (${rundMeldung.laenge} Zeichen)`);
+
+  b.abschnitt('Der Planer sieht die Vorschau, bevor etwas geschrieben wird');
+  await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    window.fbp.store.aendern(() => {
+      const a = bd.bauabschnittAnlegen(s);
+      a.name = 'Ost'; a.trupp = '3. FmTr';
+    }, 'bau');
+    const link = await t.meldungAlsLink(p, [s]);
+    window.fbp.store.aendern(() => {
+      s.bau.abschnitte = s.bau.abschnitte.filter(a => a.name !== 'Ost');
+    }, 'bau');
+    location.hash = link.split('#')[1];
+    return true;`);
+  await seite.warteAuf('!!document.querySelector(".meldung-vorschau")', 8000);
+  b.pruefe(true, 'Der Dialog steht');
+  const vorschautext = (await seite.text('.meldung-vorschau') || '').replace(/\s+/g, ' ');
+  b.pruefe(/3\. FmTr/.test(vorschautext), 'Er nennt den Trupp');
+  b.pruefe(/Zusammengeführt wird nichts/.test(vorschautext),
+    'Und sagt ausdrücklich, dass nicht verschmolzen wird');
+  b.pruefe(/Ost/.test(vorschautext), 'Und welchen Bauabschnitt die Meldung betrifft');
+  b.gleich(await bau('bau.abschnitte.filter(a => a.name === "Ost").length'), 0,
+    'Vor dem Druck auf „Einspielen“ ist nichts geschrieben');
+  await taste('#dialog-fuss', 'Einspielen');
+  await seite.ruhe();
+  b.gleich(await bau('bau.abschnitte.filter(a => a.name === "Ost").length'), 1,
+    'Danach steht der gemeldete Bauabschnitt in der Planung');
+  /* Gefragt wird nach der Sichtbarkeit und nicht nach dem Vorhandensein:
+     `schliesseDialog()` blendet die Hülle aus, ohne ihren Inhalt zu leeren. */
+  b.pruefe(!(await seite.sichtbar('#dialog')), 'Und der Dialog ist zu');
+
+  b.abschnitt('Verwerfen schreibt nichts');
+  await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    window.fbp.store.aendern(() => {
+      const a = bd.bauabschnittAnlegen(s);
+      a.name = 'West'; a.trupp = '4. FmTr';
+    }, 'bau');
+    const link = await t.meldungAlsLink(p, [s]);
+    window.fbp.store.aendern(() => {
+      s.bau.abschnitte = s.bau.abschnitte.filter(a => a.name !== 'West');
+    }, 'bau');
+    location.hash = link.split('#')[1];
+    return true;`);
+  await seite.warteAuf('!!document.querySelector(".meldung-vorschau")', 8000);
+  await taste('#dialog-fuss', 'Verwerfen');
+  await seite.ruhe();
+  b.gleich(await bau('bau.abschnitte.filter(a => a.name === "West").length'), 0,
+    'Der verworfene Bauabschnitt steht nirgends');
+
   b.abschnitt('Eine präparierte Datei bricht nicht aus');
   const gehaertet = await seite.auswerten(`
     const st = await import('./js/state.js');

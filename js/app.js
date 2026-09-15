@@ -21,7 +21,8 @@ import {
   zeichneFlaechenListe, flaechenPalette,
   zeichneRelaisListe, relaisZielAntwort, ueberdeckungUmschalten,
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis,
-  abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen, zeichneBauListe
+  abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen, zeichneBauListe,
+  baumeldungDialog
 } from './ui.js';
 import { baustrecke, baustreckeSetzen } from './baudoku.js';
 import {
@@ -677,15 +678,6 @@ function umfangText(p) {
 /* Die Ampel misst nicht den Browser – der trägt ein Vielfaches –, sondern die
    Mailprogramme: sie brechen lange Zeilen um, und ein umgebrochener Link kommt
    beim Empfänger als Bruchstück an. */
-function laengenUrteil(laenge) {
-  const z = `Der Link ist ${laenge.toLocaleString('de-DE')} Zeichen lang`;
-  if (laenge <= teilen.LAENGE_UNBEDENKLICH)
-    return { klasse: 'gut', text: `${z} – unbedenklich, den trägt jeder Weg.` };
-  if (laenge <= teilen.LAENGE_GRENZE)
-    return { klasse: 'knapp', text: `${z} – über einen Messenger sicher; in E-Mails brechen ihn manche Programme um.` };
-  return { klasse: 'zuviel', text: `${z} – zu lang für einen verlässlichen Versand. Lieber einen einzelnen Einsatzabschnitt teilen oder die Planung als Datei schicken.` };
-}
-
 function teilenDialog() {
   if (!teilen.kannPacken()) {
     dialog({
@@ -748,7 +740,7 @@ function teilenDialog() {
         const link = teilen.ausschnittAlsLink(store.projekt.ansicht);
         feldLink.value = link;
         umfang.textContent = 'Lage, Maßstab und Basiskarte – sonst nichts.';
-        const u = laengenUrteil(link.length);
+        const u = teilen.laengenUrteil(link.length);
         ampel.className = 'teilen-ampel ' + u.klasse;
         ampel.textContent = u.text;
         merke.textContent = 'Dieser Link enthält keine Planungsdaten – nur den Blick auf die Karte.';
@@ -765,7 +757,7 @@ function teilenDialog() {
       if (!gilt()) return;
       feldLink.value = link;
       umfang.textContent = umfangText(quelle);
-      const u = laengenUrteil(link.length);
+      const u = teilen.laengenUrteil(link.length);
       ampel.className = 'teilen-ampel ' + u.klasse;
       ampel.textContent = u.text;
       const bilder = (quelle.bilder || []).length;
@@ -819,6 +811,22 @@ async function geteiltenLinkPruefen() {
     }
     karte.setView([a.lat, a.lng], a.zoom);
     hinweis('Kartenausschnitt aus dem Link geöffnet');
+    return;
+  }
+
+  if (art === 'meldung') {
+    let meldung;
+    try {
+      meldung = await teilen.baumeldungAusFragment();
+    } catch (e) {
+      teilen.fragmentRaeumen();
+      hinweis(e.message, 'fehler');
+      return;
+    }
+    teilen.fragmentRaeumen();
+    if (!meldung) return;
+    if (bauauftragOffen()) schliesseBauauftrag();
+    baumeldungDialog(meldung, 'Link');
     return;
   }
 
@@ -950,7 +958,15 @@ $('#datei-import').onchange = e => {
   const datei = e.target.files[0];
   if (!datei) return;
   io.projektImportieren(datei)
-    .then(({ meldung }) => { schliesseDialog(); hinweis(meldung); })
+    .then(ergebnis => {
+      schliesseDialog();
+      /* Eine Baumeldung wird nicht geöffnet, sondern eingespielt – und vorher
+         gezeigt. Das ist die einzige Datei, für die es hier eine Vorschau gibt;
+         bei einer Planung genügt das Danebenlegen, bei ihr nicht: sie
+         überschreibt etwas. */
+      if (ergebnis.baumeldung) baumeldungDialog(ergebnis.baumeldung, 'Datei');
+      else hinweis(ergebnis.meldung);
+    })
     .catch(err => hinweis('Import fehlgeschlagen: ' + err.message, 'fehler'));
   e.target.value = '';
 };

@@ -75,15 +75,23 @@ die ganze übrige Planung. Ortsangabe, Beschriftung und Aufnahmezeitpunkt der
 Bilder können mitgehen, die Bilddaten nicht. Der Dialog sagt das im Klartext –
 für Bilder bleibt die Datei der Weg.
 
-## Drei Arten von Link
+## Vier Arten von Link
 
-- **Ganze Planung** – der Normalfall.
-- **Einsatzabschnitt** – der eigentlich nützlichste: der Zugführer schickt
-  jedem Truppführer dessen Abschnitt, kürzer und ohne fremde Baustellen. Der
-  Zuschnitt steht in `abschnittAlsProjekt()` – aus `abschnittExportieren()`
-  herausgelöst, damit Datei und Link denselben Weg nehmen.
-- **Nur der Kartenausschnitt** – Lage, Zoom, Basiskarte, rund 50 Zeichen.
-  „Schau dir mal die Stelle an“, ohne jede Planungsangabe.
+- **Ganze Planung** (`p1.`) – der Normalfall.
+- **Einsatzabschnitt** (ebenfalls `p1.`) – der eigentlich nützlichste: der
+  Zugführer schickt jedem Truppführer dessen Abschnitt, kürzer und ohne fremde
+  Baustellen. Der Zuschnitt steht in `abschnittAlsProjekt()` – aus
+  `abschnittExportieren()` herausgelöst, damit Datei und Link denselben Weg
+  nehmen.
+- **Nur der Kartenausschnitt** (`k1.`) – Lage, Zoom, Basiskarte, rund 50
+  Zeichen. „Schau dir mal die Stelle an“, ohne jede Planungsangabe.
+- **Baumeldung** (`m1.`) – die Gegenrichtung, seit dem Baumodus: der Truppführer
+  schickt zurück, was gebaut wurde. Nur die `bau`-Blöcke, ohne die Planung –
+  der Planer hat sie schon. Eine Strecke mit Bauabschnitt, Ist-Punkt,
+  Materialbogen und Prüfzeile wiegt darin rund 400 Zeichen. Die eigene Kennung
+  ist nötig, weil der Empfänger VOR dem Öffnen wissen muss, was kommt: eine
+  Planung wird danebengelegt, eine Baumeldung wird eingespielt und überschreibt
+  dabei etwas. Einzelheiten in `BAUDOKU.md`.
 
 ## Der Weg beim Empfänger
 
@@ -91,6 +99,11 @@ Ein Link darf nichts überschreiben. Vor dem ersten Zugriff auf den Bestand
 erscheint ein Dialog – Name, Umfang, Stand – mit zwei Wegen: **Übernehmen**
 (als *neue* Planung mit neuer Kennung und `herkunft`-Block, wie ihn der
 Abschnittsexport schon schreibt) und **Verwerfen**.
+
+Bei der Baumeldung ist der Dialog ausführlicher, weil mehr auf dem Spiel steht:
+er zeigt je gemeldeter Strecke, welcher Strecke der Planung sie zugeordnet wird
+(änderbar), was sie mitbringt, was dabei weicht und ob ein Bauabschnitt
+betroffen ist, an dem hier schon etwas hängt.
 
 Ein drittes „Nur ansehen“ stand im ersten Entwurf und ist beim Bauen gefallen:
 Die Anwendung speichert bei jeder Änderung selbsttätig, ein bloßes Ansehen

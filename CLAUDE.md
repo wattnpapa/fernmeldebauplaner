@@ -156,8 +156,8 @@ node scripts/zeichen-pruefen.mjs
 Prüft, ob der Bestand vollständig ist und sich jedes Zeichen rendern lässt.
 
 Nach jeder Änderung am Baumodus oder an dem, was er anfasst (`js/baudoku.js`,
-`strecke.bau` in `js/state.js`, Materialkatalog und Prüfarten in
-`js/vorschrift.js`, die Ist-Ebene in `js/strecken.js`, der Codec in
+`js/baumeldung.js`, `strecke.bau` in `js/state.js`, Materialkatalog und Prüfarten
+in `js/vorschrift.js`, die Ist-Ebene in `js/strecken.js`, der Codec in
 `js/teilen.js`):
 
 ```bash
@@ -166,8 +166,9 @@ node scripts/baumodus-pruefen.mjs
 
 Fährt die Anwendung in einem echten Chromium: legt eine Strecke an, schaltet um,
 nimmt Punkte auf allen drei Wegen auf, füllt den Materialnachweis, meldet, prüft
-und übergibt, lädt neu, schickt die Planung durch den Link und zurück und prüft,
-dass die gebaute Trasse auf keinem der drei Druckerzeugnisse landet.
+und übergibt, lädt neu, schickt die Planung durch den Link und zurück, lässt zwei
+Trupps getrennt zurückmelden und einspielen und prüft, dass die gebaute Trasse auf
+keinem der drei Druckerzeugnisse landet.
 
 Nach jeder Änderung am Offline-Weg (`sw.js`, `js/kacheln.js`, die Kachelebene in
 `js/map.js`, die Registrierung in `js/app.js`):

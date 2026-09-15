@@ -897,7 +897,7 @@ function pruefungNormalisieren(roh) {
    Was hier nicht bekannt ist, fällt weg. Eine spätere Fassung, die ein Feld
    ergänzt, trägt es hier nach – das ist der Preis der Weißliste und billiger
    als die Lücke. */
-function bauNormalisieren(roh) {
+export function bauNormalisieren(roh) {
   if (!roh || typeof roh !== 'object') return null;
   const v = neuerBau();
   const abschnitte = (Array.isArray(roh.abschnitte) ? roh.abschnitte : []).map((a, i) => ({

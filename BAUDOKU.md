@@ -7,13 +7,15 @@ Papier hält die Entscheidung und ihre Begründung fest; was am Quelltext zu
 beachten ist, steht in `CLAUDE.md`, die Zusage an den Nutzer in
 `datenschutz.html`, die beiden Wege nach draußen in `TEILEN.md` und `CLOUD.md`.
 
-Stand: Stufen 1, 2 und 4 gebaut. Stufe 1 – Datenmodell, Umschalter,
+Stand: Stufen 1, 2, 3 und 4 gebaut. Stufe 1 – Datenmodell, Umschalter,
 Bauabschnitte, Ist-Punkte auf drei Wegen, die gebaute Trasse auf der Karte und
 der Rückweg über Datei, Link und Speicher. Stufe 2 – Materialnachweis nach
 festem Katalog, Baumeldungen als Zeitschiene, Prüfung je Leitungsstamm und die
-Übergabe. Stufe 4 – die Anwendung startet ohne Netz, und die Karte lässt sich
-für den Bauort mitnehmen. Damit ist der Baumodus draußen brauchbar und der Bau
-vollständig dokumentierbar. Die Stufen 3, 5 und 6 stehen aus.
+Übergabe. Stufe 3 – die Baumeldung als Rückweg, mit Vorschau beim Planer und
+abschnittsweisem Einspielen mehrerer Trupps. Stufe 4 – die Anwendung startet
+ohne Netz, und die Karte lässt sich für den Bauort mitnehmen. Damit ist der
+Kreis geschlossen: Planung hin, Baumeldung zurück. Die Stufen 5 und 6 stehen
+aus.
 
 ## Warum überhaupt
 
@@ -218,6 +220,30 @@ dem Einspielen zeigt ein Dialog, welche Strecken und welche Abschnitte
 betroffen sind, von welchem Trupp die Meldung stammt und was überschrieben
 wird.
 
+**Zugeordnet wird über den NAMEN der Strecke.** Das ist keine Bequemlichkeit,
+sondern die einzige Möglichkeit: `verschlanken()` wirft die Streckenkennungen
+weg, weil sie ein Achtel der Linklänge kosten, `planungAusFragment()` löscht
+sogar die Projektkennung, und der Teilexport in `io.js` vergibt selbst eine
+neue. Die Planung beim Trupp trägt also von Anfang an andere Kennungen als die
+beim Planer – über sie ließe sich nichts zuordnen. Was beide Seiten teilen, ist
+der Name. Gefunden wird nur, was eindeutig ist; bei zwei gleichnamigen Strecken
+bleibt der Vorschlag leer, und der Planer entscheidet im Dialog. Ein
+Zufallstreffer legte die Aufnahme eines Trupps auf die falsche Trasse.
+
+**Mitgeschickt wird die Zahl der geplanten Punkte.** Die Verweise der
+Baudokumentation stehen als Stelle in der Punktliste, und die stimmen nur,
+solange der Plan derselbe ist. Hat der Planer seit der Übergabe einen Punkt
+eingefügt, sagt die Zahl das – die Vorschau warnt, und was sich nicht sicher
+auflösen lässt, wird gelöst statt auf den falschen Punkt gelegt. Der
+aufgenommene Punkt bleibt stehen; er bestätigt dann nur nichts mehr.
+
+**Was nicht abschnittsweise ersetzt wird:** Prüfung und Übergabe gehören der
+ganzen Leitung und nicht einem Abschnitt – eine Meldung über einen Teil der
+Strecke trägt sie nur ein, wo beim Planer noch nichts steht. Der Baustand der
+Strecke wird der niedrigere von beiden: meldet ein Trupp „gebaut“ für seinen
+Abschnitt, kann der andere noch unterwegs sein. Und zwei Abweichungsmeldungen
+werden aneinandergehängt statt ersetzt, denn der S 6 braucht beide.
+
 Das ist kein Widerspruch zu der Festlegung in `CLOUD.md`, nicht zu
 verschmelzen: dort treffen zwei Fassungen **desselben** Feldes aufeinander,
 hier schreiben mehrere Trupps in **verschiedene** Abschnitte. Wo doch zwei
@@ -335,8 +361,11 @@ den Rest nicht aufhalten soll.
    in `js/state.js` (Schema 14), Fachlogik in `js/baudoku.js`, drei Blöcke im
    Bau-Reiter von `js/ui.js`, Codec in `js/teilen.js`. Geprüft mit
    `node scripts/baumodus-pruefen.mjs`.
-3. Baumeldung als Link und Datei zurück; Einspielen beim Planer mit Vorschau;
-   Zusammenführen mehrerer Trupps.
+3. ~~Baumeldung als Link und Datei zurück; Einspielen beim Planer mit Vorschau;
+   Zusammenführen mehrerer Trupps.~~ **Gebaut.** Format und Codec in
+   `js/teilen.js` (`alsBaumeldung`, Kennung `m1.`), Einordnen und Einspielen in
+   `js/baumeldung.js`, Vorschau und Rückwegblock in `js/ui.js`, Dateierkennung
+   in `js/io.js`. Geprüft mit `node scripts/baumodus-pruefen.mjs`.
 4. ~~Offline: Service Worker und Kachelvorrat.~~ **Gebaut.** Der Wächter in
    `sw.js` legt ab, was die Anwendung lädt – keine Dateiliste, die jemand
    nachpflegen müsste –, der Vorrat liegt in `js/kacheln.js`, und die Karte
