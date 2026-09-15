@@ -7,11 +7,13 @@ Papier hält die Entscheidung und ihre Begründung fest; was am Quelltext zu
 beachten ist, steht in `CLAUDE.md`, die Zusage an den Nutzer in
 `datenschutz.html`, die beiden Wege nach draußen in `TEILEN.md` und `CLOUD.md`.
 
-Stand: Stufen 1 und 4 gebaut. Stufe 1 – Datenmodell, Umschalter,
+Stand: Stufen 1, 2 und 4 gebaut. Stufe 1 – Datenmodell, Umschalter,
 Bauabschnitte, Ist-Punkte auf drei Wegen, die gebaute Trasse auf der Karte und
-der Rückweg über Datei, Link und Speicher. Stufe 4 – die Anwendung startet ohne
-Netz, und die Karte lässt sich für den Bauort mitnehmen. Damit ist der Baumodus
-draußen brauchbar. Die Stufen 2, 3, 5 und 6 stehen aus.
+der Rückweg über Datei, Link und Speicher. Stufe 2 – Materialnachweis nach
+festem Katalog, Baumeldungen als Zeitschiene, Prüfung je Leitungsstamm und die
+Übergabe. Stufe 4 – die Anwendung startet ohne Netz, und die Karte lässt sich
+für den Bauort mitnehmen. Damit ist der Baumodus draußen brauchbar und der Bau
+vollständig dokumentierbar. Die Stufen 3, 5 und 6 stehen aus.
 
 ## Warum überhaupt
 
@@ -89,9 +91,10 @@ strecke.bau = {
                   beginn, ende, farbe } ],
   punkte:     [ { id, lat, lng, art, name, bemerkung,
                   abschnitt, sollPunkt, quelle, genauigkeit, zeit } ],
-  material:   [ { artikel, menge, abschnitt, bemerkung } ],
-  meldungen:  [ { zeit, text, abschnitt } ],
-  pruefung:   { stamm: [ … ], uebergabeAn, uebergabeZeit, uebergabeName },
+  material:   [ { id, artikel, menge, abschnitt, bemerkung } ],
+  meldungen:  [ { id, zeit, text, abschnitt } ],
+  pruefung:   { staemme: [ { id, stamm, art, ergebnis, bestanden, zeit, pruefer } ],
+                uebergabeAn, uebergabeZeit, uebergabeName },
   abweichung: ''
 }
 ```
@@ -318,8 +321,12 @@ den Rest nicht aufhalten soll.
    Fachlogik in `js/baudoku.js`, Liste in `js/ui.js`, Ist-Ebene der Karte in
    `js/strecken.js` hinter der Option `mitIst`, Codec in `js/teilen.js`.
    Geprüft mit `node scripts/baumodus-pruefen.mjs`.
-2. Materialliste mit Katalog und Soll-Gegenüberstellung, Baumeldungen,
-   Messungen und Übergabe.
+2. ~~Materialliste mit Katalog und Soll-Gegenüberstellung, Baumeldungen,
+   Messungen und Übergabe.~~ **Gebaut.** Katalog und Prüfarten in
+   `js/vorschrift.js` (`MATERIALKATALOG`, `PRUEFARTEN`), Fabriken und Weißliste
+   in `js/state.js` (Schema 14), Fachlogik in `js/baudoku.js`, drei Blöcke im
+   Bau-Reiter von `js/ui.js`, Codec in `js/teilen.js`. Geprüft mit
+   `node scripts/baumodus-pruefen.mjs`.
 3. Baumeldung als Link und Datei zurück; Einspielen beim Planer mit Vorschau;
    Zusammenführen mehrerer Trupps.
 4. ~~Offline: Service Worker und Kachelvorrat.~~ **Gebaut.** Der Wächter in
@@ -353,8 +360,20 @@ Die Stufen 1 bis 3 sind am Schreibtisch prüfbar, Stufe 4 nur am Gerät.
 ## Offen
 
 - **Die Fundstelle des Materialblattes.** Für `js/vorschrift.js` fehlen
-  genauer Titel und Stand der im THW-Extranet veröffentlichten Fassung; ohne
-  sie steht dort eine Quelle, die am Bauort niemand nachschlagen kann.
+  genauer Titel und Stand der im THW-Extranet veröffentlichten Fassung. Der
+  Katalog steht deshalb ohne `quelle` und `fundstelle` dort – als einziger
+  fachlicher Bestand der Datei. Eine erfundene Gliederungsnummer wäre schlimmer
+  als keine: am Bauort wird nach der Nummer gesucht, und eine, die es nicht
+  gibt, kostet Zeit. `fundstelleText()` gibt für einen Eintrag ohne Fundstelle
+  eine leere Zeichenkette, die Oberfläche trägt also nichts Falsches. Sobald
+  die Angabe vorliegt, gehört sie an jede Zeile.
+
+- **Das Soll steht nur an einer einzigen Zeile.** Die Planung rechnet den
+  Kabelbedarf, und damit hat genau die Kabelzeile ein Soll. Bauhaken,
+  Abspannringe, Erder und Anschlussleisten rechnet sie nicht – dort steht
+  nichts daneben, und das ist Absicht: eine hergeleitete Zahl („zwei Ableiter
+  je Strecke über 40 m“) sähe am Bauort wie eine Vorgabe aus und wäre doch nur
+  geraten.
 - **Wie lange der Vorrat liegen bleibt.** Er wird nie von selbst abgeräumt.
   Nach einem halben Jahr liegen die Kacheln von zehn Baustellen im Gerät, und
   niemand weiß mehr, welche wozu gehörten. Ein Vorrat je Planung – oder eine

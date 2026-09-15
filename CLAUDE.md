@@ -67,6 +67,13 @@ Englisch sind nur Web-APIs und die wenigen eingebürgerten Begriffe (`escapeHtml
   neben `fundstelle`; ausgegeben wird beides über `fundstelleText()`, nie ein fest
   verdrahtetes Vorschriftskürzel.
 
+  **Eine Ausnahme, und sie ist begründet:** der Materialkatalog
+  (`MATERIALKATALOG`) steht ohne `quelle` und `fundstelle` dort. Von dem Bogen
+  aus dem THW-Extranet sind Titel und Stand der veröffentlichten Fassung nicht
+  bekannt, und eine erfundene Gliederungsnummer wäre schlimmer als keine – am
+  Bauort wird nach der Nummer gesucht. Wer die Angabe beschafft, trägt sie an
+  jeder Zeile nach; wer sie nicht hat, erfindet sie nicht.
+
 ## Code-Stil
 
 - Einfache Anführungszeichen in JavaScript, zwei Leerzeichen Einrückung,
@@ -149,7 +156,8 @@ node scripts/zeichen-pruefen.mjs
 Prüft, ob der Bestand vollständig ist und sich jedes Zeichen rendern lässt.
 
 Nach jeder Änderung am Baumodus oder an dem, was er anfasst (`js/baudoku.js`,
-`strecke.bau` in `js/state.js`, die Ist-Ebene in `js/strecken.js`, der Codec in
+`strecke.bau` in `js/state.js`, Materialkatalog und Prüfarten in
+`js/vorschrift.js`, die Ist-Ebene in `js/strecken.js`, der Codec in
 `js/teilen.js`):
 
 ```bash
@@ -157,9 +165,9 @@ node scripts/baumodus-pruefen.mjs
 ```
 
 Fährt die Anwendung in einem echten Chromium: legt eine Strecke an, schaltet um,
-nimmt Punkte auf allen drei Wegen auf, lädt neu, schickt die Planung durch den
-Link und zurück und prüft, dass die gebaute Trasse auf keinem der drei
-Druckerzeugnisse landet.
+nimmt Punkte auf allen drei Wegen auf, füllt den Materialnachweis, meldet, prüft
+und übergibt, lädt neu, schickt die Planung durch den Link und zurück und prüft,
+dass die gebaute Trasse auf keinem der drei Druckerzeugnisse landet.
 
 Nach jeder Änderung am Offline-Weg (`sw.js`, `js/kacheln.js`, die Kachelebene in
 `js/map.js`, die Registrierung in `js/app.js`):

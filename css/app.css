@@ -1821,6 +1821,51 @@ body.baumodus #wz-relais { display: none; }
   color: var(--warnung-tief); font-weight: 600;
 }
 
+/* Der Materialnachweis. Zwei Spalten wie bei den Punktfeldern, aber mit der
+   Einheit rechts am Feld – am Bauort wird die Zahl gesucht und nicht die
+   Beschriftung, deshalb stehen die Zahlen in einer Flucht (tabular-nums) und
+   sind größer als die Bezeichnung darüber. */
+.mat-raster { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mat-raster .feld { margin: 0; min-width: 0; }
+.mat-raster input { min-width: 0; width: 100%; font-variant-numeric: tabular-nums; }
+/* Das Soll steht unter dem Feld und nicht darin: eine vorbelegte Menge, die
+   niemand ändert, wäre eine Abschrift des Plans und keine Dokumentation. */
+.mat-fuss { display: block; margin-top: 2px; font-size: 11px; color: var(--text-schwach); }
+.mat-frei {
+  display: grid; grid-template-columns: 1fr 90px auto; gap: 8px; align-items: end;
+  margin-bottom: 8px;
+}
+.mat-frei .feld { margin: 0; min-width: 0; }
+.mat-frei input { min-width: 0; width: 100%; }
+
+/* Die Baumeldungen als Zeitschiene: die Uhrzeit steht vorn und in fester
+   Breite, damit die Spalte beim Überfliegen eine Kante hat. */
+.bm-zeile {
+  display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: center;
+  border-left: 3px solid var(--farbe, var(--linie)); padding-left: 8px; margin-bottom: 6px;
+}
+.bm-zeit { font-variant-numeric: tabular-nums; font-weight: 650; }
+.bm-zeile .feld { margin: 0; min-width: 0; }
+/* Die Meldezeile hat ihre Beschriftung schon in der Überschrift des Blocks;
+   der leere Titel des Feldes risse sonst eine Zeile Luft auf. */
+.bm-zeile .feld-titel { display: none; }
+.bm-zeile input { min-width: 0; width: 100%; }
+.bm-abschnitt { grid-column: 2 / -1; font-size: 11px; color: var(--text-schwach); }
+
+/* Prüfung und Übergabe. Ein nicht bestandener Stamm ist der Grund, warum nicht
+   übergeben wird – er trägt deshalb die Warnfarbe und nicht nur ein Wort. */
+.pz-zeile {
+  border: 1px solid var(--linie); border-radius: var(--radius-klein);
+  padding: 8px; margin-bottom: 8px; background: var(--flaeche);
+}
+.pz-zeile.gefallen { background: var(--warnung-flaeche); border-color: var(--warnung-linie); }
+.pz-felder, .bu-felder { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pz-felder .feld, .bu-felder .feld { margin: 0; min-width: 0; }
+.pz-felder input, .pz-felder select,
+.bu-felder input, .bu-felder select { min-width: 0; width: 100%; }
+.pz-fuss { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+.bu-felder { margin-top: 10px; }
+
 /* Der Baustand in der Streckenliste des Planungsmodus – die Antwort auf
    „woran wird draußen gerade gearbeitet“ */
 .eintrag-zeile.bau-zeile { color: var(--text-blau); }

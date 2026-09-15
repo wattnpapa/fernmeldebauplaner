@@ -3,14 +3,16 @@
 import { neueStromangabe } from './strom.js';
 import { neueRichtfunkangabe, BAND_ALIAS } from './richtfunk.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
-import { QUERUNG_STANDARD, BAUWEISE_STANDARD } from './vorschrift.js';
+import {
+  QUERUNG_STANDARD, BAUWEISE_STANDARD, materialById, PRUEFARTEN
+} from './vorschrift.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
 import {
   bosBandById, BAND_STANDARD as BOS_BAND, GEGENSTELLE_STANDARD, gegenstelleById
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 13;
+export const SCHEMA = 14;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -368,9 +370,70 @@ export function neuerIstPunkt(lat, lng, o = {}) {
   };
 }
 
+/* Eine Zeile des Materialnachweises: was an dieser Stelle wirklich verbraucht
+   wurde. Die Menge fängt LEER an und nicht beim Bedarf aus der Planung – eine
+   vorausgefüllte Zahl, die niemand ändert, ist keine Dokumentation, sondern
+   eine Abschrift des Plans.
+
+   Die Kennung steht hier, obwohl (Artikel, Bauabschnitt) die Zeile schon
+   eindeutig macht: die freie Zeile „Sonstiges“ darf mehrfach vorkommen, und
+   ohne Kennung liesse sich die zweite nicht von der dritten unterscheiden. Im
+   Link reist sie nicht mit, dort wird sie neu vergeben. */
+export function neueMaterialzeile(artikel, o = {}) {
+  return {
+    id: id(),
+    artikel: materialById(artikel) ? artikel : 'sonstiges',
+    menge: null,
+    abschnitt: o.abschnitt || null,
+    bemerkung: ''
+  };
+}
+
+/* Eine Baumeldung: nach jeder Kabellänge oder nach befohlener Zeit an die
+   Anfangsstelle durchzugeben (Hdb Feldfernkabelbau, 3.5). Wer sie hier
+   mitschreibt, hat am Ende die Bauzeiten, die sonst niemand rekonstruiert –
+   deshalb steht die Zeit vorn und der Text daneben, und nicht umgekehrt. */
+export function neueBaumeldung(o = {}) {
+  return {
+    id: id(),
+    zeit: o.zeit || new Date().toISOString(),
+    text: String(o.text || ''),
+    abschnitt: o.abschnitt || null
+  };
+}
+
+/* Eine Prüfzeile je Leitungsstamm. `bestanden` ist bewusst dreiwertig: `null`
+   heisst „noch nicht geprüft“ und nicht „durchgefallen“. Zwei Werte zwängen
+   eine ungeprüfte Leitung in eines der beiden Lager, und am Bauort ist der
+   Unterschied zwischen „noch nicht“ und „nicht bestanden“ der ganze Punkt. */
+export function neuePruefzeile(o = {}) {
+  return {
+    id: id(),
+    stamm: String(o.stamm || ''),
+    art: PRUEFARTEN.some(a => a.id === o.art) ? o.art : PRUEFARTEN[0].id,
+    ergebnis: '',
+    bestanden: null,
+    zeit: o.zeit || new Date().toISOString(),
+    pruefer: ''
+  };
+}
+
+/* Prüfung und Übergabe. Beides zusammen, weil die Übergabe nach 3.5 erst
+   beendet ist, wenn die befohlenen Übernahmemessungen abgeschlossen sind –
+   zwei getrennte Blöcke liessen offen, worauf sich das „abgeschlossen“ bezieht. */
+export function neuePruefung() {
+  return { staemme: [], uebergabeAn: '', uebergabeZeit: '', uebergabeName: '' };
+}
+
+/** Trägt diese Prüfung überhaupt etwas? */
+export const pruefungGehaltvoll = pr => !!(pr && ((pr.staemme || []).length ||
+  pr.uebergabeAn || pr.uebergabeZeit || pr.uebergabeName));
+
 /** Trägt diese Strecke überhaupt eine Baudokumentation? */
 export const bauBegonnen = s => !!(s && s.bau &&
   ((s.bau.punkte || []).length || (s.bau.abschnitte || []).length ||
+   (s.bau.material || []).length || (s.bau.meldungen || []).length ||
+   pruefungGehaltvoll(s.bau.pruefung) ||
    s.bau.stand !== 'offen' || s.bau.abweichung));
 
 export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
@@ -764,6 +827,33 @@ const farbeOderVorgabe = (wert, vorgabe) =>
    Was hier nicht bekannt ist, fällt weg. Eine spätere Fassung, die ein Feld
    ergänzt, trägt es hier nach – das ist der Preis der Weißliste und billiger
    als die Lücke. */
+const mengeOderNichts = roh => {
+  if (roh === null || roh === undefined || roh === '') return null;
+  const n = Number(roh);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+/* Prüfung und Übergabe. `null` bleibt `null`: eine leere Struktur in jede
+   Planung zu schreiben verlängerte Speicher und Link, ohne etwas auszusagen. */
+function pruefungNormalisieren(roh) {
+  if (!roh || typeof roh !== 'object') return null;
+  const v = neuePruefung();
+  return {
+    ...v,
+    staemme: (Array.isArray(roh.staemme) ? roh.staemme : []).map(z => ({
+      ...neuePruefzeile(z),
+      id: z?.id || id(),
+      ergebnis: String(z?.ergebnis || ''),
+      bestanden: z?.bestanden === true ? true : (z?.bestanden === false ? false : null),
+      zeit: String(z?.zeit || ''),
+      pruefer: String(z?.pruefer || '')
+    })),
+    uebergabeAn: String(roh.uebergabeAn || ''),
+    uebergabeZeit: String(roh.uebergabeZeit || ''),
+    uebergabeName: String(roh.uebergabeName || '')
+  };
+}
+
 function bauNormalisieren(roh) {
   if (!roh || typeof roh !== 'object') return null;
   const v = neuerBau();
@@ -791,9 +881,23 @@ function bauNormalisieren(roh) {
     stand: BAUSTAENDE.some(b => b.id === roh.stand) ? roh.stand : 'offen',
     abschnitte,
     punkte,
-    material: Array.isArray(roh.material) ? roh.material : [],
-    meldungen: Array.isArray(roh.meldungen) ? roh.meldungen : [],
-    pruefung: roh.pruefung && typeof roh.pruefung === 'object' ? roh.pruefung : null,
+    material: (Array.isArray(roh.material) ? roh.material : []).map(z => ({
+      ...neueMaterialzeile(z?.artikel, z),
+      id: z?.id || id(),
+      /* Eine Menge, die keine Zahl ist, wird zu „nichts eingetragen“ und nicht
+         zu 0: null heisst „noch offen“, 0 hiesse „nachweislich nichts
+         verbraucht“, und das ist eine andere Aussage. Eine negative Menge ist
+         aus demselben Grund kein 0, sondern ebenfalls „nichts eingetragen“ –
+         verbaut wurde sie jedenfalls nicht. */
+      menge: mengeOderNichts(z?.menge),
+      bemerkung: String(z?.bemerkung || '')
+    })),
+    meldungen: (Array.isArray(roh.meldungen) ? roh.meldungen : []).map(m => ({
+      ...neueBaumeldung(m),
+      id: m?.id || id(),
+      zeit: String(m?.zeit || '')
+    })),
+    pruefung: pruefungNormalisieren(roh.pruefung),
     abweichung: String(roh.abweichung || '')
   };
 }

@@ -426,6 +426,102 @@ export function abbindeBedarf(laengeMeter) {
   return { auflagen: Math.ceil(l / 50), abbunde: Math.ceil(l / 150) };
 }
 
+// ---------------------------------------------------------- Baumaterial
+
+/* Der Materialnachweis des Bautrupps: was wirklich verbaut wurde. Ein fester
+   Katalog nach dem Bogen aus dem THW-Extranet und kein Freifeld – nur über
+   feste Zeilen laesst sich addieren, was mehrere Trupps an einer Strecke
+   verbraucht haben, und nur so steht neben dem Ist der Bedarf, den
+   `bauauftrag.js` ohnehin schon rechnet.
+
+   Die drei Spalten des Papierbogens sind bewusst nicht nachgebaut. Auf Papier
+   sind sie der Platz fuer drei Baustrecken nebeneinander; digital hat jede
+   Strecke ihren eigenen Bogen, und wo mehrere Trupps an einer bauen, traegt
+   jede Zeile ihren Bauabschnitt. Eine Spalte, die nur da ist, weil das Papier
+   drei nebeneinander tragen musste, waere am Bauort ein leeres Feld mehr, das
+   jemand mit dem Handschuh treffen muss.
+
+   OHNE FUNDSTELLE, und das ist kein Versehen: von dem Bogen sind Titel und
+   Stand der veroeffentlichten Fassung hier nicht bekannt. Eine erfundene
+   Gliederungsnummer waere schlimmer als keine – am Bauort wird nach der Nummer
+   gesucht, und eine, die es nicht gibt, kostet Zeit. `fundstelleText()` gibt
+   fuer einen Eintrag ohne `fundstelle` eine leere Zeichenkette, die Oberflaeche
+   traegt also nichts Falsches. Sobald die Angabe vorliegt, gehoert sie an jede
+   Zeile (siehe „Offen" in BAUDOKU.md). */
+export const MATERIALGRUPPEN = [
+  { id: 'kabel',     name: 'Kabel' },
+  { id: 'anschluss', name: 'Anschluss' },
+  { id: 'hochbau',   name: 'Hochbau' },
+  { id: 'blitz',     name: 'Blitzschutz' },
+  { id: 'erdung',    name: 'Erdung' },
+  { id: 'frei',      name: 'Sonstiges' }
+];
+
+/* `kabel` an einer Zeile nennt die Art aus `KABELTYPEN`, zu der sie gehoert.
+   Nur so weiss die Oberflaeche, welchen Bedarf sie danebenstellen darf: der
+   gerechnete Bedarf an Feldfernkabel geht die Zeile Feldkabel nichts an, und
+   eine Strecke fuehrt immer genau eine Kabelart.
+
+   `mehrfach` steht an der einzigen freien Zeile. Sie darf oefter als einmal
+   vorkommen, weil „Sonstiges" sonst nur einen einzigen Gegenstand aufnaehme;
+   jede andere Zeile gibt es je Bauabschnitt genau einmal, sonst liesse sich
+   nicht addieren. */
+export const MATERIALKATALOG = [
+  { id: 'fkb',  gruppe: 'kabel', name: 'Feldkabel FKb',      einheit: 'm', kabel: 'fk2' },
+  { id: 'ffkb', gruppe: 'kabel', name: 'Feldfernkabel FFKb', einheit: 'm', kabel: 'ffk' },
+  { id: 'akb',  gruppe: 'kabel', name: 'Anschlusskabel AKb', einheit: 'm', kabel: 'ak'  },
+  { id: 'vkb',  gruppe: 'kabel', name: 'Verbindungskabel VKb', einheit: 'm', kabel: 'vk' },
+
+  { id: 'peitsche_ffkb', gruppe: 'anschluss', name: 'Anschlusspeitsche FFKb', einheit: 'Stk' },
+  { id: 'peitsche_akb',  gruppe: 'anschluss', name: 'Anschlusspeitsche AKb',  einheit: 'Stk' },
+
+  { id: 'bauhaken_fkb',  gruppe: 'hochbau', name: 'Bauhaken FKb',       einheit: 'Stk' },
+  { id: 'bauhaken_ffkb', gruppe: 'hochbau', name: 'Bauhaken FFKb',      einheit: 'Stk' },
+  { id: 'abspannring',   gruppe: 'hochbau', name: 'Abspannring',        einheit: 'Stk' },
+  { id: 'ankerpfahl',    gruppe: 'hochbau', name: 'Ankerpfahl',         einheit: 'Stk' },
+  { id: 'ankerseil',     gruppe: 'hochbau', name: 'Ankerseil',          einheit: 'Stk' },
+  { id: 'baustangenteil', gruppe: 'hochbau', name: 'Baustangenteil',    einheit: 'Stk' },
+  { id: 'verlaengerung', gruppe: 'hochbau', name: 'Verlängerungsstück', einheit: 'Stk' },
+  { id: 'lattenschere',  gruppe: 'hochbau', name: 'Lattenschere',       einheit: 'Stk' },
+
+  { id: 'leiste1',  gruppe: 'blitz', name: 'Anschlussleiste 1-paarig',  einheit: 'Stk' },
+  { id: 'leiste2',  gruppe: 'blitz', name: 'Anschlussleiste 2-paarig',  einheit: 'Stk' },
+  { id: 'leiste10', gruppe: 'blitz', name: 'Anschlussleiste 10-paarig', einheit: 'Stk' },
+  { id: 'ak70',     gruppe: 'blitz', name: 'AK 70',                     einheit: 'Stk' },
+
+  { id: 'schrauberder',    gruppe: 'erdung', name: 'Schrauberder',      einheit: 'Stk' },
+  { id: 'erdungsleitung',  gruppe: 'erdung', name: 'Erdungsleitung',    einheit: 'm'   },
+  { id: 'erdungsschiene',  gruppe: 'erdung', name: 'Erdungsschiene',    einheit: 'Stk' },
+  { id: 'erdungsverbinder', gruppe: 'erdung', name: 'Erdungsverbinder', einheit: 'Stk' },
+  { id: 'erdungsschraube', gruppe: 'erdung', name: 'Erdungsverbinderschraube', einheit: 'Stk' },
+  { id: 'erdstecker',      gruppe: 'erdung', name: 'Erdstecker',        einheit: 'Stk' },
+  { id: 'erdungszwinge',   gruppe: 'erdung', name: 'Erdungszwinge',     einheit: 'Stk' },
+
+  { id: 'sonstiges', gruppe: 'frei', name: 'Sonstiges', einheit: '', mehrfach: true }
+];
+
+export const materialById = id => MATERIALKATALOG.find(m => m.id === id) || null;
+
+/* Die Pruefungen, die vor der Uebergabe stehen. Nach 3.5 sind bei
+   fertiggestellter Kabelleitung auf allen Leitungsstaemmen des Feldfernkabels
+   Messungen vorzunehmen, bei Verbindungs- und Anschlusskabel alle Staemme durch
+   Sprechproben zu pruefen. Welche der drei Arten an einem Stamm dransteht,
+   haengt also an der Kabelart und nicht an der Vorliebe des Truppfuehrers –
+   deshalb steht sie als Liste hier und nicht als Freitext in der Oberflaeche. */
+export const PRUEFARTEN = [
+  { id: 'messung',    name: 'Messung',              quelle: 'ffk', fundstelle: '3.5' },
+  { id: 'sprechprobe', name: 'Ruf- und Sprechprobe', quelle: 'ffk', fundstelle: '3.5' },
+  { id: 'uebernahme', name: 'Übernahmemessung',     quelle: 'ffk', fundstelle: '3.5' }
+];
+
+export const pruefartById = id => PRUEFARTEN.find(p => p.id === id) || PRUEFARTEN[0];
+
+/* Welche Pruefart eine Kabelart verlangt. Feldfernkabel wird gemessen,
+   Verbindungs- und Anschlusskabel werden besprochen (3.5). Fuer alles Uebrige
+   nennt das Handbuch nichts – dort bleibt die Wahl beim Truppfuehrer, und die
+   Oberflaeche schlaegt die Messung vor, ohne sie zu erzwingen. */
+export const PRUEFART_JE_KABEL = { ffk: 'messung', ak: 'sprechprobe', vk: 'sprechprobe' };
+
 // ------------------------------------------------------ Kopfangaben, Ausgabe
 
 export const VS_GRADE = [

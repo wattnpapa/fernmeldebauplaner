@@ -16,11 +16,13 @@
 
 import {
   store, neuerBau, neuerBauabschnitt, neuerIstPunkt, baustandById, istquelleById,
-  bauBegonnen
+  neueMaterialzeile, neueBaumeldung, neuePruefzeile, neuePruefung,
+  bauBegonnen, pruefungGehaltvoll
 } from './state.js';
 import { distanz, streckenlaenge } from './geo.js';
+import { MATERIALKATALOG, materialById, PRUEFART_JE_KABEL } from './vorschrift.js';
 
-export { bauBegonnen };
+export { bauBegonnen, pruefungGehaltvoll };
 
 /* Ab welcher Entfernung zwischen geplantem und gebautem Punkt von einer
    Abweichung die Rede ist. Darunter liegt die Streuung der Ortung
@@ -170,6 +172,11 @@ export function bauabschnittLoeschen(strecke, aid) {
   if (!bau) return;
   bau.abschnitte = bau.abschnitte.filter(a => a.id !== aid);
   bau.punkte.forEach(pt => { if (pt.abschnitt === aid) pt.abschnitt = null; });
+  /* Materialzeilen und Meldungen hängen an derselben Zuordnung. Bliebe sie
+     stehen, zählte `materialSumme()` weiter Mengen zu einem Abschnitt, den es
+     nicht mehr gibt – und am Bogen fehlten sie, weil kein Abschnitt sie zeigt. */
+  (bau.material || []).forEach(z => { if (z.abschnitt === aid) z.abschnitt = null; });
+  (bau.meldungen || []).forEach(m => { if (m.abschnitt === aid) m.abschnitt = null; });
 }
 
 /**
@@ -205,6 +212,211 @@ export function sollPunktGeloescht(strecke, pid) {
 export function bauUmkehren(strecke) {
   if (strecke.bau) strecke.bau.punkte.reverse();
 }
+
+// -------------------------------------------------------------- Material
+
+/* Der Materialnachweis. Der Katalog steht in `vorschrift.js`, hier steht nur,
+   wie eine Zeile entsteht und vergeht.
+
+   Eine Zeile entsteht erst, wenn jemand eine Menge einträgt, und sie vergeht
+   wieder, wenn er sie loescht. Fuer jeden der 25 Katalogeintraege je
+   Bauabschnitt von vornherein eine Zeile anzulegen hiesse, einen leeren Bogen
+   durch Speicher und Link zu schleppen – bei drei Abschnitten 75 Zeilen, von
+   denen der Trupp vielleicht sechs fuellt. Die Oberflaeche zeigt trotzdem alle
+   Katalogzeilen: was angezeigt wird und was gespeichert wird, sind zwei Dinge. */
+
+export const materialzeilen = s => (s && s.bau && s.bau.material) || [];
+
+/** Die Zeile zu Artikel und Bauabschnitt – oder `null` */
+export const materialzeile = (s, artikel, abschnitt = null) =>
+  materialzeilen(s).find(z => z.artikel === artikel &&
+    (z.abschnitt || null) === (abschnitt || null)) || null;
+
+/**
+ * Eine Menge eintragen, ändern oder wieder herausnehmen.
+ *
+ * `null` und die leere Eingabe loeschen die Zeile, sofern an ihr keine
+ * Bemerkung haengt: ein leeres Feld ist keine Aussage, und eine Zeile mit der
+ * Menge `null` traege im Bogen nichts bei, im Link aber ihr Gewicht. Traegt sie
+ * eine Bemerkung, bleibt sie stehen – die hat jemand geschrieben.
+ *
+ * Die 0 ist ausdruecklich KEIN Loeschen: „nachweislich nichts verbraucht“ ist
+ * eine andere Aussage als „noch nicht eingetragen“, und am Bauort ist der
+ * Unterschied der Grund, warum der Bogen gefuehrt wird.
+ *
+ * Nur innerhalb von `store.aendern` aufrufen.
+ */
+export function materialSetzen(strecke, artikel, abschnitt, menge) {
+  const bau = bauSichern(strecke);
+  const roh = (menge === '' || menge === null || menge === undefined) ? null : Number(menge);
+  const wert = Number.isFinite(roh) && roh >= 0 ? roh : null;
+  const da = bau.material.find(z => z.artikel === artikel &&
+    (z.abschnitt || null) === (abschnitt || null));
+
+  if (wert === null) {
+    if (!da) return null;
+    if (da.bemerkung) { da.menge = null; return da; }
+    bau.material = bau.material.filter(z => z !== da);
+    return null;
+  }
+  if (da) { da.menge = wert; return da; }
+  const zeile = neueMaterialzeile(artikel, { abschnitt });
+  zeile.menge = wert;
+  bau.material.push(zeile);
+  return zeile;
+}
+
+/** Eine freie Zeile („Sonstiges“) anlegen. Nur innerhalb von `store.aendern`. */
+export function materialFreiAnlegen(strecke, abschnitt = null) {
+  const bau = bauSichern(strecke);
+  const zeile = neueMaterialzeile('sonstiges', { abschnitt });
+  bau.material.push(zeile);
+  return zeile;
+}
+
+/** Eine Zeile über ihre Kennung loeschen. Nur innerhalb von `store.aendern`. */
+export function materialZeileLoeschen(strecke, zid) {
+  const bau = strecke.bau;
+  if (!bau) return;
+  bau.material = (bau.material || []).filter(z => z.id !== zid);
+}
+
+/**
+ * Was ueber alle Bauabschnitte zusammenkommt, je Artikel.
+ *
+ * Genau dafuer ist der Katalog fest und kein Freifeld: „Bauhaken FKb“ und
+ * „Bauhaken, Feldkabel“ liessen sich nicht addieren, und wo zwei Trupps an
+ * einer Strecke bauen, ist die Summe die Zahl, die der Planer braucht.
+ */
+export function materialSumme(strecke) {
+  const summe = new Map();
+  for (const z of materialzeilen(strecke)) {
+    if (!Number.isFinite(z.menge)) continue;
+    summe.set(z.artikel, (summe.get(z.artikel) || 0) + z.menge);
+  }
+  return summe;
+}
+
+/**
+ * Das Soll neben dem Ist – und nur dort, wo die Planung wirklich eine Zahl hat.
+ *
+ * Das ist genau EINE Zeile: die Kabelart dieser Strecke. Alles Uebrige des
+ * Katalogs – Bauhaken, Abspannringe, Erder, Anschlussleisten – rechnet die
+ * Planung nicht, und eine hergeleitete Zahl daneben zu stellen („zwei Ableiter
+ * je Strecke ueber 40 m“) waere eine Erfindung, die am Bauort wie eine Vorgabe
+ * aussaehe.
+ *
+ * `k` ist das Ergebnis von `kennzahlen()` aus `strecken.js`. Es wird
+ * hereingereicht und nicht hier geholt: `strecken.js` importiert bereits aus
+ * diesem Modul, und der Ring liesse sich nur mit Sorgfalt in beide Richtungen
+ * lesen. Die Aufrufer haben die Zahlen ohnehin schon.
+ */
+export function materialSoll(k) {
+  if (!k || !k.kabel || k.kabel.funk) return null;
+  const zeile = MATERIALKATALOG.find(m => m.kabel === k.kabel.id);
+  if (!zeile) return null;
+  return { artikel: zeile.id, menge: k.bedarf, einheit: zeile.einheit };
+}
+
+// ------------------------------------------------------------- Baumeldungen
+
+/* Nach jeder Kabellaenge oder nach befohlener Zeit ist eine Baumeldung an die
+   Anfangsstelle durchzugeben (Hdb Feldfernkabelbau, 3.5). Mitgeschrieben
+   ergeben sie die Bauzeiten, die sonst niemand rekonstruiert. */
+
+export const baumeldungen = s => (s && s.bau && s.bau.meldungen) || [];
+
+/** Eine Baumeldung anlegen. Nur innerhalb von `store.aendern` aufrufen. */
+export function baumeldungAnlegen(strecke, text = '', abschnitt = null) {
+  const bau = bauSichern(strecke);
+  const m = neueBaumeldung({ text, abschnitt });
+  if (bau.stand === 'offen') bau.stand = 'laeuft';
+  bau.meldungen.push(m);
+  return m;
+}
+
+export function baumeldungLoeschen(strecke, mid) {
+  const bau = strecke.bau;
+  if (!bau) return;
+  bau.meldungen = (bau.meldungen || []).filter(m => m.id !== mid);
+}
+
+/** Die Meldungen von der aeltesten zur juengsten – die Zeitschiene des Baus */
+export const meldungenNachZeit = s =>
+  [...baumeldungen(s)].sort((a, b) => String(a.zeit).localeCompare(String(b.zeit)));
+
+// --------------------------------------------------------- Pruefen, Uebergabe
+
+/* „Entsprechen die Messwerte den Sollwerten oder war die Ruf- und Sprechprobe
+   erfolgreich, wird das Kabel der Einheit uebergeben, fuer die es gebaut
+   wurde“ – und erst wenn die befohlenen Uebernahmemessungen abgeschlossen sind,
+   ist die Uebergabe beendet (Hdb Feldfernkabelbau, 3.5). Deshalb sind „gebaut“
+   und „uebergeben“ zwei Baustaende und nicht einer, und deshalb haengt die
+   Uebergabe an denselben Zeilen wie die Pruefung. */
+
+/** Den Pruefblock anlegen, falls er fehlt. Nur innerhalb von `store.aendern`. */
+export function pruefungSichern(strecke) {
+  const bau = bauSichern(strecke);
+  if (!bau.pruefung) bau.pruefung = neuePruefung();
+  return bau.pruefung;
+}
+
+export const pruefzeilen = s => (s && s.bau && s.bau.pruefung && s.bau.pruefung.staemme) || [];
+
+/**
+ * Eine Pruefzeile anlegen.
+ *
+ * Die Pruefart kommt aus der Kabelart der Strecke: Feldfernkabel wird gemessen,
+ * Verbindungs- und Anschlusskabel werden besprochen (3.5). Das ist ein
+ * Vorschlag und keine Sperre – der Truppfuehrer kann die Art an der Zeile
+ * aendern, denn befohlene Uebernahmemessungen kennt die Kabelart nicht.
+ *
+ * Nur innerhalb von `store.aendern` aufrufen.
+ */
+export function pruefzeileAnlegen(strecke) {
+  const pr = pruefungSichern(strecke);
+  const art = PRUEFART_JE_KABEL[strecke.kabeltyp] || 'messung';
+  const z = neuePruefzeile({ art, stamm: `Stamm ${pr.staemme.length + 1}` });
+  pr.staemme.push(z);
+  return z;
+}
+
+export function pruefzeileLoeschen(strecke, zid) {
+  const pr = strecke.bau && strecke.bau.pruefung;
+  if (!pr) return;
+  pr.staemme = (pr.staemme || []).filter(z => z.id !== zid);
+}
+
+/**
+ * Wo die Uebergabe steht.
+ *
+ * `offen` heisst: noch keine Pruefzeile bestanden. `geprueft`: alle
+ * eingetragenen Staemme sind bestanden, die Uebergabe steht aber noch aus.
+ * `uebergeben`: Empfaenger und Zeit stehen da. Eine durchgefallene Zeile
+ * blockiert – sie ist der Grund, warum nicht uebergeben wird, und darf nicht
+ * unter einer Summe verschwinden.
+ */
+export function uebergabestand(strecke) {
+  const pr = (strecke.bau && strecke.bau.pruefung) || null;
+  const zeilen = pruefzeilen(strecke);
+  const durchgefallen = zeilen.filter(z => z.bestanden === false).length;
+  const offen = zeilen.filter(z => z.bestanden === null).length;
+  const bestanden = zeilen.filter(z => z.bestanden === true).length;
+  const uebergeben = !!(pr && pr.uebergabeAn && pr.uebergabeZeit);
+  return {
+    zeilen: zeilen.length, bestanden, durchgefallen, offen, uebergeben,
+    /* Fertig heisst: geprueft UND uebergeben. Beides einzeln reicht nicht –
+       eine uebergebene, ungepruefte Leitung ist genau der Fall, den 3.5
+       ausschliesst. */
+    fertig: uebergeben && zeilen.length > 0 && durchgefallen === 0 && offen === 0,
+    an: (pr && pr.uebergabeAn) || '',
+    zeit: (pr && pr.uebergabeZeit) || '',
+    durch: (pr && pr.uebergabeName) || ''
+  };
+}
+
+/** Die Bezeichnung einer Katalogzeile, fuer Liste und Blatt */
+export const materialName = artikel => (materialById(artikel) || {}).name || artikel;
 
 // ---------------------------------------------------------------- Kennzahlen
 
@@ -253,7 +465,14 @@ export function baukennzahlen(strecke) {
     laengenUnterschied: (laenge && sollLaenge) ? laenge - sollLaenge : 0,
     abweichungen,
     groessteAbweichung: abweichungen.length ? abweichungen[0].meter : 0,
-    vollstaendig: soll.length > 0 && bestaetigt === soll.length
+    vollstaendig: soll.length > 0 && bestaetigt === soll.length,
+    /* Material, Meldungen und Übergabe stehen hier nur als Zahl. Die Zeilen
+       selbst holt sich, wer sie braucht – die Kennzahlen laufen bei jedem
+       Neuzeichnen der Liste durch, und die ganze Materialtabelle mitzuschleppen
+       kostete dort ohne Gegenwert. */
+    materialzeilen: (strecke.bau && strecke.bau.material || []).length,
+    meldungen: (strecke.bau && strecke.bau.meldungen || []).length,
+    uebergabe: uebergabestand(strecke)
   };
 }
 

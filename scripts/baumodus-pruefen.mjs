@@ -41,6 +41,23 @@ async function taste(bereich, beschriftung) {
   await seite.ruhe();
 }
 
+/** In das Mengenfeld einer Katalogzeile schreiben. Gesucht wird ueber die
+ *  Beschriftung und nicht ueber die Stelle im Raster: die Reihenfolge des
+ *  Katalogs ist Sache von `vorschrift.js` und nicht dieser Pruefung. */
+async function materialFeld(bezeichnung, wert) {
+  const ok = await seite.auswerten(`
+    const f = [...document.querySelectorAll('.bau-material .mat-raster .feld')]
+      .find(x => x.querySelector('.feld-titel').textContent === ${JSON.stringify(bezeichnung)});
+    if (!f) return 'keine Zeile';
+    const e = f.querySelector('input');
+    const setzer = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setzer.call(e, ${JSON.stringify(String(wert))});
+    e.dispatchEvent(new Event('input', { bubbles: true }));
+    return 'ok';`);
+  if (ok !== 'ok') throw new Error(`Materialzeile „${bezeichnung}“: ${ok}`);
+  await seite.ruhe();
+}
+
 /** Etwas aus dem Bau-Block der ersten Strecke ablesen – `null`, wenn es ihn
  *  noch nicht gibt. Im Ausdruck steht `bau` für den Block, `s` für die Strecke. */
 const bau = async ausdruck => seite.auswerten(`
@@ -57,7 +74,7 @@ try {
   await seite.oeffne(adresse);
   await seite.warteAuf('!!window.fbp');
   b.pruefe(await seite.sichtbar('#karte'), 'Karte steht');
-  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 13, 'Schema 13');
+  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 14, 'Schema 14');
   b.gleich(await seite.text('#btn-modus'), 'Baumodus', 'Der Umschalter bietet den Baumodus an');
   b.pruefe(await seite.auswerten('document.querySelector("#reiter-bau").hidden'),
     'Der Bau-Reiter steht im Planungsmodus nicht da');
@@ -202,6 +219,130 @@ try {
     'window.fbp.store.projekt.strecken[0].punkte.some(q => q.id === pt.sollPunkt))'),
     'Kein Verweis zeigt ins Leere');
 
+  // ------------------------------------------------------------ Materialnachweis
+
+  b.abschnitt('Der Materialnachweis nimmt Mengen auf');
+  b.pruefe(await seite.sichtbar('.bau-material'), 'Der Bogen steht da');
+  /* Welcher Bauabschnitt neue Eintragungen aufnimmt, ist Sitzungszustand und
+     ueberlebt das Neuladen bewusst nicht – nach dem Neustart gilt wieder die
+     ganze Strecke. Fuer den Bogen wird er hier wieder angetippt, denn gebucht
+     wird auf denselben Schalter, der auch die Punkte zuordnet. */
+  b.pruefe(await seite.anzahl('.ba-marke.aktiv') === 0,
+    'Nach dem Neuladen nimmt kein Abschnitt mehr auf');
+  b.pruefe(/ganze Strecke/.test(await seite.text('.bau-material') || ''),
+    'Der Bogen sagt, dass Eintragungen dann fuer die ganze Strecke gelten');
+  await seite.klick('.ba-marke');
+  b.pruefe(await seite.anzahl('.ba-marke.aktiv') === 1, 'Der Abschnitt nimmt wieder auf');
+  /* Alle Katalogzeilen sind zu sehen, auch die leeren: der Bogen ist eine
+     Abhakliste. Wer am Bauort eine Zeile sucht, die erst erscheint, wenn etwas
+     drinsteht, sucht vergeblich. */
+  b.pruefe(await seite.anzahl('.bau-material .mat-raster .feld') >= 20,
+    `Alle Katalogzeilen stehen da (${await seite.anzahl('.bau-material .mat-raster .feld')})`);
+  b.gleich(await bau('bau.material.length'), 0, 'Gespeichert ist davon noch nichts');
+
+  await materialFeld('Feldkabel FKb', 1450);
+  await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.material.length === 1', 3000);
+  b.gleich(await bau('bau.material[0].artikel'), 'fkb', 'Die Zeile trägt ihren Artikel');
+  b.gleich(await bau('bau.material[0].menge'), 1450, 'Und die eingetragene Menge');
+  b.pruefe(await bau('!!bau.material[0].abschnitt'),
+    'Gebucht wird auf den aktiven Bauabschnitt');
+
+  b.abschnitt('Das Soll steht neben dem Ist, aber nicht darin');
+  const fuss = await seite.auswerten(`
+    const f = [...document.querySelectorAll('.bau-material .mat-raster .feld')]
+      .find(x => x.querySelector('.feld-titel').textContent === 'Feldkabel FKb');
+    return f ? (f.querySelector('.mat-fuss')?.textContent || '') : null;`);
+  b.pruefe(/Bedarf laut Planung/.test(fuss || ''),
+    `Die Kabelzeile nennt den Bedarf aus der Planung (${fuss})`);
+  const ohneSoll = await seite.auswerten(`
+    const f = [...document.querySelectorAll('.bau-material .mat-raster .feld')]
+      .find(x => x.querySelector('.feld-titel').textContent === 'Ankerpfahl');
+    return f ? (f.querySelector('.mat-fuss')?.textContent || '') : null;`);
+  b.gleich(ohneSoll, '', 'Wo die Planung nichts rechnet, steht auch kein Soll');
+
+  b.abschnitt('Die Null ist etwas anderes als das leere Feld');
+  await materialFeld('Ankerpfahl', 0);
+  await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.material.length === 2', 3000);
+  b.gleich(await bau("bau.material.find(z => z.artikel === 'ankerpfahl').menge"), 0,
+    'Null wird festgehalten – „nachweislich nichts verbraucht“ ist eine Aussage');
+  await materialFeld('Ankerpfahl', '');
+  await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.material.length === 1', 3000);
+  b.pruefe(true, 'Das leere Feld nimmt die Zeile wieder heraus');
+
+  b.abschnitt('Eine freie Zeile für das, was der Katalog nicht kennt');
+  await taste('.bau-material', '+ Zeile');
+  b.gleich(await bau('bau.material.length'), 2, 'Die freie Zeile steht in der Planung');
+  b.gleich(await bau("bau.material.filter(z => z.artikel === 'sonstiges').length"), 1,
+    'Und trägt den Artikel „Sonstiges“');
+  await seite.schreibe('.bau-material .mat-frei input', 'Kabelbrücke, geliehen');
+  await seite.warteAuf(
+    "window.fbp.store.projekt.strecken[0].bau.material" +
+    ".some(z => z.bemerkung === 'Kabelbrücke, geliehen')", 3000);
+  b.pruefe(true, 'Die Bezeichnung wird geschrieben');
+
+  // ------------------------------------------------------------ Baumeldungen
+
+  b.abschnitt('Baumeldungen als Zeitschiene');
+  b.gleich(await bau('bau.meldungen.length'), 0, 'Noch keine Meldung');
+  await taste('.bau-meldungen', 'Meldung jetzt');
+  b.gleich(await bau('bau.meldungen.length'), 1, 'Eine Meldung mit einem Griff');
+  b.pruefe(await bau('!!bau.meldungen[0].zeit'),
+    'Die Uhrzeit trägt sich selbst ein – nachträglich geschätzt wäre sie keine Bauzeit');
+  b.pruefe(await bau('!!bau.meldungen[0].abschnitt'),
+    'Die Meldung hängt am aktiven Bauabschnitt');
+  await seite.schreibe('.bm-zeile input', 'Erste Länge verbaut, Trasse frei');
+  await seite.warteAuf(
+    "window.fbp.store.projekt.strecken[0].bau.meldungen[0].text.startsWith('Erste Länge')", 3000);
+  b.pruefe(true, 'Der Text wird nachgetragen');
+
+  // ------------------------------------------------------------ Prüfen und Übergeben
+
+  b.abschnitt('Ohne Prüfung keine Übergabe');
+  b.gleich(await bau('bau.pruefung'), null, 'Der Prüfblock entsteht erst bei Bedarf');
+  await taste('.bau-uebergabe', '+ Stamm');
+  b.gleich(await bau('bau.pruefung.staemme.length'), 1, 'Ein Stamm');
+  b.gleich(await bau('bau.pruefung.staemme[0].bestanden'), null,
+    '„Noch offen“ und nicht „durchgefallen“ – das ist der Unterschied am Bauort');
+  /* Die Pruefart folgt der Kabelart: Feldkabel wird gemessen (3.5). */
+  b.gleich(await bau('bau.pruefung.staemme[0].art'), 'messung',
+    'Die Prüfart kommt aus der Kabelart der Strecke');
+
+  const ergebnisWahl = '.pz-zeile .pz-felder .feld:nth-child(3) select';
+  await seite.waehle(ergebnisWahl, 'nein');
+  await seite.ruhe();
+  b.gleich(await bau('bau.pruefung.staemme[0].bestanden'), false, 'Nicht bestanden');
+  b.pruefe(/nicht bestanden/.test(await seite.text('.bau-uebergabe .bau-warnung') || ''),
+    'Die Warnung nennt den Grund, warum nicht übergeben wird');
+
+  await seite.waehle(ergebnisWahl, 'ja');
+  await seite.ruhe();
+  b.gleich(await bau('bau.pruefung.staemme[0].bestanden'), true, 'Bestanden');
+  b.gleich(await seite.anzahl('.bau-uebergabe .bau-warnung'), 0, 'Die Warnung ist weg');
+
+  b.abschnitt('Die Übergabe wird festgehalten');
+  await seite.schreibe('.bu-felder .feld:nth-child(1) input', 'FGr N 2. BA');
+  await seite.schreibe('.bu-felder .feld:nth-child(2) input', '2026-09-15T16:30');
+  await seite.warteAuf(
+    "window.fbp.store.projekt.strecken[0].bau.pruefung.uebergabeAn === 'FGr N 2. BA'", 3000);
+  b.pruefe(await bau("!!bau.pruefung.uebergabeZeit"), 'Zeitpunkt der Übergabe steht');
+  const fertig = await seite.auswerten(`
+    const m = await import('./js/baudoku.js');
+    return m.uebergabestand(window.fbp.store.projekt.strecken[0]).fertig;`);
+  b.pruefe(fertig === true,
+    'Geprüft UND übergeben – erst beides zusammen ist die Übergabe beendet (3.5)');
+
+  b.abschnitt('Eine übergebene, ungeprüfte Leitung wird gemeldet');
+  await taste('.bau-uebergabe', '+ Stamm');
+  await seite.ruhe();
+  b.pruefe(/noch nicht geprüft/.test(await seite.text('.bau-uebergabe .bau-warnung') || ''),
+    'Der zweite, offene Stamm hebt die Übergabe wieder auf');
+  await seite.auswerten(`
+    const k = [...document.querySelectorAll('.pz-zeile')].pop()
+      .querySelector('.mini-knopf.gefahr');
+    k.click(); return true;`);
+  await seite.ruhe();
+  b.gleich(await bau('bau.pruefung.staemme.length'), 1, 'Der zweite Stamm ist wieder weg');
+
   // ------------------------------------------------------------ Schmalansicht
 
   b.abschnitt('Schmalansicht mit Berührung');
@@ -288,7 +429,21 @@ try {
         a.bau.punkte.map(pt => a.punkte.findIndex(q => q.id === pt.sollPunkt)).join(',') ===
         z.bau.punkte.map(pt => z.punkte.findIndex(q => q.id === pt.sollPunkt)).join(','),
       abschnittZuordnung: z.bau.punkte.filter(pt => pt.abschnitt).length,
-      stand: z.bau ? z.bau.stand : null
+      stand: z.bau ? z.bau.stand : null,
+      material: (z.bau.material || []).map(m => m.artikel + ':' + m.menge).join(','),
+      materialVorher: (a.bau.material || []).map(m => m.artikel + ':' + m.menge).join(','),
+      materialAmAbschnitt: (z.bau.material || [])
+        .filter(m => m.abschnitt && z.bau.abschnitte.some(x => x.id === m.abschnitt)).length,
+      freieBemerkung: (z.bau.material || [])
+        .filter(m => m.artikel === 'sonstiges').map(m => m.bemerkung).join('|'),
+      meldungen: (z.bau.meldungen || []).length,
+      meldungstext: (z.bau.meldungen || []).map(m => m.text).join('|'),
+      meldungszeit: (z.bau.meldungen || []).map(m => m.zeit).join('|'),
+      meldungszeitVorher: (a.bau.meldungen || []).map(m => m.zeit).join('|'),
+      pruefarten: (z.bau.pruefung ? z.bau.pruefung.staemme : []).map(x => x.art).join(','),
+      pruefartenVorher: (a.bau.pruefung ? a.bau.pruefung.staemme : []).map(x => x.art).join(','),
+      bestanden: (z.bau.pruefung ? z.bau.pruefung.staemme : []).map(x => x.bestanden).join(','),
+      uebergabeAn: z.bau.pruefung ? z.bau.pruefung.uebergabeAn : null
     };`);
   b.gleich(rund.istPunkte, 4, 'Alle vier Ist-Punkte kommen an');
   b.gleich(rund.abschnitte, 1, 'Der Bauabschnitt kommt an');
@@ -297,6 +452,21 @@ try {
   b.pruefe(rund.zuordnungGleich, 'Jeder Ist-Punkt bestätigt denselben geplanten wie vorher');
   b.gleich(rund.abschnittZuordnung, 1, 'Die Zuordnung zum Bauabschnitt bleibt');
   b.gleich(rund.stand, 'laeuft', 'Der Baustand reist mit');
+  b.gleich(rund.material, rund.materialVorher, 'Jede Materialzeile kommt mit ihrer Menge an');
+  /* Beide Zeilen – die Kabelzeile und die freie – sind bei aktivem Abschnitt
+     eingetragen worden und müssen deshalb auch beim Empfänger an ihm hängen. */
+  b.gleich(rund.materialAmAbschnitt, 2,
+    'Und hängt beim Empfänger wieder am richtigen Bauabschnitt');
+  b.gleich(rund.freieBemerkung, 'Kabelbrücke, geliehen',
+    'Die freie Zeile behält ihre Bezeichnung');
+  b.gleich(rund.meldungen, 1, 'Die Baumeldung reist mit');
+  b.gleich(rund.meldungstext, 'Erste Länge verbaut, Trasse frei', 'Samt ihrem Text');
+  b.gleich(rund.meldungszeit, rund.meldungszeitVorher,
+    'Und samt ihrer Uhrzeit – ohne sie wäre die Zeitschiene wertlos');
+  b.gleich(rund.pruefarten, rund.pruefartenVorher,
+    'Die Prüfart bleibt, was sie war – nicht jede Sprechprobe wird zur Messung');
+  b.gleich(rund.bestanden, 'true', 'Das Ergebnis der Prüfung reist mit');
+  b.gleich(rund.uebergabeAn, 'FGr N 2. BA', 'Und die Übergabe');
   b.pruefe(rund.laenge < 8000,
     `Der Link bleibt unter der Grenze für Mailprogramme (${rund.laenge} Zeichen)`);
 
@@ -317,18 +487,45 @@ try {
         bau: {
           stand: '"><script>', abweichung: 'x',
           abschnitte: [{ name: 'A', farbe: 'red" onmouseover="alert(1)' }],
-          punkte: [{ lat: 51, lng: 10, art: 'art-boese"><img src=x>', quelle: 'erfunden' }]
+          punkte: [{ lat: 51, lng: 10, art: 'art-boese"><img src=x>', quelle: 'erfunden' }],
+          material: [
+            { artikel: 'gibt-es-nicht', menge: 'viel', bemerkung: '<img src=x onerror=1>' },
+            { artikel: 'fkb', menge: -5 }
+          ],
+          meldungen: [{ text: 'x', zeit: { boese: true } }],
+          pruefung: { staemme: [{ art: 'erfunden', bestanden: 'ja' }],
+                      uebergabeAn: { boese: true } }
         }
       }]
     });
     const bau = boese.strecken[0].bau;
     return { stand: bau.stand, farbe: bau.abschnitte[0].farbe,
-             art: bau.punkte[0].art, quelle: bau.punkte[0].quelle };`);
+             art: bau.punkte[0].art, quelle: bau.punkte[0].quelle,
+             artikel: bau.material[0].artikel,
+             mengeText: bau.material[0].menge,
+             mengeNegativ: bau.material[1].menge,
+             bemerkungTyp: typeof bau.material[0].bemerkung,
+             meldungszeitTyp: typeof bau.meldungen[0].zeit,
+             pruefart: bau.pruefung.staemme[0].art,
+             bestanden: bau.pruefung.staemme[0].bestanden,
+             uebergabeTyp: typeof bau.pruefung.uebergabeAn };`);
   b.gleich(gehaertet.stand, 'offen', 'Ein unbekannter Baustand fällt auf „offen“ zurück');
   b.pruefe(/^#[0-9a-f]{3,8}$/i.test(gehaertet.farbe),
     'Eine präparierte Farbe wird durch eine echte ersetzt');
   b.gleich(gehaertet.art, 'punkt', 'Eine präparierte Punktart wird zurückgeschnitten');
   b.gleich(gehaertet.quelle, 'karte', 'Eine unbekannte Herkunft fällt auf die Vorgabe zurück');
+  b.gleich(gehaertet.artikel, 'sonstiges',
+    'Ein Artikel, den der Katalog nicht kennt, fällt auf „Sonstiges“ zurück');
+  b.gleich(gehaertet.mengeText, null, 'Eine Menge, die keine Zahl ist, wird zu „nichts eingetragen“');
+  /* Eine negative Menge ist keine Menge. Sie faellt nicht auf 0, denn 0 hiesse
+     „nachweislich nichts verbraucht“ – sie faellt auf „nichts eingetragen“. */
+  b.gleich(gehaertet.mengeNegativ, null, 'Und eine negative Menge ebenso');
+  b.gleich(gehaertet.bemerkungTyp, 'string', 'Die Bemerkung ist in jedem Fall eine Zeichenkette');
+  b.gleich(gehaertet.meldungszeitTyp, 'string', 'Die Zeit einer Meldung ebenso');
+  b.gleich(gehaertet.pruefart, 'messung', 'Eine unbekannte Prüfart fällt auf die Vorgabe zurück');
+  b.gleich(gehaertet.bestanden, null,
+    'Ein Ergebnis, das weder wahr noch falsch ist, wird zu „noch offen“');
+  b.gleich(gehaertet.uebergabeTyp, 'string', 'Der Empfänger der Übergabe ist eine Zeichenkette');
 
   // ------------------------------------------------------------ Einsortieren
 

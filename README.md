@@ -267,6 +267,18 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Die gebaute Trasse liegt auf der Karte neben der geplanten: durchgezogen und kräftig,
   während die Planung zur feinen Punktreihe zurücktritt. Weicht ein Punkt um mehr als 25 m
   ab, zieht eine Linie zum geplanten Ort
+- **Materialnachweis** nach festem Katalog – Kabel, Anschluss, Hochbau, Blitzschutz,
+  Erdung, dazu freie Zeilen für das, was der Katalog nicht kennt. Gebucht wird auf den
+  Bauabschnitt, der gerade aufnimmt, und über alle Abschnitte wird addiert. An der
+  Kabelzeile steht der Bedarf aus der Planung daneben – daneben und nicht darin: eine
+  vorausgefüllte Menge, die niemand ändert, wäre eine Abschrift des Plans
+- **Baumeldungen** auf Knopfdruck mit der Uhrzeit, die sich selbst einträgt. Nach jeder
+  Kabellänge oder nach befohlener Zeit ist eine Meldung an die Anfangsstelle
+  durchzugeben; mitgeschrieben ergeben sie die Bauzeiten
+- **Prüfung und Übergabe:** je Leitungsstamm eine Zeile mit Prüfart, Ergebnis, Messwert
+  und Prüfer, darunter an wen, wann und durch wen übergeben wurde. Ein nicht bestandener
+  oder noch offener Stamm hebt die Übergabe auf – übergeben ist die Leitung erst, wenn
+  die befohlenen Übernahmemessungen abgeschlossen sind
 - Baustand je Strecke (noch nicht begonnen, im Bau, gebaut, übergeben), geplante gegen
   gebaute Länge und ein Feld für die Meldung an den S 6
 - **Die Planung bleibt unangetastet.** Das Ist liegt daneben, nicht an seiner Stelle –
@@ -331,9 +343,12 @@ Zwischenpunkt ein.
 
 **Baudokumentation:** In der Kopfzeile auf „Baumodus“ schalten. Im Reiter „Bau“ oben
 die Strecke wählen, an der gebaut wird; darunter steht jeder geplante Punkt mit seinen
-drei Griffen. Der Modus bleibt über das Neuladen erhalten – am Bauort bricht die
-Verbindung ab, und wer danach wieder in der Planung landete, sucht erst einmal.
-Zurück geht es über denselben Knopf, der dann „Planung“ heißt.
+drei Griffen. Weiter unten stehen Materialnachweis, Baumeldungen, die Meldung an den
+S 6 und die Übergabe. Der Modus bleibt über das Neuladen erhalten – am Bauort bricht
+die Verbindung ab, und wer danach wieder in der Planung landete, sucht erst einmal.
+Welcher Bauabschnitt gerade aufnimmt, überlebt das Neuladen dagegen bewusst nicht:
+nach dem Neustart gelten Eintragungen wieder für die ganze Strecke, und der Bogen sagt
+das auch. Zurück geht es über denselben Knopf, der dann „Planung“ heißt.
 
 **Einsatzabschnitte:** Im Reiter „Strecken“ über „+ Einsatzabschnitt“ einen anlegen.
 Die Zuteilung steht in jeder geöffneten Strecke, in jedem geöffneten taktischen Zeichen
@@ -469,7 +484,8 @@ js/strom.js           Querschnitt von Stromleitungen aus Last und Länge
 js/map.js             Leaflet-Karte und Basiskarten
 js/gitter.js          UTM-Kilometergitter (UTMREF/MGRS) auf Karte und Bauauftrag
 js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
-js/baudoku.js         Baudokumentation: Ist-Trasse, Bauabschnitte, Abweichung
+js/baudoku.js         Baudokumentation: Ist-Trasse, Bauabschnitte, Material,
+                      Baumeldungen, Prüfung und Übergabe, Abweichung
 js/kacheln.js         Kartenkacheln für den Bauort mitnehmen (IndexedDB)
 js/symbols.js         Taktische Zeichen: Auswahl und SVG-Ausgabe
 js/zeichen-daten.js   Die Zeichen selbst (erzeugt, nicht von Hand ändern)
@@ -566,9 +582,12 @@ node scripts/baumodus-pruefen.mjs
 
 Sie startet einen Webserver und einen Chromium, legt eine Strecke an, schaltet
 in den Baumodus, nimmt Punkte auf allen drei Wegen auf – samt vorgetäuschtem
-Gerätestandort –, lädt die Seite neu, schickt die Planung durch den Link und
-zurück und prüft, dass die gebaute Trasse auf keinem der drei Druckerzeugnisse
-landet.
+Gerätestandort –, füllt den Materialnachweis, setzt eine Baumeldung, prüft die
+Leitungsstämme und übergibt, lädt die Seite neu, schickt die Planung durch den
+Link und zurück und prüft, dass die gebaute Trasse auf keinem der drei
+Druckerzeugnisse landet. Eine präparierte Datei läuft dabei gegen die Weißliste
+in `migrieren()` – ein erfundener Artikel, eine negative Menge, eine Prüfart,
+die es nicht gibt.
 
 Und ob die Anwendung wirklich ohne Netz läuft:
 

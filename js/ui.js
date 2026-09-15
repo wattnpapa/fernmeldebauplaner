@@ -19,7 +19,8 @@ import {
 } from './strom.js';
 import {
   QUERUNGSARTEN, QUERUNG_BAUWEISEN, VS_GRADE, querungsartById, bauweiseById, massText, dtg,
-  KABELRESERVE_STANDARD, fundstelleText
+  KABELRESERVE_STANDARD, fundstelleText,
+  MATERIALGRUPPEN, MATERIALKATALOG, PRUEFARTEN
 } from './vorschrift.js';
 import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
 import {
@@ -67,7 +68,11 @@ import {
   baukennzahlen, istPunkte, bauabschnitte, bauabschnittById, istZuSoll,
   istPunktSetzen, bauabschnittAnlegen, bauabschnittLoeschen, bauSichern,
   sollPunktGeloescht, bauUmkehren, bauBegonnen, baustandKurz, baustrecke, baustreckeSetzen,
-  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE
+  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE,
+  materialzeilen, materialzeile, materialSetzen, materialFreiAnlegen, materialZeileLoeschen,
+  materialSumme, materialSoll, materialName,
+  baumeldungAnlegen, baumeldungLoeschen, meldungenNachZeit,
+  pruefungSichern, pruefzeilen, pruefzeileAnlegen, pruefzeileLoeschen
 } from './baudoku.js';
 import { VERSION } from './version.js';
 
@@ -3696,7 +3701,10 @@ export function zeichneBauListe() {
   liste.appendChild(kartenvorratBlock(s));
   liste.appendChild(bauabschnittBlock(s));
   liste.appendChild(bauPunktBlock(s));
+  liste.appendChild(bauMaterialBlock(s, k));
+  liste.appendChild(bauMeldungBlock(s));
   liste.appendChild(bauSchlussBlock(s, k));
+  liste.appendChild(bauUebergabeBlock(s, k));
 
   if (marke) {
     const wieder = liste.querySelector(`[data-bau-feld="${CSS.escape(marke)}"]`);
@@ -4203,6 +4211,261 @@ function bauSchlussBlock(s, k) {
       'noch nicht bestätigt.'));
   }
   return box;
+}
+
+// --------------------------------------------------- Materialnachweis
+
+/* Der Bogen des Bautrupps: was wirklich verbaut wurde. Alle Katalogzeilen
+   stehen da, auch die leeren – er ist eine Abhakliste und kein Formular, und
+   wer am Bauort eine Zeile sucht, die nicht angezeigt wird, weil noch nichts
+   drinsteht, sucht vergeblich. Gespeichert wird trotzdem nur, was ausgefüllt
+   ist (`materialSetzen` in `baudoku.js`).
+
+   Gebucht wird auf den Bauabschnitt, der oben aktiv ist. Das ist derselbe
+   Schalter, der auch die aufgenommenen Punkte zuordnet – zwei getrennte
+   Umschalter für dieselbe Frage („wer trägt hier ein?“) wären am Bauort einer
+   zu viel. */
+function bauMaterialBlock(s, k) {
+  const box = el('div', 'feldgruppe bau-material');
+  box.appendChild(el('h3', 'gruppen-titel', 'Materialnachweis'));
+
+  const aktiv = aktiverBauabschnitt(s);
+  const abschnitte = bauabschnitte(s);
+  if (abschnitte.length) {
+    box.appendChild(el('p', 'klein',
+      aktiv
+        ? `Eintragungen gehen auf <b>${escapeHtml(aktiv.name)}</b>. Unter „Bauabschnitte“ umschalten.`
+        : 'Kein Bauabschnitt gewählt – Eintragungen gelten für die ganze Strecke. ' +
+          'Unter „Bauabschnitte“ lässt sich einer wählen.'));
+  }
+
+  const abschnittId = aktiv ? aktiv.id : null;
+  const summe = abschnitte.length ? materialSumme(s) : null;
+  const soll = materialSoll(kennzahlen(s));
+
+  for (const gruppe of MATERIALGRUPPEN) {
+    const zeilen = MATERIALKATALOG.filter(m => m.gruppe === gruppe.id && !m.mehrfach);
+    if (!zeilen.length) continue;
+    box.appendChild(el('h4', 'bau-untertitel', escapeHtml(gruppe.name)));
+    const raster = el('div', 'mat-raster');
+    for (const eintrag of zeilen) {
+      raster.appendChild(materialFeld(s, eintrag, abschnittId, soll, summe));
+    }
+    box.appendChild(raster);
+  }
+
+  /* Die freien Zeilen stehen am Ende und werden einzeln angelegt: „Sonstiges“
+     ist keine Menge, sondern ein Gegenstand, der im Katalog fehlt – und davon
+     können mehrere anfallen. */
+  box.appendChild(el('h4', 'bau-untertitel', 'Sonstiges'));
+  const frei = materialzeilen(s).filter(z => z.artikel === 'sonstiges' &&
+    (z.abschnitt || null) === abschnittId);
+  for (const z of frei) box.appendChild(freieMaterialZeile(s, z));
+
+  const tasten = el('div', 'tastenreihe');
+  tasten.appendChild(knopf('+ Zeile', () => {
+    store.aendern(() => materialFreiAnlegen(s, abschnittId), 'bau');
+  }, 'klein'));
+  box.appendChild(tasten);
+  return box;
+}
+
+/* Ein Mengenfeld einer Katalogzeile. Nicht vorbelegt: eine vorausgefüllte
+   Menge, die niemand ändert, ist keine Dokumentation, sondern eine Abschrift
+   des Plans. Das Soll steht deshalb NEBEN dem Feld und nicht darin – und nur
+   an der Kabelzeile, denn nur dort hat die Planung wirklich eine Zahl. */
+function materialFeld(s, eintrag, abschnittId, soll, summe) {
+  const zeile = materialzeile(s, eintrag.id, abschnittId);
+  const wert = zeile && Number.isFinite(zeile.menge) ? zeile.menge : '';
+  const f = feld(eintrag.name, wert, w => {
+    schreib(() => materialSetzen(s, eintrag.id, abschnittId, w));
+  }, { typ: 'number', min: 0, step: 1, einheit: eintrag.einheit });
+
+  const fuss = [];
+  if (soll && soll.artikel === eintrag.id) {
+    fuss.push(`Bedarf laut Planung ${escapeHtml(formatLaenge(soll.menge))}`);
+  }
+  /* Die Summe über alle Bauabschnitte steht nur dann daneben, wenn sie etwas
+     anderes sagt als das Feld darüber – sonst wiederholte sie es. */
+  if (summe && summe.has(eintrag.id) && summe.get(eintrag.id) !== wert) {
+    fuss.push(`über alle Abschnitte ${materialMengeText(summe.get(eintrag.id), eintrag.einheit)}`);
+  }
+  if (fuss.length) f.appendChild(el('span', 'mat-fuss', fuss.join(' · ')));
+  return f;
+}
+
+/* Eine freie Zeile: Bezeichnung, Menge, und der Griff zum Löschen. Sie trägt
+   ihre Bezeichnung in der Bemerkung – der Katalog kennt sie ja nicht. */
+function freieMaterialZeile(s, z) {
+  const rahmen = el('div', 'mat-frei');
+  rahmen.appendChild(feld('Bezeichnung', z.bemerkung,
+    w => schreib(() => { z.bemerkung = w; }),
+    { platzhalter: 'was im Katalog fehlt' }));
+  rahmen.appendChild(feld('Menge', Number.isFinite(z.menge) ? z.menge : '',
+    w => schreib(() => { z.menge = (w === '' ? null : Number(w)); }),
+    { typ: 'number', min: 0 }));
+  const weg = el('button', 'mini-knopf gefahr', '✕');
+  weg.title = 'Zeile löschen';
+  weg.onclick = () => {
+    store.aendern(() => materialZeileLoeschen(s, z.id), 'bau');
+  };
+  rahmen.appendChild(weg);
+  return rahmen;
+}
+
+/* Menge mit Einheit, geschütztes Leerzeichen dazwischen. Nicht mit
+   `mengenText()` weiter oben zu verwechseln – das rechnet Bytes in kB und MB
+   um und hat mit dem Materialnachweis nichts zu tun. */
+function materialMengeText(zahl, einheit) {
+  const n = Number(zahl).toLocaleString('de-DE', { maximumFractionDigits: 1 });
+  return einheit ? `${n} ${einheit}` : n;
+}
+
+// ------------------------------------------------------ Baumeldungen
+
+/* „Nach einer abgesprochenen Anzahl Kabellängen oder nach befohlener Zeit ist
+   eine Baumeldung an die Anfangsstelle durchzugeben“ (Hdb Feldfernkabelbau,
+   3.5). Der Knopf trägt die Uhrzeit von selbst ein: am Bauort wird gemeldet
+   und weitergebaut, und eine Zeit, die jemand nachträglich schätzt, ist keine
+   Bauzeit. Der Text kommt danach – oder gar nicht. */
+function bauMeldungBlock(s) {
+  const box = el('div', 'feldgruppe bau-meldungen');
+  box.appendChild(el('h3', 'gruppen-titel', 'Baumeldungen'));
+
+  const meldungen = meldungenNachZeit(s);
+  if (!meldungen.length) {
+    box.appendChild(el('p', 'klein',
+      'Nach jeder Kabellänge oder nach befohlener Zeit ist eine Baumeldung an ' +
+      'die Anfangsstelle durchzugeben (Hdb Feldfernkabelbau, 3.5). Wer sie hier ' +
+      'mitschreibt, hat am Ende die Bauzeiten.'));
+  }
+
+  const aktiv = aktiverBauabschnitt(s);
+  for (const m of meldungen) {
+    const zeile = el('div', 'bm-zeile');
+    const a = bauabschnittById(s, m.abschnitt);
+    if (a) zeile.style.setProperty('--farbe', a.farbe);
+    zeile.appendChild(el('span', 'bm-zeit', escapeHtml(uhrzeit(m.zeit) || '—')));
+    zeile.appendChild(feld('', m.text, w => schreib(() => { m.text = w; }),
+      { platzhalter: 'Was gemeldet wurde' }));
+    const weg = el('button', 'mini-knopf gefahr', '✕');
+    weg.title = 'Meldung löschen';
+    weg.onclick = () => { store.aendern(() => baumeldungLoeschen(s, m.id), 'bau'); };
+    zeile.appendChild(weg);
+    if (a) zeile.appendChild(el('span', 'bm-abschnitt', escapeHtml(a.name)));
+    box.appendChild(zeile);
+  }
+
+  const tasten = el('div', 'tastenreihe bau-tasten');
+  tasten.appendChild(knopf('Meldung jetzt', () => {
+    store.aendern(() => baumeldungAnlegen(s, '', aktiv ? aktiv.id : null), 'bau');
+    hinweis('Baumeldung mit der aktuellen Uhrzeit angelegt – Text nachtragen.');
+  }, 'klein primaer bau-taste'));
+  box.appendChild(tasten);
+  return box;
+}
+
+// -------------------------------------------------- Prüfen und Übergeben
+
+/* Der Nachweis, ohne den die Baudokumentation eine Notiz bleibt. Nach 3.5 sind
+   bei fertiggestellter Kabelleitung auf allen Leitungsstämmen des
+   Feldfernkabels Messungen vorzunehmen, bei Verbindungs- und Anschlusskabel
+   alle Stämme durch Sprechproben zu prüfen; erst wenn die befohlenen
+   Übernahmemessungen abgeschlossen sind, ist die Übergabe beendet.
+
+   Deshalb stehen Prüfung und Übergabe in EINEM Block: zwei getrennte ließen
+   offen, worauf sich das „abgeschlossen“ bezieht. */
+function bauUebergabeBlock(s, k) {
+  const box = el('div', 'feldgruppe bau-uebergabe');
+  box.appendChild(el('h3', 'gruppen-titel', 'Prüfung und Übergabe'));
+
+  const zeilen = pruefzeilen(s);
+  if (!zeilen.length) {
+    box.appendChild(el('p', 'klein',
+      'Auf allen Leitungsstämmen sind Messungen vorzunehmen, bei Verbindungs- ' +
+      'und Anschlusskabel alle Stämme durch Sprechproben zu prüfen ' +
+      '(Hdb Feldfernkabelbau, 3.5).'));
+  }
+
+  for (const z of zeilen) {
+    box.appendChild(pruefZeile(s, z));
+  }
+
+  const tasten = el('div', 'tastenreihe');
+  tasten.appendChild(knopf('+ Stamm', () => {
+    store.aendern(() => pruefzeileAnlegen(s), 'bau');
+  }, 'klein'));
+  box.appendChild(tasten);
+
+  const u = k.uebergabe;
+  const felder = el('div', 'bu-felder');
+  felder.appendChild(feld('Übergeben an', u.an,
+    w => schreib(() => { pruefungSichern(s).uebergabeAn = w; }),
+    { platzhalter: 'Einheit, für die gebaut wurde' }));
+  felder.appendChild(feld('Zeitpunkt', u.zeit,
+    w => schreib(() => { pruefungSichern(s).uebergabeZeit = w; }),
+    { typ: 'datetime-local' }));
+  felder.appendChild(feld('Übergeben durch', u.durch,
+    w => schreib(() => { pruefungSichern(s).uebergabeName = w; }),
+    { platzhalter: 'Truppführer' }));
+  box.appendChild(felder);
+
+  /* Die Warnung nennt den Grund und nicht nur den Zustand: „noch nicht
+     übergeben“ sagt dem Truppführer nicht, was ihm fehlt. */
+  if (u.durchgefallen) {
+    box.appendChild(el('p', 'bau-warnung',
+      `${u.durchgefallen} ${u.durchgefallen === 1 ? 'Stamm ist' : 'Stämme sind'} ` +
+      'nicht bestanden – die Leitung wird nicht übergeben, bevor das behoben ist.'));
+  } else if (u.uebergeben && u.offen) {
+    box.appendChild(el('p', 'bau-warnung',
+      `${u.offen} ${u.offen === 1 ? 'Stamm ist' : 'Stämme sind'} noch nicht geprüft. ` +
+      'Übergeben ist die Leitung erst, wenn die befohlenen Übernahmemessungen ' +
+      'abgeschlossen sind (3.5).'));
+  } else if (u.uebergeben && !u.zeilen) {
+    box.appendChild(el('p', 'bau-warnung',
+      'Übergeben ohne eine einzige Prüfzeile. Nach 3.5 gehört die Messung oder ' +
+      'die Sprechprobe vor die Übergabe.'));
+  } else if (u.fertig && k.stand.id !== 'uebergeben') {
+    box.appendChild(el('p', 'klein',
+      'Geprüft und übergeben – der Stand des Baus oben lässt sich jetzt auf ' +
+      '„übergeben“ setzen.'));
+  }
+  return box;
+}
+
+/* Eine Prüfzeile. `bestanden` ist dreiwertig, und das Auswahlfeld zeigt das
+   auch so: „noch offen“ ist ein Zustand und nicht die Abwesenheit einer
+   Entscheidung. Zwei Werte zwängen eine ungeprüfte Leitung in eines der beiden
+   Lager, und am Bauort ist genau dieser Unterschied der Punkt. */
+function pruefZeile(s, z) {
+  const zeile = el('div', 'pz-zeile' + (z.bestanden === false ? ' gefallen' : ''));
+  const felder = el('div', 'pz-felder');
+  felder.appendChild(feld('Stamm', z.stamm, w => schreib(() => { z.stamm = w; }),
+    { platzhalter: 'z. B. Stamm 1' }));
+  felder.appendChild(merkeFeld(feld('Art', z.art,
+    w => store.aendern(() => { z.art = w; }, 'bau'),
+    { typ: 'select', werte: PRUEFARTEN.map(a => [a.id, a.name]) }), 'pruefart-' + z.id));
+  felder.appendChild(merkeFeld(feld('Ergebnis',
+    z.bestanden === true ? 'ja' : (z.bestanden === false ? 'nein' : 'offen'),
+    w => store.aendern(() => {
+      z.bestanden = w === 'ja' ? true : (w === 'nein' ? false : null);
+    }, 'bau'),
+    { typ: 'select', werte: [['offen', 'noch offen'], ['ja', 'bestanden'], ['nein', 'nicht bestanden']] }),
+    'bestanden-' + z.id));
+  felder.appendChild(feld('Messwert / Bemerkung', z.ergebnis,
+    w => schreib(() => { z.ergebnis = w; }),
+    { platzhalter: 'z. B. 96 Ω' }));
+  felder.appendChild(feld('Prüfer', z.pruefer, w => schreib(() => { z.pruefer = w; }), {}));
+  zeile.appendChild(felder);
+
+  const fuss = el('div', 'pz-fuss');
+  fuss.appendChild(el('span', 'klein', escapeHtml(uhrzeit(z.zeit) || '')));
+  const weg = el('button', 'mini-knopf gefahr', '✕');
+  weg.title = 'Stamm löschen';
+  weg.onclick = () => { store.aendern(() => pruefzeileLoeschen(s, z.id), 'bau'); };
+  fuss.appendChild(weg);
+  zeile.appendChild(fuss);
+  return zeile;
 }
 
 // ---------------------------------------------------------------- Projekt

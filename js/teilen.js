@@ -16,7 +16,9 @@
 
 import {
   SCHEMA, neuesProjekt, neueStrecke, neuerPunkt, neuesZeichen, neueFlaeche, neuesBild,
-  neueRelaisstelle, neuerBau, neuerBauabschnitt, neuerIstPunkt, bauBegonnen, id as neueKennung
+  neueRelaisstelle, neuerBau, neuerBauabschnitt, neuerIstPunkt, neueMaterialzeile,
+  neueBaumeldung, neuePruefzeile, neuePruefung, bauBegonnen, pruefungGehaltvoll,
+  id as neueKennung
 } from './state.js';
 
 /* Kennung der Linkfassung, nicht des Datenschemas: sie sagt, wie das Fragment
@@ -105,6 +107,9 @@ function bauVerschlanken(s) {
   const raus = entruempeln(bau, vorgabeBau);
   delete raus.abschnitte;
   delete raus.punkte;
+  delete raus.material;
+  delete raus.meldungen;
+  delete raus.pruefung;
 
   if (bau.abschnitte.length) {
     raus.abschnitte = bau.abschnitte.map((a, i) => {
@@ -142,6 +147,48 @@ function bauVerschlanken(s) {
       return { ...weg, lat: rund(pt.lat), lng: rund(pt.lng) };
     });
   }
+  if (bau.material.length) {
+    /* `artikel` bleibt in jedem Fall stehen: er IST die Zeile. Verglichen wird
+       gegen eine Zeile desselben Artikels, sonst fiele er als Vorgabewert
+       heraus und der Empfaenger bekaeme lauter „Sonstiges“. */
+    raus.material = bau.material.map(z => {
+      const weg = entruempeln(z, neueMaterialzeile(z.artikel), ['artikel']);
+      delete weg.id;
+      weg.abschnitt = stelleVon(bau.abschnitte, z.abschnitt);
+      if (weg.abschnitt === undefined) delete weg.abschnitt;
+      return weg;
+    });
+  }
+  if (bau.meldungen.length) {
+    raus.meldungen = bau.meldungen.map(m => {
+      /* `zeit` bleibt stehen wie beim Ist-Punkt: `neueBaumeldung` setzt sie aus
+         der Uhr, sie waere also nie gleich – und ohne sie faellt die Zeitschiene
+         weg, die den ganzen Zweck der Baumeldung ausmacht. */
+      const weg = entruempeln(m, neueBaumeldung(), ['zeit']);
+      delete weg.id;
+      weg.abschnitt = stelleVon(bau.abschnitte, m.abschnitt);
+      if (weg.abschnitt === undefined) delete weg.abschnitt;
+      return weg;
+    });
+  }
+  if (pruefungGehaltvoll(bau.pruefung)) {
+    const pr = bau.pruefung;
+    const weg = entruempeln(pr, neuePruefung());
+    delete weg.staemme;
+    if (pr.staemme.length) {
+      /* Verglichen wird gegen eine LEERE Pruefzeile und nicht gegen diese: eine
+         Vorgabe aus dem Eintrag selbst waere ihm in jedem Feld gleich, und die
+         Pruefart fiele als Vorgabewert heraus – beim Empfaenger staende dann
+         jede Sprechprobe als Messung da. Derselbe Fallstrick wie beim
+         Ist-Punkt weiter oben. */
+      weg.staemme = pr.staemme.map(z => {
+        const w = entruempeln(z, neuePruefzeile(), ['zeit']);
+        delete w.id;
+        return w;
+      });
+    }
+    raus.pruefung = weg;
+  }
   return raus;
 }
 
@@ -166,6 +213,12 @@ function bauAuffuellen(objekt) {
       if (!pt) continue;
       pt.sollPunkt = punktKennung(pt.sollPunkt);
       pt.abschnitt = abschnittKennung(pt.abschnitt);
+    }
+    for (const z of (Array.isArray(s.bau.material) ? s.bau.material : [])) {
+      if (z) z.abschnitt = abschnittKennung(z.abschnitt);
+    }
+    for (const m of (Array.isArray(s.bau.meldungen) ? s.bau.meldungen : [])) {
+      if (m) m.abschnitt = abschnittKennung(m.abschnitt);
     }
   }
   return objekt;
