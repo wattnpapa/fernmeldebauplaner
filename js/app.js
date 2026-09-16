@@ -26,6 +26,10 @@ import {
 } from './ui.js';
 import { baustrecke, baustreckeSetzen } from './baudoku.js';
 import {
+  initBaukarte, punktkarteOeffnen, punktkarteSchliessen, punktkarteOffen, punktkarteNachfuehren,
+  punktHierAufnehmen, punktAufKarteStarten, punktAusKoordinate
+} from './baukarte.js';
+import {
   bauauftragOffen, schliesseBauauftrag, entferneSeitenformat, oeffneSammeldruck, oeffneLagekarte
 } from './bauauftrag.js';
 import { VERSION } from './version.js';
@@ -53,7 +57,17 @@ const sl = new StreckenLayer(karte, {
     if (!pt) return;
     modusAnzeigen();
     hinweis(`Aufgenommen: ${toMGRS(pt.lat, pt.lng, 5)}`);
-  }
+    /* Gleich benennen, was da aufgenommen wurde: die Punktkarte schlägt am
+       frischen Punkt auf. Im Planungsmodus kommt der Weg nicht vor – der
+       Setzmodus wird nur aus dem Baumodus gestartet –, die Meldung genügt. */
+    if (baumodus) punktkarteOeffnen(s, { ist: pt });
+  },
+  /* Im Baumodus schlägt der Tipp auf eine Marke die Punktkarte auf: am
+     geplanten Punkt mit den drei Wegen ihn aufzunehmen, am gebauten mit der
+     Frage, was dort ist. Am Bauort ersetzt das den Tooltip, den kein
+     Touchgerät zeigt. */
+  aufSollPunkt: (s, pt) => punktkarteOeffnen(s, { soll: pt }),
+  aufIstPunktWahl: (s, pt) => punktkarteOeffnen(s, { ist: pt })
 });
 
 const zl = new ZeichenLayer(karte, {
@@ -119,6 +133,9 @@ initUI({
      stünde am Bauort kein Bedienelement mehr da. */
   modusAnzeigen: () => modusAnzeigen()
 });
+/* Die Karte des Baumodus bekommt, was sie aus der Oberfläche braucht, von
+   hier – sie darf `ui.js` nicht einführen, weil `ui.js` sie einführt. */
+initBaukarte({ karte, sl, hinweis, modusAnzeigen: () => modusAnzeigen(), zurKarte });
 
 // Der Stand steht dauerhaft im Kopf: Wer zu einem gedruckten Bauauftrag
 // zurückfragt, hat dieselbe Nummer vor Augen, die im Blattfuß steht – ohne
@@ -249,6 +266,9 @@ function modusAnzeigen() {
   // schmal weicht die Werkzeugleiste der Modusleiste – beide sitzen unten
   document.body.classList.toggle('modus-aktiv',
     zeichnet || setzt || flaecht || relais || istSetzen);
+  /* Ein Setzmodus wartet auf den nächsten Kartentipp – die Punktkarte
+     wartet auf denselben und würde ihn schlucken. Sie geht zu. */
+  if (zeichnet || setzt || flaecht || relais || istSetzen) punktkarteSchliessen();
 
   const box = $('#zeichen-hinweis');
   /* Die Modusleiste muss auch beim Setzen eines Ist-Punktes stehen: schmal
@@ -296,6 +316,9 @@ $('#zeichen-hinweis').addEventListener('click', e => {
 
 karte.on('click', e => {
   if (e.originalEvent?._fbpVerbraucht) return;
+  /* Ein Tipp neben die Punktkarte schließt sie – und tut sonst nichts. Wer
+     die Koordinate will, tippt noch einmal. */
+  if (punktkarteOffen()) return punktkarteSchliessen();
   if (sl.zeichenModus || zl.setzModus || bl.setzModus || fl.setzModus) return;
   if (sl.auswahl || zl.auswahl || bl.auswahl || fl.auswahl) {
     sl.auswahl = null; zl.auswahl = null; bl.auswahl = null; fl.auswahl = null;
@@ -306,15 +329,21 @@ karte.on('click', e => {
 
 function koordinatenPopup(ll) {
   const f = alleFormate(ll.lat, ll.lng);
+  /* Im Baumodus bietet der Tipp auf die Karte an, was dort gebraucht wird:
+     den Punkt aufnehmen. „Zeichen setzen“ und „Neue Strecke“ gehören zur
+     Planung – ihre Werkzeuge sind im Baumodus vom Schirm, und ein Griff, der
+     einen Zeichenmodus ohne Werkzeugleiste startete, wäre eine Sackgasse. */
+  const tasten = baumodus
+    ? `<button data-kp="kopie">Kopieren</button>
+       <button data-kp="ist" class="kp-primaer">Punkt hier aufnehmen</button>`
+    : `<button data-kp="kopie">Kopieren</button>
+       <button data-kp="zeichen">Zeichen setzen</button>
+       <button data-kp="strecke">Neue Strecke ab hier</button>`;
   const html = `<div class="koord-popup">
       <div class="kp-zeile"><span>MGRS</span><code>${escapeHtml(f.mgrs)}</code></div>
       <div class="kp-zeile"><span>GPS</span><code>${escapeHtml(f.ddm)}</code></div>
       <div class="kp-zeile"><span>Dezimal</span><code>${escapeHtml(f.latlng)}</code></div>
-      <div class="kp-tasten">
-        <button data-kp="kopie">Kopieren</button>
-        <button data-kp="zeichen">Zeichen setzen</button>
-        <button data-kp="strecke">Neue Strecke ab hier</button>
-      </div>
+      <div class="kp-tasten">${tasten}</div>
     </div>`;
   const popup = L.popup({ className: 'fbp-popup', maxWidth: 320 })
     .setLatLng(ll).setContent(html).openOn(karte);
@@ -328,6 +357,10 @@ function koordinatenPopup(ll) {
       if (akt === 'kopie') {
         navigator.clipboard?.writeText(`${f.mgrs}\n${f.ddm}\n${f.latlng}`)
           .then(() => hinweis('Koordinaten kopiert')).catch(() => hinweis('Kopieren nicht möglich', 'fehler'));
+      }
+      if (akt === 'ist') {
+        karte.closePopup();
+        punktAusKoordinate(ll.lat, ll.lng);
       }
       if (akt === 'zeichen') {
         karte.closePopup();
@@ -455,6 +488,8 @@ $('#wz-relais').onclick = () =>
   rl.setzModus ? (rl.beendeSetzen(), modusAnzeigen()) : relaisSetzen();
 $('#wz-suche').onclick = () => koordinatenSucheOeffnen();
 $('#wz-standort').onclick = standortUmschalten;
+$('#wz-punkt-hier').onclick = punktHierAufnehmen;
+$('#wz-punkt-karte').onclick = punktAufKarteStarten;
 
 let standortMarker = null;
 
@@ -1015,6 +1050,11 @@ let erstesAnwenden = true;
 
 function modusAnwenden() {
   document.body.classList.toggle('baumodus', baumodus);
+  /* Die Karte zeichnet im Baumodus anders: geplante Punkte werden angetippt
+     statt gezogen, die Einfügegriffe fehlen. Sie muss es wissen und neu
+     zeichnen – die Ziehbarkeit hängt an der Marke, nicht an einer Klasse. */
+  sl.baumodus = baumodus;
+  sl.zeichne();
   const schalter = $('#btn-modus');
   schalter.textContent = baumodus ? 'Planung' : 'Baumodus';
   schalter.setAttribute('aria-pressed', String(baumodus));
@@ -1050,6 +1090,7 @@ function modusUmschalten() {
   zeichnenBeenden(true);
   zl.beendeSetzen(); fl.beendeSetzen(); rl.beendeSetzen(); bl.beendeSetzen();
   sl.beendeIstSetzen();
+  punktkarteSchliessen();
   modusAnwenden();
   reiterWechseln(baumodus ? 'bau' : 'strecken');
   modusAnzeigen();
@@ -1118,6 +1159,7 @@ document.addEventListener('keydown', e => {
       dateiKnopf.focus();
       return;
     }
+    if (punktkarteOffen()) return punktkarteSchliessen();
     if (sl.istSetzModus) { sl.beendeIstSetzen(); return modusAnzeigen(); }
     if (sl.zeichenModus) return zeichnenBeenden(true);
     if (zl.setzModus) { zl.beendeSetzen(); return modusAnzeigen(); }
@@ -1146,6 +1188,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Backspace' && sl.zeichenModus) { e.preventDefault(); sl.letztenPunktZurueck(); return modusAnzeigen(); }
 
   const taste = e.key.toLowerCase();
+  /* Die Zeichenwerkzeuge sind im Baumodus vom Schirm – ihre Tasten auch.
+     Sonst startete ein Tastendruck einen Modus, dessen Leiste es dort nicht
+     gibt, und der nächste Kartentipp täte etwas Unsichtbares. */
+  if (baumodus && ['s', 't', 'f', 'r'].includes(taste)) return;
   if (taste === 's') { e.preventDefault(); sl.zeichenModus ? zeichnenBeenden(false) : neueStreckeStarten(); }
   if (taste === 't') { e.preventDefault(); zeichenSetzenStarten(); }
   if (taste === 'f') { e.preventDefault(); flaecheSetzenStarten(); }
@@ -1317,6 +1363,7 @@ store.on((p, grund) => {
   bl.zeichne();
   gl.zeichne();
   modusAnzeigen();
+  punktkarteNachfuehren(grund);
 
   $('#btn-undo').disabled = !store.undoStapel.length;
   $('#btn-redo').disabled = !store.redoStapel.length;

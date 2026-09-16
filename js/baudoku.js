@@ -15,12 +15,12 @@
    ab Stufe 5 – auf dem gedruckten Blatt. */
 
 import {
-  store, neuerBau, neuerBauabschnitt, neuerIstPunkt, baustandById, istquelleById,
+  store, neuerBau, neuerBauabschnitt, neuerIstPunkt, baustandById, istquelleById, punktartById,
   neueMaterialzeile, neueBaumeldung, neuePruefzeile, neuePruefung,
   materialZusammenfassen, bauBegonnen, pruefungGehaltvoll
 } from './state.js';
 import { distanz, streckenlaenge } from './geo.js';
-import { MATERIALKATALOG, PRUEFART_JE_KABEL } from './vorschrift.js';
+import { MATERIALKATALOG, PRUEFART_JE_KABEL, bauweiseById } from './vorschrift.js';
 
 export { bauBegonnen, pruefungGehaltvoll };
 
@@ -80,29 +80,47 @@ export function istPunktSetzen(strecke, lat, lng, o = {}) {
 
   /* Bestätigt der Punkt einen geplanten, ersetzt er eine frühere Bestätigung
      desselben: zweimal „wie geplant“ am selben Punkt ist eine Korrektur und
-     kein zweiter Punkt.
+     kein zweiter Punkt. Dasselbe gilt, wenn `ersetzt` einen aufgenommenen
+     Punkt nennt – so wird ein zusätzlicher Punkt neu geortet oder auf der
+     Karte verschoben, ohne dass er seinen Platz in der Trasse verliert.
 
      Was der Trupp am Bauort SELBST eingetragen hat, überlebt die Korrektur:
-     die Bemerkung immer, die Zuordnung zum Bauabschnitt, solange die neue
-     Aufnahme keine mitbringt. Eine neue Koordinate ist eine bessere Messung
-     desselben Punktes – kein Grund, den Satz „Muffe 6 m versetzt, Wurzelwerk“
-     wegzuwerfen, der nirgends sonst steht. */
-  if (neu.sollPunkt) {
-    const alt = bau.punkte.findIndex(pt => pt.sollPunkt === neu.sollPunkt);
-    if (alt >= 0) {
-      const vorher = bau.punkte[alt];
-      neu.id = vorher.id;
-      neu.bemerkung = vorher.bemerkung || neu.bemerkung;
-      neu.abschnitt = neu.abschnitt || vorher.abschnitt;
-      neu.name = neu.name || vorher.name;
-      bau.punkte[alt] = neu;
-      return neu;
-    }
+     die Bemerkung immer, Art und Bauweise, solange die neue Aufnahme keine
+     mitbringt, die Zuordnung zum Bauabschnitt ebenso. Eine neue Koordinate ist
+     eine bessere Messung desselben Punktes – kein Grund, den Satz „Muffe 6 m
+     versetzt, Wurzelwerk“ wegzuwerfen, der nirgends sonst steht. */
+  const alt = o.ersetzt
+    ? bau.punkte.findIndex(pt => pt.id === o.ersetzt)
+    : (neu.sollPunkt ? bau.punkte.findIndex(pt => pt.sollPunkt === neu.sollPunkt) : -1);
+  if (alt >= 0) {
+    const vorher = bau.punkte[alt];
+    neu.id = vorher.id;
+    neu.bemerkung = vorher.bemerkung || neu.bemerkung;
+    neu.abschnitt = neu.abschnitt || vorher.abschnitt;
+    neu.name = neu.name || vorher.name;
+    neu.sollPunkt = neu.sollPunkt || vorher.sollPunkt;
+    if (!o.art) { neu.art = vorher.art; neu.bauweise = vorher.bauweise; }
+    bau.punkte[alt] = neu;
+    return neu;
   }
 
   const stelle = einsortierStelle(strecke, bau, neu);
   bau.punkte.splice(stelle, 0, neu);
   return neu;
+}
+
+/**
+ * Die Art eines aufgenommenen Punktes setzen.
+ *
+ * Die Bauweise hängt an der Querung und an sonst nichts: wer aus der Querung
+ * wieder eine Muffe macht, nimmt den Überbau mit weg. Sonst stünde auf dem
+ * Bogen eine Muffe „im Überbau“ – und am Bauort sucht jemand danach.
+ *
+ * Nur innerhalb von `store.aendern` aufrufen.
+ */
+export function istArtSetzen(pt, art) {
+  pt.art = art;
+  if (art !== 'querung') pt.bauweise = null;
 }
 
 /** Wohin der neue Ist-Punkt in der Liste gehört (Index) */
@@ -479,6 +497,25 @@ export function baukennzahlen(strecke) {
 
 // ---------------------------------------------------------------- Texte
 
+/** Art des aufgenommenen Punktes in Worten – bei der Querung samt Bauweise */
+export function punktartText(pt) {
+  const art = punktartById(pt.art);
+  const bw = pt.art === 'querung' && pt.bauweise ? bauweiseById(pt.bauweise) : null;
+  return bw && bw.kurz ? `${art.name} · ${bw.name}` : art.name;
+}
+
+/** Der Buchstabe, den die Ist-Marke trägt – leer beim gewöhnlichen Trassenpunkt.
+ *  An der Querung steht die Bauweise (Ü, U, B), wenn eine eingetragen ist: sie ist
+ *  am Bauort die Aussage, die zählt, und dieselbe, die die geplante Raute trägt. */
+export function istKurz(pt) {
+  const art = punktartById(pt.art);
+  if (pt.art === 'querung' && pt.bauweise) {
+    const bw = bauweiseById(pt.bauweise);
+    if (bw.kurz) return bw.kurz;
+  }
+  return art.kurz === '·' ? '' : art.kurz;
+}
+
 /** Woher die Koordinate stammt, in einem Wort – mit Genauigkeit, wenn es eine gibt */
 export function quelleText(pt) {
   const q = istquelleById(pt.quelle);
@@ -525,3 +562,17 @@ export function baustrecke() {
   return gemerkt || zuletztGebaut(p) || p.strecken[0] || null;
 }
 export function baustreckeSetzen(sid) { gewaehlteStrecke = sid; }
+
+/* Welcher Bauabschnitt neue Eintragungen aufnimmt. Sitzungszustand wie die
+   gewählte Strecke – er überlebt das Neuladen bewusst nicht und liegt nicht in
+   der Planung: er sagt, wer gerade am Gerät steht, nicht, was gebaut wurde.
+   Er steht hier und nicht in der Liste, weil auch die Karte ihn braucht: ein
+   Punkt, der über die Bauleiste aufgenommen wird, trägt denselben Trupp wie
+   einer aus der Liste. */
+let aktiverAbschnittId = null;
+export function bauabschnittAktivSetzen(aid) { aktiverAbschnittId = aid || null; }
+export function bauabschnittAktivId() { return aktiverAbschnittId; }
+/** Der aktive Bauabschnitt dieser Strecke – oder `null`, wenn keiner (mehr) gilt */
+export function aktiverBauabschnitt(s) {
+  return bauabschnittById(s, aktiverAbschnittId);
+}

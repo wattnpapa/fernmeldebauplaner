@@ -156,9 +156,9 @@ node scripts/zeichen-pruefen.mjs
 Prüft, ob der Bestand vollständig ist und sich jedes Zeichen rendern lässt.
 
 Nach jeder Änderung am Baumodus oder an dem, was er anfasst (`js/baudoku.js`,
-`js/baumeldung.js`, `strecke.bau` in `js/state.js`, Materialkatalog und Prüfarten
-in `js/vorschrift.js`, die Ist-Ebene in `js/strecken.js`, der Codec in
-`js/teilen.js`):
+`js/baukarte.js`, `js/baumeldung.js`, `strecke.bau` in `js/state.js`,
+Materialkatalog und Prüfarten in `js/vorschrift.js`, die Ist-Ebene in
+`js/strecken.js`, der Codec in `js/teilen.js`):
 
 ```bash
 node scripts/baumodus-pruefen.mjs

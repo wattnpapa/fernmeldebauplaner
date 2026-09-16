@@ -15,8 +15,9 @@ festem Katalog, Baumeldungen als Zeitschiene, Prüfung je Leitungsstamm und die
 abschnittsweisem Einspielen mehrerer Trupps. Stufe 4 – die Anwendung startet
 ohne Netz, und die Karte lässt sich für den Bauort mitnehmen. Damit ist der
 Kreis geschlossen: Planung hin, Baumeldung zurück. Stufe 5 – die
-Baudokumentation als viertes Druckblatt. Stufe 6 – die Lichtbilder – steht
-aus.
+Baudokumentation als viertes Druckblatt. Nach dem Vermessen am Gerät kam die
+Karte als Bedienfläche dazu: Bauleiste und Punktkarte (`js/baukarte.js`),
+siehe „Die Oberfläche im Baumodus“. Stufe 6 – die Lichtbilder – steht aus.
 
 ## Warum überhaupt
 
@@ -92,7 +93,7 @@ strecke.bau = {
   stand:      'offen' | 'laeuft' | 'gebaut' | 'uebergeben',
   abschnitte: [ { id, name, trupp, fuehrer, vonPunkt, bisPunkt,
                   beginn, ende, farbe } ],
-  punkte:     [ { id, lat, lng, art, name, bemerkung,
+  punkte:     [ { id, lat, lng, art, bauweise, name, bemerkung,
                   abschnitt, sollPunkt, quelle, genauigkeit, zeit } ],
   material:   [ { id, artikel, menge, abschnitt, bemerkung } ],
   meldungen:  [ { id, zeit, text, abschnitt } ],
@@ -125,14 +126,29 @@ etwa 5 bis 10 m unter freiem Himmel, deutlich schlechter unter Bewuchs. Wer
 später eine Abweichung von 15 m beurteilt, muss wissen, ob sie gemessen oder
 getippt ist.
 
+**`art` und `bauweise`** sagen, was an der Stelle gebaut wurde. Die Art kommt
+aus derselben Liste wie beim geplanten Punkt (`PUNKTARTEN`), seit Schema 15
+um **Sonstiges** ergänzt – der Trupp nimmt auf, was am Ort steht, und nicht
+jede Stelle hat im Plan einen Namen. Die Bauweise gibt es nur an der Querung:
+Überbau, Unterbau, an einem Bauwerk entlang, wie die Trasse. Sie ist dasselbe
+Feld wie am geplanten Punkt, nur mit der Vorgabe `null` statt „wie die
+Trasse“: am Bauort heißt kein Eintrag „nicht angegeben“, und eine Vorgabe
+stünde auf dem Bogen wie eine Aussage des Trupps. Bestätigt der Trupp eine
+geplante Querung „wie geplant“, geht ihre Bauweise mit.
+
 ## Wie der Verlauf entsteht
 
 Drei Handgriffe, mehr nicht:
 
-- **Geplanten Punkt bestätigen** – der Regelfall. Der Punkt wird in der Liste
-  angetippt, die Koordinate aus dem Plan übernommen.
+- **Geplanten Punkt bestätigen** – der Regelfall. Der Punkt wird angetippt,
+  in der Liste oder auf der Karte, die Koordinate aus dem Plan übernommen.
 - **Punkt hier** – der Standort des Geräts wird als Ist-Punkt übernommen.
 - **Punkt auf der Karte** – antippen, wo er wirklich liegt.
+
+Alle drei gibt es zweimal: in der Liste des Bau-Reiters und auf der Karte
+selbst, über die Bauleiste und die Punktkarte (siehe „Die Oberfläche im
+Baumodus“). Beide Wege schreiben über dieselben Fabriken in `js/baudoku.js`
+in denselben `bau`-Block; die Liste ist der Bogen, die Karte der Griff.
 
 **Kein GPS-Mitschnitt.** Er stand im Entwurf und ist gefallen: er erzeugt bei
 Fahrt mehrere hundert Punkte je Kilometer, die jemand ausdünnen müsste, und
@@ -333,6 +349,70 @@ Grundlagen liegen bereits: `@media (pointer: coarse)` mit 44-px-Zonen, die
 Schmalansicht mit ihrem Umschalter Liste ↔ Karte, die Schriftuntergrenze von
 11 px.
 
+Der erste Stand hatte alles in die Liste gelegt, und am Telefon war das eine
+Sackgasse: die Liste liegt dort VOR der Karte, der Bau-Reiter war fünftausend
+Bildpunkte lang, und wer am Bauort einen Punkt aufnehmen wollte, musste erst
+umschalten, dann rollen, dann treffen – und danach in der Liste suchen, wo
+der Punkt gelandet war, um zu sagen, was dort steht. Deshalb ist die Karte
+seither die Bedienfläche des Baumodus (`js/baukarte.js`); die Liste bleibt der
+vollständige Bogen.
+
+**Die Bauleiste.** Im Baumodus trägt die Werkzeugleiste der Karte vier Griffe
+in einer Reihe: **Punkt hier**, **Auf Karte**, **Koordinate**, **Standort**.
+„Punkt hier“ ist gefüllt gesetzt – er ist der Regelfall und muss mit dem
+Daumen gefunden werden, ohne hinzusehen. Schmal ist die Leiste ein Streifen
+von gut 50 px statt der zwei Reihen der Planungswerkzeuge; die Beschriftung
+bleibt, weil vier Glyphen allein nicht auseinanderzuhalten sind. Beide Griffe
+gelten der Strecke, die im Bau-Reiter gewählt ist; die Punktkarte nennt sie
+danach im Kopf.
+
+**Die Punktkarte.** Ein Blatt am unteren Kartenrand, an derselben Stelle wie
+die Bauleiste – die eine löst die andere ab. Es zeigt EINEN Punkt. Ist er
+aufgenommen, fragt es „Was ist hier?“ und bietet die Arten als Chips an:
+Trassenpunkt, Muffe, Reserve, Mast, Querung, Verteiler, Sonstiges; an der
+Querung folgt „Wie gequert?“ mit den Bauweisen. Ein Tipp schreibt, es gibt
+kein „Übernehmen“. Darunter Bemerkung, bei zusätzlichen Punkten die
+Bezeichnung, dann Neu orten, Verschieben, Löschen, Fertig. Ist der Punkt
+geplant und noch offen, stehen dort die drei Wege ihn aufzunehmen. Kein
+Dialog: die Karte bleibt sichtbar und bedienbar, denn der Trupp will sehen,
+WO der Punkt liegt, den er benennt; ein Tipp neben das Blatt schließt es.
+
+Das Blatt schlägt von selbst auf, sobald ein Punkt aufgenommen ist – aus der
+Bauleiste, vom Kartentipp, aus dem Koordinaten-Popup –, und auf Tipp auf eine
+Marke: an der gebauten mit der Frage, was dort ist, an der geplanten mit den
+drei Wegen. Das ersetzt am Bauort die Tooltips, die kein Touchgerät zeigt.
+
+**Der Plan wird angetippt, nicht gezogen.** Im Baumodus sind die geplanten
+Punkte nicht ziehbar und die Einfügegriffe fehlen. Der Griff, der den Plan
+verschöbe, wäre mit dem Handschuh der häufigste Fehlgriff, und der Soll-
+Verlauf soll dort unangetastet bleiben; wer den Plan ändern muss, schaltet
+in die Planung. Wer beim Setzen eines Ist-Punktes die geplante Marke trifft,
+sagt „genau hier“ – der Tipp zählt als Kartentipp an dieser Stelle.
+
+**Die Ist-Marke trägt die Art.** Der gefüllte Kreis bleibt; Muffe, Reserve,
+Mast, Verteiler und Sonstiges stehen als Buchstabe darin, an der Querung die
+Bauweise – dieselben Buchstaben wie an den geplanten Marken. Der gewöhnliche
+Trassenpunkt bleibt der leere Kreis: er ist die Regel, und ein Buchstabe an
+jedem Punkt machte die besonderen unsichtbar. Die Zeichenerklärung der
+Baudokumentation zählt auf, welche vorkommen.
+
+**Was am Bauort nicht gebraucht wird, geht vom Schirm.** Die Kartenoptionen
+zeigen im Baumodus vier Zeilen statt neun (Karte, Gitter, Punktnummern,
+Punktbezeichnungen); schmal fällt die Herkunftszeile der Statusleiste weg,
+die Gitterangabe bleibt einzeilig. Das Koordinaten-Popup bietet „Punkt hier
+aufnehmen“ statt „Zeichen setzen“ und „Neue Strecke“; die Tasten S, T, F, R
+der Zeichenwerkzeuge sind aus – sie starteten sonst einen Modus, dessen
+Leiste es dort nicht gibt.
+
+**Der Bau-Reiter** hat unter der Summe einen Sprungstreifen (Punkte,
+Meldungen, Material, Übergabe, Karte mitnehmen), und der Kachelvorrat steht
+am Ende statt am Anfang: das Mitnehmen geschieht im Depot und nie am Bauort.
+
+Geprüft wird das in `scripts/baumodus-pruefen.mjs` (der zweite Weg zu
+denselben Eintragungen) und `scripts/geraete-pruefen.mjs` (Bauleiste höchstens
+64 px, mehr als die Hälfte der Karte frei, jeder Griff der Punktkarte auf
+Handschuhmaß, quer rollt das Blatt statt überzulaufen).
+
 ## Verworfene Wege
 
 **Eigene Seite `bau.html`.** Hätte Zustand, Karte, Migration und
@@ -445,6 +525,9 @@ Leere laufen lässt.
 | Zusammenführen | ja, abschnittsweise ersetzend, mit Vorschau; Kollision fragt |
 | Offline | Service Worker plus Kachelvorrat, vor dem ersten Einsatz |
 | Viertes Blatt | Baudokumentation, ersetzt die Technische Fernmeldeskizze |
+| Bedienung am Telefon | die Karte: Bauleiste und Punktkarte; die Liste bleibt der Bogen |
+| Was am Punkt steht | Art aus `PUNKTARTEN` samt „Sonstiges“, an der Querung die Bauweise; ein Tipp schreibt |
+| Der Plan im Baumodus | angetippt, nicht gezogen – ändern heißt umschalten |
 | Lichtbilder | vertagt in Stufe 6 |
 
 ## Offen
@@ -464,22 +547,10 @@ Leere laufen lässt.
   Soll-Geometrie und beim Planer einen eigenen Entschluss; bis dahin ist der
   Weg für diesen Fall die ganze Planungsdatei.
 
-- **Die Werkzeugleiste deckt am Telefon ein Fünftel der Karte.** Sie steht
-  bewusst im Daumenbereich und mit Beschriftung – vier Glyphen allein sind
-  nicht auseinanderzuhalten, und `title` zeigt kein Touchgerät an. Quer nimmt
-  sie damit aber 53 % der Kartenhöhe im linken Drittel ein, und ein
-  Einfügegriff darunter war mit keiner Geste zu erreichen. Der Ausweg wäre
-  derselbe Klappkopf, den die Kartenoptionen daneben schon haben; das ist
-  Markup, Zustand und eine Entscheidung darüber, wie sie startet, und gehört
-  nicht in eine Runde, die Maße nachzieht.
-
-- **Der Bau-Reiter ist 5 090 px lang.** In einem 578 px hohen Fenster sind das
-  8,8 Bildschirmhöhen, auf einem kleinen Android 10,9. Bis „Meldung jetzt“ sind
-  es 4,7, bis zur Übergabe 7,5. Die ersten anderthalb Bildschirme gehören dem
-  Kachelvorrat – einer Handlung, die im Depot stattfindet und nie am Bauort.
-  Ein Sprungstreifen unter den Reitern und der Vorratsblock nach hinten wären
-  zusammen die größte Verbesserung; beides ändert die Anordnung und nicht die
-  Maße.
+- **Die Werkzeugleiste der Planung deckt am Telefon quer ein Fünftel der
+  Karte.** Im Baumodus ist das gelöst – dort ist sie ein Streifen –, in der
+  Planung steht sie weiter zweireihig mit vier Zeichenwerkzeugen. Der Ausweg
+  wäre derselbe Klappkopf, den die Kartenoptionen daneben schon haben.
 
 - **Drei Löschgriffe ohne Rückfrage, 4 px neben einem Eingabefeld.**
   Bauabschnitt, Baumeldung und Prüfzeile löschen sofort. Der Rückweg ist
@@ -488,11 +559,12 @@ Leere laufen lässt.
   Rückholhinweis in der Hinweisbox („Meldung gelöscht · Rückgängig“) wäre die
   Antwort, und die gehört zur Hinweisbox und nicht zum Bau-Reiter.
 
-- **Die Tooltips der Karte gibt es mit dem Finger nicht.** Punkt, Linie,
-  Zeichen, Fläche und Relais tragen ihre Angabe in einem `mouseover`-Tooltip;
-  am Telefon erscheint keiner. Bei den Bildmarken ist der Fall schon gelöst
-  (`js/bilder.js`, „Am Bauort gibt es kein Überfahren“); die anderen fünf
-  brauchen dieselbe Entsprechung.
+- **Die Tooltips der Karte gibt es mit dem Finger nicht.** Linie, Zeichen,
+  Fläche und Relais tragen ihre Angabe in einem `mouseover`-Tooltip; am
+  Telefon erscheint keiner. Bei den Bildmarken ist der Fall gelöst
+  (`js/bilder.js`, „Am Bauort gibt es kein Überfahren“), bei den Punkten im
+  Baumodus über die Punktkarte; die übrigen vier brauchen dieselbe
+  Entsprechung – und die Punkte im Planungsmodus ebenso.
 
 - **Tipps unter 200 ms Abstand gehen beim Zeichnen verloren.** Gemessen: bei
   0 ms Abstand kommen 2 von 6 Punkten an, bei 100 ms 5 von 6. Ursache ist die

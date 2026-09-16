@@ -26,6 +26,7 @@
 <link rel="modulepreload" href="js/teilen.js">
 <link rel="modulepreload" href="js/strecken.js">
 <link rel="modulepreload" href="js/baudoku.js">
+<link rel="modulepreload" href="js/baukarte.js">
 <link rel="modulepreload" href="js/kacheln.js">
 <link rel="modulepreload" href="js/symbols.js">
 <link rel="modulepreload" href="js/zeichen.js">
@@ -273,7 +274,14 @@
         <button class="wz" id="wz-zeichen" title="Taktisches Zeichen setzen (T)"><span class="wz-icon">◈</span><span>Zeichen<i class="wz-taste">T</i></span></button>
         <button class="wz" id="wz-flaeche" title="Fläche einzeichnen – Fahrzeug, Anhänger, Zelt, Aufbauplatz (F)"><span class="wz-icon">▭</span><span>Fläche<i class="wz-taste">F</i></span></button>
         <button class="wz" id="wz-relais" title="Relaisstelle des Sprechfunks setzen (R)"><span class="wz-icon">◍</span><span>Relais<i class="wz-taste">R</i></span></button>
-        <button class="wz" id="wz-suche" title="Koordinate anspringen (K)"><span class="wz-icon">⌖</span><span>Koordinate<i class="wz-taste">K</i></span></button>
+        <!-- Die zwei Griffe des Baumodus stehen hier und nicht nur im Reiter:
+             schmal liegt die Liste vor der Karte, und wer am Bauort einen Punkt
+             aufnehmen will, hätte sonst erst umzuschalten, dann zu rollen. Sie
+             gelten der im Bau-Reiter gewählten Strecke; die Punktkarte nennt
+             sie danach im Kopf. -->
+        <button class="wz nur-bau primaer" id="wz-punkt-hier" title="Gebauten Punkt aus dem Standort des Geräts aufnehmen"><span class="wz-icon">◉</span><span>Punkt hier</span></button>
+        <button class="wz nur-bau" id="wz-punkt-karte" title="Gebauten Punkt auf der Karte antippen"><span class="wz-icon">✛</span><span>Auf Karte</span></button>
+        <button class="wz" id="wz-suche" title="Koordinate anspringen (K)"><span class="wz-icon">⊞</span><span>Koordinate<i class="wz-taste">K</i></span></button>
         <button class="wz" id="wz-standort" title="Eigenen Standort anzeigen"><span class="wz-icon">◎</span><span>Standort</span></button>
       </div>
 
@@ -284,9 +292,18 @@
         <button class="knopf klein" data-akt="abbruch">Abbrechen (Esc)</button>
       </div>
 
+      <!-- Die Punktkarte des Baumodus: ein aufgenommener oder ein noch offener
+           Punkt, unmittelbar auf der Karte. Gefüllt von js/baukarte.js. Kein
+           Dialog – die Karte bleibt bedienbar, ein Tipp auf sie schließt das
+           Blatt. -->
+      <div class="punktkarte" id="punktkarte" role="region" aria-label="Aufgenommener Punkt" hidden></div>
+
       <!-- Fünf Schalter, die man einmal setzt, dürfen die Trasse nicht dauerhaft
            überstimmen: die Tafel klappt zu und merkt sich das je Sitzung –
-           schmal beginnt sie geschlossen (siehe app.js). -->
+           schmal beginnt sie geschlossen (siehe app.js). Die Zeilen mit
+           `nur-planung` gehen im Baumodus vom Schirm: Teillängen, Schild und
+           Zeichengröße sind Fragen der Planung, und am Bauort deckt die offene
+           Tafel sonst die halbe Karte. -->
       <div class="kartenoptionen" id="kartenoptionen">
         <button type="button" class="ko-kopf" id="ko-kopf" aria-expanded="true">
           <span>Kartenoptionen</span><span class="ko-pfeil" aria-hidden="true">▾</span>
@@ -296,9 +313,9 @@
             <select id="basiskarte"></select>
           </label>
           <label class="ko-zeile ko-haken" title="UTM-Kilometergitter zum Ablesen von MGRS-Koordinaten"><input type="checkbox" id="opt-gitter"><span>Koordinatengitter (MGRS)</span></label>
-          <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-teillaengen"><span>Teillängen</span></label>
-          <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-gesamtlaenge"><span>Streckenname &amp; Summe</span></label>
-          <label class="ko-zeile" title="Rückt das Schild mit Streckenname und Länge senkrecht von der Trasse ab und zieht einen Pfeil dorthin zurück – auf eng geführten Trassen deckt es sonst den Verlauf zu"><span>Schild abgerückt</span>
+          <label class="ko-zeile nur-planung ko-haken"><input type="checkbox" id="opt-teillaengen"><span>Teillängen</span></label>
+          <label class="ko-zeile nur-planung ko-haken"><input type="checkbox" id="opt-gesamtlaenge"><span>Streckenname &amp; Summe</span></label>
+          <label class="ko-zeile nur-planung" title="Rückt das Schild mit Streckenname und Länge senkrecht von der Trasse ab und zieht einen Pfeil dorthin zurück – auf eng geführten Trassen deckt es sonst den Verlauf zu"><span>Schild abgerückt</span>
             <select id="opt-beschriftungsabstand">
               <option value="0">an der Strecke</option>
               <option value="1">abgerückt</option>
@@ -307,8 +324,8 @@
           </label>
           <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-punktnummern"><span>Punktnummern</span></label>
           <label class="ko-zeile ko-haken" title="Die Bezeichnungen der Trassenpunkte auf der Karte – auf einer eng geführten Trasse legen sie sich übereinander"><input type="checkbox" id="opt-punktnamen"><span>Punktbezeichnungen</span></label>
-          <label class="ko-zeile ko-haken" title="Alle Bildmarken auf einmal ein- und ausblenden – die Augen der einzelnen Bilder bleiben, wie sie sind"><input type="checkbox" id="opt-bilder"><span>Bildmarken</span></label>
-          <label class="ko-zeile"><span>Zeichengröße</span>
+          <label class="ko-zeile nur-planung ko-haken" title="Alle Bildmarken auf einmal ein- und ausblenden – die Augen der einzelnen Bilder bleiben, wie sie sind"><input type="checkbox" id="opt-bilder"><span>Bildmarken</span></label>
+          <label class="ko-zeile nur-planung"><span>Zeichengröße</span>
             <input type="range" id="opt-symbolgroesse" min="0.6" max="1.8" step="0.1">
           </label>
         </div>

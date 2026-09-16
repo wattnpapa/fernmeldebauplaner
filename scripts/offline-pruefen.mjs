@@ -81,7 +81,9 @@ try {
   b.pruefe(await seite.sichtbar('#karte'), 'Die Karte steht');
   b.pruefe(await seite.sichtbar('#btn-modus'), 'Der Moduswechsel steht');
   b.gleich(await seite.auswerten('navigator.onLine'), false, 'Der Browser weiß, dass kein Netz da ist');
-  b.pruefe(await seite.anzahl('.wz') === 6, 'Die Werkzeuge sind da');
+  /* Acht: die sechs Planungswerkzeuge und die zwei Griffe des Baumodus, die
+     im Markup stehen und nur dort sichtbar werden. */
+  b.pruefe(await seite.anzahl('.wz') === 8, 'Die Werkzeuge sind da');
 
   b.abschnitt('Und die Planung ist noch da');
   await seite.auswerten(`

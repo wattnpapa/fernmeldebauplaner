@@ -282,6 +282,12 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Zu jedem geplanten Trassenpunkt drei Griffe: **wie geplant** bestätigen, **hier**
   aus dem Standort des Geräts übernehmen oder **auf der Karte** antippen, wo er wirklich liegt.
   An jedem aufgenommenen Punkt steht, woher seine Koordinate stammt und wie genau sie ist
+- **Auf der Karte selbst:** die Bauleiste unten trägt **Punkt hier** und **Auf Karte**;
+  ein Tipp auf eine geplante Marke bietet die drei Griffe an, ein Tipp auf eine gebaute
+  fragt, was dort ist. Die **Punktkarte** benennt den Punkt mit einem Tipp – Trassenpunkt,
+  Muffe, Reserve, Mast, Querung (mit Überbau, Unterbau, an Brücke), Verteiler, Sonstiges –
+  und nimmt die Bemerkung auf. Im Baumodus werden geplante Punkte angetippt, nicht
+  gezogen: der Plan bleibt, wie er ist
 - Zusätzliche Punkte, die der Plan nicht kennt – ein Mast, der gestellt werden musste,
   eine Muffe, die dazukam
 - **Bauabschnitte:** bauen zwei Trupps aufeinander zu, bekommt jeder seinen Abschnitt mit
@@ -390,10 +396,15 @@ Trupp gearbeitet hat, nicht nur über die gerade gewählte. Der Planer öffnet s
 wie einen geteilten Link oder über „Datei → Planung oder KML laden“ und bekommt
 die Vorschau.
 
-**Baudokumentation:** In der Kopfzeile auf „Baumodus“ schalten. Im Reiter „Bau“ oben
-die Strecke wählen, an der gebaut wird; darunter steht jeder geplante Punkt mit seinen
-drei Griffen. Weiter unten stehen Materialnachweis, Baumeldungen, die Meldung an den
-S 6 und die Übergabe. Der Modus bleibt über das Neuladen erhalten – am Bauort bricht
+**Baudokumentation:** In der Kopfzeile auf „Baumodus“ schalten. Am Bauort geht es über
+die Karte: unten **Punkt hier** (Standort des Geräts) oder **Auf Karte** antippen, oder
+eine geplante Marke tippen und **Wie geplant** wählen. Die Punktkarte, die daraufhin
+aufschlägt, fragt „Was ist hier?“ – ein Tipp auf Muffe, Reserve, Mast, Querung,
+Verteiler oder Sonstiges genügt, an der Querung noch einer auf die Bauweise. Im Reiter
+„Bau“ steht dasselbe als Liste: oben die Strecke wählen, an der gebaut wird; darunter
+jeder geplante Punkt mit seinen drei Griffen, ein Sprungstreifen führt zu Meldungen,
+Material und Übergabe. Weiter unten stehen Materialnachweis, Baumeldungen, die Meldung
+an den S 6 und die Übergabe, ganz am Ende die Karte zum Mitnehmen. Der Modus bleibt über das Neuladen erhalten – am Bauort bricht
 die Verbindung ab, und wer danach wieder in der Planung landete, sucht erst einmal.
 Welcher Bauabschnitt gerade aufnimmt, überlebt das Neuladen dagegen bewusst nicht:
 nach dem Neustart gelten Eintragungen wieder für die ganze Strecke, und der Bogen sagt
@@ -535,6 +546,7 @@ js/gitter.js          UTM-Kilometergitter (UTMREF/MGRS) auf Karte und Bauauftrag
 js/strecken.js        Strecken zeichnen, bearbeiten, beschriften
 js/baudoku.js         Baudokumentation: Ist-Trasse, Bauabschnitte, Material,
                       Baumeldungen, Prüfung und Übergabe, Abweichung
+js/baukarte.js        Baumodus auf der Karte: Bauleiste, Punktkarte, Ortung
 js/baumeldung.js      Der Rückweg vom Bauort: eine fremde Meldung einordnen
                       und abschnittsweise einspielen
 js/kacheln.js         Kartenkacheln für den Bauort mitnehmen (IndexedDB)

@@ -446,11 +446,16 @@ body.druckansicht { overflow: hidden; }
 .lg-linie.lg-abw { border-top: 1pt dashed #b45309; }
 /* Die Marke des aufgenommenen Punktes in der Zeichenerklärung – derselbe Kreis
    mit weißem Rand wie auf der Karte. Die Punktarten haben für das Ist keine
-   eigene Form: der Trupp nimmt einen Ort auf, keine Bauform. */
+   eigene Form: der Trupp nimmt einen Ort auf, keine Bauform. Die Art steht
+   als Buchstabe im Kreis, und dafür wächst er auf das Maß der geplanten
+   Marke – in 2,6 mm ist kein Buchstabe zu lesen. */
 .lg-punkt-ist {
-  display: inline-block; width: 2.6mm; height: 2.6mm; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.6mm; height: 2.6mm; border-radius: 50%;
   background: var(--farbe, #111); border: .5pt solid #fff; box-shadow: 0 0 0 .3pt #111;
+  color: #fff; font-size: .62em; font-weight: 700; font-style: normal;
 }
+.lg-punkt-ist.mit-kurz { width: 4mm; height: 4mm; }
 .druck-doku.sw .lg-linie.lg-abw { border-top-color: #444; }
 /* Musterstück der Kabelart: das Zeichen sitzt im Linienzug, genau wie auf
    der Karte – die Linie läuft als Hintergrund hinter Strichen und Ziffern. */
@@ -979,6 +984,12 @@ body.druckansicht { overflow: hidden; }
   margin: calc(2px * var(--karten-schrift));
   border-width: calc(2.5px * var(--karten-schrift));
   box-shadow: 0 0 0 calc(1px * var(--karten-schrift)) rgba(16,32,56,.45);
+}
+/* Trägt die Marke einen Buchstaben, füllt sie ihren Kasten: derselbe Griff
+   wie am Bildschirm (app.css), damit Karte und Blatt dasselbe Bild zeigen. */
+.karten-inner .fbp-istpunkt.mit-kurz {
+  width: calc(19px * var(--karten-schrift)); height: calc(19px * var(--karten-schrift));
+  margin: 0; font-size: calc(9px * var(--karten-schrift));
 }
 .karten-inner .punkt-name {
   font-size: calc(8.5px * var(--karten-schrift));

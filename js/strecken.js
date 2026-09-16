@@ -3,7 +3,8 @@
 import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText } from './geo.js';
 import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar } from './state.js';
 import {
-  istPunkte, sollZuIst, istPunktSetzen, sollPunktGeloescht, ABWEICHUNG_SCHWELLE
+  istPunkte, sollZuIst, istPunktSetzen, sollPunktGeloescht, ABWEICHUNG_SCHWELLE,
+  istKurz, punktartText
 } from './baudoku.js';
 import { auslegung, querschnittText } from './strom.js';
 import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf,
@@ -568,8 +569,17 @@ export class StreckenLayer {
        Option und bringt beides mit (`baudokuLegendeHTML` in
        `bauauftrag.js`). */
     this.mitIst = !!opt.mitIst;
-    this.istSetzModus = null;   // { sid, sollPunkt, art } während „Punkt setzen“
+    this.istSetzModus = null;   // { sid, sollPunkt, art, … } während „Punkt setzen“
     this.aufIstPunkt = opt.aufIstPunkt || (() => {});
+    /* Im Baumodus ist die Karte eine andere: der geplante Punkt wird nicht
+       gezogen, sondern angetippt – und der Tipp meldet ihn nach außen, damit
+       die Punktkarte aufschlägt. Ein Griff, der den Plan verschöbe, wäre am
+       Bauort mit dem Handschuh der häufigste Fehlgriff, und der Soll-Verlauf
+       soll dort unangetastet bleiben. Umgeschaltet wird von app.js, das den
+       Modus kennt. */
+    this.baumodus = false;
+    this.aufSollPunkt = opt.aufSollPunkt || (() => {});
+    this.aufIstPunktWahl = opt.aufIstPunktWahl || (() => {});
     this.aufAuswahl = opt.aufAuswahl || (() => {});
     this.aufAenderung = opt.aufAenderung || (() => {});
     this.sw = !!opt.sw;                       // Schwarz-Weiß-Druck
@@ -676,8 +686,13 @@ export class StreckenLayer {
      anderen – den geplanten bestätigen und die Gerätepeilung übernehmen –
      brauchen die Karte nicht und laufen über die Liste. */
   starteIstSetzen(sid, o = {}) {
-    this.istSetzModus = { sid, sollPunkt: o.sollPunkt || null, art: o.art || 'punkt',
-                          abschnitt: o.abschnitt || null };
+    /* `art` bleibt leer, wenn keine mitkommt: beim Verschieben eines
+       aufgenommenen Punktes (`ersetzt`) behält er dann, was der Trupp
+       eingetragen hat; ein neuer Punkt wird ohne Art ohnehin zum Trassenpunkt
+       (`neuerIstPunkt`). */
+    this.istSetzModus = { sid, sollPunkt: o.sollPunkt || null, art: o.art || null,
+                          bauweise: o.bauweise || null, abschnitt: o.abschnitt || null,
+                          ersetzt: o.ersetzt || null };
     this.auswahl = sid;
     L.DomUtil.addClass(this.karte.getContainer(), 'modus-zeichnen');
     this.zeichne();
@@ -695,10 +710,16 @@ export class StreckenLayer {
       const m = this.istSetzModus;
       const s = store.strecke(m.sid);
       if (!s) return this.beendeIstSetzen();
+      /* Verbraucht: an demselben Klick hängt in app.js das Koordinaten-Popup
+         und das Schließen der Punktkarte. Beides gehört nicht zu einem Tipp,
+         der gerade einen Punkt gesetzt hat – die Punktkarte, die der Tipp
+         aufschlägt, wäre sonst im selben Augenblick wieder zu. */
+      if (e.originalEvent) e.originalEvent._fbpVerbraucht = true;
       let neu = null;
       store.aendern(() => {
         neu = istPunktSetzen(s, e.latlng.lat, e.latlng.lng,
-          { sollPunkt: m.sollPunkt, art: m.art, abschnitt: m.abschnitt, quelle: 'karte' });
+          { sollPunkt: m.sollPunkt, art: m.art, bauweise: m.bauweise, abschnitt: m.abschnitt,
+            ersetzt: m.ersetzt, quelle: 'karte' });
       }, 'bau');
       this.beendeIstSetzen();
       this.aufIstPunkt(s, neu);
@@ -944,8 +965,10 @@ export class StreckenLayer {
 
     this._zeichneIst(s, o, st);
 
-    // Einfügegriffe zwischen den Punkten
-    if (this.interaktiv && gewaehlt && !this.zeichenModus && s.punkte.length >= 2) {
+    // Einfügegriffe zwischen den Punkten – nicht im Baumodus: dort wird der
+    // Plan nicht verändert, und der Griff läge genau da, wo der Trupp die
+    // gebaute Trasse antippt.
+    if (this.interaktiv && gewaehlt && !this.zeichenModus && !this.baumodus && s.punkte.length >= 2) {
       for (let i = 1; i < s.punkte.length; i++) {
         const m = mitte(s.punkte[i - 1], s.punkte[i]);
         const griff = L.marker(m, {
@@ -1059,24 +1082,37 @@ export class StreckenLayer {
           dashArray: [3 * f, 4 * f].join(' '), interactive: false
         }).addTo(this.gruppe);
       }
-      L.marker([pt.lat, pt.lng], {
+      /* Die Art steht als Buchstabe in der Marke, wie an der geplanten – nur
+         weiß auf der Streckenfarbe statt dunkel auf Weiß. Der gewöhnliche
+         Trassenpunkt bleibt der leere Kreis: er ist die Regel, und ein
+         Buchstabe an jedem Punkt machte die besonderen unsichtbar. */
+      const kurz = istKurz(pt);
+      const marke = L.marker([pt.lat, pt.lng], {
         pane: 'fbp-griffe', interactive: this.interaktiv, keyboard: false,
         icon: L.divIcon({
           className: 'fbp-punkt-icon',
-          html: `<span class="fbp-istpunkt" style="--farbe:${st.farbe}"></span>`,
+          html: `<span class="fbp-istpunkt${kurz ? ' mit-kurz' : ''}" style="--farbe:${st.farbe}">` +
+                `${escapeHtml(kurz)}</span>`,
           iconSize: [18, 18], iconAnchor: [9, 9]
         })
       }).addTo(this.gruppe)
         .bindTooltip(() => this._istTooltip(s, pt),
           { direction: 'top', className: 'fbp-tooltip', offset: [0, -8] });
+      if (this.interaktiv) {
+        /* Am Bauort gibt es kein Überfahren, also keinen Tooltip – der Tipp
+           auf die Marke schlägt statt dessen die Punktkarte auf. */
+        marke.on('click', e => {
+          L.DomEvent.stop(e);
+          if (this.baumodus && !this.zeichenModus && !this.istSetzModus) this.aufIstPunktWahl(s, pt);
+        });
+      }
     }
   }
 
   _istTooltip(s, pt) {
     const soll = sollZuIst(s, pt);
-    const art = punktartById(pt.art);
     const abw = soll ? distanz(soll, pt) : null;
-    return `<b>Gebaut</b> – ${escapeHtml(art.name)}` +
+    return `<b>Gebaut</b> – ${escapeHtml(punktartText(pt))}` +
       (pt.name ? `<br>${escapeHtml(pt.name)}` : '') +
       (abw !== null ? `<br>${escapeHtml(formatLaenge(abw))} vom geplanten Punkt`
                     : '<br>zusätzlich zur Planung') +
@@ -1336,7 +1372,7 @@ export class StreckenLayer {
 
     const m = L.marker([pt.lat, pt.lng], {
       pane: 'fbp-griffe',
-      draggable: this.interaktiv && gewaehlt && !this.zeichenModus,
+      draggable: this.interaktiv && gewaehlt && !this.zeichenModus && !this.baumodus,
       keyboard: false,
       interactive: this.interaktiv,
       icon: L.divIcon({
@@ -1371,7 +1407,13 @@ export class StreckenLayer {
     m.on('click', e => {
       L.DomEvent.stop(e);
       if (this.zeichenModus) return;
+      /* Wer beim Setzen eines Ist-Punktes die geplante Marke trifft, sagt
+         damit: genau hier. Der Tipp zählt als Kartentipp an dieser Stelle –
+         sonst müsste er knapp neben die Marke zielen, und der Punkt läge dann
+         zwei Meter neben dem, was gemeint war. */
+      if (this.istSetzModus) return this._kartenKlick({ latlng: m.getLatLng(), originalEvent: e.originalEvent });
       this.waehle(s.id, pt.id);
+      if (this.baumodus) this.aufSollPunkt(s, pt);
     });
     m.on('drag', ev => {
       const ll = ev.target.getLatLng();

@@ -172,7 +172,13 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
            calc(12px + env(safe-area-inset-right, 0px)) 5px
            calc(12px + env(safe-area-inset-left, 0px));
   min-height: var(--kopf-hoehe);
-  background: var(--thw); color: #fff; box-shadow: var(--schatten); z-index: 900;
+  background: var(--thw); color: #fff; box-shadow: var(--schatten);
+  /* Über der Seitenleiste (schmal 1100) und über den Leaflet-Bedienelementen
+     (1000): das Dateimenü hängt in der Stapelordnung der Kopfzeile, und mit
+     900 lag es auf dem Telefon HINTER der Liste – sichtbar waren zwei Einträge
+     im Band darunter, der Rest war weg, und nichts deutete an, dass es ihn
+     gab. Unter dem Umschalter Liste/Karte (1300) und den Dialogen bleibt sie. */
+  z-index: 1200;
 }
 .marke { display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0; }
 .marke-zeichen { width: 28px; height: 28px; border-radius: 5px; }
@@ -1479,6 +1485,9 @@ body.modus-aktiv .fbp-bild { pointer-events: none; }
   padding: 3px 8px; font-size: 11.5px; cursor: pointer;
 }
 .koord-popup .kp-tasten button:hover { border-color: var(--thw); color: var(--thw); }
+/* Im Baumodus ist „Punkt hier aufnehmen“ der Griff, um den es geht */
+.koord-popup .kp-tasten .kp-primaer { background: var(--thw); border-color: var(--thw); color: #fff; }
+.koord-popup .kp-tasten .kp-primaer:hover { background: var(--thw-hell); color: #fff; }
 
 body.karte-dunkel .seg-mass,
 body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
@@ -1757,16 +1766,33 @@ body.baumodus #wz-strecke,
 body.baumodus #wz-zeichen,
 body.baumodus #wz-flaeche,
 body.baumodus #wz-relais { display: none; }
+/* Dafür kommen die zwei Griffe der Aufnahme auf die Karte – dieselben wie am
+   Ende der Punktliste, nur ohne den Weg dorthin. „Punkt hier“ trägt die
+   Bedienfarbe: er ist der Regelfall am Bauort und der Griff, der mit dem
+   Daumen gefunden werden muss, ohne hinzusehen. */
+.wz.nur-bau { display: none; }
+body.baumodus .wz.nur-bau { display: flex; }
+.wz.primaer { background: var(--thw); color: #fff; }
+.wz.primaer:hover { background: var(--thw-hell); }
+/* Die Planungszeilen der Kartenoptionen gehen im Baumodus vom Schirm – bleiben
+   die vier, die am Bauort umgestellt werden: Karte, Gitter, Nummern, Namen. */
+body.baumodus .ko-zeile.nur-planung { display: none; }
 
 /* Die gebaute Trasse auf der Karte: gefüllt, wo der geplante Punkt hohl ist.
    Kein Schlagschatten – Firefox gibt Seitenbereiche mit CSS-`filter` beim
    Drucken nicht aus, und was auf der Arbeitskarte anders aussähe als auf dem
    Blatt, führte beim Vergleich in die Irre. */
 .fbp-istpunkt {
-  display: block; width: 14px; height: 14px; margin: 2px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; position: relative;
+  width: 14px; height: 14px; margin: 2px; border-radius: 50%;
   background: var(--farbe, #333); border: 2.5px solid #fff;
   box-shadow: 0 0 0 1px rgba(16,32,56,.45);
+  color: #fff; font-size: 9.5px; font-weight: 700; line-height: 1; cursor: pointer;
 }
+/* Trägt die Marke einen Buchstaben (Muffe, Reserve, Bauweise der Querung),
+   füllt sie ihren 18-px-Kasten – in 14 px wäre er nicht zu lesen. Der Anker
+   der Marke bleibt derselbe, sie wächst um ihre Mitte. */
+.fbp-istpunkt.mit-kurz { width: 18px; height: 18px; margin: 0; }
 
 .bau-wahl { margin: 0; }
 .bau-wahl select { font-weight: 650; }
@@ -1855,6 +1881,9 @@ body.baumodus #wz-relais { display: none; }
   background: var(--thw-blass); color: var(--text-blau);
 }
 .bp-haken { background: var(--gut) !important; color: #fff !important; font-weight: 650; }
+/* „gebaut als …“: der Trupp hat am Punkt etwas anderes eingetragen als der
+   Plan – kein Fehler, eine Aussage, deshalb im Mahnton und nicht in Rot. */
+.bp-istart { background: var(--warnung-flaeche) !important; color: var(--warnung-tief) !important; }
 .bp-abweichung {
   background: var(--warnung-flaeche) !important; color: var(--warnung-tief) !important;
   font-weight: 650;
@@ -1963,6 +1992,81 @@ body.baumodus #wz-relais { display: none; }
   font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
 }
 
+/* Der Sprungstreifen unter der Summe des Bau-Reiters. Die Liste ist rund
+   fünftausend Bildpunkte lang – acht Bildschirmhöhen auf dem Telefon –, und
+   „Meldung jetzt“ stand auf der fünften. Die Chips springen an den Block; sie
+   ersetzen keine Gliederung, sie ersetzen das Rollen. Eine Reihe, die rollt,
+   statt umzubrechen: zwei Reihen kosteten den Platz, den sie sparen sollen. */
+.bau-sprung {
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  margin: -4px 0 10px; padding: 2px 0;
+}
+.bau-sprung::-webkit-scrollbar { display: none; }
+.bau-sprung .knopf.klein { flex: 0 0 auto; border-radius: 999px; }
+
+/* ---------------------------------------------------------------- Punktkarte
+
+   Das Blatt des Baumodus am unteren Kartenrand (js/baukarte.js). Es steht, wo
+   die Werkzeugleiste steht, und löst sie schmal ab: beide gehören in den
+   Daumenbereich, und übereinander nähmen sie der Karte ein Drittel. Kein
+   Dialog und keine Hülle – die Karte bleibt sichtbar und bedienbar, denn der
+   Trupp will sehen, WO der Punkt liegt, den er gerade benennt. */
+.punktkarte {
+  position: absolute; z-index: 730;
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--sl-hoehe) + max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px))
+               + var(--karten-fuss) + 12px);
+  max-width: 440px; margin-right: auto;
+  /* Höher als die Karte wird das Blatt nie; darüber rollt es. Die Zoom-
+     steuerung oben rechts wird dabei nicht abgezogen: hochkant reicht das
+     Blatt nie so weit hinauf, quer steht es mit 440 px links neben ihr – und
+     mit dem Abzug blieben quer 52 px, gerade der Kopf des Blattes. */
+  max-height: calc(100% - var(--sl-hoehe) - var(--karten-fuss)
+                   - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 24px);
+  overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--flaeche); border: 1px solid var(--thw); border-radius: var(--radius);
+  padding: 10px 12px; box-shadow: var(--schatten-stark); font-size: 12.5px;
+}
+.punktkarte[hidden] { display: none; }
+.punktkarte:not([hidden]) { animation: leiste-an var(--zeit-zustand) var(--weg); }
+.punktkarte > div { display: flex; flex-direction: column; gap: 8px; }
+.pk-kopf { display: flex; align-items: flex-start; gap: 8px; }
+.pk-titel { flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.pk-titel b { font-size: 14px; }
+.pk-unter { color: var(--text); }
+/* Die Strecke steht klein dabei, weil die Bauleiste blind an die gewählte
+   schreibt – wer hier die falsche liest, wechselt sie oben im Reiter. */
+.pk-strecke { flex-basis: 100%; font-size: 11.5px; color: var(--text-schwach); }
+.pk-befund { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pk-befund span {
+  font-size: 11.5px; padding: 3px 7px; border-radius: 999px;
+  background: var(--thw-blass); color: var(--text-blau);
+}
+.pk-befund .pk-offen { background: var(--warnung-flaeche); color: var(--warnung-tief); font-weight: 650; }
+.pk-frage { font-size: 11.5px; font-weight: 600; color: var(--text-schwach); margin-top: 2px; }
+.pk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Die Chips sind Schalter und keine Knöpfe: gewählt ist gefüllt, sonst
+   umrandet – derselbe Stand wie an der Marke des Bauabschnitts. */
+.pk-chip {
+  padding: 6px 11px; min-height: 34px; border: 1px solid var(--linie-stark);
+  border-radius: 999px; background: var(--flaeche); color: var(--text); cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 550; white-space: nowrap;
+}
+.pk-chip:hover { border-color: var(--thw-hell); color: var(--thw); }
+.pk-chip[aria-pressed="true"] { background: var(--thw); border-color: var(--thw); color: #fff; }
+.pk-felder { display: flex; flex-direction: column; gap: 6px; }
+.pk-felder input {
+  width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--linie-stark);
+  border-radius: var(--radius-klein); background: var(--flaeche); font-size: 13px;
+}
+.pk-tasten { display: flex; flex-wrap: wrap; gap: 6px; }
+.pk-tasten .knopf { flex: 1 1 auto; margin: 0; }
+/* Die drei Aufnahmegriffe des offenen Punktes – dieselben Maße wie in der
+   Liste (`.knopf.bau-taste`), es sind dieselben Griffe. */
+.pk-aufnahme .knopf { flex: 1 1 0; min-width: 0; }
+
 /* ---------------------------------------------------------------- Schmale Fenster */
 
 @media (max-width: 900px) {
@@ -2050,8 +2154,25 @@ body.baumodus #wz-relais { display: none; }
     display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
   }
   /* Im Zeichen- oder Setzmodus zählt nur die Modusleiste; die Werkzeugleiste
-     würde denselben Platz beanspruchen. */
-  body.modus-aktiv .werkzeuge { display: none; }
+     würde denselben Platz beanspruchen. Dasselbe gilt für die Punktkarte des
+     Baumodus: sie steht an derselben Stelle. */
+  body.modus-aktiv .werkzeuge,
+  body.punktkarte-offen .werkzeuge { display: none; }
+
+  /* Die Bauleiste: vier Griffe in EINER Reihe, Sinnbild über dem Wort. Zwei
+     Reihen à zwei – wie die Planungswerkzeuge – nahmen der Karte auf dem
+     Telefon ein Fünftel; so bleibt es ein Streifen von gut 50 px. Die
+     Beschriftung bleibt: vier Glyphen allein sind nicht auseinanderzuhalten,
+     und `title` zeigt kein Touchgerät an. */
+  body.baumodus .werkzeuge {
+    grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 4px;
+    width: calc(100% - 24px); max-width: 440px;
+  }
+  body.baumodus .wz {
+    flex-direction: column; gap: 3px; padding: 5px 2px; min-height: 44px;
+    font-size: 11px; line-height: 1.15; text-align: center; white-space: normal;
+  }
+  body.baumodus .wz-icon { font-size: 17px; height: 18px; }
 
   .sl-dez { display: none; }
 }
@@ -2075,6 +2196,11 @@ body.baumodus #wz-relais { display: none; }
   #sl-gps-kopie { display: none; }
   /* Gitterangabe und Herkunftszeile sollen in eine Zeile passen */
   .statusleiste { padding: 3px 8px; gap: 4px 10px; }
+  /* Die Herkunftszeile („zuletzt angetippte Position“) geht: mit gefüllter
+     Gitterangabe brach die Leiste in zwei Zeilen um, und die zweite sagte nur,
+     was der Finger eben getan hat. Die Koordinate bleibt – sie ist die Zahl,
+     die am Bauort über Funk durchgegeben wird. */
+  .sl-quelle { display: none; }
   /* Vier Kennzahlen nebeneinander lassen „309,67 km“ umbrechen – zu zweit
      stehen die Zahlen, auf die es ankommt, ungebrochen und größer da. */
   .kennzahlen { grid-template-columns: 1fr 1fr; }
@@ -2181,6 +2307,21 @@ body.baumodus #wz-relais { display: none; }
      unberührt, die Marke sitzt also weiter genau auf ihrer Koordinate. */
   .fbp-punkt { position: relative; }
   .fbp-punkt::before { content: ''; position: absolute; inset: -11px; }
+  /* Die Ist-Marke wird im Baumodus angetippt und braucht dieselbe Zone; sie
+     ist 14 bzw. 18 px groß, die Zone rechnet auf 44 auf. */
+  .fbp-istpunkt::before { content: ''; position: absolute; inset: -15px; }
+  .fbp-istpunkt.mit-kurz::before { inset: -13px; }
+  /* Die Chips der Punktkarte sind die Griffe, mit denen am Bauort benannt
+     wird – Handschuhmaß, und nur senkrecht aufgezogen, damit Nachbarn sich
+     nicht überdecken. */
+  .pk-chip { position: relative; min-height: 40px; padding: 8px 12px; }
+  .pk-chip::after { content: ''; position: absolute; inset: -2px 0; }
+  .pk-felder input { min-height: 44px; }
+  /* Der Schließgriff des Blattes trägt seine 44 px selbst: die `::after`-
+     Aufweitung des `.mini-knopf` läuft rechts in die Polsterung des Blattes
+     und wird dort beschnitten – gemessen 42×43. */
+  .pk-zu { width: 44px; height: 44px; }
+  .pk-zu::after { content: none; }
   /* Der Einfügegriff wird bewusst nicht auf 44 px gezogen: er sitzt auf der
      Mitte zwischen zwei Trassenpunkten, und bei kurzen Abschnitten schluckte
      eine 44er Zone die Punkte, auf die eigentlich gezielt wird. 32 px lösen

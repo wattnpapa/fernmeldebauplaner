@@ -18,6 +18,7 @@ import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById, dopQuel
 import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter, distanz } from './geo.js';
 import {
   bauBegonnen, baukennzahlen, istPunkte, bauabschnitte, bauabschnittById, sollZuIst,
+  punktartText, istKurz,
   materialzeilen, materialSumme, materialSoll, meldungenNachZeit, pruefzeilen,
   quelleText, uhrzeit, ABWEICHUNG_SCHWELLE
 } from './baudoku.js';
@@ -2859,17 +2860,29 @@ function baudokuLegendeHTML(s, sw, opt) {
   const abweichung = baukennzahlen(s).abweichungen.length;
 
   /* Erklärt wird, was auf DIESER Karte steht, und nichts sonst. Zwei Fallen
-     liegen hier nahe: die Punktarten der aufgenommenen Punkte aufzuzählen –
-     die Ist-Marke ist aber immer derselbe Kreis und trägt keine Form je Art –,
-     und eine Linie zu erklären, die es nicht gibt, weil noch nichts
+     liegen hier nahe: Punktarten aufzuzählen, die kein aufgenommener Punkt
+     trägt, und eine Linie zu erklären, die es nicht gibt, weil noch nichts
      aufgenommen wurde. Eine Zeichenerklärung, die mehr verspricht als das
-     Blatt hält, ist schlimmer als keine: am Bauort wird danach gesucht. */
+     Blatt hält, ist schlimmer als keine: am Bauort wird danach gesucht.
+
+     Die Ist-Marke ist immer derselbe gefüllte Kreis; die Art steht als
+     Buchstabe darin, an der Querung die Bauweise – dieselben Buchstaben wie
+     an den geplanten Punkten. Aufgezählt werden nur die, die vorkommen. */
   const zeilen = [];
   if (ist.length) {
     zeilen.push(`<span class="lg-eintrag"><i class="lg-linie lg-ist" style="--farbe:${farbe}"></i>` +
       `gebaute Trasse</span>`);
     zeilen.push(`<span class="lg-eintrag"><i class="lg-punkt-ist" style="--farbe:${farbe}"></i>` +
       `aufgenommener Punkt</span>`);
+    const buchstaben = new Map();
+    for (const pt of ist) {
+      const k = istKurz(pt);
+      if (k && !buchstaben.has(k)) buchstaben.set(k, punktartText(pt));
+    }
+    for (const [k, text] of buchstaben) {
+      zeilen.push(`<span class="lg-eintrag"><i class="lg-punkt-ist mit-kurz" style="--farbe:${farbe}">` +
+        `${escapeHtml(k)}</i>${escapeHtml(text)} (gebaut)</span>`);
+    }
   }
   if (s.punkte.length) {
     zeilen.push(`<span class="lg-eintrag"><i class="lg-linie ` +
@@ -3071,14 +3084,13 @@ function istpunkteRahmenHTML(fortsetzung) {
 
 function istpunkteZeilenHTML(s) {
   return istPunkte(s).map((pt, i) => {
-    const art = punktartById(pt.art);
     const soll = sollZuIst(s, pt);
     const nr = soll ? s.punkte.indexOf(soll) + 1 : 0;
     const weit = soll ? distanz(soll, pt) : null;
     const abschnitt = bauabschnittById(s, pt.abschnitt);
     return `<tr>
       <td class="nr">${i + 1}</td>
-      <td>${escapeHtml(art.name)}</td>
+      <td>${escapeHtml(punktartText(pt))}</td>
       <td>${escapeHtml(pt.name || '')}</td>
       <td class="mono">${escapeHtml(toMGRS(pt.lat, pt.lng, 5))}</td>
       <td>${escapeHtml(quelleText(pt))}</td>

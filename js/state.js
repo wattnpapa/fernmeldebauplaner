@@ -4,7 +4,7 @@ import { neueStromangabe } from './strom.js';
 import { neueRichtfunkangabe, BAND_ALIAS } from './richtfunk.js';
 import { STANDARD_SYMBOL, symbolBekannt } from './symbols.js';
 import {
-  QUERUNG_STANDARD, BAUWEISE_STANDARD, materialById, PRUEFARTEN
+  QUERUNG_STANDARD, BAUWEISE_STANDARD, QUERUNG_BAUWEISEN, materialById, PRUEFARTEN
 } from './vorschrift.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
 import {
@@ -12,7 +12,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 14;
+export const SCHEMA = 15;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -62,6 +62,12 @@ export const PUNKTARTEN = [
   { id: 'querung',   name: 'Querung / Kreuzung',          kurz: 'Q'  },
   { id: 'mast',      name: 'Mast / Hochführung',        kurz: 'H'  },
   { id: 'reserve',   name: 'Kabelreserve',              kurz: 'R'  },
+  /* „Sonstiges“ ist für den Bauort da: der Trupp nimmt auf, was am Ort steht,
+     und nicht jede Stelle hat einen Namen im Plan – eine Erdung, eine Durchführung
+     durch einen Zaun, ein Übergabepunkt an fremdes Gerät. Ohne diese Art landete
+     all das als „Trassenpunkt“ mit Bemerkung, und der Bogen unterschied es nicht
+     mehr von einem Punkt, an dem nichts weiter war. */
+  { id: 'sonstiges', name: 'Sonstiges',                 kurz: 'S'  },
   { id: 'ziel',      name: 'Endpunkt',                  kurz: 'E'  }
 ];
 
@@ -357,6 +363,11 @@ export function neuerIstPunkt(lat, lng, o = {}) {
     id: id(),
     lat, lng,
     art: PUNKTARTEN.some(a => a.id === o.art) ? o.art : 'punkt',
+    /* Die Bauweise gibt es nur an der Querung: Überbau, Unterbau, an einem
+       Bauwerk entlang. Vorgabe ist `null` und nicht „wie die Trasse“ wie beim
+       geplanten Punkt – am Bauort heißt kein Eintrag „nicht angegeben“, und
+       eine Vorgabe stünde auf dem Bogen wie eine Aussage des Trupps. */
+    bauweise: QUERUNG_BAUWEISEN.some(b => b.id === o.bauweise) ? o.bauweise : null,
     name: o.name || '',
     bemerkung: '',
     abschnitt: o.abschnitt || null,
@@ -1011,7 +1022,10 @@ export function migrieren(p) {
         })),
         /* Schema 13 hat die Baudokumentation eingeführt. Ältere Stände bringen
            sie nicht mit und öffnen ohne sie – eine Planung, an der noch nicht
-           gebaut wurde, sieht genauso aus wie vorher. */
+           gebaut wurde, sieht genauso aus wie vorher. Schema 15 hat dem
+           aufgenommenen Punkt die Bauweise gegeben und die Punktart
+           „Sonstiges“; `bauNormalisieren()` füllt beides aus der Vorgabe auf,
+           ein Stand von 13 oder 14 braucht deshalb keinen eigenen Schritt. */
         bau: bauNormalisieren(s.bau)
       };
     }),

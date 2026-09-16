@@ -68,8 +68,9 @@ import {
 import { relaisTitel, relaisKurz, befundLesen, masthoeheFuer, rechenwerte } from './relais.js';
 import {
   baukennzahlen, istPunkte, bauabschnitte, bauabschnittById, istZuSoll,
-  istPunktSetzen, bauabschnittAnlegen, bauabschnittLoeschen, bauSichern,
+  istPunktSetzen, istArtSetzen, bauabschnittAnlegen, bauabschnittLoeschen, bauSichern,
   sollPunktGeloescht, bauUmkehren, bauBegonnen, baustandKurz, baustrecke, baustreckeSetzen,
+  aktiverBauabschnitt, bauabschnittAktivId, bauabschnittAktivSetzen, punktartText,
   quelleText, uhrzeit, ABWEICHUNG_SCHWELLE,
   materialzeilen, materialzeile, materialSetzen, materialFreiAnlegen, materialZeileLoeschen,
   materialSumme, materialSoll, baumeldungen,
@@ -80,6 +81,11 @@ import {
   vorschlag, truppText, befund, einspielen, berichtText
 } from './baumeldung.js';
 import { meldungAlsLink, laengenUrteil } from './teilen.js';
+/* Die Ortung liegt bei der Karte des Baumodus und wird von dort eingeführt –
+   nicht umgekehrt: `baukarte.js` braucht nichts aus dieser Datei, was es nicht
+   beim Start hereingereicht bekommt, und ein Ring zwischen beiden liefe beim
+   Laden ins Leere. */
+import { istPunktAusStandort } from './baukarte.js';
 import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
@@ -3631,18 +3637,6 @@ export async function bilderUebernehmen(dateien) {
    Bau laufen zwei Trupps aufeinander zu (Hdb Feldfernkabelbau, 3.6), und der eine
    beginnt am Ende der Trasse. */
 
-/* Welchem Bauabschnitt neue Ist-Punkte zugeschlagen werden. Modulweit und
-   nicht in der Planung: das ist eine Einstellung dieses Geräts für diese
-   Sitzung – ein zweiter Trupp am zweiten Gerät hat seine eigene. */
-let bauabschnittAktiv = null;
-
-/** Der Bauabschnitt, in den gerade eingetragen wird – oder null */
-function aktiverBauabschnitt(s) {
-  const alle = bauabschnitte(s);
-  if (!alle.length) return null;
-  return alle.find(a => a.id === bauabschnittAktiv) || null;
-}
-
 export function zeichneBauListe() {
   const p = store.projekt;
   const liste = document.getElementById('bau-liste');
@@ -3707,25 +3701,56 @@ export function zeichneBauListe() {
       ? `<span class="bau-abw"><b>${k.abweichungen.length}</b> ${k.abweichungen.length === 1 ? 'Abweichung' : 'Abweichungen'}</span>`
       : '');
 
+  const bloecke = {
+    punkte: bauPunktBlock(s),
+    meldungen: bauMeldungBlock(s),
+    material: bauMaterialBlock(s, k),
+    uebergabe: bauUebergabeBlock(s, k),
+    vorrat: kartenvorratBlock(s)
+  };
   liste.appendChild(baukopfBlock(s, k));
-  liste.appendChild(kartenvorratBlock(s));
+  liste.appendChild(sprungstreifen(bloecke));
   liste.appendChild(bauabschnittBlock(s));
-  liste.appendChild(bauPunktBlock(s));
+  liste.appendChild(bloecke.punkte);
   /* Die Baumeldungen stehen VOR dem Materialnachweis, obwohl der Ablauf
      andersherum liest. Der Grund ist der Daumen: gemeldet wird laufend, nach
      jeder Kabellänge, der Bogen wird einmal am Ende gefüllt. Hinter dem
      Materialnachweis läge der Griff „Meldung jetzt“ rund tausend Bildpunkte
      tief im Blatt – genau der Griff, der am häufigsten gebraucht wird. */
-  liste.appendChild(bauMeldungBlock(s));
-  liste.appendChild(bauMaterialBlock(s, k));
+  liste.appendChild(bloecke.meldungen);
+  liste.appendChild(bloecke.material);
   liste.appendChild(bauSchlussBlock(s, k));
-  liste.appendChild(bauUebergabeBlock(s, k));
+  liste.appendChild(bloecke.uebergabe);
   liste.appendChild(bauRueckwegBlock(s));
+  /* Der Kachelvorrat steht ganz am Ende. Er stand zuerst vorn – anderthalb
+     Bildschirme, bevor der erste Trassenpunkt kam –, dabei geschieht das
+     Mitnehmen im Depot und nie am Bauort. Wer es braucht, hat den Sprung
+     dorthin oben im Streifen. */
+  liste.appendChild(bloecke.vorrat);
 
   if (marke) {
     const wieder = liste.querySelector(`[data-bau-feld="${CSS.escape(marke)}"]`);
     if (wieder) wieder.focus();
   }
+}
+
+/* Der Sprungstreifen: die Liste des Bau-Reiters ist rund fünftausend
+   Bildpunkte lang, und am Bauort wird darin nach einer Stelle gesucht, nicht
+   gelesen. Fünf Chips springen an die Blöcke, die dort gebraucht werden;
+   gerollt wird im Reiterinhalt, in dem die Liste steht. */
+function sprungstreifen(bloecke) {
+  const streifen = el('nav', 'bau-sprung');
+  streifen.setAttribute('aria-label', 'Im Bau-Reiter springen');
+  const ziele = [
+    ['punkte', 'Punkte'], ['meldungen', 'Meldungen'], ['material', 'Material'],
+    ['uebergabe', 'Übergabe'], ['vorrat', 'Karte mitnehmen']
+  ];
+  for (const [schluessel, text] of ziele) {
+    streifen.appendChild(knopf(text, () => {
+      bloecke[schluessel].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 'klein'));
+  }
+  return streifen;
 }
 
 /** Ein Feld, das den Fokus über den Neuaufbau der Liste behält */
@@ -3943,14 +3968,15 @@ function bauabschnittBlock(s) {
     /* Der Zustand steht als Wort daneben und nicht nur in der Farbe: am Bauort
        gibt es keinen `title`, und ein Knopf, der wie eine Überschrift aussieht,
        wird nicht gedrückt – dann trägt kein einziger Punkt seinen Trupp. */
-    const marke = el('button', 'ba-marke' + (a.id === bauabschnittAktiv ? ' aktiv' : ''),
+    const aktivHier = a.id === bauabschnittAktivId();
+    const marke = el('button', 'ba-marke' + (aktivHier ? ' aktiv' : ''),
       `<span class="ba-name">${escapeHtml(a.name)}</span>` +
-      `<span class="ba-zustand">${a.id === bauabschnittAktiv
+      `<span class="ba-zustand">${aktivHier
         ? 'nimmt neue Punkte auf' : 'antippen, um hier einzutragen'}</span>`);
     marke.type = 'button';
-    marke.setAttribute('aria-pressed', String(a.id === bauabschnittAktiv));
+    marke.setAttribute('aria-pressed', String(aktivHier));
     marke.onclick = () => {
-      bauabschnittAktiv = bauabschnittAktiv === a.id ? null : a.id;
+      bauabschnittAktivSetzen(aktivHier ? null : a.id);
       zeichneBauListe();
     };
     kopf.appendChild(marke);
@@ -3958,7 +3984,7 @@ function bauabschnittBlock(s) {
     weg.title = `${a.name} löschen`;
     weg.onclick = () => {
       store.aendern(() => bauabschnittLoeschen(s, a.id), 'bau');
-      if (bauabschnittAktiv === a.id) bauabschnittAktiv = null;
+      if (bauabschnittAktivId() === a.id) bauabschnittAktivSetzen(null);
       hinweis(`${a.name} gelöscht – die aufgenommenen Punkte bleiben stehen. ` +
         '„Rückgängig“ in der Kopfzeile holt die Zuordnung zurück.');
     };
@@ -3982,7 +4008,7 @@ function bauabschnittBlock(s) {
   tasten.appendChild(knopf('+ Bauabschnitt', () => {
     let neu = null;
     store.aendern(() => { neu = bauabschnittAnlegen(s); }, 'bau');
-    if (neu) bauabschnittAktiv = neu.id;
+    if (neu) bauabschnittAktivSetzen(neu.id);
     zeichneBauListe();
   }, 'klein'));
   box.appendChild(tasten);
@@ -4011,7 +4037,7 @@ function bauPunktBlock(s) {
   }
 
   const tasten = el('div', 'tastenreihe bau-tasten');
-  tasten.appendChild(knopf('⌖ Punkt hier', () => istPunktAusStandort(s.id, null),
+  tasten.appendChild(knopf('◉ Punkt hier', () => istPunktAusStandort(s.id, null),
     'bau-taste'));
   tasten.appendChild(knopf('✛ Punkt auf Karte', () => {
     ctx.sl.starteIstSetzen(s.id, { abschnitt: aktiv ? aktiv.id : null });
@@ -4052,6 +4078,11 @@ function bauPunktZeile(s, pt, i) {
       `<span class="bp-haken">✓ gebaut</span>
        <span class="bp-quelle">${escapeHtml(quelleText(ist))}</span>` +
       (uhrzeit(ist.zeit) ? `<span class="bp-zeit">${escapeHtml(uhrzeit(ist.zeit))}</span>` : '') +
+      /* Wurde am Bauort etwas anderes gebaut als geplant – eine Muffe, wo ein
+         Trassenpunkt stand –, steht es hier: die Art des Ist-Punktes ist die
+         Aussage des Trupps, die Zeile darüber die des Plans. */
+      (punktartText(ist) !== punktartText(pt)
+        ? `<span class="bp-istart">gebaut als ${escapeHtml(punktartText(ist))}</span>` : '') +
       (abschnitt ? `<span class="bp-trupp">${escapeHtml(abschnitt.trupp || abschnitt.name)}</span>` : '') +
       (abw >= ABWEICHUNG_SCHWELLE
         ? `<span class="bp-abweichung">${escapeHtml(formatLaenge(abw))} abweichend</span>`
@@ -4078,9 +4109,12 @@ function bauPunktZeile(s, pt, i) {
     }
 
     const tasten = el('div', 'tastenreihe');
-    tasten.appendChild(knopf('Standort neu holen', () => istPunktAusStandort(s.id, pt.id), 'klein'));
+    /* Beide Griffe ERSETZEN die Aufnahme, sie legen keine zweite an – und
+       lassen, was der Trupp am Punkt eingetragen hat (`istPunktSetzen`). */
+    tasten.appendChild(knopf('Standort neu holen', () =>
+      istPunktAusStandort(s.id, pt.id, { ersetzt: ist.id }), 'klein'));
     tasten.appendChild(knopf('Auf Karte verschieben', () => {
-      ctx.sl.starteIstSetzen(s.id, { sollPunkt: pt.id, art: pt.art,
+      ctx.sl.starteIstSetzen(s.id, { sollPunkt: pt.id, ersetzt: ist.id,
         abschnitt: ist.abschnitt || (aktiverBauabschnitt(s) || {}).id || null });
       ctx.modusAnzeigen?.();
       ctx.zurKarte?.();
@@ -4098,18 +4132,22 @@ function bauPunktZeile(s, pt, i) {
   }
 
   const tasten = el('div', 'tastenreihe bau-tasten');
+  /* Die Bauweise der geplanten Querung geht mit: „wie geplant“ heißt auch
+     „so gequert wie geplant“. An jeder anderen Art gibt es keine. */
+  const bauweise = pt.art === 'querung' ? pt.bauweise : null;
   tasten.appendChild(knopf('✓ wie geplant', () => {
     const a = aktiverBauabschnitt(s);
     store.aendern(() => {
       istPunktSetzen(s, pt.lat, pt.lng,
-        { sollPunkt: pt.id, art: pt.art, name: pt.name, quelle: 'plan',
+        { sollPunkt: pt.id, art: pt.art, bauweise, name: pt.name, quelle: 'plan',
           abschnitt: a ? a.id : null });
     }, 'bau');
   }, 'bau-taste primaer'));
-  tasten.appendChild(knopf('⌖ hier', () => istPunktAusStandort(s.id, pt.id), 'bau-taste'));
+  tasten.appendChild(knopf('◉ hier', () => istPunktAusStandort(s.id, pt.id), 'bau-taste'));
   tasten.appendChild(knopf('✛ Karte', () => {
     const a = aktiverBauabschnitt(s);
-    ctx.sl.starteIstSetzen(s.id, { sollPunkt: pt.id, art: pt.art, abschnitt: a ? a.id : null });
+    ctx.sl.starteIstSetzen(s.id, { sollPunkt: pt.id, art: pt.art, bauweise,
+      abschnitt: a ? a.id : null });
     ctx.modusAnzeigen?.();
     ctx.zurKarte?.();
     hinweis('Auf die Karte tippen, wo der Punkt wirklich liegt.');
@@ -4135,8 +4173,18 @@ function bauZusatzZeile(s, pt) {
 
   const felder = el('div', 'bp-felder');
   felder.appendChild(merkeFeld(feld('Art', pt.art, w => {
-    store.aendern(() => { pt.art = w; }, 'bau');
+    store.aendern(() => istArtSetzen(pt, w), 'bau');
   }, { typ: 'select', werte: PUNKTARTEN.map(a => [a.id, a.name]) }), 'art-' + pt.id));
+  /* Die Bauweise nur an der Querung – dieselbe Regel wie am geplanten Punkt
+     und auf der Punktkarte. „nicht angegeben“ ist eine eigene Wahl: der Trupp
+     hat sie dann nicht eingetragen, und das steht so auf dem Bogen. */
+  if (pt.art === 'querung') {
+    felder.appendChild(merkeFeld(feld('Bauweise', pt.bauweise || '', w => {
+      store.aendern(() => { pt.bauweise = w || null; }, 'bau');
+    }, { typ: 'select', werte: [['', 'nicht angegeben'],
+                                 ...QUERUNG_BAUWEISEN.map(b => [b.id, b.name])] }),
+      'bauweise-' + pt.id));
+  }
   felder.appendChild(feld('Bezeichnung', pt.name, w => schreib(() => { pt.name = w; }),
     { platzhalter: 'z. B. Mast an der Scheune' }));
   zeile.appendChild(felder);
@@ -4150,49 +4198,6 @@ function bauZusatzZeile(s, pt) {
   }, 'klein gefahr'));
   zeile.appendChild(tasten);
   return zeile;
-}
-
-/* Die Ortung durch das Gerät. Sie ist der einzige der drei Wege, der
-   schiefgehen kann – im Gebäude, unter Bewuchs, ohne Freigabe –, und meldet das
-   im Klartext: ein Punkt, der still auf einer alten Position landet, wäre
-   schlimmer als keiner.
-
-   Gehalten werden nur die KENNUNGEN von Strecke und Punkt, nicht die Objekte.
-   Zwischen dem Griff und der Antwort des Geräts liegen bis zu zwölf Sekunden,
-   und in dieser Zeit kann ein Rückgängig, ein Wiederholen oder ein Stand vom
-   angebundenen Speicher den ganzen Objektbaum austauschen (`store.undo` in
-   `state.js` setzt `projekt` neu). Ein festgehaltenes Streckenobjekt gehörte
-   danach zu keiner Planung mehr: die Aufnahme liefe ins Leere, während die
-   Meldung „Aufgenommen“ sagt. Derselbe Grund, aus dem der Kartenweg in
-   `strecken.js` die Strecke erst im Klickmoment nachschlägt. */
-function istPunktAusStandort(sid, sollPunktId) {
-  if (!navigator.geolocation) return hinweis('Dieses Gerät liefert keine Position.', 'fehler');
-  hinweis('Position wird ermittelt …');
-  const abschnittId = (aktiverBauabschnitt(store.strecke(sid)) || {}).id || null;
-  navigator.geolocation.getCurrentPosition(pos => {
-    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-    const s = store.strecke(sid);
-    if (!s) return hinweis('Die Strecke gibt es nicht mehr – nichts aufgenommen.', 'fehler');
-    const sollPunkt = sollPunktId ? s.punkte.find(pt => pt.id === sollPunktId) : null;
-    /* Der Bauabschnitt wird noch einmal geprüft: er kann in der Wartezeit
-       gelöscht worden sein, und ein Verweis ins Leere machte den Punkt
-       truppenlos, ohne dass es jemand sieht. */
-    const abschnitt = bauabschnittById(s, abschnittId);
-    store.aendern(() => {
-      istPunktSetzen(s, lat, lng, {
-        sollPunkt: sollPunkt ? sollPunkt.id : null,
-        art: sollPunkt ? sollPunkt.art : 'punkt',
-        name: sollPunkt ? sollPunkt.name : '',
-        quelle: 'standort', genauigkeit: accuracy,
-        abschnitt: abschnitt ? abschnitt.id : null
-      });
-    }, 'bau');
-    const abw = sollPunkt ? distanz(sollPunkt, { lat, lng }) : null;
-    hinweis(abw !== null && abw >= ABWEICHUNG_SCHWELLE
-      ? `Aufgenommen: ${toMGRS(lat, lng, 5)} (±${Math.round(accuracy)} m) – ${formatLaenge(abw)} vom Plan`
-      : `Aufgenommen: ${toMGRS(lat, lng, 5)} (±${Math.round(accuracy)} m)`);
-  }, err => hinweis('Position nicht verfügbar: ' + err.message, 'fehler'),
-     { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
 }
 
 /* Was der Truppführer dem S 6 meldet, steht am Ende der Liste: die Abweichung
@@ -5262,6 +5267,24 @@ export function hilfeDialog() {
               <b>Sicherungsdatei</b> gehen sie mit ein – sie wird dadurch entsprechend groß.</li>
           <li>Sie erscheinen <b>nicht</b> im Bauauftrag, nicht auf der Lagekarte und nicht
               in GeoJSON, GPX oder KML.</li>
+        </ul>
+        <h3>Baumodus</h3>
+        <p>In der Kopfzeile auf <b>Baumodus</b> schalten: die Anwendung zeigt dann, was am
+           Bauort gebraucht wird, und hält fest, was gebaut wurde – die Planung bleibt
+           unangetastet. Am Bauort geht es über die Karte:</p>
+        <ul>
+          <li>Unten <b>Punkt hier</b>: der Standort des Geräts wird als gebauter Punkt
+              aufgenommen. <b>Auf Karte</b>: der nächste Tipp auf die Karte ist der Punkt.</li>
+          <li>Eine <b>geplante Marke antippen</b>: <b>Wie geplant</b> bestätigt sie,
+              <b>Hier</b> nimmt den Standort, <b>Auf Karte</b> die angetippte Stelle.
+              Geplante Punkte lassen sich im Baumodus nicht verschieben.</li>
+          <li>Nach jeder Aufnahme fragt die <b>Punktkarte</b> „Was ist hier?“ – ein Tipp auf
+              Trassenpunkt, Muffe, Reserve, Mast, Querung, Verteiler oder Sonstiges genügt;
+              an der Querung noch einer auf Überbau, Unterbau oder an Brücke. Dazu die
+              Bemerkung. Ein Tipp auf eine gebaute Marke öffnet sie wieder.</li>
+          <li>Im Reiter <b>Bau</b> steht dasselbe als Liste, dazu Bauabschnitte,
+              Baumeldungen, Materialnachweis, Meldung an den S 6, Übergabe und ganz unten
+              die Karte zum Mitnehmen. Der Sprungstreifen unter der Summe führt hin.</li>
         </ul>
         <h3>Koordinaten</h3>
         <p>Unten steht die Koordinate der Stelle, über der die Maus steht oder die zuletzt

@@ -208,7 +208,7 @@ try {
 
   b.abschnitt('Sichere Bereiche überall, nicht nur in der Schmalansicht');
   for (const wahl of ['.kopf', '.statusleiste', '.werkzeuge', '.kartenoptionen',
-                      '.zeichen-hinweis', '.dialog-huelle', '.hinweisbox', '#druck']) {
+                      '.zeichen-hinweis', '.punktkarte', '.dialog-huelle', '.hinweisbox', '#druck']) {
     b.pruefe(await seite.auswerten(`window._g.sichererRand(${JSON.stringify(wahl)})`),
       `${wahl} berücksichtigt den Rand des Geräts`);
   }
@@ -270,6 +270,98 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     return { hUnten: Math.round(h.bottom), wOben: Math.round(w.top) };`);
   b.pruefe(lage.hUnten <= lage.wOben,
     `Unterkante ${lage.hUnten} liegt über der Oberkante des Umschalters ${lage.wOben}`);
+
+  // ------------------------------------------------------------ Dateimenü über der Liste
+
+  b.abschnitt('Das Dateimenü liegt schmal über der Liste, nicht dahinter');
+  /* Die Kopfzeile lag mit 900 unter der Seitenleiste (1100): sichtbar waren
+     zwei Einträge im Band darunter, der Rest stand hinter der Liste. Gemessen
+     wird mit elementFromPoint – ein verdeckter Eintrag gibt die Liste zurück. */
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.ruhe();
+  await seite.klick('#btn-datei');
+  await seite.warteAuf('!document.querySelector(".menu").hidden');
+  const menueFrei = await seite.auswerten(`
+    const eintraege = [...document.querySelectorAll('.menu button')].filter(window._g.imBild);
+    return { anzahl: eintraege.length,
+             verdeckt: eintraege.filter(e => window._g.treffer(e).verdeckt).length };`);
+  b.pruefe(menueFrei.anzahl >= 5 && menueFrei.verdeckt === 0,
+    `${menueFrei.anzahl} Einträge im Bild, ${menueFrei.verdeckt} davon verdeckt`);
+  await seite.taste('Escape');
+
+  // ------------------------------------------------------------ Baumodus auf dem Telefon
+
+  b.abschnitt('Baumodus auf dem Telefon: die Karte bleibt frei');
+  await seite.klick('#btn-modus');
+  await seite.auswerten('document.getElementById("aw-karte").click(); return true;');
+  /* Die Liste schiebt sich in 280 ms zur Seite – gemessen wird, wo alles
+     stehen bleibt. */
+  await new Promise(r => setTimeout(r, 450));
+  if (await seite.auswerten('document.getElementById("ko-kopf").getAttribute("aria-expanded") === "true"')) {
+    await seite.klick('#ko-kopf');
+  }
+  const bauKarte = await seite.auswerten(`
+    const k = document.getElementById('karte').getBoundingClientRect();
+    const w = document.querySelector('.werkzeuge').getBoundingClientRect();
+    const ko = document.querySelector('.kartenoptionen').getBoundingClientRect();
+    const sl = document.querySelector('.statusleiste').getBoundingClientRect();
+    return { karte: Math.round(k.height), werkzeuge: Math.round(w.height),
+             frei: Math.round(w.top - ko.bottom), statusleiste: Math.round(sl.height) };`);
+  b.pruefe(bauKarte.werkzeuge <= 64,
+    `Die Bauleiste ist ein Streifen: ${bauKarte.werkzeuge} px hoch (höchstens 64)`);
+  /* Gemessen: rund 350 von 676 px. Oben stehen Zoomsteuerung und der Kopf
+     der Kartenoptionen, unten Bauleiste, Maßstab, Quellenzeile und
+     Statusleiste – die Hälfte der Karte bleibt frei, und eine Zeile mehr an
+     einer dieser Leisten fiele hier durch. */
+  b.pruefe(bauKarte.frei >= bauKarte.karte * 0.5,
+    `Zwischen Kartenoptionen und Bauleiste bleiben ${bauKarte.frei} von ${bauKarte.karte} px frei`);
+  /* Eine Zeile misst 34 px, zwei rund 60. */
+  b.pruefe(bauKarte.statusleiste <= 36, `Die Statusleiste ist einzeilig (${bauKarte.statusleiste} px)`);
+  const bauGriffe = await zuKleineGriffe('.werkzeuge', 'button');
+  b.gleich(bauGriffe.length, 0, 'Bauleiste: jeder Griff trägt 44 px' +
+    (bauGriffe.length ? ' – zu klein: ' + bauGriffe.join(', ') : ''));
+  await seite.klick('#ko-kopf');
+  await seite.ruhe();
+  const koZeilen = await seite.auswerten(
+    '[...document.querySelectorAll(".ko-zeile")].filter(z => z.getClientRects().length).length');
+  b.gleich(koZeilen, 4, `Die Kartenoptionen zeigen im Baumodus vier Zeilen (${koZeilen})`);
+  await seite.klick('#ko-kopf');
+
+  b.abschnitt('Die Punktkarte ist mit dem Finger zu bedienen');
+  await seite.auswerten('document.querySelector(".fbp-punkt").click(); return true;');
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden');
+  const aufnahme = await zuKleineGriffe('#punktkarte', 'button');
+  b.gleich(aufnahme.length, 0, 'Offener Punkt: jeder Griff trägt 44 px' +
+    (aufnahme.length ? ' – zu klein: ' + aufnahme.join(', ') : ''));
+  await seite.auswerten(`
+    [...document.querySelectorAll('#punktkarte button')]
+      .find(b => b.textContent.includes('Wie geplant')).click(); return true;`);
+  await seite.warteAuf('!!document.querySelector("#punktkarte .pk-chip")');
+  const pkGriffe = await zuKleineGriffe('#punktkarte', 'button, input');
+  b.gleich(pkGriffe.length, 0, 'Aufgenommener Punkt: jeder Griff trägt 44 px' +
+    (pkGriffe.length ? ' – zu klein: ' + pkGriffe.join(', ') : ''));
+  const pkFelder = await seite.auswerten('window._g.zuKlein(document.getElementById("punktkarte"))');
+  b.gleich(pkFelder.length, 0, 'Punktkarte: alle Felder tragen 16 px' +
+    (pkFelder.length ? ' – zu klein: ' + pkFelder.join(', ') : ''));
+  const pkLage = async () => seite.auswerten(`
+    const p = document.getElementById('punktkarte');
+    const r = p.getBoundingClientRect();
+    const k = document.getElementById('karte').getBoundingClientRect();
+    return { oben: Math.round(r.top), unten: Math.round(r.bottom), karteOben: Math.round(k.top),
+             schirm: innerHeight, rollt: getComputedStyle(p).overflowY === 'auto' };`);
+  const hoch = await pkLage();
+  b.pruefe(hoch.unten <= hoch.schirm && hoch.oben >= hoch.karteOben,
+    `Hochkant steht das Blatt ganz im Kartenbereich (${hoch.oben}–${hoch.unten}, Karte ab ${hoch.karteOben})`);
+  await stelleEin(844, 390);
+  const quer = await pkLage();
+  b.pruefe(quer.unten <= quer.schirm && quer.oben >= quer.karteOben && quer.rollt,
+    `Quer bleibt es im Kartenbereich und rollt (${quer.oben}–${quer.unten} im ${quer.schirm} hohen Fenster)`);
+  await stelleEin(390, 844);
+  await seite.taste('Escape');
+  b.pruefe(await seite.auswerten('document.getElementById("punktkarte").hidden'), 'Esc schließt das Blatt');
+  await seite.klick('#btn-modus');
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.ruhe();
 
   // ------------------------------------------------------------ Querformat
 

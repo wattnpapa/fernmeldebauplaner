@@ -74,7 +74,7 @@ try {
   await seite.oeffne(adresse);
   await seite.warteAuf('!!window.fbp');
   b.pruefe(await seite.sichtbar('#karte'), 'Karte steht');
-  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 14, 'Schema 14');
+  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 15, 'Schema 15');
   b.gleich(await seite.text('#btn-modus'), 'Baumodus', 'Der Umschalter bietet den Baumodus an');
   b.pruefe(await seite.auswerten('document.querySelector("#reiter-bau").hidden'),
     'Der Bau-Reiter steht im Planungsmodus nicht da');
@@ -187,7 +187,7 @@ try {
   await seite.warteAuf(
     'window.fbp.store.projekt.strecken[0].bau.abschnitte[0].name === "Nordabschnitt"', 3000);
   b.pruefe(true, 'Die Bezeichnung des Bauabschnitts wird geschrieben');
-  await taste('.bau-punkte', '⌖ Punkt hier');
+  await taste('.bau-punkte', 'Punkt hier');
   await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.punkte.length === 4', 10000);
   /* Gesucht wird über den fehlenden Bezug zur Planung und nicht über die
      Stelle in der Liste: ein zusätzlicher Punkt hängt sich neben seinen
@@ -409,6 +409,148 @@ try {
   await seite.ruhe();
   b.gleich(await bau('bau.pruefung.staemme.length'), 1, 'Der zweite Stamm ist wieder weg');
 
+  // ------------------------------------------------------------ Karte im Baumodus
+
+  /* Der zweite Weg zu denselben Eintragungen: nicht über die Liste, sondern
+     über die Karte – Bauleiste und Punktkarte aus `js/baukarte.js`. Beides
+     schreibt in denselben `bau`-Block; geprüft wird deshalb am Block. */
+  const punktkarte = () => seite.auswerten('!document.getElementById("punktkarte").hidden');
+  const chipWaehlen = async wert => {
+    await seite.auswerten(`
+      const c = [...document.querySelectorAll('#punktkarte .pk-chip')]
+        .find(x => x.dataset.wert === ${JSON.stringify(wert)});
+      if (!c) throw new Error('Chip fehlt: ' + ${JSON.stringify(wert)});
+      c.click(); return true;`);
+    await seite.ruhe();
+  };
+  const blattTaste = async text => {
+    await seite.auswerten(`
+      const k = [...document.querySelectorAll('#punktkarte button')]
+        .find(x => x.textContent.includes(${JSON.stringify(text)}));
+      if (!k) throw new Error('Taste fehlt auf der Punktkarte: ' + ${JSON.stringify(text)});
+      k.click(); return true;`);
+    await seite.ruhe();
+  };
+
+  /* Der Bauabschnitt nimmt hier nicht auf: die späteren Abschnitte zählen,
+     wie viele Punkte einem Trupp zugeordnet sind, und was hier zurückgenommen
+     und wieder bestätigt wird, soll dieselbe Zuordnung tragen wie vorher. */
+  await seite.klick('.ba-marke.aktiv');
+  b.gleich(await seite.anzahl('.ba-marke.aktiv'), 0, 'Kein Bauabschnitt nimmt auf');
+
+  b.abschnitt('Die Bauleiste steht auf der Karte');
+  b.pruefe(await seite.sichtbar('#wz-punkt-hier'), '„Punkt hier“ steht in der Werkzeugleiste');
+  b.pruefe(await seite.sichtbar('#wz-punkt-karte'), '„Auf Karte“ steht in der Werkzeugleiste');
+  b.pruefe(await seite.sichtbar('#wz-standort'), '„Standort“ bleibt');
+  b.pruefe(await seite.auswerten('!document.querySelector("#wz-strecke").offsetParent'),
+    'Die Planungswerkzeuge bleiben weg');
+  b.pruefe(!(await punktkarte()), 'Die Punktkarte ist zu, solange niemand einen Punkt antippt');
+
+  b.abschnitt('Der geplante Punkt wird angetippt, nicht gezogen');
+  await seite.auswerten('window.fbp.sl.waehle(window.fbp.store.projekt.strecken[0].id); return true;');
+  await seite.ruhe();
+  b.gleich(await seite.anzahl('.leaflet-marker-draggable'), 0,
+    'Keine Marke ist im Baumodus ziehbar – der Plan bleibt, wie er ist');
+  b.gleich(await seite.anzahl('.fbp-einfuegen'), 0, 'Keine Einfügegriffe zwischen den Punkten');
+
+  b.abschnitt('Ein Tipp auf die gebaute Marke schlägt die Punktkarte auf');
+  await seite.auswerten('document.querySelector(".fbp-istpunkt").click(); return true;');
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden');
+  b.pruefe(true, 'Die Punktkarte steht');
+  b.pruefe(await seite.anzahl('#punktkarte .pk-chip') >= 7, 'Sieben Arten zur Wahl');
+  const artenVorher = await bau('bau.punkte.map(pt => pt.art).join()');
+  await chipWaehlen('reserve');
+  const artenNachher = await bau('bau.punkte.map(pt => pt.art).join()');
+  b.pruefe(artenVorher !== artenNachher &&
+           artenNachher.split(',').filter(a => a === 'reserve').length === 1,
+    'Genau ein Punkt ist jetzt eine Kabelreserve');
+  b.pruefe(await punktkarte(), 'Die Punktkarte bleibt nach der Wahl offen');
+  /* Nicht gezählt, sondern gelesen: die Marke des Anfangspunktes trägt schon
+     ein A – wird sie zur Reserve, wechselt der Buchstabe, die Zahl bleibt. */
+  b.pruefe(await seite.auswerten(
+    '[...document.querySelectorAll(".fbp-istpunkt.mit-kurz")].some(m => m.textContent === "R")'),
+    'Eine Ist-Marke trägt jetzt das R der Kabelreserve');
+
+  b.abschnitt('Die Querung fragt nach der Bauweise');
+  b.gleich(await seite.anzahl('#punktkarte .pk-chip[data-wert="ueberbau"]'), 0,
+    'Ohne Querung keine Bauweise zur Wahl');
+  await chipWaehlen('querung');
+  b.pruefe(await seite.anzahl('#punktkarte .pk-chip[data-wert="ueberbau"]') === 1,
+    'An der Querung stehen die Bauweisen');
+  await chipWaehlen('ueberbau');
+  b.pruefe(await bau('bau.punkte.some(pt => pt.art === "querung" && pt.bauweise === "ueberbau")'),
+    'Der Überbau ist am Punkt eingetragen');
+  b.pruefe(await seite.auswerten(
+    '[...document.querySelectorAll(".fbp-istpunkt.mit-kurz")].some(m => m.textContent === "Ü")'),
+    'Die Marke zeigt das Ü der Bauweise');
+  await chipWaehlen('punkt');
+  b.pruefe(await bau('bau.punkte.every(pt => pt.art === "querung" || pt.bauweise === null)'),
+    'Zurück zum Trassenpunkt nimmt die Bauweise mit weg');
+
+  b.abschnitt('Die Bemerkung schreibt, ohne das Blatt zu schließen');
+  await seite.schreibe('#punktkarte .pk-bemerkung', 'Wurzelwerk');
+  await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.punkte.some(pt => pt.bemerkung === "Wurzelwerk")', 3000);
+  b.pruefe(true, 'Die Bemerkung steht am Punkt');
+  b.pruefe(await punktkarte(), 'Das Blatt steht noch – die Eingabe hat es nicht neu aufgebaut');
+  await blattTaste('Fertig');
+  b.pruefe(!(await punktkarte()), '„Fertig“ schließt es');
+
+  b.abschnitt('Der geplante Punkt: zurücknehmen und wieder bestätigen, alles auf der Karte');
+  await seite.auswerten('document.querySelector(".fbp-punkt").click(); return true;');
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden');
+  b.pruefe(/Punkt 1/.test(await seite.text('#punktkarte .pk-titel') || ''),
+    'Das Blatt zeigt Punkt 1');
+  await blattTaste('Zurücknehmen');
+  b.gleich(await bau('bau.punkte.length'), 3, 'Die Aufnahme ist zurückgenommen');
+  b.pruefe(!(await punktkarte()), 'Das Blatt ist zu');
+  await seite.auswerten('document.querySelector(".fbp-punkt").click(); return true;');
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden');
+  b.pruefe(/noch nicht gebaut/.test(await seite.text('#punktkarte') || ''),
+    'Der offene Punkt bietet die drei Wege an');
+  await blattTaste('Wie geplant');
+  b.gleich(await bau('bau.punkte.length'), 4, 'Der Punkt ist wieder bestätigt');
+  b.pruefe(await bau('bau.punkte.some(pt => pt.sollPunkt === s.punkte[0].id && pt.quelle === "plan")'),
+    'Quelle: aus dem Plan');
+  b.pruefe(await seite.anzahl('#punktkarte .pk-chip') >= 7,
+    'Das Blatt zeigt jetzt die Aufnahme und fragt, was hier ist');
+  await seite.taste('Escape');
+  b.pruefe(!(await punktkarte()), 'Esc schließt das Blatt');
+
+  b.abschnitt('„Auf Karte“ aus der Bauleiste');
+  await seite.klick('#wz-punkt-karte');
+  b.pruefe(await seite.auswerten('!document.querySelector("#zeichen-hinweis").hidden'),
+    'Die Modusleiste sagt, dass der nächste Tipp zählt');
+  await seite.klickeKarte(700, 560);
+  await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.punkte.length === 5');
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden');
+  b.pruefe(/Zusätzlicher Punkt/.test(await seite.text('#punktkarte .pk-titel') || ''),
+    'Der neue Punkt steht als zusätzlicher auf dem Blatt');
+  await blattTaste('Löschen');
+  b.gleich(await bau('bau.punkte.length'), 4, '„Löschen“ nimmt ihn wieder weg');
+
+  b.abschnitt('Das Koordinaten-Popup bietet im Baumodus die Aufnahme an');
+  await seite.auswerten(`
+    const f = window.fbp; f.sl.auswahl = null; f.zl.auswahl = null; f.fl.auswahl = null;
+    f.sl.zeichne(); return true;`);
+  await seite.klickeKarte(640, 620);
+  await seite.warteAuf('!!document.querySelector(".koord-popup [data-kp=ist]")');
+  b.gleich(await seite.anzahl('.koord-popup [data-kp=strecke]'), 0,
+    '„Neue Strecke ab hier“ steht im Baumodus nicht da');
+  await seite.klick('.koord-popup [data-kp=ist]');
+  await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.punkte.length === 5');
+  b.gleich(await bau('bau.punkte.filter(pt => pt.quelle === "karte").length >= 1'), true,
+    'Der Punkt kommt von der Karte');
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden');
+  await blattTaste('Löschen');
+  b.gleich(await bau('bau.punkte.length'), 4, 'Wieder vier Punkte');
+  /* Zurück zum Stand vor diesem Abschnitt: der Bauabschnitt nimmt wieder auf,
+     und genau ein Punkt – der zusätzliche – trägt ihn. Der Anfangspunkt trägt
+     wieder seine Art; die Reserve war eine Probe. */
+  await seite.klick('.ba-marke');
+  b.gleich(await seite.anzahl('.ba-marke.aktiv'), 1, 'Der Bauabschnitt nimmt wieder auf');
+  b.gleich(await bau('bau.punkte.filter(pt => pt.abschnitt).length'), 1,
+    'Weiterhin trägt genau ein Punkt den Bauabschnitt');
+
   // ------------------------------------------------------------ Schmalansicht
 
   b.abschnitt('Schmalansicht mit Berührung');
@@ -453,6 +595,16 @@ try {
   b.pruefe(!(await seite.auswerten('document.body.classList.contains("baumodus")')),
     'Die Modusklasse ist weg');
   b.pruefe(await seite.sichtbar('#wz-strecke'), 'Das Streckenwerkzeug ist wieder da');
+  b.pruefe(await seite.auswerten('!document.querySelector("#wz-punkt-hier").offsetParent'),
+    'Die Bauleiste ist weg');
+  await seite.auswerten('window.fbp.sl.waehle(window.fbp.store.projekt.strecken[0].id); return true;');
+  await seite.ruhe();
+  b.pruefe(await seite.anzahl('.fbp-einfuegen') >= 1,
+    'Die Einfügegriffe sind in der Planung wieder da');
+  /* Die Auswahl wieder lösen: die Streckenkarte in der Liste ist offen, solange
+     die Strecke gewählt ist, und der nächste Abschnitt klappt sie selbst auf. */
+  await seite.auswerten('window.fbp.sl.waehle(null); return true;');
+  await seite.ruhe();
   b.pruefe(await seite.anzahl('.bau-zeile') >= 1,
     'Die Streckenliste meldet, dass an dieser Strecke gebaut wird');
 
