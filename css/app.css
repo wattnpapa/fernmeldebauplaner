@@ -1324,6 +1324,23 @@ body.modus-aktiv .kartenoptionen { display: none; }
 .fbp-punkt.gewaehlt { width: 26px; height: 26px; box-shadow: 0 0 0 3px rgba(0,51,153,.25), 0 1px 4px rgba(0,0,0,.4); }
 .fbp-punkt.aktiv { box-shadow: 0 0 0 4px rgba(0,51,153,.45), 0 1px 4px rgba(0,0,0,.4); }
 
+/* Der Ring, der beim „Auf der Karte zeigen“ um den Punkt schlägt
+   (`zeigePunkt` in strecken.js). In der Streckenfarbe wäre er auf der
+   eigenen Linie unsichtbar, deshalb THW-Blau mit weißem Saum. Kein
+   `fill-mode`: nach dem letzten Schlag – und bei abgestellter Bewegung
+   sofort – steht der Ring in seiner Grundgröße, bis strecken.js ihn abräumt. */
+.fbp-puls { background: none; border: 0; pointer-events: none; }
+.fbp-puls > span {
+  display: block; width: 48px; height: 48px; border-radius: 50%;
+  border: 3px solid var(--thw);
+  box-shadow: 0 0 0 2px #fff, inset 0 0 0 2px #fff;
+  animation: punkt-puls 800ms ease-out 3;
+}
+@keyframes punkt-puls {
+  from { transform: scale(.4); opacity: 1; }
+  to   { transform: scale(1.3); opacity: 0; }
+}
+
 /* Taktisches Zeichen einer Punktart (Verteiler). Kein Schlagschatten wie bei
    den frei gesetzten Zeichen: dieses hier steht auch im Bauauftrag, und Firefox
    gibt Seitenbereiche mit CSS-`filter` beim Drucken gar nicht aus. */

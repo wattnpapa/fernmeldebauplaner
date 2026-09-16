@@ -539,6 +539,10 @@ function bedarfsHerkunft(k) {
  * Wird sowohl für die Arbeitskarte als auch für die Druckkarte benutzt
  * (dort mit interaktiv:false).
  */
+/* Drei Schläge zu 800 ms (siehe `punkt-puls` in app.css) und ein wenig Luft,
+   damit der Ring nicht mitten im letzten Schlag weggerissen wird. */
+const PULS_DAUER = 2600;
+
 export class StreckenLayer {
   constructor(karte, opt = {}) {
     this.karte = karte;
@@ -1482,6 +1486,34 @@ export class StreckenLayer {
     if (!s || !s.punkte.length) return;
     if (s.punkte.length === 1) this.karte.setView([s.punkte[0].lat, s.punkte[0].lng], 16);
     else this.karte.fitBounds(L.latLngBounds(s.punkte.map(p => [p.lat, p.lng])), { padding });
+  }
+
+  /**
+   * Auf einen Punkt springen und ihn anschlagen lassen.
+   *
+   * Die Auswahl allein reicht dafür nicht: ihr Ring ist ein paar Bildpunkte
+   * kräftiger als der der Nachbarn, und am Bauort, auf einem kleinen Schirm
+   * in der Sonne, zwischen zwanzig Marken, findet ihn niemand. Deshalb
+   * schlägt ein Ring dreimal um die Marke und verschwindet dann wieder – er
+   * ist eine Geste, keine weitere Marke.
+   */
+  zeigePunkt(pt, zoom = 16) {
+    this.karte.setView([pt.lat, pt.lng], Math.max(this.karte.getZoom(), zoom));
+    /* Der Ring hängt an der Karte, nicht an der Gruppe: `zeichne()` räumt die
+       Gruppe bei jeder Änderung leer, und die Auswahl, die dem Sprung meist
+       vorausgeht, ist so eine – der Ring wäre weg, bevor er zu sehen ist. */
+    if (this._puls) this._puls.remove();
+    clearTimeout(this._pulsUhr);
+    this._puls = L.marker([pt.lat, pt.lng], {
+      pane: 'fbp-labels', interactive: false, keyboard: false,
+      icon: L.divIcon({ className: 'fbp-puls', html: '<span></span>',
+                        iconSize: [48, 48], iconAnchor: [24, 24] })
+    }).addTo(this.karte);
+    /* Nach der Uhr und nicht nach `animationend`: wer Bewegung abgestellt
+       hat, bekommt die Animation in einer Hundertstelsekunde – der Ring soll
+       dann trotzdem so lange stehen, wie er sonst schlüge. */
+    this._pulsUhr = setTimeout(() => { if (this._puls) this._puls.remove(); this._puls = null; },
+      PULS_DAUER);
   }
 }
 

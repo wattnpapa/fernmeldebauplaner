@@ -1980,8 +1980,8 @@ function punktTabelle(s, frisch) {
     const zeigen = el('button', 'mini-knopf', '⌖');
     zeigen.title = 'Punkt auf der Karte zeigen';
     zeigen.onclick = () => {
-      ctx.karte.setView([pt.lat, pt.lng], Math.max(ctx.karte.getZoom(), 16));
       ctx.sl.waehle(s.id, pt.id);
+      ctx.sl.zeigePunkt(pt);
       ctx.zurKarte?.();
     };
     kopf.appendChild(zeigen);
@@ -4066,7 +4066,7 @@ function bauPunktZeile(s, pt, i) {
     (pt.name ? `<span class="bp-name">${escapeHtml(pt.name)}</span>` : '');
   const zeigen = el('button', 'mini-knopf bp-karte', '◎');
   zeigen.title = 'Auf der Karte zeigen';
-  zeigen.onclick = () => { ctx.sl.waehle(s.id, pt.id); ctx.sl.zeigeStrecke(s.id); ctx.zurKarte?.(); };
+  zeigen.onclick = () => { ctx.sl.waehle(s.id, pt.id); ctx.sl.zeigePunkt(pt); ctx.zurKarte?.(); };
   kopf.appendChild(zeigen);
   zeile.appendChild(kopf);
 
@@ -4167,7 +4167,7 @@ function bauZusatzZeile(s, pt) {
     (uhrzeit(pt.zeit) ? `<span class="bp-zeit">${escapeHtml(uhrzeit(pt.zeit))}</span>` : '');
   const zeigen = el('button', 'mini-knopf bp-karte', '◎');
   zeigen.title = 'Auf der Karte zeigen';
-  zeigen.onclick = () => { ctx.karte.setView([pt.lat, pt.lng], Math.max(ctx.karte.getZoom(), 16)); ctx.zurKarte?.(); };
+  zeigen.onclick = () => { ctx.sl.zeigePunkt(pt); ctx.zurKarte?.(); };
   kopf.appendChild(zeigen);
   zeile.appendChild(kopf);
 
