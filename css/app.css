@@ -97,6 +97,10 @@
 
 html, body {
   margin: 0; height: 100%;
+  /* Der Finger färbt nichts nach: das graue Rechteck, das Android-Browser
+     über den Griff legen, steht nach dem Tippen noch da, wenn die Karte
+     darunter schon gescrollt ist – und sieht dann wie eine Auswahl aus. */
+  -webkit-tap-highlight-color: transparent;
   font-family: var(--schrift);
   font-size: 14px; line-height: 1.45;
   color: var(--text); background: var(--grund);
@@ -158,9 +162,16 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 
 /* ---------------------------------------------------------------- Kopfleiste */
 
+/* `viewport-fit=cover` steht ohne Bedingung im Kopf der Seite – die Ränder,
+   die es freigibt, sind deshalb überall zu berücksichtigen und nicht nur in
+   der Schmalansicht. Auf dem Telefon quer liegt links die Kerbe, unten der
+   Bedienbalken; beide nehmen Griffe an, ohne sie auszulösen. */
 .kopf {
   display: flex; align-items: center; flex-wrap: wrap; gap: 5px 14px;
-  padding: 5px 12px; min-height: var(--kopf-hoehe);
+  padding: calc(5px + env(safe-area-inset-top, 0px))
+           calc(12px + env(safe-area-inset-right, 0px)) 5px
+           calc(12px + env(safe-area-inset-left, 0px));
+  min-height: var(--kopf-hoehe);
   background: var(--thw); color: #fff; box-shadow: var(--schatten); z-index: 900;
 }
 .marke { display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0; }
@@ -244,6 +255,13 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
   background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
   box-shadow: var(--schatten-stark); padding: 5px; min-width: 262px;
   color: var(--text);
+  /* Quer auf dem Telefon ist das Menü höher als der Schirm: sichtbar war ein
+     einziger Eintrag, und nichts deutete an, dass darunter noch Sammel-PDF,
+     Lagekarte und die drei Ausgabeformate stehen. Ohne diese Grenze ist das
+     eine Sackgasse, denn die Fläche dahinter nimmt keine Rollbewegung an. */
+  max-height: calc(100vh - var(--kopf-hoehe) - 24px);
+  max-height: calc(100dvh - var(--kopf-hoehe) - 24px);
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .menu button, .menu a {
   display: block; width: 100%; text-align: left; padding: 7px 10px; border: 0;
@@ -304,7 +322,10 @@ body.seite-zu .seite { display: none; }
 }
 .reiter button:hover { color: var(--text); }
 .reiter button.aktiv { color: var(--thw); border-bottom-color: var(--thw); background: var(--flaeche); }
-.reiter-inhalt { display: none; flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+.reiter-inhalt {
+  display: none; flex: 1; overflow-y: auto; overscroll-behavior: contain;
+  padding: 12px; min-height: 0;
+}
 .reiter-inhalt.aktiv { display: block; }
 /* Im Streckenreiter trägt die Liste die Polsterung am Fuß, nicht der
    Scrollbereich: sonst bliebe unter der angehefteten Ausgabezeile ein Spalt
@@ -1000,7 +1021,7 @@ body.seite-zu .seite { display: none; }
 #karte.modus-bild { cursor: copy; }
 
 .werkzeuge {
-  position: absolute; top: 12px; left: 12px; z-index: 700;
+  position: absolute; top: 12px; left: calc(12px + env(safe-area-inset-left, 0px)); z-index: 700;
   display: flex; flex-direction: column; gap: 5px;
   background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
   padding: 5px; box-shadow: var(--schatten);
@@ -1036,8 +1057,10 @@ body.seite-zu .seite { display: none; }
    die halbe Breite als Spielraum, schmal wurde daraus eine hohe Säule. */
 .zeichen-hinweis {
   position: absolute; z-index: 720;
-  left: 12px; right: 12px; margin: 0 auto;
-  bottom: calc(var(--sl-hoehe) + var(--wechsel-hoehe) + var(--karten-fuss) + 12px);
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px)); margin: 0 auto;
+  bottom: calc(var(--sl-hoehe) + max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px))
+               + var(--karten-fuss) + 12px);
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
   background: var(--flaeche); border: 1px solid var(--thw); border-radius: var(--radius);
   padding: 8px 12px; box-shadow: var(--schatten-stark); font-size: 12.5px;
@@ -1058,7 +1081,8 @@ body.seite-zu .seite { display: none; }
    stand hier ein auf die Zoomsteuerung eingepasster Festwert – er wäre bei der
    ersten Änderung an ihr falsch geworden. */
 .kartenoptionen {
-  position: absolute; top: calc(var(--karten-kopf) + 12px); right: 12px; z-index: 700; width: 214px;
+  position: absolute; top: calc(var(--karten-kopf) + 12px); z-index: 700; width: 214px;
+  right: calc(12px + env(safe-area-inset-right, 0px));
   background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
   padding: 8px 10px; box-shadow: var(--schatten); display: flex; flex-direction: column; gap: 6px;
 }
@@ -1089,10 +1113,17 @@ body.seite-zu .seite { display: none; }
 body.modus-aktiv .kartenoptionen { display: none; }
 
 .statusleiste {
-  position: absolute; left: 0; right: 0; bottom: var(--wechsel-hoehe); z-index: 700;
+  position: absolute; left: 0; right: 0; z-index: 700;
+  /* In der Breitansicht ist `--wechsel-hoehe` null und die Gitterangabe säße
+     unter dem Bedienbalken des Tablets – dort ist sie nicht mehr abzulesen,
+     und genau sie wird am Bauort abgelesen. Schmal steckt der Rand schon in
+     `--wechsel-hoehe`, deshalb das Maximum statt einer Summe. */
+  bottom: max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px));
   display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap;
   background: rgba(255,255,255,.94); backdrop-filter: blur(6px);
-  border-top: 1px solid var(--linie); padding: 3px 10px; font-size: 12px;
+  border-top: 1px solid var(--linie); font-size: 12px;
+  padding: 3px calc(10px + env(safe-area-inset-right, 0px))
+           3px calc(10px + env(safe-area-inset-left, 0px));
 }
 .sl-koord { display: flex; align-items: baseline; gap: 6px; }
 /* Die Leiste steht bei Tageslicht auf einem kleinen Schirm. Keine ihrer
@@ -1117,8 +1148,14 @@ body.modus-aktiv .kartenoptionen { display: none; }
 .leaflet-control-attribution { font-size: 11px; background: rgba(255,255,255,.82) !important; }
 /* --sl-hoehe wird gemessen: die Statusleiste bricht schmal zweizeilig um und
    verdeckte mit dem früheren Festwert die Maßstabsleiste. */
-.leaflet-bottom.leaflet-right { margin-bottom: calc(var(--sl-hoehe) + var(--wechsel-hoehe)); }
-.leaflet-bottom.leaflet-left { margin-bottom: var(--wechsel-hoehe); }
+.leaflet-bottom.leaflet-right {
+  margin-bottom: calc(var(--sl-hoehe) + max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)));
+}
+.leaflet-bottom.leaflet-left {
+  margin-bottom: max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px));
+  margin-left: env(safe-area-inset-left, 0px);
+}
+.leaflet-bottom.leaflet-right, .leaflet-top.leaflet-right { margin-right: env(safe-area-inset-right, 0px); }
 /* Das Koordinaten-Popup lag mit den Kartenoptionen auf derselben Ebene und
    verschwand dahinter – ausgerechnet beim Antippen einer Koordinate. */
 .leaflet-popup-pane { z-index: 800; }
@@ -1448,9 +1485,19 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 
 /* ---------------------------------------------------------------- Dialog */
 
+/* Die Hülle rollt selbst und richtet ihr Kind oben aus; mittig hält es das
+   `margin: auto` des Dialogs, solange Platz da ist. Zentriert und ohne Rollen
+   schnitt ein zu hoher Dialog oben ab – und der Fußknopf, auf den es ankommt,
+   stand unterhalb der Kante. Auf dem Telefon tritt das regelmäßig ein, weil
+   die Adressleiste die sichtbare Höhe unter die gemessene drückt. */
 .dialog-huelle {
   position: fixed; inset: 0; z-index: 2000; background: rgba(14,22,36,.5);
-  display: flex; align-items: center; justify-content: center; padding: 20px;
+  display: flex; align-items: flex-start; justify-content: center;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: calc(20px + env(safe-area-inset-top, 0px))
+           calc(20px + env(safe-area-inset-right, 0px))
+           calc(20px + env(safe-area-inset-bottom, 0px))
+           calc(20px + env(safe-area-inset-left, 0px));
 }
 .dialog-huelle[hidden] { display: none; }
 
@@ -1467,7 +1514,11 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 }
 .dialog {
   background: var(--flaeche); border-radius: 10px; box-shadow: var(--schatten-stark);
-  width: min(560px, 100%); max-height: 88vh; display: flex; flex-direction: column;
+  width: min(560px, 100%); margin: auto; display: flex; flex-direction: column;
+  /* `dvh` statt `vh`: `vh` misst die große Ansicht, also die ohne Adress-
+     leiste. Solange sie steht, fehlen 60 bis 100 px – und zwar unten, beim
+     Fuß. */
+  max-height: 88vh; max-height: 88dvh;
 }
 .dialog.breit { width: min(880px, 100%); }
 .dialog-kopf {
@@ -1475,7 +1526,10 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   padding: 13px 16px; border-bottom: 1px solid var(--linie);
 }
 .dialog-kopf h2 { font-size: 15px; }
-.dialog-inhalt { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.dialog-inhalt {
+  padding: 16px; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 12px;
+}
 /* Umbrechen statt hinauslaufen: Der Konfliktdialog stellt vier Wege
    nebeneinander, und schmal schob das den ersten aus dem Fenster – gerade der,
    der nichts entscheidet, war dann nicht mehr erreichbar. Ausgerichtet bleibt
@@ -1607,7 +1661,10 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .palette-suche { flex: 2 1 220px; }
 .palette-kat-wahl { flex: 1 1 180px; }
 .palette-kat-wahl:disabled { opacity: .5; }
-.palette-gitter { display: flex; flex-direction: column; gap: 6px; max-height: 58vh; overflow-y: auto; }
+.palette-gitter {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 58vh; max-height: 58dvh; overflow-y: auto; overscroll-behavior: contain;
+}
 .palette-kat {
   font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-schwach);
   margin-top: 6px; padding-bottom: 3px; border-bottom: 1px solid var(--linie);
@@ -1633,8 +1690,13 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 
 /* ---------------------------------------------------------------- Hinweisbox */
 
+/* Über dem Umschalter, nicht darauf: er ist 52 px hoch, die Pille stand mit
+   ihren 46 px auf seiner oberen Kante und deckte zugleich die letzte
+   Listenzeile zu – im Baumodus den Knopf, der die Baudokumentation ausgibt.
+   Schmal steckt der sichere Rand schon in `--wechsel-hoehe`. */
 .hinweisbox {
-  position: fixed; bottom: 46px; left: 50%; transform: translateX(-50%); z-index: 2500;
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 2500;
+  bottom: max(calc(46px + env(safe-area-inset-bottom, 0px)), calc(var(--wechsel-hoehe) + 10px));
   background: rgba(20,28,40,.95); color: #fff; padding: 9px 16px; border-radius: 20px;
   font-size: 13px; box-shadow: var(--schatten-stark); max-width: 88vw; text-align: center;
 }
@@ -2023,6 +2085,17 @@ body.baumodus #wz-relais { display: none; }
    ihre Dichte; hier wachsen die Trefferflächen auf ~44 px. */
 
 @media (pointer: coarse) {
+  /* Sechzehn Pixel sind hier keine Größe, sondern eine Grenze: Safari auf iOS
+     zoomt beim Fokus in jedes Feld hinein, das darunter liegt, und kehrt von
+     allein nicht zurück. Danach steht die halbe Anwendung hinter dem
+     Fensterrand, und das mitten im Materialnachweis. Die Ansicht bleibt
+     trotzdem dicht, weil die Polsterung unverändert knapp ist.
+     Bereichsregler, Haken und Farbfelder tragen keine Schrift – sie sind
+     ausgenommen, damit ihre Maße nicht an der Schriftgröße hängen. */
+  input:not([type="range"]):not([type="checkbox"]):not([type="color"]),
+  select:not([multiple]),
+  textarea:not([hidden]) { font-size: 16px; }
+
   /* Sichtbar bleiben die Knöpfe kompakt, die Trefferzone reicht auf 44 px –
      bis an die Lücke zum Nachbarn heran, nie darüber hinaus. */
   .mini-knopf { position: relative; width: 36px; height: 36px; }
@@ -2041,17 +2114,16 @@ body.baumodus #wz-relais { display: none; }
   .knopf.klein { position: relative; padding: 8px 12px; min-height: 40px; font-size: 12.5px; }
   .knopf.klein::after { content: ''; position: absolute; inset: -2px 0; }
   .tastenreihe { gap: 8px; }
-  .zeichen-hinweis { gap: 12px; }
   .reiter button { padding: 13px 6px; font-size: 13px; }
   .wz { padding: 12px 10px; }
   /* Breite Felder: nur die Höhe fehlt zur Trefferfläche */
-  .mini-select { padding: 10px 6px; font-size: 12.5px; }
+  .mini-select { padding: 10px 6px; }
   /* Die Querungsart wird mit dem Handschuh am Bauort umgestellt */
   .pz-querung select { padding: 9px 7px; min-height: 40px; }
   /* Auch die Kartenoptionen werden dort umgestellt – die Zeilen wachsen auf
      Trefferhöhe, die Tafel bleibt sichtbar kompakt. Vorher: 19 px. */
   .ko-zeile, .ko-kopf { min-height: 36px; }
-  .mini-input { padding: 10px 8px; font-size: 12.5px; }
+  .mini-input { padding: 10px 8px; }
   .koord-knopf { padding: 10px 6px; }
   .sl-kopie::after { content: ''; position: absolute; inset: -9px -4px; }
   .menu button { padding: 11px 12px; }
@@ -2059,6 +2131,68 @@ body.baumodus #wz-relais { display: none; }
   /* Am Bauort wird das Bild mit dem Handschuh geöffnet – die Zeile ist der
      Griff, das Vorschaubild wächst mit. */
   .mini-bild { width: 40px; height: 40px; }
+
+  /* Jedes Feld im Reiterinhalt auf Trefferhöhe. Einzeln nachgezogen waren
+     bisher nur `.mini-input`, `.mini-select` und die Querungsart; die
+     gewöhnlichen Felder der Streckenkarte – Bezeichnung, von, nach, Tiefe,
+     Leitungsart – standen bei 31 bis 34 px. */
+  .reiter-inhalt input:not([type="range"]):not([type="checkbox"]):not([type="color"]),
+  .reiter-inhalt select, .dialog-inhalt .feld input, .dialog-inhalt .feld select {
+    min-height: 44px;
+  }
+  .koord-knopf { min-height: 44px; }
+  /* Haken mit 13 px sind auf dem Telefon nicht zu treffen. Der Griff ist zwar
+     die ganze Zeile, gezielt wird aber auf das Kästchen. */
+  .ks-haken input, .ko-haken input { flex: 0 0 auto; width: 22px; height: 22px; }
+
+  /* Die drei Kopfknöpfe standen bei 28 bis 31 px Breite – darunter
+     „Rückgängig“, der einzige Rückweg nach einem Fehlgriff auf ein Löschkreuz.
+     Rechts neben „Datei“ bleiben schmal über 110 px frei, der Platz ist da. */
+  .kopf-tasten { gap: 8px; }
+  .kopf-tasten .knopf { min-width: 44px; justify-content: center; }
+
+  /* Im Baumodus tragen `.knopf.klein` die Handlungen, auf die alles zuläuft:
+     „Meldung jetzt“, „Als Link“, „Als Datei“. Sie standen als einzige flache
+     Griffe zwischen lauter 46er – dieselbe Höhe wie `.knopf.bau-taste`. */
+  .knopf.klein.bau-taste { min-height: 46px; }
+  .knopf.breit { min-height: 48px; }
+  /* Der Schließgriff des Dialogs steht allein in seiner Kopfzeile; waagerecht
+     aufziehen kann hier keinen Nachbarn überdecken. */
+  .dialog-kopf .knopf.klein::after { inset: -2px -4px; }
+  /* Impressum und Datenschutz sind Verweise, keine Knöpfe – die Regel für
+     `.menu button` ließ sie bei 33 px stehen. */
+  .menu a { padding: 11px 12px; }
+  /* Leaflets eigene Zoomsteuerung bleibt bei 30 px, solange niemand sie
+     nachzieht. Am Bauort wird mit ihr der Maßstab gesetzt. */
+  .leaflet-control-zoom a { width: 44px; height: 44px; line-height: 44px; }
+
+  /* Das Meldungsfeld steckt als einziges nicht in einer `.feld`-Umhüllung –
+     seine Beschriftung zählt also nicht zur Trefferfläche, und gleich daneben
+     steht das Kreuz, das die Meldung löscht. */
+  .bm-zeile input { min-height: 44px; }
+  /* Im Bau-Reiter ist Platz für die vollen 44 px. Die `::after`-Krücke lief
+     dort in die Lücke zum Nachbarn und blieb bei 41 px stecken – das sind die
+     einzigen Griffe der Anwendung, die auch in der Breite darunter lagen. */
+  #bau-liste .mini-knopf { width: 44px; height: 44px; }
+  #bau-liste .mini-knopf::after { content: none; }
+
+  /* Die Marken auf der Karte: sichtbar bleiben sie so groß wie geplant, die
+     Trefferzone wächst unsichtbar mit. `iconSize` und `iconAnchor` bleiben
+     unberührt, die Marke sitzt also weiter genau auf ihrer Koordinate. */
+  .fbp-punkt { position: relative; }
+  .fbp-punkt::before { content: ''; position: absolute; inset: -11px; }
+  /* Der Einfügegriff wird bewusst nicht auf 44 px gezogen: er sitzt auf der
+     Mitte zwischen zwei Trassenpunkten, und bei kurzen Abschnitten schluckte
+     eine 44er Zone die Punkte, auf die eigentlich gezielt wird. 32 px lösen
+     die gemessenen ±7 px Greifradius und lassen den Punkten ihren Vorrang. */
+  .fbp-einfuegen::before { content: ''; position: absolute; inset: -9px; }
+
+  /* Die Modusleiste beim Zeichnen stand mit 178 px auf einem Viertel der
+     Karte, weil die drei Knöpfe schmal in drei Zeilen umbrachen. Nebeneinander
+     zu gleichen Teilen bleibt sie bei rund 90 px – die Beschriftung bricht
+     dann innerhalb des Knopfes um, was sie lesbar lässt. */
+  .zeichen-hinweis { gap: 8px; }
+  .zeichen-hinweis .knopf { flex: 1 1 0; min-width: 0; padding: 9px 6px; white-space: normal; }
 }
 
 /* ------------------------------------------------- Bewegung zurücknehmen

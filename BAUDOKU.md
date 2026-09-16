@@ -388,6 +388,48 @@ den Rest nicht aufhalten soll.
 
 Die Stufen 1 bis 3 sind am Schreibtisch prüfbar, Stufe 4 nur am Gerät.
 
+## Vermessen am Gerät
+
+Die Anwendung ist am Rechner entstanden und am Rechner bedient worden. Der
+Baumodus steht aber auf einem Telefon, im Stehen, einhändig, oft mit
+Handschuh. Vor Stufe 6 ist sie deshalb einmal vollständig am Gerät vermessen
+worden – fünf Durchgänge in echtem Chromium mit Fingerbedienung, in 360×740,
+390×844, 844×390 und 820×1180: Planungsmodus, Baumodus, Dialoge und Menüs,
+Druckansicht, Breitenwechsel. Gemessen wurden wirksame Trefferzonen, nicht
+Kastenmaße.
+
+Vier Befunde waren Sackgassen, also Stellen, an denen die Bedienung nicht nur
+mühsam, sondern unmöglich war:
+
+- Jedes Eingabefeld lag unter 16 px. Safari auf iOS zoomt beim Fokus hinein
+  und kehrt nicht zurück – wer am Bauort eine Materialmenge einträgt, arbeitet
+  danach in einer vergrößerten Ansicht weiter, deren Rand er nicht mehr sieht.
+- Das Dateimenü hatte weder `max-height` noch `overflow`. Quer auf dem Telefon
+  ist es 693 px hoch bei 390 px Schirm: sichtbar war ein Eintrag, und nichts
+  deutete an, dass Sammel-PDF, Lagekarte und die drei Ausgabeformate darunter
+  stehen.
+- `.dialog { max-height: 88vh }` stand gegen eine feste Hülle, die keine
+  Rollbewegung annahm. `vh` misst die große Ansicht; solange die Adressleiste
+  steht, fehlen 60 bis 100 px, und zwar unten, beim Fußknopf.
+- `env(safe-area-inset-*)` stand an zwei Stellen, beide in
+  `@media (max-width: 900px)`, während `viewport-fit=cover` ohne Bedingung im
+  Kopf der Seite steht. Unter dem Bedienbalken lagen die Gitterangabe der
+  Statusleiste und, in der Druckansicht, „Drucken“ und „Schließen“.
+
+Dazu kam eine Stelle, an der die Oberfläche eine Entscheidung verdeckte: die
+Vorschau einer Baumeldung öffnete auf dem Telefon 117 px weggerollt, weil der
+Fokus auf das erste Bedienelement sprang. Weg war der Satz „Zusammengeführt
+wird nichts“ – der Planer entschied über ein Überschreiben, ohne ihn gelesen
+zu haben. Der Fokus setzt jetzt `preventScroll`.
+
+Festgehalten ist das in `scripts/geraete-pruefen.mjs`. Zwei Regeln dieser
+Prüfung sind selbst aus Fehlern entstanden: `offsetParent` taugt in der
+Schmalansicht nicht als Sichtbarkeitsprobe (ein fest positionierter Vorfahr
+macht sie für jedes Feld null, und die Prüfung fand deshalb kein einziges und
+bestand genau deshalb), und seit CSS-Nesting trägt jede Stilregel eine leere –
+also wahre – `cssRules`-Liste, was eine Suche über die Stilbögen still ins
+Leere laufen lässt.
+
 ## Getroffene Festlegungen
 
 | Frage | Entscheidung |
@@ -421,6 +463,42 @@ Die Stufen 1 bis 3 sind am Schreibtisch prüfbar, Stufe 4 nur am Gerät.
   dann, die Baumeldung nimmt sie aber nicht mit. Sie braucht ihre volle
   Soll-Geometrie und beim Planer einen eigenen Entschluss; bis dahin ist der
   Weg für diesen Fall die ganze Planungsdatei.
+
+- **Die Werkzeugleiste deckt am Telefon ein Fünftel der Karte.** Sie steht
+  bewusst im Daumenbereich und mit Beschriftung – vier Glyphen allein sind
+  nicht auseinanderzuhalten, und `title` zeigt kein Touchgerät an. Quer nimmt
+  sie damit aber 53 % der Kartenhöhe im linken Drittel ein, und ein
+  Einfügegriff darunter war mit keiner Geste zu erreichen. Der Ausweg wäre
+  derselbe Klappkopf, den die Kartenoptionen daneben schon haben; das ist
+  Markup, Zustand und eine Entscheidung darüber, wie sie startet, und gehört
+  nicht in eine Runde, die Maße nachzieht.
+
+- **Der Bau-Reiter ist 5 090 px lang.** In einem 578 px hohen Fenster sind das
+  8,8 Bildschirmhöhen, auf einem kleinen Android 10,9. Bis „Meldung jetzt“ sind
+  es 4,7, bis zur Übergabe 7,5. Die ersten anderthalb Bildschirme gehören dem
+  Kachelvorrat – einer Handlung, die im Depot stattfindet und nie am Bauort.
+  Ein Sprungstreifen unter den Reitern und der Vorratsblock nach hinten wären
+  zusammen die größte Verbesserung; beides ändert die Anordnung und nicht die
+  Maße.
+
+- **Drei Löschgriffe ohne Rückfrage, 4 px neben einem Eingabefeld.**
+  Bauabschnitt, Baumeldung und Prüfzeile löschen sofort. Der Rückweg ist
+  „Rückgängig“ in der Kopfzeile – jetzt 44 px breit statt 31, aber weiterhin
+  eine Kopfzeile weit weg von der Stelle, an der der Fehlgriff geschah. Ein
+  Rückholhinweis in der Hinweisbox („Meldung gelöscht · Rückgängig“) wäre die
+  Antwort, und die gehört zur Hinweisbox und nicht zum Bau-Reiter.
+
+- **Die Tooltips der Karte gibt es mit dem Finger nicht.** Punkt, Linie,
+  Zeichen, Fläche und Relais tragen ihre Angabe in einem `mouseover`-Tooltip;
+  am Telefon erscheint keiner. Bei den Bildmarken ist der Fall schon gelöst
+  (`js/bilder.js`, „Am Bauort gibt es kein Überfahren“); die anderen fünf
+  brauchen dieselbe Entsprechung.
+
+- **Tipps unter 200 ms Abstand gehen beim Zeichnen verloren.** Gemessen: bei
+  0 ms Abstand kommen 2 von 6 Punkten an, bei 100 ms 5 von 6. Ursache ist die
+  Doppeltipp-Unterdrückung, und nichts in der Oberfläche sagt es an. Der saubere
+  Weg wäre, die Punkte im Zeichenmodus aus `touchend` statt aus dem abgeleiteten
+  `click` zu setzen.
 
 - **Das Soll steht nur an einer einzigen Zeile.** Die Planung rechnet den
   Kabelbedarf, und damit hat genau die Kabelzeile ein Soll. Bauhaken,

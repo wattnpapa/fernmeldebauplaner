@@ -171,6 +171,24 @@ Trupps getrennt zurückmelden und einspielen und prüft, dass die gebaute Trasse
 keinem der drei Auftragsblätter landet – wohl aber auf dem vierten, der
 Baudokumentation, dort in allen vier Formaten.
 
+Nach jeder Änderung an der Oberfläche, die Maße, Abstände, Schriftgrößen oder
+Überdeckungen berührt:
+
+```bash
+node scripts/geraete-pruefen.mjs
+```
+
+Misst die Anwendung in vier Gerätegrößen mit Fingerbedienung: 360×740,
+390×844, 844×390 und 820×1180. Geprüft werden die wirksamen Trefferzonen
+(die `::after`-Aufweitungen also eingerechnet, getastet mit
+`elementFromPoint`), die Schriftgröße jedes Eingabefeldes gegen die
+16-Pixel-Grenze von iOS, der sichere Rand des Geräts, ob eine Fläche, die
+höher ist als der Schirm, überhaupt rollt, und ob eine Ansicht waagerecht
+überläuft. Zwei Regeln dieser Prüfung sind aus Fehlern entstanden und
+stehen dort kommentiert: `offsetParent` taugt in der Schmalansicht nicht als
+Sichtbarkeitsprobe, und seit CSS-Nesting trägt jede Stilregel eine – leere,
+also wahre – `cssRules`-Liste.
+
 Nach jeder Änderung am Offline-Weg (`sw.js`, `js/kacheln.js`, die Kachelebene in
 `js/map.js`, die Registrierung in `js/app.js`):
 

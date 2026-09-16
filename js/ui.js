@@ -179,7 +179,12 @@ export function dialog({ titel, inhalt, fuss = [], breit = false }) {
   const ersterFokus = feld.querySelector('input,select,textarea,button')
     || fussEl.querySelector('button')
     || huelle.querySelector('[data-akt="dialog-zu"]');
-  if (ersterFokus) setTimeout(() => ersterFokus.focus(), 30);
+  /* `preventScroll`, weil der Fokus sonst sein Feld ins Bild holt und damit
+     den Text darüber hinausschiebt: die Vorschau einer Baumeldung öffnete auf
+     dem Telefon bereits 117 px weggerollt, und weg war genau der Satz
+     „Zusammengeführt wird nichts“ – der Planer entschied über ein
+     Überschreiben, ohne den Hinweis gelesen zu haben. */
+  if (ersterFokus) setTimeout(() => ersterFokus.focus({ preventScroll: true }), 30);
   return feld;
 }
 

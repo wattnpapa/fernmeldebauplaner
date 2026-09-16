@@ -3,6 +3,12 @@
 #druck {
   position: fixed; inset: 0; z-index: 3000; background: #55606e;
   display: flex;
+  /* `viewport-fit=cover` gibt die Ränder frei, die das Gerät für Kerbe und
+     Bedienbalken braucht. Ohne diese Polsterung liegen „Drucken“ und
+     „Schließen“ auf dem Balken – die Ansicht wäre dann nur noch über die
+     Escape-Taste zu verlassen, die kein Telefon hat. */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+           env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 body.druckansicht { overflow: hidden; }
 
@@ -126,7 +132,12 @@ body.druckansicht { overflow: hidden; }
    Fünftel der Höhe und scrollen darin – alle bleiben erreichbar, ohne erst
    eine Klappe zu suchen, und das Blatt behält den Rest. Die Gruppen stehen
    nebeneinander in einem Raster, die Tasten teilen sich eine Zeile. */
-@media (max-width: 780px) {
+/* Bis Fassung … stand hier 780 px, während die Anwendung bei 900 px umbricht.
+   Dazwischen – ein Tablet hochkant, 820 px – behielt die Vorschau die Spalte
+   neben dem Blatt und passte es auf 0,468 ein: die Tabellen des Bauauftrags
+   waren dort nicht mehr zu lesen, bei 768 px dagegen schon (0,641). Ein
+   Umbruchpunkt für beide. */
+@media (max-width: 900px) {
   #druck { flex-direction: column; }
   .druck-steuerung {
     flex: 0 1 auto; max-height: 44vh;
@@ -150,6 +161,26 @@ body.druckansicht { overflow: hidden; }
   .ds-format { grid-column: 1 / -1; text-align: center; padding: 2px 8px; }
   /* Der Rand um das Blatt ist Platz, den die Vorschau besser gebrauchen kann. */
   .druck-buehne { padding: 10px 8px; }
+}
+
+/* ------------------------------------------------- Bedienung ohne Maus
+   Die Druckansicht hatte als einziger Teil der Anwendung keinen Block für
+   grobe Zeiger: 22 von 22 Griffen der Steuerleiste lagen unter 44 px, die
+   Haken bei 13×13. Der Bauauftrag wird aber im Fahrzeug freigegeben, mit dem
+   Finger, nicht am Rechner. */
+@media (pointer: coarse) {
+  /* Dieselbe Grenze wie in der Anwendung: unter 16 px zoomt Safari auf iOS
+     beim Fokus hinein und kehrt nicht zurück – hier in eine Ansicht, deren
+     Ausgang am unteren Rand steht. */
+  .ds-feld select, .ds-massefelder input { font-size: 16px; }
+  .ds-feld { min-height: 44px; }
+  .ds-feld select { padding: 9px 8px; min-height: 44px; }
+  .ds-massefelder input { padding: 9px 6px; min-height: 44px; width: 6ch; }
+  .ds-haken input { width: 22px; height: 22px; }
+  .ds-zoomtasten .knopf { min-width: 44px; }
+  .ds-strich input[type="range"] { height: 34px; }
+  .ds-felder { overscroll-behavior: contain; }
+  .druck-buehne { overscroll-behavior: contain; }
 }
 
 /* Zwei Ansichten desselben Blattes: eingepasst zeigt es die Aufteilung,
