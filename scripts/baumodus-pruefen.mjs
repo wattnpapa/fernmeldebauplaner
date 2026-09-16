@@ -1070,10 +1070,40 @@ try {
     'Die aufgenommenen Punkte stehen auf dem Blatt');
   b.pruefe(await seite.auswerten('document.querySelectorAll("#druck path.fbp-ist-linie").length') > 0,
     'Und die gebaute Trasse als durchgezogene Linie');
-  b.pruefe(await seite.auswerten(`
+  /* Gemessen wird das VERHÄLTNIS und nicht die Zeichenkette. Genau daran ist
+     die erste Fassung gescheitert: das Muster stand roh als „1 7“ im Attribut,
+     während die Linie im Druck auf das Doppelte skaliert wurde – die Punkte
+     liefen ineinander und druckten als durchgezogene Linie, und die Prüfung sah
+     das Attribut und war zufrieden. Eine Punktreihe ist eine Punktreihe, wenn
+     die Lücke breiter bleibt als die Linie dick ist. */
+  const gestrichelt = (await seite.auswerten(`
     return [...document.querySelectorAll('#druck path')]
-      .some(p => (p.getAttribute('stroke-dasharray') || '').replace(/,/g, ' ').trim().startsWith('1 7'));`),
-    'Die geplante Trasse tritt daneben zur feinen Punktreihe zurück');
+      .map(x => ({ muster: (x.getAttribute('stroke-dasharray') || '').trim(),
+                   breite: parseFloat(x.getAttribute('stroke-width')) || 0,
+                   kappe: getComputedStyle(x).strokeLinecap }))
+      .filter(x => x.muster);`))
+    /* Zerlegt wird hier und nicht in der Seite: über das DevTools-Protokoll
+       kommen Zahlen aus verschachtelten Objekten nicht verlässlich zurück –
+       eine Zeichenkette dagegen schon. */
+    .map(x => {
+      const teile = x.muster.replace(/,/g, ' ').split(/\s+/).map(Number);
+      return { ...x, strich: teile[0], luecke: teile.length > 1 ? teile[1] : teile[0] };
+    });
+  b.pruefe(gestrichelt.length > 0, `Gestrichelte Linien auf dem Blatt (${gestrichelt.length})`);
+  /* Für JEDE gestrichelte Linie, nicht nur für die geplante Trasse: dieselbe
+     Rechnung entscheidet auch über die Abweichungslinie, und beide werden mit
+     demselben Faktor skaliert. */
+  const zugelaufen = gestrichelt.filter(x =>
+    !(x.luecke - (x.kappe === 'round' ? x.breite : 0) > 0));
+  b.gleich(zugelaufen.length, 0,
+    `Keine gestrichelte Linie läuft im Druck zu (${gestrichelt.map(x =>
+      x.muster + ' bei ' + x.breite + ' ' + x.kappe).join(', ')})`);
+  const sollLinie = gestrichelt.slice().sort((a, c) => c.breite - a.breite)[0];
+  b.pruefe(sollLinie && sollLinie.kappe === 'butt',
+    'Die geplante Trasse trägt eine stumpfe Kappe – eine runde fräße ihre Lücke');
+  b.pruefe(sollLinie && sollLinie.strich < sollLinie.luecke,
+    `Und ihr Strich ist kürzer als die Lücke – eine Punktreihe, keine Strichlinie ` +
+    `(${sollLinie && sollLinie.muster} bei ${sollLinie && sollLinie.breite} Breite)`);
   const blatttext = (await seite.text('#druck') || '').replace(/\s+/g, ' ');
   b.pruefe(/Baudokumentation Fernmeldebau/.test(blatttext), 'Der Kopf nennt das Erzeugnis');
   b.pruefe(/Zeichenerklärung/.test(blatttext) && /gebaute Trasse/.test(blatttext) &&

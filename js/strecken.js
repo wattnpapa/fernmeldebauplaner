@@ -840,9 +840,21 @@ export class StreckenLayer {
        beiden Linien das Gelände beschreibt und welche den Auftrag. Geändert
        wird dabei nur die Darstellung – die Planung selbst bleibt, wie sie ist. */
     const gebaut = this.mitIst && istPunkte(s).length > 0;
+    /* Das Punktmuster MUSS mit dem Strichfaktor wachsen wie jedes andere Maß.
+       Roh gesetzt ergäbe es im Druck eine durchgezogene Linie: dort ist der
+       Faktor 2, die Linie also gut zehn Bildpunkte breit, und die runde Kappe
+       verlängert jeden Punkt um eine halbe Breite an jedem Ende – aus 1 wird
+       11,5 bei einer Periode von 8, die Punkte laufen ineinander. Am Bildschirm
+       (Faktor 1, Breite 4,5) fällt das nicht auf, und genau deshalb stand es
+       eine Fassung lang falsch da: geprüft wurde am Attribut, nicht am Bild.
+
+       `lineCap: 'butt'` für diese eine Linie, aus demselben Grund: eine runde
+       Kappe frisst die Lücke, an der die Punktreihe hängt. Die durchgezogene
+       Ist-Linie behält ihre runde Kappe – sie hat keine Lücken zu verlieren. */
+    const f = this.strichFaktor * this.strichbreite;
     const sollSt = gebaut
-      ? { ...st, breite: Math.max(2, st.breite - 1.5), deckkraft: st.deckkraft * 0.6,
-          strich: '1 7', fassung: 0 }
+      ? { ...st, breite: Math.max(2, st.breite - 1.5 * f), deckkraft: st.deckkraft * 0.6,
+          strich: [1 * f, 7 * f].join(' '), fassung: 0, kappe: 'butt' }
       : st;
     if (pfad.length >= 2) {
       /* Für die Platzsuche der Schilder: jede gezeichnete Trasse zählt, auch
@@ -858,7 +870,7 @@ export class StreckenLayer {
 
       const linie = L.polyline(pfad, {
         pane: 'fbp-strecken', color: sollSt.farbe, weight: sollSt.breite,
-        opacity: sollSt.deckkraft, lineCap: 'round', lineJoin: 'round',
+        opacity: sollSt.deckkraft, lineCap: sollSt.kappe || 'round', lineJoin: 'round',
         dashArray: sollSt.strich,
         interactive: this.interaktiv, bubblingMouseEvents: false
       }).addTo(this.gruppe);
@@ -1011,12 +1023,17 @@ export class StreckenLayer {
          Planung – und deckt trotzdem den Fall ab, für den sie da ist: ein
          Schild, das quer über der Linie liegt, die der Trupp aufgenommen hat. */
       this._linienzuege.push(ist);
+      /* Die Zuschläge wachsen mit dem Strichfaktor wie alles andere. Fest
+         gesetzt wäre die gebaute Trasse auf einem A3-Blatt kaum noch kräftiger
+         als die geplante – und genau der Unterschied ist die Aussage des
+         Blattes. */
+      const zu = this.strichFaktor * this.strichbreite;
       L.polyline(pfad, {
-        pane: 'fbp-strecken', color: '#ffffff', weight: (st.fassung || 8) + 1,
+        pane: 'fbp-strecken', color: '#ffffff', weight: (st.fassung || 8 * zu) + 1 * zu,
         opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false
       }).addTo(this.gruppe);
       L.polyline(pfad, {
-        pane: 'fbp-strecken', color: st.farbe, weight: st.breite + 1.5,
+        pane: 'fbp-strecken', color: st.farbe, weight: st.breite + 1.5 * zu,
         opacity: 1, lineCap: 'round', lineJoin: 'round',
         interactive: false, className: 'fbp-ist-linie'
       }).addTo(this.gruppe);

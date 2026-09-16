@@ -413,6 +413,13 @@ body.druckansicht { overflow: hidden; }
 .lg-linie.lg-ist { border-top-width: 1.8pt; }
 .lg-linie.lg-soll { border-top: 1pt dotted var(--farbe, #111); }
 .lg-linie.lg-abw { border-top: 1pt dashed #b45309; }
+/* Die Marke des aufgenommenen Punktes in der Zeichenerklärung – derselbe Kreis
+   mit weißem Rand wie auf der Karte. Die Punktarten haben für das Ist keine
+   eigene Form: der Trupp nimmt einen Ort auf, keine Bauform. */
+.lg-punkt-ist {
+  display: inline-block; width: 2.6mm; height: 2.6mm; border-radius: 50%;
+  background: var(--farbe, #111); border: .5pt solid #fff; box-shadow: 0 0 0 .3pt #111;
+}
 .druck-doku.sw .lg-linie.lg-abw { border-top-color: #444; }
 /* Musterstück der Kabelart: das Zeichen sitzt im Linienzug, genau wie auf
    der Karte – die Linie läuft als Hintergrund hinter Strichen und Ziffern. */
@@ -857,9 +864,10 @@ body.druckansicht { overflow: hidden; }
    Bauauftrag – hier steht nur, was sich unterscheidet.
 
    Fünf Kennzahlkacheln statt vier: geplant, gebaut, Unterschied, Punkte,
-   Abweichungen. Die Oberkante ist grün statt blau, damit auf dem Stapel im
-   Fahrzeug auf einen Blick zu sehen ist, welches Blatt den Auftrag zeigt und
-   welches die Ausführung. */
+   Abweichungen. Die Oberkante ist grün statt blau – ein Hinweis für den
+   Farbdruck, kein Erkennungsmerkmal: im Schwarz-Weiß-Satz ist sie schwarz wie
+   die des Bauauftrags, und unterschieden wird dann am Kopf, der das Erzeugnis
+   ausschreibt. */
 .druck-doku .bl-baudoku .kz { border-top-color: #2e7d32; }
 
 /* Die Nachweistabellen sind schmaler als die Punkttabelle des Auftrags und
@@ -870,13 +878,26 @@ body.druckansicht { overflow: hidden; }
 /* Eine leere Tabelle sagt „nichts eingetragen“ und bleibt nicht wortlos: ein
    leeres Feld auf einem Nachweis liest sich wie ein vergessenes. */
 .tab-leer { text-align: center; font-style: italic; color: #555; padding: 2.4mm 0; }
+/* Vordruckzeilen der Prüfung: höher als eine gefüllte Zeile, damit am Bauplatz
+   mit dem Stift hineinzuschreiben ist. Ein Nachweis ohne Platz zum Nachtragen
+   wäre nur eine Auskunft. */
+.pz-vordruck td { height: 6mm; }
 
 /* Die Übergabe steht abgesetzt unter den Prüfzeilen – sie gilt der ganzen
-   Leitung und nicht einem einzelnen Stamm. */
-.bd-uebergabe { margin-top: 2.4mm; grid-template-columns: repeat(3, 1fr); }
+   Leitung und nicht einem einzelnen Stamm. Drei Felder, drei Spalten, und
+   zwar auch auf A3: die Regel für `.bl-stamm` stellt dort auf sechs Spalten
+   um, weil der Kopf des Bauauftrags acht Felder trägt. Drei Felder auf sechs
+   Spalten ergäben eine halbe Zeile und drei leere Kästen daneben. */
+.bd-uebergabe,
+.druck-doku.a3 .bd-uebergabe { margin-top: 2.4mm; grid-template-columns: repeat(3, 1fr); }
 /* Drei Bestätigungen statt vier, also auch drei Spalten: sonst bliebe rechts
    ein leeres Feld stehen, das jemand auszufüllen versuchte. */
 .bd-unterschrift { grid-template-columns: repeat(3, 1fr); }
+/* Das F.d.R.-Feld ist genau eine Spalte breit – bei vier Spalten ein Viertel,
+   hier ein Drittel. Die Rechnung steht deshalb neben der Spaltenzahl und nicht
+   an einer Stelle, die beide bedienen müsste; sonst fluchtete die Kante nicht
+   mehr mit dem Raster darüber. */
+.bl-baudoku .us-fdr { width: calc(33.333% - 1.6mm); }
 
 /* ---------------------------------------------------------------- Schwarz-Weiß */
 
@@ -916,6 +937,17 @@ body.druckansicht { overflow: hidden; }
 .karten-inner .fbp-punkt {
   width: calc(17px * var(--karten-schrift)); height: calc(17px * var(--karten-schrift));
   font-size: calc(7.5px * var(--karten-schrift)); border-width: calc(2px * var(--karten-schrift));
+}
+/* Die Marke des aufgenommenen Punktes. Sie war neu auf einem Druckblatt und
+   fiel deshalb zunächst aus dieser Rechnung heraus – mit der Folge, dass sie
+   auf dem Papier halb so groß druckte wie die Marke des geplanten Punktes und
+   in ihrer eigenen Trassenlinie verschwand. Am Bauort ist sie das, wonach
+   gesucht wird, also ist sie hier eher größer als die geplante. */
+.karten-inner .fbp-istpunkt {
+  width: calc(15px * var(--karten-schrift)); height: calc(15px * var(--karten-schrift));
+  margin: calc(2px * var(--karten-schrift));
+  border-width: calc(2.5px * var(--karten-schrift));
+  box-shadow: 0 0 0 calc(1px * var(--karten-schrift)) rgba(16,32,56,.45);
 }
 .karten-inner .punkt-name {
   font-size: calc(8.5px * var(--karten-schrift));
