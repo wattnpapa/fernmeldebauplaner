@@ -168,7 +168,8 @@ Fährt die Anwendung in einem echten Chromium: legt eine Strecke an, schaltet um
 nimmt Punkte auf allen drei Wegen auf, füllt den Materialnachweis, meldet, prüft
 und übergibt, lädt neu, schickt die Planung durch den Link und zurück, lässt zwei
 Trupps getrennt zurückmelden und einspielen und prüft, dass die gebaute Trasse auf
-keinem der drei Druckerzeugnisse landet.
+keinem der drei Auftragsblätter landet – wohl aber auf dem vierten, der
+Baudokumentation, dort in allen vier Formaten.
 
 Nach jeder Änderung am Offline-Weg (`sw.js`, `js/kacheln.js`, die Kachelebene in
 `js/map.js`, die Registrierung in `js/app.js`):

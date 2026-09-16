@@ -1057,6 +1057,69 @@ try {
     await seite.ruhe();
   }
 
+  b.abschnitt('Die Baudokumentation trägt beide Trassen');
+  /* Das vierte Erzeugnis ist das Gegenstück zu den dreien darüber: dort darf
+     die gebaute Trasse NICHT stehen, hier muss sie. Geprüft wird beides, denn
+     eine Option, die überall gleich wirkt, wäre genau der Fehler. */
+  await seite.auswerten(`
+    const m = await import('./js/bauauftrag.js');
+    m.oeffneBaudoku(window.fbp.store.projekt.strecken[0].id); return true;`);
+  await seite.warteAuf('!!document.querySelector("#druck")', 20000);
+  await seite.warteAuf('document.querySelectorAll("#druck .leaflet-container").length >= 1', 20000);
+  b.pruefe(await seite.auswerten('document.querySelectorAll("#druck .fbp-istpunkt").length') > 0,
+    'Die aufgenommenen Punkte stehen auf dem Blatt');
+  b.pruefe(await seite.auswerten('document.querySelectorAll("#druck path.fbp-ist-linie").length') > 0,
+    'Und die gebaute Trasse als durchgezogene Linie');
+  b.pruefe(await seite.auswerten(`
+    return [...document.querySelectorAll('#druck path')]
+      .some(p => (p.getAttribute('stroke-dasharray') || '').replace(/,/g, ' ').trim().startsWith('1 7'));`),
+    'Die geplante Trasse tritt daneben zur feinen Punktreihe zurück');
+  const blatttext = (await seite.text('#druck') || '').replace(/\s+/g, ' ');
+  b.pruefe(/Baudokumentation Fernmeldebau/.test(blatttext), 'Der Kopf nennt das Erzeugnis');
+  b.pruefe(/Zeichenerklärung/.test(blatttext) && /gebaute Trasse/.test(blatttext) &&
+    /geplante Trasse/.test(blatttext),
+    'Die Zeichenerklärung erklärt beide Linien');
+  b.pruefe(/Aufgenommene Punkte/.test(blatttext), 'Die Punkttabelle steht da');
+  b.pruefe(/Materialnachweis/.test(blatttext), 'Der Materialnachweis ebenso');
+  b.pruefe(/Prüfung und Übergabe/.test(blatttext), 'Prüfung und Übergabe ebenso');
+  b.pruefe(/Bestätigungen/.test(blatttext), 'Und die Unterschriften');
+  /* MGRS und nicht das am Bildschirm gewählte Format: auf dem Blatt wird die
+     Koordinate vorgelesen, und dafür gilt im THW MGRS. */
+  b.pruefe(/\b\d{1,2}[A-Z] [A-Z]{2} \d+ \d+/.test(blatttext),
+    'Die Koordinaten stehen als MGRS auf dem Blatt');
+
+  b.abschnitt('Die Baudokumentation schaltet alle vier Formate');
+  for (const [format, ausrichtung] of [['a4', 'hoch'], ['a4', 'quer'], ['a3', 'hoch'], ['a3', 'quer']]) {
+    const mass = await seite.auswerten(`
+      const w = document.querySelectorAll('#druck .ds-felder select');
+      const setz = (stelle, wert) => {
+        const e = w[stelle];
+        e.value = wert;
+        e.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      setz(0, ${JSON.stringify(format)});
+      setz(1, ${JSON.stringify(ausrichtung)});
+      await new Promise(f => setTimeout(f, 600));
+      const doku = document.querySelector('.druck-doku');
+      const blatt = document.querySelector('#druck .blatt');
+      return { klasse: doku.className,
+               breit: Math.round(blatt.getBoundingClientRect().width),
+               hoch: Math.round(blatt.getBoundingClientRect().height) };`);
+    b.pruefe(mass.klasse.includes(format) && mass.klasse.includes(ausrichtung),
+      `${format.toUpperCase()} ${ausrichtung}: das Blatt trägt sein Formatkennwort`);
+    const quer = mass.breit > mass.hoch;
+    b.gleich(quer, ausrichtung === 'quer',
+      `${format.toUpperCase()} ${ausrichtung}: das Blatt liegt richtig herum (${mass.breit}×${mass.hoch})`);
+  }
+  b.pruefe(await seite.auswerten(`
+    const d = document.querySelector('#druck .druck-doku');
+    d.classList.add('sw');
+    const linien = [...document.querySelectorAll('#druck path.fbp-ist-linie')];
+    return linien.length > 0;`), 'Im Schwarz-Weiß-Satz bleibt die gebaute Trasse eine eigene Linie');
+  await seite.auswerten(
+    `const m = await import('./js/bauauftrag.js'); m.schliesseBauauftrag(); return true;`);
+  await seite.ruhe();
+
   b.abschnitt('Der Baumodus stylt die übrigen Blätter nicht um');
   /* Der Bauauftrag haengt als `#druck` in DASSELBE Dokument wie die
      Seitenleiste, und `css/app.css` gilt fuer beide. Ein Klassenname, den der

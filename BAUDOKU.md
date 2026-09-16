@@ -7,14 +7,15 @@ Papier hält die Entscheidung und ihre Begründung fest; was am Quelltext zu
 beachten ist, steht in `CLAUDE.md`, die Zusage an den Nutzer in
 `datenschutz.html`, die beiden Wege nach draußen in `TEILEN.md` und `CLOUD.md`.
 
-Stand: Stufen 1, 2, 3 und 4 gebaut. Stufe 1 – Datenmodell, Umschalter,
+Stand: Stufen 1 bis 5 gebaut. Stufe 1 – Datenmodell, Umschalter,
 Bauabschnitte, Ist-Punkte auf drei Wegen, die gebaute Trasse auf der Karte und
 der Rückweg über Datei, Link und Speicher. Stufe 2 – Materialnachweis nach
 festem Katalog, Baumeldungen als Zeitschiene, Prüfung je Leitungsstamm und die
 Übergabe. Stufe 3 – die Baumeldung als Rückweg, mit Vorschau beim Planer und
 abschnittsweisem Einspielen mehrerer Trupps. Stufe 4 – die Anwendung startet
 ohne Netz, und die Karte lässt sich für den Bauort mitnehmen. Damit ist der
-Kreis geschlossen: Planung hin, Baumeldung zurück. Die Stufen 5 und 6 stehen
+Kreis geschlossen: Planung hin, Baumeldung zurück. Stufe 5 – die
+Baudokumentation als viertes Druckblatt. Stufe 6 – die Lichtbilder – steht
 aus.
 
 ## Warum überhaupt
@@ -377,7 +378,12 @@ den Rest nicht aufhalten soll.
    liest ihn über `vorratsEbene()` in `js/map.js`. Geprüft mit
    `node scripts/offline-pruefen.mjs`, das das Netz im Browser wirklich
    abschaltet.
-5. Druckerzeugnis Baudokumentation, alle vier Formate.
+5. ~~Druckerzeugnis Baudokumentation, alle vier Formate.~~ **Gebaut.** Eigener
+   Modus `baudoku` in `js/bauauftrag.js` mit eigenem Optionsprofil
+   (`fbp.baudoku.v1`, A4 hoch), Kartenblatt über `mitIst` und Nachweisblätter
+   über denselben Blattfluss wie die Datenblätter des Bauauftrags. Geprüft mit
+   `node scripts/baumodus-pruefen.mjs`; die vier Formate im Browser gegengemessen,
+   Firefox auf macOS steht aus.
 6. Lichtbilder: Aufnahme am Punkt, Speicher, Rückweg.
 
 Die Stufen 1 bis 3 sind am Schreibtisch prüfbar, Stufe 4 nur am Gerät.

@@ -42,7 +42,9 @@ import { peilungText, nordbezugText } from './missweisung.js';
 import { bilderAufnehmen } from './bilder.js';
 import { bildUrl, miniUrl } from './bildspeicher.js';
 import * as io from './io.js';
-import { oeffneBauauftrag, oeffneSammeldruck, oeffneLagekarte } from './bauauftrag.js';
+import {
+  oeffneBauauftrag, oeffneSammeldruck, oeffneLagekarte, oeffneBaudoku
+} from './bauauftrag.js';
 import { funksicht, sichtText, UMKREIS_STANDARD, UMKREIS_HOECHSTENS } from './funksicht.js';
 /* `befundLesen` heißt in relais.js schon etwas anderes – hier umbenannt, damit
    an der Aufrufstelle steht, um welchen Befund es geht. */
@@ -4560,7 +4562,21 @@ function bauRueckwegBlock(s) {
     if (io.baumeldungExportieren(alle)) hinweis('Baumeldung als Datei gesichert');
   }, 'klein bau-taste'));
   box.appendChild(tasten);
-  void s;
+
+  /* Das gedruckte Blatt steht hier und nicht bei den Ausgabewegen der
+     Streckenliste: es ist das Erzeugnis des TRUPPS – es ersetzt die Technische
+     Fernmeldeskizze und verbleibt bei ihm –, und gegriffen wird danach am
+     Bauort, wo der Baumodus läuft. Es gilt der gewählten Strecke und nicht
+     allen: ein Blatt je Trasse, so wie der Bauauftrag. */
+  const druck = el('div', 'tastenreihe');
+  const druckKnopf = knopf('▤ Baudokumentation (PDF)', () => oeffneBaudoku(s.id), 'breit');
+  druck.appendChild(druckKnopf);
+  if (!bauBegonnen(s)) {
+    druckKnopf.disabled = true;
+    druck.appendChild(el('p', 'ausgabe-grund',
+      `An „${escapeHtml(s.name)}“ ist noch nichts aufgenommen.`));
+  }
+  box.appendChild(druck);
   return box;
 }
 

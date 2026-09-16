@@ -42,7 +42,8 @@ Was ein Nachbarprodukt nicht wahrheitsgemäß kopieren könnte:
   Entscheidungsort (Querungsarten, Mindesthöhen, Schutzabstände,
   Genehmigungspflichten) – am Bauort wird nach der Nummer gesucht.
 - Das Werkzeug ist **vom gedruckten Erzeugnis her komponiert**: Bauauftrag,
-  Sammel-Bauauftrag und Lagekarte sind das Produkt, die Karte ist der Weg dorthin.
+  Sammel-Bauauftrag, Lagekarte und Baudokumentation sind das Produkt, die Karte
+  ist der Weg dorthin.
 - Es läuft **vollständig im Browser** – kein Server, kein Konto, keine
   Installation; einsetzbar auf jedem OV-Rechner ohne IT-Freigabeprozess.
 - **894 taktische Zeichen** (davon 108 Fernmeldewesen) mit eigener
@@ -68,7 +69,7 @@ Was ein Nachbarprodukt nicht wahrheitsgemäß kopieren könnte:
 ## Capabilities and Constraints
 
 Funktionsumfang im Detail: siehe `README.md` (Strecken, Einsatzabschnitte,
-Zeichengruppen, Rechengrößen, Koordinaten, drei Druckerzeugnisse, Austauschformate).
+Zeichengruppen, Rechengrößen, Koordinaten, vier Druckerzeugnisse, Austauschformate).
 
 **Technische Randbedingungen (Ist-Stand, bewusst gewählt):**
 

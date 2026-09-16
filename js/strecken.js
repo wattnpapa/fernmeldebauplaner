@@ -560,11 +560,13 @@ export class StreckenLayer {
     this.aktiverPunkt = null;   // Punkt-ID
     this.zeichenModus = null;   // Strecken-ID während des Zeichnens
     /* Die gebaute Trasse liegt neben der geplanten. Sie ist ausdrücklich
-       abzuschalten und nicht von selbst da: die drei Druckerzeugnisse zeigen
-       den Auftrag, und eine zweite Linie darin hätte weder einen Eintrag in
-       der Zeichenerklärung noch ein eigenes Strichmuster für den
-       Schwarz-Weiß-Druck. Das gedruckte Blatt der Baudokumentation ist ein
-       eigenes und kommt später. */
+       abzuschalten und nicht von selbst da: die drei Auftragsblätter –
+       Bauauftrag, Sammel-Bauauftrag, Lagekarte – zeigen den AUFTRAG, und eine
+       zweite Linie darin hätte dort weder einen Eintrag in der
+       Zeichenerklärung noch ein eigenes Strichmuster für den
+       Schwarz-Weiß-Druck. Das vierte Blatt, die Baudokumentation, setzt die
+       Option und bringt beides mit (`baudokuLegendeHTML` in
+       `bauauftrag.js`). */
     this.mitIst = !!opt.mitIst;
     this.istSetzModus = null;   // { sid, sollPunkt, art } während „Punkt setzen“
     this.aufIstPunkt = opt.aufIstPunkt || (() => {});

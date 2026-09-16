@@ -1,6 +1,6 @@
 // bauauftrag.js – Druckfertige Erzeugnisse: der Bauauftrag je Strecke und als
-//                 Sammelauftrag (A4/A3) und die Lagekarte der Führungsstelle
-//                 (bis A0 und in freiem Maß)
+//                 Sammelauftrag (A4/A3), die Lagekarte der Führungsstelle
+//                 (bis A0 und in freiem Maß) und die Baudokumentation des Trupps
 
 import {
   store, punktartById, kabelById, VERLEGEARTEN, abschnittById, abschnittGewaehlt, streckenIm
@@ -15,7 +15,13 @@ import { ZONEN_ERKLAERUNG, ausbreitungText } from './ausbreitung.js';
 import { bosBandById } from './bosfunk.js';
 import { GitterLayer } from './gitter.js';
 import { setzeBasiskarte, grauVariante, warteAufKacheln, basiskarteById, dopQuellenangabe, MAX_ZOOM } from './map.js';
-import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter } from './geo.js';
+import { toMGRS, toDDM, peilung, himmelsrichtung, formatLaenge, meter, distanz } from './geo.js';
+import {
+  bauBegonnen, baukennzahlen, istPunkte, bauabschnitte, bauabschnittById, sollZuIst,
+  materialzeilen, materialSumme, materialSoll, meldungenNachZeit, pruefzeilen,
+  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE
+} from './baudoku.js';
+import { MATERIALKATALOG, MATERIALGRUPPEN, pruefartById, dtg } from './vorschrift.js';
 import { HOEHEN_QUELLE } from './hoehe.js';
 import { OBERFLAECHEN_QUELLE } from './oberflaeche.js';
 import {
@@ -122,6 +128,23 @@ const STANDARD_AUFTRAG = {
   deckblatt: true, verzeichnis: true, einzelblaetter: true
 };
 
+/* Die Baudokumentation merkt sich ihre Einstellungen ebenfalls getrennt. Sie
+   wird am Bauort ausgefüllt und beim Trupp abgelegt, der Bauauftrag geht an die
+   Führung – wer beides druckt, will dafür nicht dasselbe Papier.
+
+   Hoch statt quer: das Blatt ist eine Aufstellung und keine Karte. Die
+   Punkttabelle, der Materialbogen und die Prüfzeilen sind schmal und lang, und
+   im Querformat stünden neben ihnen vier leere Zentimeter. */
+const STANDARD_BAUDOKU = {
+  format: 'a4', ausrichtung: 'hoch', farbe: 'farbe',
+  uebersicht: true, gitter: true, punktzeichen: true, zeichen: false,
+  flaechen: false, relais: false, andereStrecken: false,
+  zwischenpunkte: false, teillaengen: false, punktnamen: true,
+  istpunkte: true, materialbogen: true, meldungen: true, pruefung: true,
+  abweichungen: true, unterschrift: true,
+  zoomVersatz: 0, strichstaerke: 1
+};
+
 /* Die Lagekarte merkt sich ihre Einstellungen getrennt vom Bauauftrag. Sonst
    stünde nach einer A0-Lagekarte auch der nächste Bauauftrag auf A0 – und der
    soll in die Tasche passen. */
@@ -162,10 +185,13 @@ const LAGE_EINZELPUNKT_ZOOM = 14;
 
 const PROFILE = {
   auftrag: { schluessel: 'fbp.druck.v1', standard: STANDARD_AUFTRAG },
-  lage: { schluessel: 'fbp.lagekarte.v1', standard: STANDARD_LAGE }
+  lage: { schluessel: 'fbp.lagekarte.v1', standard: STANDARD_LAGE },
+  baudoku: { schluessel: 'fbp.baudoku.v1', standard: STANDARD_BAUDOKU }
 };
 
-const profilVon = auftrag => PROFILE[auftrag.modus === 'lage' ? 'lage' : 'auftrag'];
+const profilVon = auftrag =>
+  PROFILE[auftrag.modus === 'lage' ? 'lage'
+    : auftrag.modus === 'baudoku' ? 'baudoku' : 'auftrag'];
 
 function ladeOptionen(profil) {
   try { return { ...profil.standard, ...JSON.parse(localStorage.getItem(profil.schluessel) || '{}') }; }
@@ -203,6 +229,29 @@ export function oeffneBauauftrag(sid) {
     return;
   }
   oeffneDruckansicht({ modus: 'einzel', strecken: [strecke], abschnitt: null, umfang: 'strecke' });
+}
+
+/**
+ * Die Baudokumentation einer Strecke – das vierte Blatt.
+ *
+ * Sie ersetzt die Technische Fernmeldeskizze für den Kabelbau (Hdb
+ * Feldfernkabelbau, 1.3.2) und verbleibt beim Trupp. Anders als die drei
+ * anderen Erzeugnisse zeigt sie nicht den Auftrag, sondern die Ausführung:
+ * die gebaute Trasse kräftig, die geplante als feine Punktreihe daneben.
+ *
+ * Verlangt wird eine begonnene Baudokumentation und keine Mindestzahl an
+ * Trassenpunkten: ein Trupp, der eine Strecke ohne Plan gebaut hat, soll sein
+ * Blatt bekommen.
+ */
+export function oeffneBaudoku(sid) {
+  const strecke = store.strecke(sid);
+  if (!strecke) return;
+  if (!bauBegonnen(strecke)) {
+    hinweis('An dieser Strecke ist noch nichts aufgenommen – die Baudokumentation ' +
+      'entsteht im Baumodus.', 'warnung');
+    return;
+  }
+  oeffneDruckansicht({ modus: 'baudoku', strecken: [strecke], abschnitt: null, umfang: 'strecke' });
 }
 
 /**
@@ -322,12 +371,14 @@ const streckenzahl = n => `${n} ${n === 1 ? 'Strecke' : 'Strecken'}`;
 
 function doktyp(auftrag) {
   if (auftrag.modus === 'lage') return 'Lagekarte Fernmeldebau';
+  if (auftrag.modus === 'baudoku') return 'Baudokumentation Fernmeldebau';
   return auftrag.modus === 'sammel' ? 'Sammel-Bauauftrag Fernmeldebau' : 'Bauauftrag Fernmeldebau';
 }
 
 /** Name des Erzeugnisses in der Steuerleiste und im Dateinamen */
 function erzeugnis(auftrag) {
   return auftrag.modus === 'lage' ? 'Lagekarte'
+    : auftrag.modus === 'baudoku' ? 'Baudokumentation'
     : auftrag.modus === 'sammel' ? 'Sammel-Bauauftrag' : 'Bauauftrag';
 }
 
@@ -337,6 +388,7 @@ function oeffneDruckansicht(auftrag) {
   schliesseBauauftrag();
   const sammel = auftrag.modus === 'sammel';
   const lage = auftrag.modus === 'lage';
+  const baudoku = auftrag.modus === 'baudoku';
   const profil = profilVon(auftrag);
   const opt = ladeOptionen(profil);
   /* Die Kennung eines Einsatzabschnitts gilt nur in der Planung, in der sie
@@ -399,7 +451,39 @@ function oeffneDruckansicht(auftrag) {
     [['quer', 'Quer'], ['hoch', 'Hoch']], opt, neuAufbau);
   const masseFeld = lage ? freiesMassFeld(opt, neuAufbau) : null;
 
-  felder.append(
+  if (baudoku) {
+    /* Eine eigene Leiste statt eines dritten Zweigs in der bestehenden: die
+       Baudokumentation teilt mit dem Bauauftrag nur das Papier. Was auf ihr
+       steht, ist durchweg anderes – und drei Fragezeichen in derselben
+       verschachtelten Bedingung liest niemand mehr. */
+    felder.append(
+      gruppe('Papier', [
+        auswahl('Format', 'format', PAPIERE_AUFTRAG, opt, neuAufbau),
+        ausrichtungFeld,
+        auswahl('Farbe', 'farbe', [['farbe', 'Farbe'], ['sw', 'Schwarz-Weiß']], opt, neuAufbau)
+      ]),
+      gruppe('Kartenblatt', [
+        haken('Übersichtskarte', 'uebersicht', opt, neuAufbau),
+        haken('Punktbezeichnungen', 'punktnamen', opt, neuAufbau),
+        ...(hatPunktzeichen(auftrag.strecken)
+          ? [haken('Verteilerzeichen', 'punktzeichen', opt, neuAufbau)] : []),
+        haken('Taktische Zeichen', 'zeichen', opt, neuAufbau),
+        haken('Koordinatengitter', 'gitter', opt, neuAufbau)
+      ]),
+      gruppe('Darstellung', [zoomFeld(opt, neuAufbau), strichFeld(opt, neuAufbau)]),
+      /* In der Reihenfolge, in der die Teile auf dem Blatt stehen – und das
+         ist die Reihenfolge des Bauens: aufnehmen, verbrauchen, melden,
+         prüfen, abweichen, unterschreiben. */
+      gruppe('Nachweise', [
+        haken('Aufgenommene Punkte', 'istpunkte', opt, neuAufbau),
+        haken('Materialnachweis', 'materialbogen', opt, neuAufbau),
+        haken('Baumeldungen', 'meldungen', opt, neuAufbau),
+        haken('Prüfung und Übergabe', 'pruefung', opt, neuAufbau),
+        haken('Abweichungen', 'abweichungen', opt, neuAufbau),
+        haken('Unterschriften', 'unterschrift', opt, neuAufbau)
+      ])
+    );
+  } else felder.append(
     gruppe('Papier', [
       auswahl('Format', 'format', lage ? PAPIERE_LAGE : PAPIERE_AUFTRAG, opt, neuAufbau),
       ...(masseFeld ? [masseFeld] : []),
@@ -962,6 +1046,7 @@ function aufbauen(ziel, auftrag, opt, karten, druckKnopf) {
   const sw = opt.farbe === 'sw';
   const sammel = auftrag.modus === 'sammel';
   const lage = auftrag.modus === 'lage';
+  const baudoku = auftrag.modus === 'baudoku';
   const mass = blattmasse(auftrag, opt);
   // Im Sammeldruck meint „andere Strecken“ die übrigen der Sammlung,
   // nicht alles, was sonst noch in der Planung liegt.
@@ -986,6 +1071,11 @@ function aufbauen(ziel, auftrag, opt, karten, druckKnopf) {
   if (sammel) {
     if (opt.deckblatt) deckblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau);
     if (opt.verzeichnis) verzeichnisblaetter(ziel, auftrag, opt);
+  }
+  if (baudoku) {
+    for (const s of auftrag.strecken) {
+      baudokublaetter(ziel, s, opt, mass, sw, karten, kartenbau);
+    }
   }
   if (auftrag.modus === 'einzel' || (sammel && opt.einzelblaetter)) {
     for (const s of auftrag.strecken) {
@@ -2650,6 +2740,435 @@ function druckHinweisText(opt) {
   const lage = opt.ausrichtung === 'hoch' ? 'Hoch' : 'Quer';
   const masse = FORMATE[opt.format] && Math.max(bmm, hmm) > 420 ? ` (${bmm} × ${hmm} mm)` : '';
   return `Im Druckdialog: ${name} · ${lage}${masse} · Ränder „Keine“`;
+}
+
+// ------------------------------------------------------ Baudokumentation
+
+/* Das vierte Erzeugnis. Die drei anderen zeigen den AUFTRAG – was gebaut
+   werden soll. Dieses zeigt die AUSFÜHRUNG und ersetzt die Technische
+   Fernmeldeskizze für den Kabelbau (Hdb Feldfernkabelbau, 1.3.2). Es verbleibt
+   beim Trupp.
+
+   Deshalb ist es ein eigenes Blatt und keine zusätzliche Linie auf dem
+   Bauauftrag: dort hätte die gebaute Trasse weder einen Eintrag in der
+   Zeichenerklärung noch ein eigenes Strichmuster für den Schwarz-Weiß-Druck,
+   und der Trupp suchte auf dem Blatt, das ihm sagt, was er tun soll, plötzlich
+   auch das, was er schon getan hat. */
+
+function baudokublaetter(ziel, strecke, opt, mass, sw, karten, kartenbau) {
+  const p = store.projekt;
+  const k = baukennzahlen(strecke);
+
+  const b1 = blatt(ziel, opt);
+  b1.innerHTML =
+    baudokuKopfHTML(p, strecke) +
+    baudokuStammHTML(p, strecke, k) +
+    kartenfeldHTML({ uebersicht: opt.uebersicht }) +
+    baudokuLegendeHTML(strecke, sw, opt) +
+    baudokuKennzahlenHTML(k) +
+    fussHTML(p, opt);
+
+  if (baudokuNachweiseNoetig(opt)) baudokuNachweise(ziel, p, strecke, k, opt);
+  /* Erst jetzt, nachdem der Blattfluss alle Blätter angelegt hat: das Kennwort
+     gehört an jedes von ihnen, nicht nur an das erste. Ein späteres Blatt der
+     Baudokumentation soll sich nicht als Bauauftrag ausgeben – auf dem Stapel
+     im Fahrzeug wird nach der Farbe der Kennzahlkante gegriffen. */
+  ziel.querySelectorAll('.blatt').forEach(b => b.classList.add('bl-baudoku'));
+
+  kartenbau.push(() => {
+    const karte = baueBaudokuKarte(b1.querySelector('.karten-buehne'), strecke, opt, mass, sw, karten);
+    setzeUebersichtsecke(b1.querySelector('.karten-rahmen'), karte, strecke);
+    const ukBuehne = b1.querySelector('.uk-buehne');
+    const uk = ukBuehne ? baueUebersichtskarte(ukBuehne, strecke, mass, sw, karten, null) : null;
+    massstabSchreiben(b1, karte);
+    return Promise.all([warteAufKacheln(karte, kachelfrist(mass)), uk ? warteAufKacheln(uk) : null])
+      .then(() => massstabSchreiben(b1, karte));
+  });
+}
+
+function baudokuKopfHTML(p, s) {
+  return kopfHTML(p, {
+    titel: s.name,
+    unter: (s.von || s.nach) ? `${s.von || '?'} → ${s.nach || '?'}` : '',
+    doktyp: 'Baudokumentation Fernmeldebau'
+  });
+}
+
+/* Kopfangaben des Trupps. Trupp, Truppführer, Baubeginn und Bauende hängen am
+   BAUABSCHNITT und nicht an der Strecke – baut nur einer, steht seine Angabe
+   hier oben; bauen mehrere aufeinander zu, steht hier „mehrere“ und die
+   Aufstellung folgt weiter unten. Eine Zusammenfassung wäre an dieser Stelle
+   eine Behauptung: „1. und 2. FmTr“ sagt nicht, wer welchen Teil gebaut hat. */
+function baudokuStammHTML(p, s, k) {
+  const abs = bauabschnitte(s);
+  const eins = abs.length === 1 ? abs[0] : null;
+  const mehrere = abs.length > 1 ? `${abs.length} Abschnitte` : '';
+  return stammFelderHTML([
+    ['Auftrag / Einsatz', p.kopf.einsatz],
+    ['Einheit', p.kopf.einheit],
+    ['Auftrags-Nr.', p.kopf.auftragNr],
+    ['Trupp', eins ? eins.trupp : mehrere],
+    ['Truppführer', eins ? eins.fuehrer : mehrere],
+    ['Baubeginn', eins ? dtgOderStrich(eins.beginn) : mehrere],
+    ['Bauende', eins ? dtgOderStrich(eins.ende) : mehrere],
+    ['Stand', k.stand.name]
+  ]);
+}
+
+/* Datum-Zeit-Gruppe statt eines Datums: so steht es in der Fernmeldeskizze und
+   so wird es am Fernsprecher durchgegeben. `dtg()` in `vorschrift.js` erzeugt
+   sie; ein leeres Feld bleibt ein Strich und wird nicht zu „jetzt“. */
+function dtgOderStrich(wert) {
+  if (!wert) return '';
+  const d = new Date(wert);
+  return isNaN(d) ? String(wert) : dtg(d);
+}
+
+/* Die Zeichenerklärung des Blattes. Sie muss BEIDE Linien erklären – das ist
+   der Grund, warum die gebaute Trasse ein eigenes Blatt bekommt und nicht auf
+   dem Bauauftrag mitläuft. Im Schwarz-Weiß-Druck unterscheiden sie sich am
+   Strichmuster und nicht an der Farbe: die gebaute ist durchgezogen, die
+   geplante eine feine Punktreihe. */
+function baudokuLegendeHTML(s, sw, opt) {
+  const farbe = sw ? '#000' : s.farbe;
+  const arten = [...new Set(istPunkte(s).map(pt => pt.art))];
+  const punkte = arten.map(a => {
+    const pa = punktartById(a);
+    return `<span class="lg-eintrag"><i class="lg-punkt art-${a}" style="--farbe:${farbe}">` +
+      `${pa.kurz === '·' ? '' : pa.kurz}</i>${pa.name}</span>`;
+  }).join('');
+  return `<div class="bl-legende">
+    <span class="lg-titel">Zeichenerklärung</span>
+    <span class="lg-eintrag"><i class="lg-linie lg-ist" style="--farbe:${farbe}"></i>gebaute Trasse</span>
+    <span class="lg-eintrag"><i class="lg-linie lg-soll" style="--farbe:${farbe}"></i>geplante Trasse</span>
+    <span class="lg-eintrag"><i class="lg-linie lg-abw"></i>Abweichung ab ${ABWEICHUNG_SCHWELLE} m</span>
+    ${punkte}
+    ${opt.punktnamen === false ? '' :
+      '<span class="lg-eintrag lg-hinweis">Nummern = Reihenfolge der Aufnahme</span>'}
+  </div>`;
+}
+
+function baudokuKennzahlenHTML(k) {
+  const kacheln = [
+    ['geplant', k.sollLaenge ? formatLaenge(k.sollLaenge) : '–', 'Trasse laut Auftrag'],
+    ['gebaut', k.laenge ? formatLaenge(k.laenge) : '–', 'Trasse nach Aufnahme'],
+    ['Unterschied', k.laengenUnterschied
+      ? (k.laengenUnterschied > 0 ? '+' : '−') + formatLaenge(Math.abs(k.laengenUnterschied))
+      : '–', 'gebaut gegen geplant'],
+    ['Punkte', `${k.bestaetigt} von ${k.sollPunkte}`,
+      k.zusaetzlich ? `${k.zusaetzlich} zusätzlich` : 'bestätigt'],
+    ['Abweichungen', String(k.abweichungen.length),
+      k.groessteAbweichung ? `größte ${formatLaenge(k.groessteAbweichung)}` : `ab ${ABWEICHUNG_SCHWELLE} m`]
+  ];
+  return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>
+    `<div class="kz"><span class="kz-titel">${escapeHtml(t)}</span>` +
+    `<span class="kz-wert">${escapeHtml(w)}</span>` +
+    `<span class="kz-unter">${escapeHtml(u)}</span></div>`).join('')}</div>`;
+}
+
+/* Die Karte des Blattes: die gebaute Trasse kräftig, die geplante daneben.
+   Über `mitIst` – dieselbe Option, die auch die Arbeitskarte im Baumodus
+   setzt. Andere Strecken bleiben draußen: das Blatt gilt EINER Trasse, und
+   eine fremde Linie daneben ist auf einem Nachweis nichts als Verwechselung. */
+function baueBaudokuKarte(buehne, strecke, opt, mass, sw, karten) {
+  const p = store.projekt;
+  const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.25 });
+  setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
+
+  const sl = new StreckenLayer(karte, {
+    interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt),
+    hervorheben: strecke.id, nurStrecke: strecke.id,
+    punktzeichen: opt.punktzeichen !== false,
+    mitIst: true
+  });
+  sl.zeichne({
+    ...p.optionen, gesamtlaenge: false, punktnummern: true,
+    teillaengen: opt.teillaengen !== false,
+    punktnamen: opt.punktnamen !== false,
+    zwischenpunkte: opt.zwischenpunkte !== false
+  });
+
+  if (opt.zeichen) {
+    const zl = new ZeichenLayer(karte, {
+      interaktiv: false, sw, abschnittSchaltet: false,
+      nurAbschnitt: strecke.abschnitt || undefined
+    });
+    zl.zeichne(zeichenOptionen(p, mass));
+  }
+
+  /* Der Ausschnitt umfasst BEIDE Trassen. Nur auf die geplante zu passen
+     schnitte genau das ab, worum es auf diesem Blatt geht: die Stelle, an der
+     der Trupp ausgewichen ist. */
+  const ecken = strecke.punkte.concat(istPunkte(strecke)).map(x => [x.lat, x.lng]);
+  if (ecken.length) {
+    const grenzen = L.latLngBounds(ecken);
+    const rand = kartenrand(mass);
+    if (grenzen.getNorthEast().equals(grenzen.getSouthWest())) {
+      karte.setView(grenzen.getCenter(), 16, { animate: false });
+    } else {
+      karte.fitBounds(grenzen, { padding: [rand, rand], animate: false });
+    }
+  }
+  if (opt.zoomVersatz) karte.setZoom(karte.getZoom() + opt.zoomVersatz, { animate: false });
+  karte.invalidateSize({ animate: false });
+  if (opt.gitter) {
+    new GitterLayer(karte, {
+      interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt)
+    }).zeichne({ gitter: true });
+  }
+  karten.push(karte);
+  return karte;
+}
+
+// ------------------------------------------- Nachweise der Baudokumentation
+
+function baudokuNachweiseNoetig(opt) {
+  return !!(opt.istpunkte || opt.materialbogen || opt.meldungen || opt.pruefung ||
+    opt.abweichungen || opt.unterschrift);
+}
+
+function baudokuNachweise(ziel, p, strecke, k, opt) {
+  const fluss = blattfluss(ziel, opt, baudokuKopfHTML(p, strecke), fussHTML(p, opt));
+
+  if (bauabschnitte(strecke).length > 1) {
+    fluss.setze(elementAus(bauabschnittHTML(strecke)));
+  }
+  if (opt.istpunkte) {
+    tabelleFliessen(fluss, istpunkteRahmenHTML, istpunkteZeilenHTML(strecke));
+  }
+  if (opt.materialbogen) {
+    tabelleFliessen(fluss, materialbogenRahmenHTML, materialbogenZeilenHTML(strecke));
+  }
+  if (opt.meldungen && meldungenNachZeit(strecke).length) {
+    tabelleFliessen(fluss, meldungRahmenHTML, meldungZeilenHTML(strecke));
+  }
+  if (opt.pruefung) fluss.setze(elementAus(pruefungHTML(strecke, k)));
+  if (opt.abweichungen) fluss.setze(elementAus(baudokuAbweichungHTML(strecke, k)));
+  if (opt.unterschrift) fluss.setze(elementAus(baudokuUnterschriftHTML(p)));
+}
+
+/* Wer welchen Teil gebaut hat. Steht nur da, wo mehrere Trupps an einer
+   Strecke gebaut haben – bei einem einzigen stehen seine Angaben schon im
+   Kopf, und eine Tabelle mit einer Zeile ist Papier ohne Aussage. */
+function bauabschnittHTML(s) {
+  const zeilen = bauabschnitte(s).map(a => `<tr>
+    <td>${escapeHtml(a.name)}</td>
+    <td>${escapeHtml(a.trupp || '')}</td>
+    <td>${escapeHtml(a.fuehrer || '')}</td>
+    <td class="mono">${escapeHtml(dtgOderStrich(a.beginn) || '–')}</td>
+    <td class="mono">${escapeHtml(dtgOderStrich(a.ende) || '–')}</td>
+  </tr>`).join('');
+  return `<section class="bl-abschnitt">
+    <h2>Bauabschnitte</h2>
+    <table class="tab-punkte">
+      <thead><tr><th>Abschnitt</th><th>Trupp</th><th>Truppführer</th>
+        <th>Baubeginn</th><th>Bauende</th></tr></thead>
+      <tbody>${zeilen}</tbody>
+    </table>
+  </section>`;
+}
+
+function istpunkteRahmenHTML(fortsetzung) {
+  return `<section class="bl-abschnitt">
+    <h2>Aufgenommene Punkte${fortsetzung ? ' (Fortsetzung)' : ''}</h2>
+    <table class="tab-punkte tab-ist">
+      <thead><tr>
+        <th>Nr.</th><th>Art</th><th>Bezeichnung</th><th>MGRS</th>
+        <th>Herkunft</th><th>Zeit</th><th>Abschnitt</th><th>geplant</th><th>Bemerkung</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="tab-fussnote">Die Herkunft sagt, wie die Koordinate entstanden ist: bestätigt
+      aus dem Plan, vom Gerät geortet (mit Genauigkeit) oder auf der Karte gesetzt. Die
+      Spalte „geplant“ nennt die Nummer des bestätigten Trassenpunktes und die Entfernung
+      zu ihm.</p>
+  </section>`;
+}
+
+function istpunkteZeilenHTML(s) {
+  return istPunkte(s).map((pt, i) => {
+    const art = punktartById(pt.art);
+    const soll = sollZuIst(s, pt);
+    const nr = soll ? s.punkte.indexOf(soll) + 1 : 0;
+    const weit = soll ? distanz(soll, pt) : null;
+    const abschnitt = bauabschnittById(s, pt.abschnitt);
+    return `<tr>
+      <td class="nr">${i + 1}</td>
+      <td>${escapeHtml(art.name)}</td>
+      <td>${escapeHtml(pt.name || '')}</td>
+      <td class="mono">${escapeHtml(toMGRS(pt.lat, pt.lng, 5))}</td>
+      <td>${escapeHtml(quelleText(pt))}</td>
+      <td class="mono">${escapeHtml(uhrzeit(pt.zeit) || '–')}</td>
+      <td>${escapeHtml(abschnitt ? abschnitt.name : '')}</td>
+      <td class="zahl">${soll
+        ? `Pkt. ${nr}${weit >= ABWEICHUNG_SCHWELLE
+            ? ` <b>(${escapeHtml(formatLaenge(weit))})</b>` : ''}`
+        : 'zusätzlich'}</td>
+      <td>${escapeHtml(pt.bemerkung || '')}</td>
+    </tr>`;
+  }).join('');
+}
+
+function materialbogenRahmenHTML(fortsetzung) {
+  return `<section class="bl-abschnitt">
+    <h2>Materialnachweis${fortsetzung ? ' (Fortsetzung)' : ''}</h2>
+    <table class="tab-punkte tab-bogen">
+      <thead><tr><th>Gruppe</th><th>Artikel</th><th>verbraucht</th><th>Bedarf laut Planung</th>
+        <th>Bemerkung</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="tab-fussnote">Aufgeführt ist nur, was eingetragen wurde. Ein Bedarf steht
+      allein an der Kabelzeile – für alles Übrige rechnet die Planung keine Menge, und
+      eine hergeleitete Zahl sähe hier wie eine Vorgabe aus.</p>
+  </section>`;
+}
+
+function materialbogenZeilenHTML(s) {
+  const summe = materialSumme(s);
+  const soll = materialSoll(kennzahlen(s));
+  const zeilen = [];
+  for (const gruppe of MATERIALGRUPPEN) {
+    for (const eintrag of MATERIALKATALOG.filter(m => m.gruppe === gruppe.id)) {
+      if (eintrag.mehrfach) continue;
+      if (!summe.has(eintrag.id)) continue;
+      zeilen.push([gruppe.name, eintrag.name,
+        mengeMitEinheit(summe.get(eintrag.id), eintrag.einheit),
+        (soll && soll.artikel === eintrag.id)
+          ? mengeMitEinheit(Math.round(soll.menge), eintrag.einheit) : '–',
+        bemerkungenZu(s, eintrag.id)]);
+    }
+  }
+  /* Die freien Zeilen stehen am Ende und tragen ihre Bezeichnung in der
+     Bemerkung – der Katalog kennt sie ja nicht. */
+  for (const z of materialzeilen(s).filter(x => x.artikel === 'sonstiges')) {
+    zeilen.push(['Sonstiges', z.bemerkung || '(ohne Bezeichnung)',
+      Number.isFinite(z.menge) ? mengeMitEinheit(z.menge, '') : '–', '–', '']);
+  }
+  if (!zeilen.length) {
+    return `<tr><td colspan="5" class="tab-leer">Kein Material eingetragen.</td></tr>`;
+  }
+  return zeilen.map(([g, a, ist, sollText, bem]) => `<tr>
+    <td>${escapeHtml(g)}</td>
+    <td>${escapeHtml(a)}</td>
+    <td class="zahl"><b>${escapeHtml(ist)}</b></td>
+    <td class="zahl">${escapeHtml(sollText)}</td>
+    <td>${escapeHtml(bem)}</td>
+  </tr>`).join('');
+}
+
+const mengeMitEinheit = (zahl, einheit) => {
+  const n = Number(zahl).toLocaleString('de-DE', { maximumFractionDigits: 1 });
+  return einheit ? `${n} ${einheit}` : n;
+};
+
+const bemerkungenZu = (s, artikel) => materialzeilen(s)
+  .filter(z => z.artikel === artikel && z.bemerkung).map(z => z.bemerkung).join('; ');
+
+function meldungRahmenHTML(fortsetzung) {
+  return `<section class="bl-abschnitt">
+    <h2>Baumeldungen${fortsetzung ? ' (Fortsetzung)' : ''}</h2>
+    <table class="tab-punkte tab-meldung">
+      <thead><tr><th>Zeit</th><th>Abschnitt</th><th>Meldung</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="tab-fussnote">Nach jeder Kabellänge oder nach befohlener Zeit ist eine
+      Baumeldung an die Anfangsstelle durchzugeben (Hdb Feldfernkabelbau, 3.5).</p>
+  </section>`;
+}
+
+function meldungZeilenHTML(s) {
+  return meldungenNachZeit(s).map(m => {
+    const a = bauabschnittById(s, m.abschnitt);
+    return `<tr>
+      <td class="mono">${escapeHtml(uhrzeit(m.zeit) || '–')}</td>
+      <td>${escapeHtml(a ? a.name : '')}</td>
+      <td>${escapeHtml(m.text || '')}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* Messungen und Sprechproben je Leitungsstamm, darunter die Übergabe. Ohne
+   diesen Teil ist die Baudokumentation eine Notiz und kein Nachweis: nach 3.5
+   ist die Übergabe erst beendet, wenn die befohlenen Übernahmemessungen
+   abgeschlossen sind. Steht noch nichts da, bleibt der Vordruck stehen – am
+   Bauplatz wird er mit der Hand ausgefüllt. */
+function pruefungHTML(s, k) {
+  const zeilen = pruefzeilen(s);
+  const u = k.uebergabe;
+  const koerper = zeilen.length
+    ? zeilen.map(z => `<tr>
+        <td>${escapeHtml(z.stamm || '')}</td>
+        <td>${escapeHtml(pruefartById(z.art).name)}</td>
+        <td>${escapeHtml(z.ergebnis || '')}</td>
+        <td>${z.bestanden === true ? 'bestanden'
+             : z.bestanden === false ? '<b>nicht bestanden</b>' : 'offen'}</td>
+        <td class="mono">${escapeHtml(uhrzeit(z.zeit) || '–')}</td>
+        <td>${escapeHtml(z.pruefer || '')}</td>
+      </tr>`).join('')
+    : '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>'.repeat(4);
+  return `<section class="bl-abschnitt">
+    <h2>Prüfung und Übergabe</h2>
+    <table class="tab-punkte tab-pruef">
+      <thead><tr><th>Stamm</th><th>Art</th><th>Messwert / Bemerkung</th>
+        <th>Ergebnis</th><th>Zeit</th><th>Prüfer</th></tr></thead>
+      <tbody>${koerper}</tbody>
+    </table>
+    <div class="bl-stamm bd-uebergabe">
+      <div class="st-feld"><span class="st-titel">Übergeben an</span>
+        <span class="st-wert">${escapeHtml(u.an || '–')}</span></div>
+      <div class="st-feld"><span class="st-titel">Zeitpunkt</span>
+        <span class="st-wert">${escapeHtml(dtgOderStrich(u.zeit) || '–')}</span></div>
+      <div class="st-feld"><span class="st-titel">Übergeben durch</span>
+        <span class="st-wert">${escapeHtml(u.durch || '–')}</span></div>
+    </div>
+    <p class="tab-fussnote">Auf allen Leitungsstämmen des Feldfernkabels sind Messungen
+      vorzunehmen, bei Verbindungs- und Anschlusskabel alle Stämme durch Sprechproben zu
+      prüfen. Übergeben ist die Leitung erst, wenn die befohlenen Übernahmemessungen
+      abgeschlossen sind (Hdb Feldfernkabelbau, 3.5).</p>
+  </section>`;
+}
+
+/* Die Abweichungen im Klartext – der eigentliche Ertrag des Blattes. Der
+   Truppführer muss zwingende Abweichungen vom Auftrag melden (1.3.2), und der
+   Planer braucht sie, wenn er den nächsten Auftrag auf dieselbe Trasse legt.
+   Die Liste nennt sie mit Punktnummer und Entfernung, das Feld darunter trägt
+   den Satz dazu – getippt oder mit der Hand. */
+function baudokuAbweichungHTML(s, k) {
+  const text = (s.bau && s.bau.abweichung) || '';
+  const liste = k.abweichungen.map(a => {
+    const nr = s.punkte.indexOf(a.soll) + 1;
+    return `<li>Punkt ${nr}: <b>${escapeHtml(formatLaenge(a.meter))}</b> vom geplanten Ort</li>`;
+  }).join('');
+  return `<section class="bl-abschnitt">
+    <h2>Abweichungen vom Auftrag</h2>
+    ${liste ? `<ul class="bau-abwliste">${liste}</ul>`
+      : `<p class="tab-fussnote">Kein aufgenommener Punkt liegt mehr als
+         ${ABWEICHUNG_SCHWELLE} m vom geplanten entfernt.</p>`}
+    <div class="bl-freitext">
+      <div class="bl-linien" aria-hidden="true">${'<i></i>'.repeat(12)}</div>
+      <div class="bl-text">${text ? escapeHtml(text).replace(/\n/g, '<br>') : ''}</div>
+    </div>
+  </section>`;
+}
+
+function baudokuUnterschriftHTML(p) {
+  const felder = [
+    'Bau beendet (Truppführer)', 'Leitung geprüft (Prüfer)',
+    'Übernommen (empfangende Einheit)'
+  ];
+  const fdr = (p.kopf.fdr || '').trim();
+  return `<section class="bl-abschnitt bl-unterschrift">
+    <h2>Bestätigungen</h2>
+    <div class="us-gitter bd-unterschrift">${felder.map(f => `<div class="us-feld">
+      <span class="us-titel">${f}</span>
+      <div class="us-zeile"><span>Datum / Uhrzeit</span></div>
+      <div class="us-zeile"><span>Name, Unterschrift</span></div>
+    </div>`).join('')}</div>
+    ${fdr ? `<div class="us-fdr">
+      <span class="us-titel">F.d.R. ${escapeHtml(fdr)}</span>
+      <div class="us-zeile"><span>Unterschrift</span></div>
+    </div>` : ''}
+  </section>`;
 }
 
 function drucken(auftrag, opt) {

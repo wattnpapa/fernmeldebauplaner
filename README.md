@@ -7,7 +7,9 @@ Strecken werden auf der Karte geplant, die Längen stehen direkt an der Trasse, 
 für jede Strecke lässt sich ein druckfertiger **Bauauftrag** für den Fernmeldebautrupp
 ausgeben – A4 oder A3, hoch oder quer, in Farbe oder Schwarz-Weiß. Für die
 Führungsstelle gibt es dieselbe Lage als **Lagekarte** auf einem einzelnen Blatt
-bis A0 oder in freiem Maß.
+bis A0 oder in freiem Maß. Was der Trupp draußen daraus gemacht hat, hält er im
+Baumodus fest und bringt es als **Baudokumentation** zurück – als viertes Blatt
+und als Meldung an den Planer.
 
 Die Anwendung läuft vollständig im Browser. Es gibt keinen Server, keine Anmeldung
 und kein Benutzerkonto: alle Planungen liegen im lokalen Speicher des Browsers und
@@ -218,6 +220,27 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Einsatzabschnitten gegliedert samt Teilsummen; dazu der Materialbedarf nach Leitungsarten
 - Danach je Strecke die gewohnten Blätter; welche Blattarten entstehen, ist wählbar
 
+**Baudokumentation als PDF**
+- Das vierte Erzeugnis, und das einzige, das nicht den Auftrag zeigt, sondern die
+  Ausführung. Es ersetzt die Technische Fernmeldeskizze für den Kabelbau und verbleibt
+  beim Trupp
+- Kopf mit Auftrag, Einheit, Trupp, Truppführer, Baubeginn und Bauende als
+  Datum-Zeit-Gruppe; bauen mehrere Trupps an einer Strecke, folgt die Aufstellung nach
+  Bauabschnitten
+- Die Karte trägt **beide Trassen**: die gebaute durchgezogen und kräftig, die geplante
+  als feine Punktreihe, dazu die Verbindungslinie überall dort, wo ein Punkt um mehr als
+  25 m abweicht. Der Ausschnitt umfasst beide – nur auf die geplante zu passen schnitte
+  gerade die Stelle ab, an der der Trupp ausgewichen ist
+- Darunter: die aufgenommenen Punkte mit MGRS, Herkunft der Koordinate, Uhrzeit und
+  Abweichung; der Materialnachweis verbraucht gegen Bedarf; die Baumeldungen mit
+  Uhrzeit; Messungen und Sprechproben je Leitungsstamm samt Übergabe; die Abweichungen
+  im Klartext mit Schreiblinien; die Bestätigungen
+- **A4 und A3, hoch und quer, Farbe und Schwarz-Weiß.** Im Schwarz-Weiß-Druck
+  unterscheiden Strichmuster die beiden Trassen, nicht Farben
+- Das Papier wird getrennt vom Bauauftrag gemerkt: die Baudokumentation wird am Bauort
+  ausgefüllt, der Bauauftrag geht an die Führung – wer beides druckt, will dafür nicht
+  dasselbe Format
+
 **Lagekarte als PDF**
 - Ein einzelnes Blatt für die Führungsstelle, auf dem die Karte fast alles ist:
   alle Strecken mit Namen und Länge, die taktischen Zeichen, das Koordinatengitter
@@ -281,8 +304,15 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   die befohlenen Übernahmemessungen abgeschlossen sind
 - Baustand je Strecke (noch nicht begonnen, im Bau, gebaut, übergeben), geplante gegen
   gebaute Länge und ein Feld für die Meldung an den S 6
+- **Baudokumentation als viertes Druckblatt:** was gebaut wurde, in A4 und A3, hoch und
+  quer, Farbe und Schwarz-Weiß. Kopf mit Trupp, Truppführer, Baubeginn und Bauende als
+  Datum-Zeit-Gruppe; die Karte mit der gebauten Trasse kräftig und der geplanten als
+  feiner Punktreihe; die aufgenommenen Punkte mit MGRS, Herkunft und Uhrzeit; Material
+  verbraucht gegen Bedarf; Baumeldungen; Messungen und Sprechproben je Stamm;
+  Abweichungen; Unterschriften. Sie ersetzt die Technische Fernmeldeskizze und verbleibt
+  beim Trupp
 - **Die Planung bleibt unangetastet.** Das Ist liegt daneben, nicht an seiner Stelle –
-  nur so bleibt die Abweichung nachweisbar. Die drei gedruckten Erzeugnisse zeigen
+  nur so bleibt die Abweichung nachweisbar. Die drei Auftragsblätter zeigen
   weiterhin den Auftrag
 
 **Ohne Netz**
@@ -348,6 +378,11 @@ Orthophotos der Landesvermessungen (DOP 20 cm, alle 16 Länder).
 anklicken, mit Doppelklick oder `Enter` abschließen. Punkte lassen sich anschließend
 verschieben; die gestrichelten Griffe zwischen zwei Punkten fügen beim Ziehen einen
 Zwischenpunkt ein.
+
+**Baudokumentation drucken:** Im Baumodus ganz unten unter „Baumeldung an den
+Planer“ steht „▤ Baudokumentation (PDF)“. Sie gilt der oben gewählten Strecke –
+ein Blatt je Trasse, wie beim Bauauftrag – und merkt sich ihr Papier getrennt
+von ihm: sie wird am Bauort ausgefüllt, der Bauauftrag geht an die Führung.
 
 **Baumeldung zurückschicken:** Im Baumodus ganz unten unter „Baumeldung an den
 Planer“ – als Link oder als Datei. Sie geht über alle Strecken, an denen dieser
@@ -601,7 +636,8 @@ in den Baumodus, nimmt Punkte auf allen drei Wegen auf – samt vorgetäuschtem
 Gerätestandort –, füllt den Materialnachweis, setzt eine Baumeldung, prüft die
 Leitungsstämme und übergibt, lädt die Seite neu, schickt die Planung durch den
 Link und zurück, lässt zwei Trupps getrennt zurückmelden und einspielen und
-prüft, dass die gebaute Trasse auf keinem der drei Druckerzeugnisse landet. Eine präparierte Datei läuft dabei gegen die Weißliste
+prüft, dass die gebaute Trasse auf keinem der drei Auftragsblätter landet – wohl aber auf
+dem vierten, der Baudokumentation, dort in allen vier Formaten. Eine präparierte Datei läuft dabei gegen die Weißliste
 in `migrieren()` – ein erfundener Artikel, eine negative Menge, eine Prüfart,
 die es nicht gibt.
 

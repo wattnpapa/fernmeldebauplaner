@@ -404,6 +404,16 @@ body.druckansicht { overflow: hidden; }
 .lg-linie { display: inline-block; width: 9mm; height: 0; border-top: 1.2pt solid var(--farbe, #111); }
 .lg-linie.ander { border-top: 1pt dashed #8a8a8a; }
 .lg-linie.funk { border-top-style: dashed; }
+/* Die beiden Trassen der Baudokumentation. Sie müssen sich auch im
+   Schwarz-Weiß-Druck unterscheiden, wo die Farbe nichts sagt – deshalb steht
+   der Unterschied im Strichmuster und nicht im Ton: die gebaute Trasse ist
+   durchgezogen und kräftiger, die geplante eine feine Punktreihe. Genau so
+   zeichnet `_zeichneIst()` in `strecken.js` sie auf die Karte; die
+   Zeichenerklärung wäre wertlos, wenn sie etwas anderes zeigte. */
+.lg-linie.lg-ist { border-top-width: 1.8pt; }
+.lg-linie.lg-soll { border-top: 1pt dotted var(--farbe, #111); }
+.lg-linie.lg-abw { border-top: 1pt dashed #b45309; }
+.druck-doku.sw .lg-linie.lg-abw { border-top-color: #444; }
 /* Musterstück der Kabelart: das Zeichen sitzt im Linienzug, genau wie auf
    der Karte – die Linie läuft als Hintergrund hinter Strichen und Ziffern. */
 .lg-kabel {
@@ -840,6 +850,33 @@ body.druckansicht { overflow: hidden; }
   border-width: var(--strich); border-top-width: calc(var(--strich) * 3.2);
 }
 .lageblatt .bl-fuss { gap: 1.32em; padding-top: .46em; border-top-width: var(--strich); }
+
+/* ---------------------------------------------------- Baudokumentation */
+
+/* Das vierte Blatt. Es teilt Kopf, Karte, Kennzahlen und Tabellen mit dem
+   Bauauftrag – hier steht nur, was sich unterscheidet.
+
+   Fünf Kennzahlkacheln statt vier: geplant, gebaut, Unterschied, Punkte,
+   Abweichungen. Die Oberkante ist grün statt blau, damit auf dem Stapel im
+   Fahrzeug auf einen Blick zu sehen ist, welches Blatt den Auftrag zeigt und
+   welches die Ausführung. */
+.druck-doku .bl-baudoku .kz { border-top-color: #2e7d32; }
+
+/* Die Nachweistabellen sind schmaler als die Punkttabelle des Auftrags und
+   vertragen deshalb etwas mehr Luft in der Zeile: auf ihnen wird mit der Hand
+   nachgetragen, was das Gerät am Bauort nicht aufgenommen hat. */
+.tab-ist td, .tab-bogen td, .tab-meldung td, .tab-pruef td { padding: 1.2mm 1.2mm; }
+.tab-bogen .zahl, .tab-pruef .zahl { white-space: nowrap; }
+/* Eine leere Tabelle sagt „nichts eingetragen“ und bleibt nicht wortlos: ein
+   leeres Feld auf einem Nachweis liest sich wie ein vergessenes. */
+.tab-leer { text-align: center; font-style: italic; color: #555; padding: 2.4mm 0; }
+
+/* Die Übergabe steht abgesetzt unter den Prüfzeilen – sie gilt der ganzen
+   Leitung und nicht einem einzelnen Stamm. */
+.bd-uebergabe { margin-top: 2.4mm; grid-template-columns: repeat(3, 1fr); }
+/* Drei Bestätigungen statt vier, also auch drei Spalten: sonst bliebe rechts
+   ein leeres Feld stehen, das jemand auszufüllen versuchte. */
+.bd-unterschrift { grid-template-columns: repeat(3, 1fr); }
 
 /* ---------------------------------------------------------------- Schwarz-Weiß */
 
