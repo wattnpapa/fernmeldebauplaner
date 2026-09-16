@@ -119,11 +119,21 @@ function bauVerschlanken(s) {
 
   if (bau.abschnitte.length) {
     raus.abschnitte = bau.abschnitte.map((a, i) => {
-      /* Verglichen wird gegen die Vorgabe AN DIESER STELLE: Name und Farbe des
-         Bauabschnitts hängen an seiner Nummer, und `bauNormalisieren()` in
-         `state.js` stellt beide aus derselben Nummer wieder her. Sie müssen
-         deshalb – anders als bei der Strecke – nicht mitreisen. */
-      const weg = entruempeln(a, neuerBauabschnitt({ abschnitte: new Array(i) }));
+      /* Verglichen wird gegen die Vorgabe AN DIESER STELLE: die Farbe des
+         Bauabschnitts hängt an seiner Nummer, und `bauNormalisieren()` in
+         `state.js` stellt sie aus derselben Nummer wieder her.
+
+         DER NAME REIST IN JEDEM FALL MIT, auch wenn er der Vorgabe entspricht.
+         Beim Hinweg wäre er entbehrlich – dort baut der Empfänger denselben
+         Namen aus derselben Nummer wieder auf. Beim Rückweg nicht: eine
+         Baumeldung wird über den Namen des Bauabschnitts eingeordnet
+         (`baumeldung.js`), und zwar bevor `bauNormalisieren()` darüberläuft.
+         Fehlte er, suchte das Einspielen mit einem leeren Namen, fände nichts,
+         legte die Aufnahme an eine frische Kennung – und der Namensvergleich
+         eine Zeile später träfe dann doch den vorhandenen Abschnitt und löschte
+         dessen Eintragungen. Beide Trupps verlören ihre Aufnahme, lautlos.
+         Achtzehn Zeichen je Abschnitt sind der Preis dafür. */
+      const weg = entruempeln(a, neuerBauabschnitt({ abschnitte: new Array(i) }), ['name']);
       delete weg.id;
       weg.vonPunkt = stelleVon(s.punkte, a.vonPunkt);
       weg.bisPunkt = stelleVon(s.punkte, a.bisPunkt);
@@ -544,10 +554,35 @@ export async function meldungAlsLink(projekt, strecken) {
     await packen(JSON.stringify(alsBaumeldung(projekt, strecken)));
 }
 
-/** Ist dieses Objekt eine Baumeldung? Gilt für den Datei- wie den Linkweg. */
-export const istBaumeldung = o => !!(o && typeof o === 'object' &&
-  o.fassung === 1 && Array.isArray(o.strecken) && !o.kopf && !o.ansicht &&
-  o.strecken.every(m => m && typeof m === 'object' && typeof m.name === 'string' && m.bau));
+/**
+ * Ist dieses Objekt eine Baumeldung? Gilt für den Datei- wie den Linkweg.
+ *
+ * Geprüft wird bis in den `bau`-Block hinein und nicht nur an der Oberfläche.
+ * Was hier durchkommt, geht anschließend durch `befund()` und `einspielen()` in
+ * `baumeldung.js`, und die lesen `bau.abschnitte`, `bau.punkte`, `bau.material`
+ * und `bau.meldungen` als Listen. Wäre dort eine Zeichenkette oder eine Zahl,
+ * bräche das Einspielen MITTEN im Schreiben ab – mit einem halb ersetzten Bogen
+ * in der Planung, den niemand mehr auseinandersortiert. Die Weißliste in
+ * `state.js` fängt das erst danach ab, hier geht es um die Frage davor: soll
+ * das überhaupt als Baumeldung behandelt werden?
+ */
+export function istBaumeldung(o) {
+  if (!o || typeof o !== 'object') return false;
+  if (o.fassung !== 1 || !Array.isArray(o.strecken)) return false;
+  if (o.kopf || o.ansicht) return false;
+  const listeOderNichts = w => w === undefined || w === null || Array.isArray(w);
+  return o.strecken.every(m => {
+    if (!m || typeof m !== 'object' || typeof m.name !== 'string') return false;
+    const bau = m.bau;
+    if (!bau || typeof bau !== 'object' || Array.isArray(bau)) return false;
+    if (!listeOderNichts(bau.abschnitte) || !listeOderNichts(bau.punkte) ||
+        !listeOderNichts(bau.material) || !listeOderNichts(bau.meldungen)) return false;
+    if (bau.pruefung !== undefined && bau.pruefung !== null &&
+        (typeof bau.pruefung !== 'object' || Array.isArray(bau.pruefung) ||
+         !listeOderNichts(bau.pruefung.staemme))) return false;
+    return true;
+  });
+}
 
 /**
  * Die Baumeldung aus dem Fragment holen – roh, noch nicht zugeordnet.

@@ -210,8 +210,13 @@ oder Datei, wie in `TEILEN.md` beschrieben.
 
 **Zurück** geht eine **Baumeldung**: ein Link oder eine Datei, die nicht die
 ganze Planung enthält, sondern nur die `bau`-Blöcke der Strecken dieses
-Trupps, dazu neu angelegte Strecken und die Kennung der Planung, zu der sie
-gehören. Das hält sie klein – Ist-Punkte und Materialzeilen wiegen weniger als
+Trupps, dazu der Name der Planung und je Strecke die Zahl der geplanten Punkte.
+
+Die **Kennung** der Planung reist ausdrücklich NICHT mit – sie könnte es gar
+nicht, siehe unten. Und **neu am Bauort angelegte Strecken** reisen vorerst
+ebenfalls nicht mit: sie brauchten ihre ganze Soll-Geometrie im Gepäck, also
+genau das, was die Baumeldung klein hält, und beim Planer eine zweite
+Entscheidung („anlegen oder verwerfen“). Das steht unter „Offen“. Das hält sie klein – Ist-Punkte und Materialzeilen wiegen weniger als
 die Planung, die hingeschickt wurde, und die reist heute in gut 2 000 Zeichen.
 
 **Zusammenführen ist erlaubt**, eng geschnitten: eine Baumeldung ersetzt genau
@@ -404,6 +409,12 @@ Die Stufen 1 bis 3 sind am Schreibtisch prüfbar, Stufe 4 nur am Gerät.
   gibt, kostet Zeit. `fundstelleText()` gibt für einen Eintrag ohne Fundstelle
   eine leere Zeichenkette, die Oberfläche trägt also nichts Falsches. Sobald
   die Angabe vorliegt, gehört sie an jede Zeile.
+
+- **Neu angelegte Strecken kommen noch nicht zurück.** Der Trupp darf am Bauort
+  eine Strecke anlegen, weil der Weg anders lief – auf seinem Gerät steht sie
+  dann, die Baumeldung nimmt sie aber nicht mit. Sie braucht ihre volle
+  Soll-Geometrie und beim Planer einen eigenen Entschluss; bis dahin ist der
+  Weg für diesen Fall die ganze Planungsdatei.
 
 - **Das Soll steht nur an einer einzigen Zeile.** Die Planung rechnet den
   Kabelbedarf, und damit hat genau die Kabelzeile ein Soll. Bauhaken,

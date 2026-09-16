@@ -20,12 +20,29 @@
 import { bauNormalisieren, BAUSTAENDE, id as neueKennung } from './state.js';
 import { bauabschnitte, istPunkte } from './baudoku.js';
 
-/* Die Reihenfolge der Baustände, um den niedrigeren zu bestimmen. Meldet ein
-   Trupp „gebaut“ für seinen Abschnitt, ist die STRECKE deshalb noch nicht
-   gebaut – der andere Trupp kann noch unterwegs sein. */
+/* Die Reihenfolge der Baustände, um sie vergleichen zu können. */
 const STAND_RANG = new Map(BAUSTAENDE.map((b, i) => [b.id, i]));
-const niedrigererStand = (a, b) =>
-  (STAND_RANG.get(a) ?? 0) <= (STAND_RANG.get(b) ?? 0) ? a : b;
+const rang = id => STAND_RANG.get(id) ?? 0;
+const nachRang = r => BAUSTAENDE[Math.max(0, Math.min(BAUSTAENDE.length - 1, r))].id;
+
+/**
+ * Der Baustand der STRECKE nach einer Meldung über einen Teil von ihr.
+ *
+ * Zwei Fehler liegen hier nahe, und beide wären schlimm. Den gemeldeten Stand
+ * einfach zu übernehmen hieße: Trupp Nord meldet „gebaut“ für seine Hälfte, und
+ * die ganze Strecke gilt als gebaut, während Süd noch im Gelände steht.
+ * Umgekehrt immer den niedrigeren zu nehmen hieße: die Strecke bliebe für immer
+ * auf „noch nicht begonnen“, denn dort fängt sie an – keine Meldung könnte sie
+ * je bewegen.
+ *
+ * Deshalb: eine Teilmeldung hebt den Stand, senkt ihn nie, und hebt ihn
+ * höchstens auf „im Bau“. Dass die Strecke fertig ist, entscheidet der Planer –
+ * er ist der Einzige, der alle Abschnitte vor sich hat.
+ */
+function standNachTeilmeldung(bisher, gemeldet) {
+  const gedeckelt = Math.min(rang(gemeldet), rang('laeuft'));
+  return nachRang(Math.max(rang(bisher), gedeckelt));
+}
 
 // ------------------------------------------------------------- Einordnen
 
@@ -66,8 +83,14 @@ export function befund(projekt, meldung, zuordnung) {
     const zielId = zuordnung ? zuordnung[i] : undefined;
     const ziel = zielId === null ? null
       : (projekt.strecken || []).find(s => s.id === zielId) || vorschlag(projekt, m.name);
-    const abschnitteDerMeldung = ((m.bau && m.bau.abschnitte) || []).map(a => String(a.name || ''));
+    /* Der Name wird hier genauso hergestellt, wie `bauNormalisieren()` ihn
+       später herstellt – sonst sähe die Vorschau leere Namen, meldete nie eine
+       Kollision und zeigte „0 weichen“, während das Einspielen sehr wohl
+       etwas ersetzte. */
+    const abschnitteDerMeldung = ((m.bau && m.bau.abschnitte) || [])
+      .map((a, n) => String((a && a.name) || `Bauabschnitt ${n + 1}`));
     const ganzeStrecke = abschnitteDerMeldung.length === 0;
+    const unzugeordnet = m.bau ? zaehleOhneAbschnitt(m.bau) : 0;
 
     /* Ein Bauabschnitt gleichen Namens, an dem beim Planer schon etwas hängt,
        ist der Kollisionsfall: zwei Trupps haben denselben Abschnitt gemeldet,
@@ -92,8 +115,24 @@ export function befund(projekt, meldung, zuordnung) {
       istPunkte: ((m.bau && m.bau.punkte) || []).length,
       materialzeilen: ((m.bau && m.bau.material) || []).length,
       meldungen: ((m.bau && m.bau.meldungen) || []).length,
+      pruefzeilen: ((m.bau && m.bau.pruefung && m.bau.pruefung.staemme) || []).length,
+      uebergabe: !!(m.bau && m.bau.pruefung && m.bau.pruefung.uebergabeAn),
+      /* Was die Meldung ohne Bauabschnitt mitbringt. Es wird mit eingespielt und
+         ersetzt den unzugeordneten Bestand des Planers – der Planer muss das
+         vorher sehen. */
+      unzugeordnet,
       kollision,
       planAbweicht,
+      /* Was eine Meldung über die ganze Strecke beim Planer wegnimmt: sie tritt
+         an die Stelle des ganzen Bogens, also auch an die von Bauabschnitten,
+         die sie gar nicht nennt, und von Prüfung und Übergabe. */
+      verdraengt: (ziel && ganzeStrecke) ? {
+        abschnitte: vorhandene.length,
+        pruefzeilen: ((ziel.bau && ziel.bau.pruefung && ziel.bau.pruefung.staemme) || []).length,
+        uebergabe: !!(ziel.bau && ziel.bau.pruefung && ziel.bau.pruefung.uebergabeAn),
+        material: ((ziel.bau && ziel.bau.material) || []).length,
+        abweichung: !!(ziel.bau && ziel.bau.abweichung)
+      } : null,
       /* Was beim Planer verlorenginge. Bei der ganzen Strecke ist das der
          ganze Bogen, bei einzelnen Abschnitten nur deren Eintragungen. */
       ersetzt: ziel ? (ganzeStrecke ? istPunkte(ziel).length
@@ -103,6 +142,18 @@ export function befund(projekt, meldung, zuordnung) {
     };
   });
 }
+
+/* Wie viele Eintragungen dieses Bogens keinem Bauabschnitt zugeordnet sind.
+   Gilt für den ROHEN Bogen einer Meldung, und dort steht die Zuordnung als
+   STELLE in der Abschnittsliste. Die erste Stelle ist die 0, und die ist falsch
+   – ein `!z.abschnitt` zählte die Eintragungen des ersten Bauabschnitts
+   allesamt als unzugeordnet und meldete dem Planer, sie träten an die Stelle
+   seines eigenen unzugeordneten Bestands. */
+const nichtZugeordnet = x => x.abschnitt === undefined || x.abschnitt === null;
+const zaehleOhneAbschnitt = bau =>
+  (bau.punkte || []).filter(nichtZugeordnet).length +
+  (bau.material || []).filter(nichtZugeordnet).length +
+  (bau.meldungen || []).filter(nichtZugeordnet).length;
 
 /** Hängt an diesem Bauabschnitt überhaupt etwas? */
 function traegtEintraege(strecke, aid) {
@@ -124,21 +175,29 @@ function traegtEintraege(strecke, aid) {
  * Nur innerhalb von `store.aendern` aufrufen.
  */
 export function einspielen(projekt, meldung, zuordnung) {
-  const bericht = { strecken: 0, punkte: 0, abschnitte: 0, uebersprungen: 0 };
+  const bericht = { strecken: 0, punkte: 0, bestand: 0, abschnitte: 0, uebersprungen: 0 };
   (meldung.strecken || []).forEach((m, i) => {
     const zielId = zuordnung ? zuordnung[i] : undefined;
     const ziel = zielId === null ? null
       : (projekt.strecken || []).find(s => s.id === zielId) || vorschlag(projekt, m.name);
     if (!ziel) { bericht.uebersprungen++; return; }
 
-    const frisch = aufloesen(ziel, m);
+    const planAbweicht = Number.isInteger(m.sollPunkte) &&
+      m.sollPunkte !== (ziel.punkte || []).length;
+    const frisch = aufloesen(ziel, m, planAbweicht);
     if (!frisch) { bericht.uebersprungen++; return; }
 
+    const vorher = istPunkte(ziel).length;
     if (!frisch.abschnitte.length) ganzeStreckeErsetzen(ziel, frisch);
     else abschnitteErsetzen(ziel, frisch);
 
     bericht.strecken++;
-    bericht.punkte += frisch.punkte.length;
+    /* Gezählt wird, was danach WIRKLICH in der Planung steht, und nicht, was die
+       Meldung mitbrachte. Beides auseinanderlaufen zu lassen wäre die
+       schlimmste Sorte Fehler: der Planer läse „7 Punkte eingespielt“ und hätte
+       drei – und suchte den Fehler beim Trupp. */
+    bericht.punkte += Math.max(0, istPunkte(ziel).length - vorher);
+    bericht.bestand += istPunkte(ziel).length;
     bericht.abschnitte += frisch.abschnitte.length;
   });
   return bericht;
@@ -157,7 +216,7 @@ export function einspielen(projekt, meldung, zuordnung) {
  * (`bauNormalisieren` in `state.js`) – eine Baumeldung kommt aus derselben
  * Fremde wie ein Link.
  */
-function aufloesen(ziel, m) {
+function aufloesen(ziel, m, planAbweicht) {
   if (!m || !m.bau || typeof m.bau !== 'object') return null;
   const roh = JSON.parse(JSON.stringify(m.bau));
   const punkte = ziel.punkte || [];
@@ -174,12 +233,28 @@ function aufloesen(ziel, m) {
      Ein vorhandener Abschnitt gleichen Namens gibt seine Kennung her: sonst
      hinge alles, was beim Planer sonst noch auf ihn zeigt, in der Luft. */
   const vorhandene = bauabschnitte(ziel);
-  abschnitte.forEach(a => {
-    const alt = vorhandene.find(x => x.name === String(a.name || ''));
+  const vergeben = new Set();
+  abschnitte.forEach((a, n) => {
+    /* Der Name wird festgeschrieben, BEVOR gesucht wird, und zwar genauso, wie
+       `bauNormalisieren()` ihn gleich darauf herstellen wird. Sonst suchte
+       diese Zeile mit einem leeren Namen, fände nichts, und der Namensvergleich
+       in `abschnitteErsetzen()` träfe eine Zeile später doch – auf eine andere
+       Kennung. Der Bogen beider Trupps wäre dann weg. */
+    a.name = String((a && a.name) || `Bauabschnitt ${n + 1}`);
+    const alt = vorhandene.find(x => x.name === a.name && !vergeben.has(x.id));
+    if (alt) vergeben.add(alt.id);
     a.id = alt ? alt.id : (a.id || neueKennung());
   });
 
-  const punktKennung = i => (Number.isInteger(i) && punkte[i] ? punkte[i].id : null);
+  /* Weicht die Zahl der geplanten Punkte ab, hat jemand eingefügt oder gelöscht,
+     und die Stellen zeigen auf eine andere Liste als die, gegen die sie
+     geschrieben wurden. Dann wird JEDER Planbezug gelöst und keiner geraten:
+     ein Ist-Punkt ohne Bezug ist ein eigenständiger Punkt und bleibt stehen,
+     ein falsch aufgelöster behauptete, ein bestimmter geplanter Punkt sei
+     bestätigt worden – und genau darauf beruht die ganze Abweichungsrechnung.
+     Die Vorschau sagt das vorher zu; hier wird es eingelöst. */
+  const punktKennung = i =>
+    (!planAbweicht && Number.isInteger(i) && punkte[i] ? punkte[i].id : null);
   const abschnittKennung = i => (Number.isInteger(i) && abschnitte[i] ? abschnitte[i].id : null);
   abschnitte.forEach(a => {
     a.vonPunkt = punktKennung(a.vonPunkt);
@@ -199,6 +274,39 @@ function aufloesen(ziel, m) {
   return bauNormalisieren(roh);
 }
 
+/* Trägt dieser Bogen etwas, das keinem Bauabschnitt zugeordnet ist?
+   Gilt für den AUFGELÖSTEN Bogen, dort ist die Zuordnung eine Kennung oder
+   `null` – eine Stelle 0 kann hier nicht mehr vorkommen. Derselbe Test steht
+   für den rohen Bogen weiter oben unter `nichtZugeordnet`. */
+const ohneAbschnitt = bau =>
+  (bau.punkte || []).some(nichtZugeordnet) ||
+  (bau.material || []).some(nichtZugeordnet) ||
+  (bau.meldungen || []).some(nichtZugeordnet);
+
+/**
+ * Die Ist-Punkte wieder in die Ordnung der Planung bringen.
+ *
+ * Nötig, weil zwei Trupps aufeinander zu bauen und der eine am Ende der Trasse
+ * anfängt – nach der Eintragungszeit sortiert liefe die gebaute Trasse sonst
+ * verkehrt herum über die Karte.
+ *
+ * Ein Punkt OHNE Planbezug bekommt dabei den Rang seines Vorgängers und nicht
+ * den letzten: ans Listenende geschoben liefe die gebaute Trasse über die ganze
+ * Strecke und wieder zurück, und die gerechnete Länge wäre doppelt so groß wie
+ * die gebaute. Denselben Fehler vermeidet `nebenDenNachbarn()` in `baudoku.js`
+ * beim Aufnehmen – hier darf er nicht durch die Hintertür zurückkommen.
+ */
+function istPunkteOrdnen(ziel, punkte) {
+  const ordnung = new Map((ziel.punkte || []).map((pt, i) => [pt.id, i]));
+  let zuletzt = -1;
+  const mitRang = punkte.map((pt, i) => {
+    if (ordnung.has(pt.sollPunkt)) zuletzt = ordnung.get(pt.sollPunkt);
+    return { pt, rang: zuletzt, stelle: i };
+  });
+  mitRang.sort((a, b) => a.rang - b.rang || a.stelle - b.stelle);
+  return mitRang.map(x => x.pt);
+}
+
 /* Eine Meldung ohne Bauabschnitt betrifft die ganze Strecke: ein Trupp, eine
    Trasse. Dann tritt ihr Bogen an die Stelle des vorhandenen – alles andere
    liefe darauf hinaus, zwei Bögen zu verschmelzen. */
@@ -212,10 +320,15 @@ function ganzeStreckeErsetzen(ziel, frisch) {
 function abschnitteErsetzen(ziel, frisch) {
   const bau = ziel.bau || (ziel.bau = bauNormalisieren({}));
   const betroffen = new Set();
+  const vergeben = new Set();
 
   for (const neu of frisch.abschnitte) {
-    const alt = (bau.abschnitte || []).find(a => a.name === neu.name);
+    /* Jeder vorhandene Abschnitt wird höchstens EINMAL vergeben: trüge eine
+       Meldung zwei Abschnitte desselben Namens, fielen sonst beide auf
+       denselben Eintrag, und der zweite verlöre seine Eintragungen. */
+    const alt = (bau.abschnitte || []).find(a => a.name === neu.name && !vergeben.has(a.id));
     if (alt) {
+      vergeben.add(alt.id);
       betroffen.add(alt.id);
       /* Die Farbe bleibt die des Planers: an ihr hängt die Karte, die er vor
          sich hat, und der Trupp hat sie nie gesehen. */
@@ -226,24 +339,28 @@ function abschnitteErsetzen(ziel, frisch) {
     }
   }
 
+  /* Was der Trupp OHNE Bauabschnitt aufgenommen hat, gehört ebenso zu seiner
+     Meldung – und fiele sonst lautlos weg, weil `null` in keiner Menge von
+     Abschnittskennungen steht. Das ist kein Randfall: wer aufnimmt, ohne oben
+     einen Abschnitt zu wählen, landet hier, und `bauabschnittLoeschen()` setzt
+     die Zuordnung beim Umgliedern ausdrücklich zurück.
+
+     Der unzugeordnete Bestand des Planers wird dabei ERSETZT und nicht
+     ergänzt. Sonst stünde nach einem zweiten Einspielen derselben Meldung alles
+     doppelt da – und eine Meldung zweimal einzuspielen ist am Bauort
+     wahrscheinlicher als zwei Trupps, die beide nichts zuordnen. Die Vorschau
+     nennt diesen Bestand eigens. */
+  if (ohneAbschnitt(frisch)) betroffen.add(null);
+
   bau.punkte = (bau.punkte || []).filter(pt => !betroffen.has(pt.abschnitt))
     .concat(frisch.punkte.filter(pt => betroffen.has(pt.abschnitt)));
   bau.material = (bau.material || []).filter(z => !betroffen.has(z.abschnitt))
     .concat(frisch.material.filter(z => betroffen.has(z.abschnitt)));
   bau.meldungen = (bau.meldungen || []).filter(mm => !betroffen.has(mm.abschnitt))
     .concat(frisch.meldungen.filter(mm => betroffen.has(mm.abschnitt)));
+  bau.punkte = istPunkteOrdnen(ziel, bau.punkte);
 
-  /* Die Ist-Punkte folgen wieder der Ordnung der Planung und nicht der Uhr –
-     sonst liefe die gebaute Trasse nach dem Einspielen zweier Meldungen einmal
-     hin und zurück, weil der zweite Trupp am anderen Ende angefangen hat. */
-  const ordnung = new Map((ziel.punkte || []).map((pt, i) => [pt.id, i]));
-  bau.punkte.sort((a, b) =>
-    (ordnung.has(a.sollPunkt) ? ordnung.get(a.sollPunkt) : Number.MAX_SAFE_INTEGER) -
-    (ordnung.has(b.sollPunkt) ? ordnung.get(b.sollPunkt) : Number.MAX_SAFE_INTEGER));
-
-  /* Der Stand der STRECKE ist der niedrigere: meldet ein Trupp „gebaut“ für
-     seinen Abschnitt, kann der andere noch unterwegs sein. */
-  bau.stand = niedrigererStand(bau.stand, frisch.stand);
+  bau.stand = standNachTeilmeldung(bau.stand, frisch.stand);
 
   /* Prüfung und Übergabe gehören der ganzen Leitung und nicht einem Abschnitt.
      Eine Meldung über einen Teil der Strecke überschreibt sie deshalb nicht –
@@ -265,7 +382,14 @@ export function berichtText(bericht) {
   const zaehl = (n, ein, viele) => { if (n) teile.push(`${n} ${n === 1 ? ein : viele}`); };
   zaehl(bericht.strecken, 'Strecke', 'Strecken');
   zaehl(bericht.abschnitte, 'Bauabschnitt', 'Bauabschnitte');
-  zaehl(bericht.punkte, 'aufgenommener Punkt', 'aufgenommene Punkte');
   if (!teile.length) return 'Nichts eingespielt';
-  return teile.join(', ') + ' eingespielt';
+  /* Der Bestand und nicht der Zuwachs: eine Meldung, die vorhandene Punkte
+     ERSETZT, bringt netto null neue – „0 Punkte“ danebenzuschreiben wäre
+     irreführend, „12 Punkte stehen jetzt an dieser Strecke“ ist die Aussage,
+     die der Planer prüfen kann. */
+  const satz = teile.join(', ') + ' eingespielt';
+  return bericht.bestand
+    ? `${satz} – ${bericht.bestand} ${bericht.bestand === 1
+        ? 'aufgenommener Punkt steht' : 'aufgenommene Punkte stehen'} jetzt in der Planung`
+    : satz;
 }

@@ -4660,7 +4660,23 @@ export function baumeldungDialog(meldung, herkunft) {
   const liste = el('div', 'meldung-liste');
   box.appendChild(liste);
 
+  /* Zwei Strecken dürfen im Auswahlfeld denselben Namen tragen – dann ist
+     genau das die Frage, die der Planer beantworten muss, und zwei gleich
+     beschriftete Zeilen helfen ihm nicht. Unterschieden wird über die Zahl der
+     geplanten Punkte; sie steht ohnehin vor ihm auf der Karte. */
+  const wahlText = st => {
+    const gleichnamig = (p.strecken || []).filter(x => x.name === st.name).length > 1;
+    return gleichnamig
+      ? `${st.name} (${(st.punkte || []).length} Punkte)` : st.name;
+  };
+
   const zeichne = () => {
+    /* Die Liste wird bei jeder Änderung neu gebaut, und ein Auswahlfeld, das
+       dabei den Fokus verliert, ist mit der Tastatur nicht zu bedienen: jede
+       Zuordnung verlangte neu zuzugreifen. Gerettet wird über die Stelle und
+       nicht über das Element – nach dem Neuaufbau gibt es das alte nicht mehr. */
+    const warFokus = document.activeElement;
+    const marke = warFokus && liste.contains(warFokus) ? warFokus.dataset.mvStelle : null;
     const befunde = befund(p, meldung, zuordnung);
     liste.innerHTML = '';
     befunde.forEach((b, i) => {
@@ -4668,7 +4684,11 @@ export function baumeldungDialog(meldung, herkunft) {
       const bringt = [
         b.istPunkte && `${b.istPunkte} ${b.istPunkte === 1 ? 'Punkt' : 'Punkte'}`,
         b.materialzeilen && `${b.materialzeilen} ${b.materialzeilen === 1 ? 'Materialzeile' : 'Materialzeilen'}`,
-        b.meldungen && `${b.meldungen} ${b.meldungen === 1 ? 'Baumeldung' : 'Baumeldungen'}`
+        b.meldungen && `${b.meldungen} ${b.meldungen === 1 ? 'Baumeldung' : 'Baumeldungen'}`,
+        /* Prüfzeilen und Übergabe gehören dazu: eine Meldung, die nur die
+           Übernahmemessung nachreicht, stünde sonst mit „nichts“ da. */
+        b.pruefzeilen && `${b.pruefzeilen} ${b.pruefzeilen === 1 ? 'Prüfzeile' : 'Prüfzeilen'}`,
+        b.uebergabe && 'Übergabe'
       ].filter(Boolean).join(' · ');
       zeile.innerHTML =
         `<div class="mv-kopf"><b>${escapeHtml(b.name)}</b>
@@ -4681,7 +4701,9 @@ export function baumeldungDialog(meldung, herkunft) {
         zuordnung[i] = wert || null;
         zeichne();
       }, { typ: 'select', werte: [['', '– nicht einspielen –']]
-        .concat((p.strecken || []).map(s => [s.id, s.name])) });
+        .concat((p.strecken || []).map(st => [st.id, wahlText(st)])) });
+      const auswahl = wahl.querySelector('select');
+      if (auswahl) auswahl.dataset.mvStelle = String(i);
       zeile.appendChild(wahl);
 
       if (!b.ziel) {
@@ -4700,15 +4722,41 @@ export function baumeldungDialog(meldung, herkunft) {
             'Aufnahme. Sie wird ersetzt und nicht verschmolzen – wenn zwei Trupps ' +
             'denselben Abschnitt gemeldet haben, vorher die ältere Meldung sichern.'));
         }
+        if (b.unzugeordnet) {
+          zeile.appendChild(el('p', 'klein',
+            `Davon ${b.unzugeordnet} ${b.unzugeordnet === 1 ? 'Eintragung' : 'Eintragungen'} ` +
+            'ohne Bauabschnitt. Sie treten an die Stelle dessen, was hier ohne ' +
+            'Bauabschnitt steht.'));
+        }
+        if (b.verdraengt) {
+          const weg = [
+            b.verdraengt.abschnitte && `${b.verdraengt.abschnitte} ` +
+              `${b.verdraengt.abschnitte === 1 ? 'Bauabschnitt' : 'Bauabschnitte'}`,
+            b.verdraengt.material && `${b.verdraengt.material} Materialzeilen`,
+            b.verdraengt.pruefzeilen && `${b.verdraengt.pruefzeilen} Prüfzeilen`,
+            b.verdraengt.uebergabe && 'die Übergabe',
+            b.verdraengt.abweichung && 'die Meldung an den S 6'
+          ].filter(Boolean);
+          if (weg.length) {
+            zeile.appendChild(el('p', 'bau-warnung',
+              'Diese Meldung nennt keinen Bauabschnitt und tritt deshalb an die Stelle ' +
+              `des ganzen Bogens. Dabei gehen verloren: ${escapeHtml(weg.join(', '))}.`));
+          }
+        }
         if (b.planAbweicht) {
           zeile.appendChild(el('p', 'bau-warnung',
             'Die geplante Trasse hat seit der Übergabe an den Trupp eine andere Zahl ' +
-            'von Punkten. Bestätigungen, die sich nicht sicher zuordnen lassen, werden ' +
-            'gelöst – die aufgenommenen Punkte bleiben stehen.'));
+            'von Punkten. Der Bezug zum Plan wird deshalb bei ALLEN aufgenommenen ' +
+            'Punkten gelöst statt geraten – sie bleiben stehen, bestätigen aber ' +
+            'keinen geplanten Punkt mehr.'));
         }
       }
       liste.appendChild(zeile);
     });
+    if (marke) {
+      const wieder = liste.querySelector(`[data-mv-stelle="${CSS.escape(marke)}"]`);
+      if (wieder) wieder.focus();
+    }
   };
   zeichne();
 

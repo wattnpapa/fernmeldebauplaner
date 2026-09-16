@@ -644,6 +644,196 @@ try {
   b.gleich(zweiTrupps.kollision, 'Nord',
     'Eine zweite Meldung zum selben Abschnitt wird als Kollision gemeldet');
 
+  b.abschnitt('Zwei Trupps, die den Vorgabenamen stehen lassen');
+  /* Der Regelfall, und der gefährlichste: niemand benennt den ersten
+     Bauabschnitt um. Trägt der Name nicht mit, sucht das Einspielen erst mit
+     einem leeren Namen (findet nichts, legt eine frische Kennung an) und gleich
+     darauf doch mit dem hergestellten Namen (findet den vorhandenen) – der
+     Bogen beider Trupps wäre weg, lautlos. */
+  const vorgabename = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const bm = await import('./js/baumeldung.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    const meldungVon = (trupp, stelle) => {
+      window.fbp.store.aendern(() => {
+        s.bau = null;
+        const a = bd.bauabschnittAnlegen(s);   // heisst „Bauabschnitt 1“
+        a.trupp = trupp;
+        const pt = s.punkte[stelle];
+        bd.istPunktSetzen(s, pt.lat, pt.lng,
+          { sollPunkt: pt.id, quelle: 'plan', abschnitt: a.id });
+        bd.materialSetzen(s, 'fkb', a.id, 100);
+      }, 'bau');
+      return JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s])));
+    };
+    const a1 = meldungVon('1. FmTr', 0);
+    const a2 = meldungVon('2. FmTr', s.punkte.length - 1);
+    const name1 = a1.strecken[0].bau.abschnitte[0].name;
+
+    window.fbp.store.aendern(() => { s.bau = null; }, 'bau');
+    window.fbp.store.aendern(pr => bm.einspielen(pr, a1, [s.id]), 'meldung');
+    const nachErster = { punkte: bd.istPunkte(s).length, material: bd.materialSumme(s).get('fkb') };
+    const befundZwei = bm.befund(p, a2, [s.id])[0];
+    window.fbp.store.aendern(pr => bm.einspielen(pr, a2, [s.id]), 'meldung');
+    const nachZweiter = {
+      abschnitte: bd.bauabschnitte(s).length,
+      punkte: bd.istPunkte(s).length,
+      trupp: bd.bauabschnitte(s).map(x => x.trupp).join(','),
+      material: bd.materialSumme(s).get('fkb')
+    };
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return { name1, nachErster, nachZweiter,
+             kollision: befundZwei.kollision.map(x => x.name).join(','),
+             ersetzt: befundZwei.ersetzt };`);
+  b.gleich(vorgabename.name1, 'Bauabschnitt 1', 'Der Vorgabename reist mit');
+  b.gleich(vorgabename.nachErster.punkte, 1, 'Die erste Meldung kommt an');
+  b.gleich(vorgabename.kollision, 'Bauabschnitt 1',
+    'Die zweite wird als Kollision auf demselben Abschnitt erkannt');
+  b.gleich(vorgabename.ersetzt, 1, 'Und die Vorschau sagt, dass dabei ein Punkt weicht');
+  b.gleich(vorgabename.nachZweiter.abschnitte, 1, 'Danach steht ein Bauabschnitt da');
+  b.gleich(vorgabename.nachZweiter.punkte, 1, 'Mit dem Punkt des zweiten Trupps');
+  b.gleich(vorgabename.nachZweiter.trupp, '2. FmTr', 'Und dessen Trupp');
+  b.gleich(vorgabename.nachZweiter.material, 100,
+    'Das Material wird ersetzt und nicht verdoppelt');
+
+  b.abschnitt('Was ohne Bauabschnitt aufgenommen wurde, geht nicht verloren');
+  const ohneZuordnung = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const bm = await import('./js/baumeldung.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const a = bd.bauabschnittAnlegen(s);
+      a.name = 'Nord'; a.trupp = '1. FmTr';
+      bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng,
+        { sollPunkt: s.punkte[0].id, quelle: 'plan', abschnitt: a.id });
+      /* Und einer ohne Zuordnung – wer aufnimmt, ohne oben einen Abschnitt
+         zu wählen, landet genau hier. */
+      const letzter = s.punkte[s.punkte.length - 1];
+      bd.istPunktSetzen(s, letzter.lat, letzter.lng,
+        { sollPunkt: letzter.id, quelle: 'karte' });
+      bd.materialSetzen(s, 'ffkb', null, 55);
+      bd.baumeldungAnlegen(s, 'ohne Abschnitt gemeldet', null);
+    }, 'bau');
+    const meldung = JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s])));
+    const befundEins = bm.befund(p, meldung, [s.id])[0];
+    window.fbp.store.aendern(() => { s.bau = null; }, 'bau');
+    window.fbp.store.aendern(pr => bm.einspielen(pr, meldung, [s.id]), 'meldung');
+    const erst = { punkte: bd.istPunkte(s).length, material: bd.materialSumme(s).get('ffkb'),
+                   meldungen: bd.baumeldungen(s).length };
+    /* Zweimal einspielen darf nicht verdoppeln – am Bauort wird eine Meldung
+       eher zweimal geschickt als zwei Trupps ohne Zuordnung arbeiten. */
+    window.fbp.store.aendern(pr => bm.einspielen(pr, meldung, [s.id]), 'meldung');
+    const zweit = { punkte: bd.istPunkte(s).length, material: bd.materialSumme(s).get('ffkb'),
+                    meldungen: bd.baumeldungen(s).length };
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return { unzugeordnet: befundEins.unzugeordnet, erst, zweit };`);
+  b.gleich(ohneZuordnung.unzugeordnet, 3,
+    'Die Vorschau zählt, was ohne Bauabschnitt mitkommt');
+  b.gleich(ohneZuordnung.erst.punkte, 2, 'Beide Punkte kommen an, auch der ohne Abschnitt');
+  b.gleich(ohneZuordnung.erst.material, 55, 'Die Materialzeile ohne Abschnitt ebenso');
+  b.gleich(ohneZuordnung.erst.meldungen, 1, 'Und die Baumeldung ohne Abschnitt');
+  b.gleich(ohneZuordnung.zweit.punkte, 2, 'Zweimal einspielen verdoppelt nichts');
+  b.gleich(ohneZuordnung.zweit.material, 55, 'Auch das Material nicht');
+
+  b.abschnitt('Der Baustand einer Teilmeldung hebt, aber nicht über „im Bau“');
+  const staende = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const bm = await import('./js/baumeldung.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const a = bd.bauabschnittAnlegen(s);
+      a.name = 'Nord';
+      bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng,
+        { sollPunkt: s.punkte[0].id, quelle: 'plan', abschnitt: a.id });
+      s.bau.stand = 'gebaut';
+    }, 'bau');
+    const meldung = JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s])));
+    window.fbp.store.aendern(() => { s.bau = null; }, 'bau');
+    window.fbp.store.aendern(pr => bm.einspielen(pr, meldung, [s.id]), 'meldung');
+    const nachTeil = s.bau.stand;
+    /* Und die Gegenprobe: der Planer hat schon „übergeben“ gesetzt – eine
+       Teilmeldung darf ihn nicht zurückwerfen. */
+    window.fbp.store.aendern(() => { s.bau.stand = 'uebergeben'; }, 'bau');
+    window.fbp.store.aendern(pr => bm.einspielen(pr, meldung, [s.id]), 'meldung');
+    const nachUebergeben = s.bau.stand;
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return { nachTeil, nachUebergeben };`);
+  b.gleich(staende.nachTeil, 'laeuft',
+    'Aus „noch nicht begonnen“ wird „im Bau“ – gebaut ist erst, was der Planer feststellt');
+  b.gleich(staende.nachUebergeben, 'uebergeben',
+    'Und eine Teilmeldung wirft einen weiter fortgeschrittenen Stand nicht zurück');
+
+  b.abschnitt('Bei verschobener Punktliste wird der Planbezug gelöst, nicht geraten');
+  const verschoben = await seite.auswerten(`
+    const st = await import('./js/state.js');
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const bm = await import('./js/baumeldung.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    const merkPunkte = JSON.stringify(s.punkte);
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const a = bd.bauabschnittAnlegen(s);
+      a.name = 'Nord';
+      const zweiter = s.punkte[1] || s.punkte[0];
+      bd.istPunktSetzen(s, zweiter.lat, zweiter.lng,
+        { sollPunkt: zweiter.id, quelle: 'plan', abschnitt: a.id });
+    }, 'bau');
+    const meldung = JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s])));
+    /* Der Planer fügt inzwischen vorn einen Punkt ein – alle Stellen rutschen. */
+    window.fbp.store.aendern(() => {
+      s.punkte.unshift(st.neuerPunkt(s.punkte[0].lat + 0.01, s.punkte[0].lng));
+      s.bau = null;
+    }, 'strecke');
+    const befundEins = bm.befund(p, meldung, [s.id])[0];
+    window.fbp.store.aendern(pr => bm.einspielen(pr, meldung, [s.id]), 'meldung');
+    const bezuege = bd.istPunkte(s).map(pt => pt.sollPunkt === null ? 'gelöst' : 'gesetzt').join(',');
+    const punkte = bd.istPunkte(s).length;
+    window.fbp.store.aendern(() => {
+      s.punkte = JSON.parse(merkPunkte);
+      s.bau = JSON.parse(merk);
+    }, 'strecke');
+    return { warnt: befundEins.planAbweicht, bezuege, punkte };`);
+  b.pruefe(verschoben.warnt === true, 'Die Vorschau erkennt die verschobene Punktliste');
+  b.gleich(verschoben.punkte, 1, 'Der aufgenommene Punkt bleibt stehen');
+  b.gleich(verschoben.bezuege, 'gelöst',
+    'Sein Bezug zum Plan wird gelöst statt auf den falschen Punkt gelegt');
+
+  b.abschnitt('Eine präparierte Baumeldung wird gar nicht erst angenommen');
+  const gefaelscht = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const faelle = {
+      punkteKeineListe: { fassung: 1, strecken: [{ name: 'S', bau: { punkte: 'x' } }] },
+      bauKeinObjekt:    { fassung: 1, strecken: [{ name: 'S', bau: [] }] },
+      pruefungKaputt:   { fassung: 1, strecken: [{ name: 'S', bau: { pruefung: { staemme: 7 } } }] },
+      nameFehlt:        { fassung: 1, strecken: [{ bau: {} }] },
+      echtePlanung:     { version: 14, name: 'P', kopf: {}, ansicht: {}, strecken: [] },
+      echteMeldung:     { fassung: 1, strecken: [{ name: 'S', sollPunkte: 2,
+                          bau: { abschnitte: [], punkte: [], material: [], meldungen: [] } }] }
+    };
+    const raus = {};
+    for (const [k, v] of Object.entries(faelle)) raus[k] = t.istBaumeldung(v);
+    return raus;`);
+  b.gleich(gefaelscht.punkteKeineListe, false, 'Eine Punktliste, die keine ist, fällt durch');
+  b.gleich(gefaelscht.bauKeinObjekt, false, 'Ein bau-Block, der eine Liste ist, ebenso');
+  b.gleich(gefaelscht.pruefungKaputt, false, 'Und eine Prüfung mit kaputten Stämmen');
+  b.gleich(gefaelscht.nameFehlt, false, 'Eine Strecke ohne Namen ebenso');
+  b.gleich(gefaelscht.echtePlanung, false, 'Eine echte Planung ist keine Baumeldung');
+  b.gleich(gefaelscht.echteMeldung, true, 'Eine echte Baumeldung kommt durch');
+
   b.abschnitt('Die Baumeldung reist durch den Link');
   const rundMeldung = await seite.auswerten(`
     const t = await import('./js/teilen.js');
