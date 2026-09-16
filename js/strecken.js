@@ -1027,9 +1027,17 @@ export class StreckenLayer {
          Abweichung zu zeigen, machte die Karte unruhig und die Meldung wertlos. */
       const soll = sollZuIst(s, pt);
       if (soll && distanz(soll, pt) >= ABWEICHUNG_SCHWELLE) {
+        /* Im Schwarz-Weiß-Druck trägt die Verbindungslinie kein Braun: Farben
+           unterscheiden dort nichts, Strichmuster schon. Ihr enges `3 4` liegt
+           zwischen der Punktreihe der Planung und der durchgezogenen Ist-Linie
+           und bleibt auch grau auseinanderzuhalten. Die Breite geht wie jede
+           andere Linie über den Strichfaktor – auf einem A3-Blatt wären zwei
+           feste Bildpunkte ein Haar. */
+        const f = this.strichFaktor * this.strichbreite;
         L.polyline([[soll.lat, soll.lng], [pt.lat, pt.lng]], {
-          pane: 'fbp-strecken', color: '#b45309', weight: 2, opacity: 0.9,
-          dashArray: '3 4', interactive: false
+          pane: 'fbp-strecken', color: this.sw ? '#444444' : '#b45309',
+          weight: 2 * f, opacity: 0.9,
+          dashArray: [3 * f, 4 * f].join(' '), interactive: false
         }).addTo(this.gruppe);
       }
       L.marker([pt.lat, pt.lng], {
