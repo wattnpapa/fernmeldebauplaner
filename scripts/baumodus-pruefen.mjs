@@ -1074,6 +1074,26 @@ try {
   b.pruefe(/Ost/.test(vorschautext), 'Und welchen Bauabschnitt die Meldung betrifft');
   b.gleich(await bau('bau.abschnitte.filter(a => a.name === "Ost").length'), 0,
     'Vor dem Druck auf „Einspielen“ ist nichts geschrieben');
+
+  /* Der Fehlgriff, der eine Meldung kostete: Esc oder ein Tipp neben den
+     Dialog schlossen ihn, und weil das Fragment schon geräumt war, holte auch
+     ein Neuladen nichts zurück. Beides muss abprallen, und das Fragment muss
+     stehen bleiben, bis entschieden ist. */
+  await seite.taste('Escape');
+  await seite.auswerten('document.getElementById("dialog").click(); return true;');
+  await seite.ruhe();
+  /* Nicht `sichtbar`: die Hülle liegt fest im Fenster, und ein fest
+     positioniertes Element hat gar kein `offsetParent` – die Probe wäre
+     immer falsch. Gefragt wird nach dem Merkmal, das der Dialog selbst
+     setzt. */
+  b.pruefe(await seite.auswerten('!document.getElementById("dialog").hidden'),
+    'Esc und Schleiertipp schließen ihn nicht');
+  b.pruefe(await seite.auswerten('!!location.hash'),
+    'Solange niemand entschieden hat, steht die Meldung noch in der Adresse');
+  b.pruefe(await seite.auswerten(
+    'document.querySelector(\'[data-akt="dialog-zu"]\').hidden'),
+    'Ein Schließkreuz, das nichts täte, steht gar nicht erst da');
+
   await taste('#dialog-fuss', 'Einspielen');
   await seite.ruhe();
   b.gleich(await bau('bau.abschnitte.filter(a => a.name === "Ost").length'), 1,
@@ -1103,6 +1123,8 @@ try {
   await seite.ruhe();
   b.gleich(await bau('bau.abschnitte.filter(a => a.name === "West").length'), 0,
     'Der verworfene Bauabschnitt steht nirgends');
+  b.pruefe(!(await seite.auswerten('!!location.hash')),
+    'Mit der Entscheidung ist die Adresse geräumt');
 
   b.abschnitt('Eine präparierte Datei bricht nicht aus');
   const gehaertet = await seite.auswerten(`

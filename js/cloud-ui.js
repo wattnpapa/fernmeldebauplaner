@@ -135,6 +135,13 @@ function anbieterWahlDialog() {
   box.appendChild(hinweisKasten());
 
   box.appendChild(el('h3', 'gruppen-titel', 'Wohin die Planungen gehen sollen'));
+  /* Die Wahl steht im ersten Schirm. Vorher standen dort 1.112 px Hinweistext
+     und im Fuß „Abbrechen“ – der Dialog las sich am Telefon wie eine bloße
+     Warnung, und dass darunter etwas zu wählen ist, war nicht zu sehen; die
+     erste Anbieterzeile lag 2,4 Schirme tief. Der entscheidende Absatz bleibt
+     trotzdem davor: dass von hier an Planungsdaten das Gerät verlassen, ist
+     keine Fußnote zur Wahl, sondern ihre Voraussetzung. Der Rest steht
+     aufklappbar unter der Liste. */
   const liste = el('div', 'anbieterliste');
   for (const a of ANBIETER) {
     const kann = a.verfuegbar();
@@ -148,6 +155,7 @@ function anbieterWahlDialog() {
     liste.appendChild(zeile);
   }
   box.appendChild(liste);
+  box.appendChild(mehrDazu());
 
   dialog({
     titel: 'Eigenen Speicher einrichten',
@@ -158,14 +166,27 @@ function anbieterWahlDialog() {
 }
 
 /* Der Hinweis steht vor der Wahl und nicht dahinter: Wer schon einen Anbieter
-   angetippt hat, liest keinen Absatz mehr, der ihm die Entscheidung abnimmt. */
+   angetippt hat, liest keinen Absatz mehr, der ihm die Entscheidung abnimmt.
+   Vor der Wahl steht deshalb der eine Absatz, der die Entscheidung benennt –
+   die drei zusammen waren am Telefon der ganze erste Schirm. */
 function hinweisKasten() {
   const k = el('div', 'speicher-hinweis');
   k.innerHTML =
     `<p><b>Bis hierher hat diese Anwendung keine Planungsdaten nach außen gegeben.</b>
         Mit einer eingerichteten Verbindung ändert sich das: Von da an gehen die
         <b>vollständige Planung samt aller Koordinaten und Lichtbilder</b> an den
-        Speicher, den du gleich auswählst. Das können Einsatzdaten sein.</p>
+        Speicher, den du gleich auswählst. Das können Einsatzdaten sein.</p>`;
+  return k;
+}
+
+/* Was nicht die Entscheidung selbst ist, sondern ihr Umfeld: Zuständigkeit im
+   Ortsverband und der Rückweg. Beides gehört gelesen, aber nicht vor die
+   Wahl – zugeklappt sind es 44 px statt 700. */
+function mehrDazu() {
+  const d = document.createElement('details');
+  d.className = 'speicher-mehr';
+  d.innerHTML =
+    `<summary>Mehr dazu: Zuständigkeit und Rückweg</summary>
      <p>Wohin sie gehen, bestimmst du. Die Anwendung hat bei keinem Anbieter ein
         eigenes Konto – sie legt die Dateien in deinem ab. Ob eine <b>dienstliche</b>
         Planung des THW in einem privaten Cloudkonto liegen darf, ist keine
@@ -175,7 +196,7 @@ function hinweisKasten() {
         dabei liegen – sie zu löschen, ist deine Sache, nicht die dieses Programms.
         Zugangsschlüssel und Anmeldemarken liegen im Speicher dieses Browsers; auf
         einem geteilten Rechner gehört die Verbindung nach der Arbeit getrennt.</p>`;
-  return k;
+  return d;
 }
 
 // -------------------------------------------------- Einrichtungsformular
@@ -209,13 +230,35 @@ function einrichtenDialog(anbieter, vorbelegung = {}) {
   const fussKnoepfe = document.getElementById('dialog-fuss').querySelectorAll('.knopf');
   const verbindenKnopf = fussKnoepfe[fussKnoepfe.length - 1];
 
+  /* Die Meldung stand bei 320 px 645 px unter der Sichtkante – gedrückt,
+     nichts geschehen, kein Grund. Sie wird deshalb herangeholt; `nearest`,
+     damit der Dialog nicht weiter springt als nötig. */
+  function fehlerZeigen(text) {
+    meldung.textContent = text;
+    meldung.classList.add('fehler');
+    meldung.hidden = false;
+    meldung.scrollIntoView({ block: 'nearest' });
+  }
+
   async function verbinden() {
     meldung.hidden = true;
     meldung.classList.remove('fehler');
+    /* Ohne Netz gibt es nichts einzurichten – außer beim Ordner auf diesem
+       Gerät, der ohne auskommt. Vorher lief der Versuch in den Fehlschlag des
+       Nachladens und meldete dessen englischen Wortlaut: „Failed to fetch
+       dynamically imported module“. Das ist die Sprache des Browsers, nicht
+       die des Trupps, und es sagt nicht, was zu tun ist. */
+    if (navigator.onLine === false && anbieter.id !== 'ordner') {
+      return fehlerZeigen('Ohne Netz lässt sich keine Verbindung einrichten. ' +
+        'Sichern geht trotzdem: „Planung als Datei sichern“ im Datei-Menü.');
+    }
     verbindenKnopf.disabled = true;
     verbindenKnopf.textContent = 'Verbinde …';
     try {
-      const modul = await import(anbieter.modul);
+      const modul = await import(anbieter.modul).catch(() => {
+        throw new Error('Der Teil der Anwendung, der diesen Speicher anbindet, ließ sich ' +
+          'nicht nachladen. Bei schwacher Verbindung später noch einmal versuchen.');
+      });
       const ergebnis = await modul.einrichten(werte);
       await verbindungSetzen({
         anbieter: anbieter.id,
@@ -228,9 +271,7 @@ function einrichtenDialog(anbieter, vorbelegung = {}) {
       zeichneSpeicherAbschnitt();
       jetztAbgleichen().catch(() => {});
     } catch (e) {
-      meldung.textContent = e.message || String(e);
-      meldung.classList.add('fehler');
-      meldung.hidden = false;
+      fehlerZeigen(e.message || String(e));
     } finally {
       verbindenKnopf.disabled = false;
       verbindenKnopf.textContent = anbieter.id === 'ordner' ? 'Ordner wählen …' : 'Verbinden';

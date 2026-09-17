@@ -304,6 +304,58 @@ const MESSHILFEN = `
       return { unten: Math.round(tafel.getBoundingClientRect().bottom), schirm: innerHeight,
                rollt, zeilen: zeilen.length, fehl };
     },
+    /* Jeder Eintrag des Dateimenüs auf Handschuhmaß. Getastet wird in
+       Schritten wie im Bau-Reiter: das Menü ist gedeckelt und rollt, und was
+       gerade über oder unter seiner Kante steht, misst sich beschnitten zu
+       klein. Gewertet wird das größte Maß, das ein Eintrag in irgendeinem
+       Rollstand erreicht – das ist die Fläche, die der Finger vorfindet,
+       wenn er ihn ansteuert. */
+    dateiGriffe() {
+      const m = window._g.muss('.menu');
+      if (m.hidden) throw new Error('Das Dateimenü ist zu');
+      const eintraege = [...m.querySelectorAll('button, a')].filter(e => window._g.kasten(e));
+      if (!eintraege.length) throw new Error('Kein Eintrag im Dateimenü');
+      const beste = new Map();
+      const alt = m.scrollTop;
+      const schritt = Math.max(40, m.clientHeight - 60);
+      for (let y = 0; y < m.scrollHeight + schritt; y += schritt) {
+        m.scrollTop = y;
+        for (const e of eintraege) {
+          if (!window._g.imBild(e)) continue;
+          const t = window._g.treffer(e);
+          const kleinste = Math.min(t.breite, t.hoehe);
+          if (!beste.has(e) || beste.get(e) < kleinste) beste.set(e, kleinste);
+        }
+      }
+      m.scrollTop = alt;
+      const fehl = eintraege
+        .filter(e => (beste.get(e) ?? 0) < ${GRIFF - TASTFEHLER})
+        .map(e => e.textContent.trim().slice(0, 16) + ' ' + (beste.get(e) ?? 0) + ' px');
+      return { anzahl: eintraege.length, fehl,
+               kleinster: Math.min(...eintraege.map(e => beste.get(e) ?? 0)) };
+    },
+    /* Kopf und Fuß eines Dialogs: beide sollen ohne Rollen im Bild stehen und
+       ihre Knöpfe treffbar sein. Quer blieben dem Inhalt zwischen ihnen
+       184 px – deshalb kommt die Inhaltshöhe mit, auch wenn sie keinen Fall
+       entscheidet. */
+    dialogRahmen() {
+      const d = window._g.muss('.dialog');
+      const kopf = window._g.muss('.dialog-kopf', d);
+      const fuss = window._g.muss('.dialog-fuss', d);
+      const inhalt = window._g.muss('.dialog-inhalt', d);
+      const k = kopf.getBoundingClientRect(), f = fuss.getBoundingClientRect();
+      const knoepfe = [...fuss.querySelectorAll('button')].filter(e => window._g.kasten(e));
+      if (!knoepfe.length) throw new Error('Kein Knopf im Dialogfuß');
+      return {
+        titel: window._g.muss('#dialog-titel').textContent.trim(),
+        kopfHoch: Math.round(k.height), fussHoch: Math.round(f.height),
+        inhaltHoch: Math.round(inhalt.getBoundingClientRect().height),
+        schirm: innerHeight,
+        kopfImBild: window._g.imBild(kopf), fussImBild: window._g.imBild(fuss),
+        kopfUnten: Math.round(k.bottom), fussUnten: Math.round(f.bottom),
+        knoepfe: knoepfe.map(e => ({ text: e.textContent.trim(), ...window._g.lage(e) }))
+      };
+    },
     dateimenue() {
       const m = window._g.muss('.menu');
       if (m.hidden) throw new Error('Das Dateimenü ist zu');
@@ -813,6 +865,26 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     : l.verdeckt ? `${name} im Bild, zu ${prozent(l.verdeckt)} verdeckt von ${l.durch.join(', ')}`
     : `${name} im Bild und treffbar`;
   const griffGut = l => l.imBild && l.verdeckt === 0;
+  const menueWaehlen = async akt => {
+    await seite.klick('#btn-datei');
+    await seite.warteAuf('!document.querySelector(".menu").hidden');
+    await seite.auswerten(`window._g.muss('.menu [data-akt="${akt}"]').click(); return true;`);
+  };
+  /* Die Baumeldung kommt aus der offenen Planung selbst – `alsBaumeldung`
+     packt genau das, was über den Link reist. So braucht die Prüfung keinen
+     abgelegten Beispiellink, der mit dem nächsten Schemastand veraltet. */
+  const meldungsDialog = () => seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const ui = await import('./js/ui.js');
+    const p = window.fbp.store.projekt;
+    ui.baumeldungDialog(t.alsBaumeldung(p, [p.strecken[0]]), 'Datei');
+    return true;`);
+  const fussKnopfDruecken = text => seite.auswerten(`
+    const b = [...document.querySelectorAll('#dialog-fuss button')]
+      .find(e => e.textContent.trim() === ${JSON.stringify(text)});
+    if (!b) throw new Error('Kein Fußknopf ' + ${JSON.stringify(text)});
+    b.click();
+    return true;`);
   /* Der Gerätestandort für „Punkt hier“ – ohne ihn gäbe es keine Punktkarte
      zu messen. */
   await seite.standort(51.802, 10.618, 7);
@@ -867,7 +939,56 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                  kurz: griffGut(d) ? '' : d.imBild ? 'verdeckt' : `bis ${d.unten}`,
                  text: griffText('„Datenschutz“', d) };
       });
+    await fall(fenster, 'Dateimenü: jeder Eintrag trägt 44 px',
+      'Jeder Eintrag des Dateimenüs ist mit dem Finger zu treffen',
+      async () => {
+        if (!(await seite.auswerten('matchMedia("(pointer: coarse)").matches'))) {
+          throw new Error('kein grober Zeiger – die Regeln für den Finger gelten nicht');
+        }
+        const m = await seite.auswerten('window._g.dateiGriffe()');
+        return { gut: m.fehl.length === 0,
+                 kurz: m.fehl.length ? m.fehl.length + ' zu klein' : m.kleinster + ' px',
+                 text: m.fehl.length
+                   ? `von ${m.anzahl} Einträgen zu klein: ${m.fehl.join(', ')}`
+                   : `alle ${m.anzahl} Einträge ≥ 44 px (kleinster ${m.kleinster})` };
+      });
     await seite.taste('Escape');
+
+    /* Die drei Dialoge, an denen das Querformat gemessen wird: einer mit
+       Eingabefeld, einer mit Liste, einer mit Entscheidung. Der letzte geht
+       nicht per Esc zu – er verlangt eine Antwort, seit eine eingegangene
+       Meldung an einem Fehlgriff verloren ging. */
+    for (const [zeile, titel, oeffne, schliesse] of [
+      ['Neue Planung', 'Neue Planung', () => menueWaehlen('neu'), () => seite.taste('Escape')],
+      ['Gespeicherte Planungen', 'Gespeicherte Planungen',
+        () => menueWaehlen('oeffnen'), () => seite.taste('Escape')],
+      ['Baumeldung einspielen', 'Baumeldung eingegangen',
+        () => meldungsDialog(), () => fussKnopfDruecken('Verwerfen')]
+    ]) {
+      await fall(fenster, `Dialog „${zeile}“: Kopf und Fuß im Bild`,
+        `Dialog „${zeile}“: Kopf und Fuß stehen ohne Rollen im Bild, ` +
+        'die Fußknöpfe sind treffbar',
+        async () => {
+          await oeffne();
+          await seite.warteAuf('!document.getElementById("dialog").hidden', 5000);
+          await seite.ruhe();
+          const d = await seite.auswerten('window._g.dialogRahmen()');
+          if (d.titel !== titel) throw new Error(`Offen ist „${d.titel}“`);
+          const schlecht = d.knoepfe.filter(k => !griffGut(k));
+          const gut = d.kopfImBild && d.fussImBild && schlecht.length === 0;
+          await schliesse();
+          await seite.warteAuf('document.getElementById("dialog").hidden', 5000);
+          await hinweisWeg();
+          return { gut, kurz: gut ? d.inhaltHoch + ' px' : !d.kopfImBild ? 'Kopf weg'
+                     : !d.fussImBild ? 'Fuß weg' : 'Knopf zu',
+                   text: `Kopf ${d.kopfHoch} px, Fuß ${d.fussHoch} px, ` +
+                         `Inhalt ${d.inhaltHoch} px im ${d.schirm} hohen Fenster` +
+                         (schlecht.length
+                           ? '; nicht treffbar: ' +
+                             schlecht.map(k => griffText(`„${k.text}“`, k)).join(', ')
+                           : '') };
+        });
+    }
 
     await fall(fenster, 'Meldungspille lässt Tipps durch',
       'Eine stehende Meldung fängt keinen Tipp ab, der dem Griff darunter gilt',

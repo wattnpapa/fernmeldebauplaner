@@ -70,6 +70,9 @@
   --schatten-stark: 0 2px 4px rgba(16,32,56,.12), 0 8px 14px rgba(16,32,56,.22);
   --schatten-oben: 0 -1px 2px rgba(16,32,56,.08), 0 -4px 9px rgba(16,32,56,.12);
   --kopf-hoehe: 52px;
+  /* Die wirklich gemessene Höhe der Kopfzeile – schmal bricht sie in zwei
+     Reihen um. Daran hängt, wieviel Platz das Dateimenü darunter hat. */
+  --kopf-ist: 52px;
   --seite-breite: 372px;
   /* Höhe der Statusleiste – wird zur Laufzeit gemessen, weil die Leiste umbricht */
   --sl-hoehe: 26px;
@@ -274,9 +277,17 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
   /* Quer auf dem Telefon ist das Menü höher als der Schirm: sichtbar war ein
      einziger Eintrag, und nichts deutete an, dass darunter noch Sammel-PDF,
      Lagekarte und die drei Ausgabeformate stehen. Ohne diese Grenze ist das
-     eine Sackgasse, denn die Fläche dahinter nimmt keine Rollbewegung an. */
-  max-height: calc(100vh - var(--kopf-hoehe) - 24px);
-  max-height: calc(100dvh - var(--kopf-hoehe) - 24px);
+     eine Sackgasse, denn die Fläche dahinter nimmt keine Rollbewegung an.
+
+     Gerechnet wird mit der gemessenen Kopfhöhe und nicht mit den 52 px, die
+     die Leiste mindestens hat: schmal bricht sie in zwei Reihen um, und mit
+     dem zu kleinen Wert endete das Menü hinter dem Umschalter Liste/Karte –
+     Impressum und Datenschutz waren dort 3 px hoch tastbar. Unten kommt
+     deshalb der Umschalter ab, der auf dem Telefon dauerhaft steht. */
+  max-height: calc(100vh - var(--kopf-ist)
+                   - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 18px);
+  max-height: calc(100dvh - var(--kopf-ist)
+                   - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 18px);
   overflow-y: auto; overscroll-behavior: contain;
 }
 .menu button, .menu a {
@@ -1595,6 +1606,10 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   padding: 13px 16px; border-bottom: 1px solid var(--linie);
 }
 .dialog-kopf h2 { font-size: 15px; }
+/* `.klein` ist zugleich eine Textklasse und bringt `margin: .4em 0` mit – am
+   Schließgriff sind das 10 px Kopfhöhe, die niemand sieht und die quer dem
+   Inhalt fehlen. Dieselbe Falle wie an der Modusleiste. */
+.dialog-kopf .knopf { margin: 0; }
 .dialog-inhalt {
   padding: 16px; overflow-y: auto; overscroll-behavior: contain;
   display: flex; flex-direction: column; gap: 12px;
@@ -1606,6 +1621,35 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .dialog-fuss {
   display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 16px;
   border-top: 1px solid var(--linie); background: var(--flaeche-2); border-radius: 0 0 10px 10px;
+}
+/* Zwei Knöpfe, die das Gegenteil voneinander tun – „Verwerfen“ wirft eine
+   eingegangene Meldung weg, „Einspielen“ überschreibt damit eine Aufnahme –
+   standen mit 8 px Abstand rechts unter dem Daumen, während links bis zu
+   318 px Fußzeile leer blieben. Sie stehen jetzt an den gegenüberliegenden
+   Enden. Bricht die Zeile schmal doch um, hält `gap` sie weiter auseinander,
+   und der Hauptknopf bleibt der untere – dort, wo der Daumen zuletzt hinsieht. */
+.dialog-fuss.geteilt { justify-content: space-between; gap: 8px 24px; }
+
+/* Quer bleibt vom Dialog ein Guckloch: bei 844×390 sind 88 dvh 343 px, davon
+   nahmen Hülle, Kopf und Fuß 185 px – für den Inhalt blieben 184 bis 197 px,
+   „Gespeicherte Planungen“ zeigte anderthalb Zeilen. Der Deckel steigt auf
+   96 dvh, Kopf und Fuß geben ihre Polsterung ab und bleiben mit den 40 px
+   ihrer Griffe bei 48 px. Nicht kleiner: darunter läge der Schließgriff unter
+   dem Handschuhmaß, und das ist der Ausweg aus jedem Dialog. */
+@media (max-height: 500px) {
+  .dialog-huelle {
+    padding: calc(6px + env(safe-area-inset-top, 0px))
+             calc(12px + env(safe-area-inset-right, 0px))
+             calc(6px + env(safe-area-inset-bottom, 0px))
+             calc(12px + env(safe-area-inset-left, 0px));
+  }
+  .dialog { max-height: 96vh; max-height: 96dvh; }
+  .dialog-kopf { padding: 2px 12px; }
+  /* Die Trennlinie als Innenschatten statt als Rahmen: sie sieht gleich aus,
+     belegt aber keine Zeile mehr. Ohne das stünde der Fuß bei 49 px – 44 davon
+     sind der Knopf, und unter das Handschuhmaß geht er nicht. */
+  .dialog-fuss { padding: 2px 12px; border-top: 0; box-shadow: inset 0 1px 0 var(--linie); }
+  .dialog-inhalt { padding: 10px 12px; gap: 8px; }
 }
 
 .koord-dialog .koord-liste { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; }
@@ -1674,6 +1718,17 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
    fehlt, statt ihn für nicht vorhanden zu halten. */
 .anbieter-zeile.gesperrt { opacity: .6; cursor: default; background: var(--flaeche-2); }
 .anbieter-zeile.gesperrt:hover { border-color: var(--linie-stark); background: var(--flaeche-2); }
+
+/* Zugeklappt eine Zeile, aufgeklappt zwei Absätze – der Griff trägt sein
+   Handschuhmaß aus der Polsterung, ein Dreieck allein wäre 12 px. */
+.speicher-mehr {
+  border: 1px solid var(--linie); border-radius: var(--radius); background: var(--flaeche-2);
+}
+.speicher-mehr > summary {
+  padding: 12px 13px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--thw);
+}
+.speicher-mehr p { margin: 0 13px .6em; font-size: 13px; line-height: 1.45; }
+.speicher-mehr p:last-child { margin-bottom: 13px; }
 
 .speicher-anleitung {
   background: var(--flaeche-2); border: 1px solid var(--linie);
@@ -1750,6 +1805,15 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 
 .hilfe h3 { font-size: 13.5px; margin: 14px 0 5px; color: var(--thw); }
 .hilfe h3:first-child { margin-top: 0; }
+/* Fünfzehn Abschnitte auf 6.662 px: ohne diese Liste war „Baumodus“ zwölf
+   Schirme tief zu erwischen. Die Chips brechen um wie im Bau-Reiter – eine
+   waagerecht rollende Reihe verbirgt bei 320 px ihr Ende, ohne es anzuzeigen. */
+.hilfe-sprung { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.hilfe-sprung .knopf.klein { flex: 0 0 auto; border-radius: 999px; margin: 0; }
+/* Die beiden Einstiege stehen in eigener Zeile über der Abschnittsliste – die
+   Anwendung hat genau zwei Zustände, und am Bauort wird der zweite gesucht. */
+.hs-einstieg { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+.hs-einstieg .knopf.klein { border-color: var(--thw); color: var(--thw); font-weight: 650; }
 .hilfe p, .hilfe li { font-size: 13px; margin: .3em 0; }
 .hilfe ol, .hilfe ul { padding-left: 20px; margin: .3em 0; }
 .tasten-liste { list-style: none; padding: 0; }
@@ -2401,6 +2465,14 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   /* Vier Kennzahlen nebeneinander lassen „309,67 km“ umbrechen – zu zweit
      stehen die Zahlen, auf die es ankommt, ungebrochen und größer da. */
   .kennzahlen { grid-template-columns: 1fr 1fr; }
+
+  /* „Gespeicherte Planungen“: „Öffnen“ und „Löschen“ behielten ihre 161 px,
+     dem Namen blieben bei 320 px 116 px – er zerfiel in Ein-Wort-Zeilen, und
+     die Kennzahlen darunter brachen mitten im Datum um. Untereinander trägt
+     der Name die volle Breite und die beiden Knöpfe teilen sich die Zeile
+     darunter. */
+  .pl-zeile { flex-direction: column; align-items: stretch; gap: 8px; }
+  .pl-tasten .knopf { flex: 1 1 0; }
 }
 
 /* ------------------------------------------------- Bedienung ohne Maus
@@ -2452,6 +2524,11 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   .mini-input { padding: 10px 8px; }
   .koord-knopf { padding: 10px 6px; }
   .sl-kopie::after { content: ''; position: absolute; inset: -9px -4px; }
+  /* Die Einträge trugen 33 bis 37 px – zu wenig für den Handschuh, und die
+     letzten beiden stehen ohnehin schon am gedeckelten unteren Rand. Die
+     Höhe kommt aus min-height statt aus mehr Polsterung: so bleibt der Text
+     mittig, auch wenn ein langer Eintrag zweizeilig umbricht. */
+  .menu button, .menu a { display: flex; align-items: center; min-height: 44px; }
   .menu button { padding: 11px 12px; }
   .palette-knopf { min-height: 108px; }
   /* Am Bauort wird das Bild mit dem Handschuh geöffnet – die Zeile ist der

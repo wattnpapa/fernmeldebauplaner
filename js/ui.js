@@ -173,16 +173,34 @@ export function fortschritt(text, anteil) {
    Auslöser gemerkt – der Zwischenknopf existiert nach dem Umbau nicht mehr. */
 let dialogOeffner = null;
 
-export function dialog({ titel, inhalt, fuss = [], breit = false }) {
+/* Ein Dialog, der eine Entscheidung verlangt, geht nicht beiläufig zu. Steht
+   hier ein Satz, weisen Esc, der Tipp auf den Schleier und das Schließkreuz
+   den Schließversuch ab und sagen stattdessen diesen Satz. Gebraucht wird das
+   für die beiden Empfangsdialoge: was über den Link hereinkommt, gibt es nur
+   dieses eine Mal, und der Schleier bot quer 54 px genau dort an, wo beim
+   Querhalten die Daumen liegen. */
+let dialogSchutz = '';
+
+export function dialog({ titel, inhalt, fuss = [], breit = false, geteilt = false, schutz = '' }) {
   const huelle = document.getElementById('dialog');
   const aktiv = document.activeElement;
   if (aktiv instanceof HTMLElement && !huelle.contains(aktiv)) dialogOeffner = aktiv;
   huelle.querySelector('.dialog').classList.toggle('breit', breit);
   document.getElementById('dialog-titel').textContent = titel;
+  dialogSchutz = schutz;
+  /* Ein Kreuz, das nichts tut, ist schlimmer als keines: bei einem
+     geschützten Dialog fällt es weg, und es bleiben die beiden Fußknöpfe. */
+  huelle.querySelector('[data-akt="dialog-zu"]').hidden = !!schutz;
   const feld = document.getElementById('dialog-inhalt');
   feld.innerHTML = '';
   if (typeof inhalt === 'string') feld.innerHTML = inhalt; else feld.appendChild(inhalt);
+  /* Der Rollstand gehört zum alten Inhalt. Ohne diese Zeile übernahm ihn der
+     neue: wer in der Kurzanleitung zum Baumodus gesprungen war und danach
+     „Eigener Speicher“ öffnete, sah dort den zugeklappten Schluss statt der
+     Anbieterliste – am Telefon ist der Unterschied der ganze Dialog. */
+  feld.scrollTop = 0;
   const fussEl = document.getElementById('dialog-fuss');
+  fussEl.className = 'dialog-fuss' + (geteilt ? ' geteilt' : '');
   fussEl.innerHTML = '';
   for (const f of fuss) {
     const b = document.createElement('button');
@@ -208,12 +226,44 @@ export function dialog({ titel, inhalt, fuss = [], breit = false }) {
      „Zusammengeführt wird nichts“ – der Planer entschied über ein
      Überschreiben, ohne den Hinweis gelesen zu haben. */
   if (ersterFokus) setTimeout(() => ersterFokus.focus({ preventScroll: true }), 30);
+  /* Ein einzelnes Textfeld und ein Hauptknopf: dann ist die Eingabetaste der
+     Abschluss, und zwar überall gleich. Am Telefon steht auf ihr „Los“, und
+     sie blieb bisher ohne Wirkung – der Nutzer tippte sie, das Feld verlor
+     den Fokus, die Tastatur ging zu, und der Knopf war ungedrückt. Bei
+     mehreren Feldern nicht: dort ist unklar, welches gemeint war. Der
+     Gefahrknopf zählt nie als Hauptknopf – „Endgültig löschen“ soll gedrückt
+     und nicht getippt werden. */
+  const hauptknopf = fussEl.querySelector('.knopf.primaer:not(.gefahr)');
+  const einzeln = feld.querySelectorAll(
+    'input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file])');
+  if (hauptknopf && einzeln.length === 1) {
+    einzeln[0].addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.isComposing || hauptknopf.disabled) return;
+      e.preventDefault();
+      hauptknopf.click();
+    });
+  }
   return feld;
+}
+
+/**
+ * Der beiläufige Schließversuch – Esc, Tipp auf den Schleier, Schließkreuz.
+ * Ein geschützter Dialog geht so nicht zu; er sagt stattdessen, was zu
+ * entscheiden ist.
+ *
+ * @returns {boolean} ob der Dialog geschlossen wurde
+ */
+export function dialogAbweisen() {
+  if (document.getElementById('dialog').hidden) return false;
+  if (dialogSchutz) { hinweis(dialogSchutz, 'warnung'); return false; }
+  schliesseDialog();
+  return true;
 }
 
 export function schliesseDialog() {
   const huelle = document.getElementById('dialog');
   if (huelle.hidden) return;
+  dialogSchutz = '';
   huelle.hidden = true;
   document.getElementById('app').inert = false;
   if (dialogOeffner && document.contains(dialogOeffner)) dialogOeffner.focus();
@@ -413,12 +463,23 @@ export function zeichneStreckenListe() {
     : '';
 
   const sammelKnopf = document.getElementById('btn-sammel-pdf');
+  const sammelGrund = document.getElementById('sammel-grund');
   if (sammelKnopf) {
     const druckbar = p.strecken.filter(s => s.punkte.length >= 2).length;
     sammelKnopf.disabled = !druckbar;
     sammelKnopf.title = druckbar
       ? `Ein Dokument mit allen ${druckbar} druckbaren Strecken der Planung`
       : 'Noch keine Strecke mit zwei Trassenpunkten';
+    /* Der Grund gehört neben den Knopf und nicht in den title: auf dem
+       Telefon gibt es kein Verweilen, und der gesperrte Knopf stand dort
+       grau da, ohne zu sagen, was ihm fehlt. Dieselbe Zeile wie am
+       Bauauftrag der einzelnen Strecke. */
+    if (sammelGrund) {
+      sammelGrund.hidden = !!druckbar;
+      sammelGrund.textContent = druckbar ? ''
+        : 'Für den Sammel-Bauauftrag wird mindestens eine Strecke mit zwei ' +
+          'Trassenpunkten gebraucht.';
+    }
   }
 
   if (!p.strecken.length) {
@@ -4865,7 +4926,13 @@ function meldungAlsLinkZeigen(strecken) {
  * er zuerst, was ankommt, wem es zugeordnet wird und was dabei weicht – und
  * kann die Zuordnung ändern, bevor irgendetwas geschrieben wird.
  */
-export function baumeldungDialog(meldung, herkunft) {
+/**
+ * @param {Function} [entschieden] wird gerufen, sobald die Entscheidung
+ *   gefallen ist – gleich wie sie ausfällt. Der Empfangsweg räumt daran das
+ *   Fragment der Adresse: vorher geräumt war die Meldung nach einem Fehlgriff
+ *   spurlos weg, und der Link kam über Funk und nicht noch einmal.
+ */
+export function baumeldungDialog(meldung, herkunft, entschieden = null) {
   const p = store.projekt;
   const zuordnung = (meldung.strecken || []).map(m => {
     const v = vorschlag(p, m.name);
@@ -4948,9 +5015,14 @@ export function baumeldungDialog(meldung, herkunft) {
           'Keine Strecke dieses Namens – oder mehrere. Von Hand zuordnen oder auslassen.'));
       } else {
         if (b.ersetzt) {
-          zeile.appendChild(el('p', 'mv-ersetzt',
-            `Dabei weichen ${b.ersetzt} hier schon aufgenommene ` +
-            `${b.ersetzt === 1 ? 'Punkt' : 'Punkte'}.`));
+          /* Die Einzahl vollständig gebildet und nicht nur am Hauptwort:
+             „Dabei weichen 1 hier schon aufgenommene Punkt“ stand in dem
+             einen Satz, der sagt, dass eine vorhandene Aufnahme verloren
+             geht – und ein Satz, der beim ersten Lesen stolpert, wird unter
+             Zeitdruck überlesen. */
+          zeile.appendChild(el('p', 'mv-ersetzt', b.ersetzt === 1
+            ? 'Dabei weicht 1 hier schon aufgenommener Punkt.'
+            : `Dabei weichen ${b.ersetzt} hier schon aufgenommene Punkte.`));
         }
         if (b.kollision.length) {
           zeile.appendChild(el('p', 'bau-warnung',
@@ -5001,9 +5073,17 @@ export function baumeldungDialog(meldung, herkunft) {
     titel: 'Baumeldung eingegangen',
     inhalt: box,
     breit: true,
+    /* Getrennt und geschützt: die beiden Knöpfe tun das Gegenteil voneinander,
+       und was hier hereinkommt, gibt es nur einmal. */
+    geteilt: true,
+    schutz: 'Bitte entscheiden: verwerfen oder einspielen.',
     fuss: [
-      { text: 'Verwerfen' },
+      { text: 'Verwerfen', tun: () => {
+        if (entschieden) entschieden();
+        hinweis('Baumeldung verworfen – sie ist damit weg.', 'warnung');
+      } },
       { text: 'Einspielen', primaer: true, tun: () => {
+        if (entschieden) entschieden();
         let bericht;
         store.aendern(pr => { bericht = einspielen(pr, meldung, zuordnung); }, 'meldung');
         ctx.sl.zeichne();
@@ -5266,7 +5346,7 @@ export function koordinatenSuche(punktAnfuegen = null) {
 // ---------------------------------------------------------------- Hilfe
 
 export function hilfeDialog() {
-  dialog({
+  const inhalt = dialog({
     titel: 'Kurzanleitung', breit: true,
     inhalt: `
       <div class="hilfe">
@@ -5524,8 +5604,48 @@ export function hilfeDialog() {
           <li><kbd>Strg</kbd>+<kbd>P</kbd> Bauauftrag der gewählten Strecke öffnen</li>
         </ul>
       </div>`,
-    fuss: [{ text: 'Schließen', primaer: true }]
+    fuss: [
+      /* Der Rückweg zur Sprungliste, ohne dass sie Höhe kostet: quer bleiben
+         dem Inhalt rund 240 px, und eine festgehaltene Leiste nähme davon ein
+         Drittel. Im Fuß steht sie ohnehin – der bleibt stehen. */
+      { text: '↑ Zur Übersicht', tun: () => { inhalt.scrollTop = 0; return false; } },
+      { text: 'Schließen', primaer: true }
+    ]
   });
+
+  /* 6.662 px Text – „Baumodus“ lag zwölf Schirme tief, und wer ihn suchte,
+     rollte an vierzehn Abschnitten vorbei. Die Sprungliste wird aus den
+     Überschriften gebaut und nicht daneben gepflegt: sonst nennt sie nach der
+     nächsten Ergänzung einen Abschnitt zu wenig. */
+  const kopfe = [...inhalt.querySelectorAll('.hilfe h3')];
+  const streifen = el('nav', 'hilfe-sprung');
+  streifen.setAttribute('aria-label', 'In der Kurzanleitung springen');
+  const springe = ziel => () => ziel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  /* Zwei Einstiege vorweg, einer je Modus: die Anwendung hat genau diese zwei
+     Zustände, und am Bauort wird der zweite gesucht. Sie stehen über der
+     Liste und nicht in ihr – in der Reihe der fünfzehn Abschnitte wären sie
+     zwei Chips unter fünfzehn. */
+  const einstieg = el('div', 'hs-einstieg');
+  for (const [text, titel] of [['▸ Planung', 'Strecke planen'], ['▸ Baumodus', 'Baumodus']]) {
+    const ziel = kopfe.find(h => h.textContent.trim() === titel);
+    if (ziel) einstieg.appendChild(knopf(text, springe(ziel), 'klein hs-modus'));
+  }
+  if (einstieg.children.length) streifen.appendChild(einstieg);
+
+  /* Vier Überschriften tragen im Text ihren vollen Namen und im Chip das
+     Wort, das am Reiter steht. Ohne diese Abkürzung stand der Streifen bei
+     390 px 406 px hoch – die Übersicht wäre selbst ein Schirm zum Durchrollen
+     gewesen. Was hier nicht steht, behält seinen vollen Titel. */
+  const KURZ = {
+    'Strecke planen': 'Strecke', 'Flächen und Aufbauplatz': 'Flächen',
+    'Relaisstellen des Sprechfunks': 'Relais', 'Bilder vom Bauort': 'Bilder'
+  };
+  for (const h of kopfe) {
+    const titel = h.textContent.trim();
+    streifen.appendChild(knopf(KURZ[titel] || titel, springe(h), 'klein'));
+  }
+  inhalt.querySelector('.hilfe').prepend(streifen);
 }
 
 // ---------------------------------------------------------------- Hilfsknopf

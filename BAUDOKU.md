@@ -242,6 +242,18 @@ dem Einspielen zeigt ein Dialog, welche Strecken und welche Abschnitte
 betroffen sind, von welchem Trupp die Meldung stammt und was überschrieben
 wird.
 
+**Dieser Dialog geht nicht beiläufig zu.** Er kennt zwei Ausgänge, „Verwerfen“
+und „Einspielen“, und sie stehen an den gegenüberliegenden Enden der Fußzeile;
+Esc, ein Tipp auf den Schleier und ein Schließkreuz gibt es nicht. Die Meldung
+ist nicht zu wiederholen: sie kam über Funk oder aus einer Nachricht, die nicht
+noch einmal zur Hand ist, und der Schleier bot am quer gehaltenen Telefon 54 px
+genau dort an, wo die Daumen liegen. Aus demselben Grund wird das Fragment der
+Adresse erst mit der Entscheidung geräumt und nicht davor: solange niemand
+entschieden hat, bringt ein Neuladen die Meldung wieder herein. Die Zusage aus
+`datenschutz.html` bleibt gewahrt – die Adresse trägt die Meldung nur, solange
+der Dialog offen steht, und `fragmentRaeumen()` schreibt mit `replaceState` in
+denselben Verlaufseintrag.
+
 **Zugeordnet wird über den NAMEN der Strecke.** Das ist keine Bequemlichkeit,
 sondern die einzige Möglichkeit: `verschlanken()` wirft die Streckenkennungen
 weg, weil sie ein Achtel der Linklänge kosten, `planungAusFragment()` löscht

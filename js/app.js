@@ -21,7 +21,7 @@ import {
   zeichneFlaechenListe, flaechenPalette,
   zeichneRelaisListe, relaisZielAntwort, ueberdeckungUmschalten,
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog,
-  hinweis, hinweisAus,
+  dialogAbweisen, hinweis, hinweisAus,
   abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen, zeichneBauListe,
   baumeldungDialog
 } from './ui.js';
@@ -510,13 +510,22 @@ $('#sl-gps-kopie').onclick = () => koordKopieren(slGps.textContent, 'GPS-Koordin
    unter der die Kartenoptionen sitzen. Alle diese Höhen ändern sich – die
    Statusleiste bricht um, an den Leaflet-Bedienelementen kann eines dazu-
    kommen –, deshalb werden sie gemessen statt geschätzt. Festwerte hatten
-   erst den Maßstab verdeckt und dann die Kartenoptionen falsch eingehängt. */
+   erst den Maßstab verdeckt und dann die Kartenoptionen falsch eingehängt.
+   Die Kopfzeile misst hier mit: sie bricht schmal in zwei Reihen um, und an
+   ihrer Unterkante hängt das Dateimenü. */
 const statusLeiste = document.querySelector('.statusleiste');
+const kopfLeiste = document.querySelector('.kopf');
 const kartenFuss = document.querySelector('.leaflet-bottom.leaflet-right');
 const kartenKopf = document.querySelector('.leaflet-top.leaflet-right');
-function kartenKantenMessen() {
+function leistenMessen() {
   const st = document.documentElement.style;
   st.setProperty('--sl-hoehe', statusLeiste.offsetHeight + 'px');
+  /* Eine eigene Variable und nicht --kopf-hoehe: die ist die Mindesthöhe der
+     Kopfzeile selbst. Ihr den gemessenen Wert zu geben hieße, eine Leiste an
+     ihre eigene Höhe zu binden – das Menü rechnete bisher mit 52 px, während
+     die umgebrochene Kopfzeile 95 px hoch stand, und der letzte Eintrag lag
+     40 px hinter dem Umschalter Liste/Karte. */
+  if (kopfLeiste) st.setProperty('--kopf-ist', kopfLeiste.offsetHeight + 'px');
   if (kartenFuss) st.setProperty('--karten-fuss', kartenFuss.offsetHeight + 'px');
   if (kartenKopf) {
     st.setProperty('--karten-kopf', kartenKopf.offsetHeight + 'px');
@@ -525,11 +534,12 @@ function kartenKantenMessen() {
     st.setProperty('--karten-kopf-breite', kartenKopf.offsetWidth + 'px');
   }
 }
-const kantenWaechter = new ResizeObserver(kartenKantenMessen);
-kantenWaechter.observe(statusLeiste);
-if (kartenFuss) kantenWaechter.observe(kartenFuss);
-if (kartenKopf) kantenWaechter.observe(kartenKopf);
-kartenKantenMessen();
+const leistenWaechter = new ResizeObserver(leistenMessen);
+leistenWaechter.observe(statusLeiste);
+if (kopfLeiste) leistenWaechter.observe(kopfLeiste);
+if (kartenFuss) leistenWaechter.observe(kartenFuss);
+if (kartenKopf) leistenWaechter.observe(kartenKopf);
+leistenMessen();
 
 karte.on('moveend zoomend', () => {
   store.still(p => {
@@ -900,7 +910,16 @@ function teilenDialog() {
 /* Ein Link darf nichts überschreiben: Der Empfänger sieht zuerst, was da
    ankommt, und entscheidet dann. Das Fragment wird in jedem Fall geräumt –
    sonst stünde die Planung im Verlauf des Browsers, und ein Browser mit
-   Verlaufssynchronisierung trüge sie zu seinem Hersteller. */
+   Verlaufssynchronisierung trüge sie zu seinem Hersteller.
+
+   Geräumt wird aber erst NACH der Entscheidung und nicht davor. Vorher war
+   ein Fehlgriff auf den Schleier – quer 54 px breit, genau unter dem Daumen –
+   das Ende der Meldung: Dialog zu, Fragment leer, ein Neuladen holte nichts
+   zurück, und der Link kam über Funk. Jetzt räumt jeder der beiden Fußknöpfe,
+   und solange niemand entschieden hat, bringt ein Neuladen die Meldung wieder
+   herein. Die Zusage bleibt gewahrt: die Adresse trägt die Planung nur, solange
+   der Dialog offen steht, und ein Verlaufseintrag entsteht dabei nicht –
+   `fragmentRaeumen` schreibt mit `replaceState` in denselben. */
 async function geteiltenLinkPruefen() {
   const art = teilen.artDesFragments();
   if (!art) return;
@@ -928,10 +947,9 @@ async function geteiltenLinkPruefen() {
       hinweis(e.message, 'fehler');
       return;
     }
-    teilen.fragmentRaeumen();
-    if (!meldung) return;
+    if (!meldung) return teilen.fragmentRaeumen();
     if (bauauftragOffen()) schliesseBauauftrag();
-    baumeldungDialog(meldung, 'Link');
+    baumeldungDialog(meldung, 'Link', () => teilen.fragmentRaeumen());
     return;
   }
 
@@ -943,8 +961,7 @@ async function geteiltenLinkPruefen() {
     hinweis(e.message, 'fehler');
     return;
   }
-  teilen.fragmentRaeumen();
-  if (!roh) return;
+  if (!roh) return teilen.fragmentRaeumen();
 
   /* Der Bauauftrag legt sich über die ganze Anwendung. Käme der Link an,
      während er offen steht, stünde der Dialog unsichtbar dahinter. */
@@ -967,9 +984,15 @@ async function geteiltenLinkPruefen() {
         – dafür braucht es die Planungsdatei.</p>` : ''}
       <p class="klein">Sie wird als <b>neue</b> Planung übernommen. Deine bisherige bleibt
         unter „Gespeicherte Planungen“ erhalten.</p>`,
+    geteilt: true,
+    schutz: 'Bitte entscheiden: verwerfen oder übernehmen.',
     fuss: [
-      { text: 'Verwerfen' },
+      { text: 'Verwerfen', tun: () => {
+        teilen.fragmentRaeumen();
+        hinweis('Geteilte Planung verworfen – der Link ist damit verbraucht.', 'warnung');
+      } },
       { text: 'Übernehmen', primaer: true, tun: () => {
+        teilen.fragmentRaeumen();
         /* `uebernehmen` schickt die Planung durch `migrieren()` – dieselbe
            Strecke, die eine geladene Datei nimmt – und meldet „geladen“;
            daran hängt der vollständige Neuaufbau samt Kartensprung. */
@@ -1209,8 +1232,11 @@ document.querySelector('.reiter').addEventListener('keydown', e => {
 
 // ---------------------------------------------------------------- Dialog schließen
 
+/* Nicht schliesseDialog, sondern der abweisbare Weg: über den Schleier und das
+   Kreuz gingen die beiden Empfangsdialoge zu, ohne dass entschieden war – und
+   mit ihnen die eingegangene Planung. */
 $('#dialog').addEventListener('click', e => {
-  if (e.target.id === 'dialog' || e.target.dataset.akt === 'dialog-zu') schliesseDialog();
+  if (e.target.id === 'dialog' || e.target.dataset.akt === 'dialog-zu') dialogAbweisen();
 });
 
 // ---------------------------------------------------------------- Tastatur
@@ -1220,7 +1246,7 @@ document.addEventListener('keydown', e => {
 
   if (e.key === 'Escape') {
     if (bauauftragOffen()) return schliesseBauauftrag();
-    if (!$('#dialog').hidden) return schliesseDialog();
+    if (!$('#dialog').hidden) return void dialogAbweisen();
     /* Das Datei-Menü schließt wie der Dialog auch per Esc – der Fokus kehrt
        zum Knopf zurück, damit die Tastatur nicht ins Leere fällt. */
     if (!dateiMenu.hidden) {

@@ -169,7 +169,9 @@ nimmt Punkte auf allen drei Wegen auf, füllt den Materialnachweis, meldet, prü
 und übergibt, lädt neu, schickt die Planung durch den Link und zurück, lässt zwei
 Trupps getrennt zurückmelden und einspielen und prüft, dass die gebaute Trasse auf
 keinem der drei Auftragsblätter landet – wohl aber auf dem vierten, der
-Baudokumentation, dort in allen vier Formaten.
+Baudokumentation, dort in allen vier Formaten. Dazu, dass der Empfangsdialog
+einer Baumeldung weder auf Esc noch auf einen Tipp neben sich zugeht und die
+Adresse erst mit der Entscheidung räumt.
 
 Nach jeder Änderung an der Oberfläche, die Maße, Abstände, Schriftgrößen oder
 Überdeckungen berührt:
@@ -194,7 +196,10 @@ Aufnahme keine Leiste zudecken), die Modusleiste nach „Auf Karte“ (nur
 wirksame Knöpfe, höchstens 64 px hoch), der Bau-Reiter (mit drei bestätigten
 Punkten unter 2500 px, jeder Griff darin auf Handschuhmaß – getastet wird in
 Schritten, weil der Reiter länger ist als jedes Fenster), das Koordinaten-Popup, die
-aufgeklappten Kartenoptionen, das Dateimenü, die Zoomsteuerung und die
+aufgeklappten Kartenoptionen, das Dateimenü (letzter Eintrag treffbar, und jeder
+Eintrag auf 44 px – auch hier über die Rollstände getastet), die drei Dialoge
+„Neue Planung“, „Gespeicherte Planungen“ und „Baumeldung eingegangen“ mit Kopf
+und Fuß im Bild und treffbaren Fußknöpfen, die Zoomsteuerung und die
 Druckvorschau (Lupenhinweis gegen die wirksame Blattschrift, drei
 Einstellungsfelder ganz im Bild, das vergrößerte Blatt übersteht eine
 geänderte Einstellung); die Tabelle am Ende des Laufs zeigt alles je Fenster
