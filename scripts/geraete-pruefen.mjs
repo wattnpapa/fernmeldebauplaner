@@ -331,10 +331,41 @@ const MESSHILFEN = `
       /* Das Blatt kommt von unten herein – gemessen wird, wo es steht. */
       await Promise.all(pk.getAnimations().map(a => a.finished.catch(() => {})));
       const zu = window._g.muss('.pk-zu', pk);
-      const fertig = [...pk.querySelectorAll('.pk-tasten button')]
+      /* Gesucht im ganzen Blatt und nicht in der Tastenreihe: der Abschluss
+         steht seit Paket 1 in einer eigenen, festgehaltenen Zeile. */
+      const fertig = [...pk.querySelectorAll('button')]
         .find(b => b.textContent.trim() === 'Fertig');
       if (!fertig) throw new Error('Kein „Fertig“ in der Punktkarte');
       return { gerollt: pk.scrollTop, zu: window._g.lage(zu), fertig: window._g.lage(fertig) };
+    },
+    /* „Zurücknehmen“ und „Löschen“ wirken sofort, und der Rückweg liegt oben
+       in der Kopfzeile: sie dürfen keinem anderen Griff nahe kommen. Gemessen
+       wird der kürzeste Abstand zu irgendeiner anderen Taste des Blattes und
+       nicht nur zur nächsten in der Reihe – schmal bricht die Reihe um, und
+       dann steht der Nachbar darüber statt daneben.
+
+       Gerollt wird vorher ans Ende. Ungerollt steht der festgehaltene
+       Abschluss an der Unterkante des Blattes, während die Tastenreihe noch
+       weit darunter im Inhalt liegt: der Abstand wäre eine Zahl über zwei
+       Griffe, die niemand zugleich sieht. Getroffen wird die Gefahrtaste
+       ohnehin erst, wenn zu ihr gerollt wurde. */
+    async gefahrAbstand() {
+      const pk = window._g.muss('#punktkarte');
+      const gefahr = window._g.muss('.knopf.gefahr', pk);
+      const vorher = pk.scrollTop;
+      pk.scrollTop = pk.scrollHeight;
+      await new Promise(f => requestAnimationFrame(f));
+      const r = gefahr.getBoundingClientRect();
+      const abstand = Math.min(...[...pk.querySelectorAll('.knopf')]
+        .filter(k => k !== gefahr && window._g.kasten(k))
+        .map(k => {
+          const o = k.getBoundingClientRect();
+          return Math.hypot(Math.max(0, r.left - o.right, o.left - r.right),
+                            Math.max(0, r.top - o.bottom, o.top - r.bottom));
+        }));
+      pk.scrollTop = vorher;
+      await new Promise(f => requestAnimationFrame(f));
+      return { text: gefahr.textContent.trim(), abstand: Math.round(abstand) };
     }
   };
   return true;`;
@@ -762,6 +793,13 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                    kurz: gut ? '' : p.fertig.imBild ? `${prozent(p.fertig.verdeckt)} zu`
                                                     : `bis ${p.fertig.unten}`,
                    text: griffText('„Fertig“', p.fertig) };
+        });
+      await fall(fenster, 'Punktkarte: Gefahrtaste ≥ 16 px entfernt' + spalte,
+        '„Zurücknehmen“ bzw. „Löschen“ hält 16 px Abstand zur nächsten Taste',
+        async () => {
+          const g = await seite.auswerten('return await window._g.gefahrAbstand();');
+          return { gut: g.abstand >= 16, kurz: g.abstand + ' px',
+                   text: `„${g.text}“ steht ${g.abstand} px von der nächsten Taste` };
         });
     };
     await punktkarteFaelle(false);

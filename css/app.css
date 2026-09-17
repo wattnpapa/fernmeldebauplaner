@@ -2018,21 +2018,48 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
   bottom: calc(var(--sl-hoehe) + max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px))
                + var(--karten-fuss) + 12px);
   max-width: 440px; margin-right: auto;
-  /* Höher als die Karte wird das Blatt nie; darüber rollt es. Die Zoom-
-     steuerung oben rechts wird dabei nicht abgezogen: hochkant reicht das
-     Blatt nie so weit hinauf, quer steht es mit 440 px links neben ihr – und
-     mit dem Abzug blieben quer 52 px, gerade der Kopf des Blattes. */
-  max-height: calc(100% - var(--sl-hoehe) - var(--karten-fuss)
-                   - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 24px);
+  /* Zwei Deckel, und jeder hält etwas anderes.
+
+     Der erste hält das Blatt im Kartenbereich. Die Zoomsteuerung oben rechts
+     wird dabei nicht abgezogen: der Schließgriff steht seit Befund 9 links,
+     rechts oben liegt nur noch Text.
+
+     Der zweite lässt oben einen Streifen Karte frei, und der ist kein
+     Schmuck: ein Tipp neben das Blatt schließt es (Kartenklick in app.js),
+     und das ist der Rückweg, auf den sich das Soll-Blatt ohne Abschlusstaste
+     verlässt. Vorher blieben dafür 12 px – rechnerisch da, mit dem Handschuh
+     nicht zu treffen. Gemessen bei 390×690: 74 px statt 12, und das Blatt
+     reicht nicht mehr hinter die Zoomsteuerung.
+
+     Was dabei über den Deckel hinauswächst, rollt – Kopf und Tastenreihe
+     bleiben stehen (siehe .pk-kopf und .pk-abschluss). Das senkrechte Polster
+     sitzt deshalb nicht mehr hier, sondern an beiden: ein Polster am
+     rollenden Kasten liegt über dem Rollbereich, und der Inhalt zöge sichtbar
+     durch den Streifen über dem festgehaltenen Kopf. */
+  max-height: min(60%, calc(100% - var(--sl-hoehe) - var(--karten-fuss)
+                   - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 24px));
   overflow-y: auto; overscroll-behavior: contain;
   display: flex; flex-direction: column; gap: 8px;
   background: var(--flaeche); border: 1px solid var(--thw); border-radius: var(--radius);
-  padding: 10px 12px; box-shadow: var(--schatten-stark); font-size: 12.5px;
+  padding: 0 12px; box-shadow: var(--schatten-stark); font-size: 12.5px;
 }
 .punktkarte[hidden] { display: none; }
 .punktkarte:not([hidden]) { animation: leiste-an var(--zeit-zustand) var(--weg); }
 .punktkarte > div { display: flex; flex-direction: column; gap: 8px; }
-.pk-kopf { display: flex; align-items: flex-start; gap: 8px; }
+/* Der Kopf bleibt beim Rollen stehen – dieselbe Arbeitsteilung, die
+   .dialog-kopf/.dialog-inhalt/.dialog-fuss schon leisten. Er trägt sein
+   senkrechtes Polster selbst (siehe .punktkarte) und deckt mit dem negativen
+   Rand auch die Lücke zur ersten Zeile darunter ab: sonst zöge der Befund
+   durch einen 8 px hohen Spalt unter dem Titel hindurch.
+
+   Eine Stufe über der Tastenreihe: werden quer beide zusammen höher als das
+   Blatt, überdeckt der Kopf die Reihe und nicht umgekehrt. Das Kreuz ist der
+   Ausstieg, den beide Blätter haben – „Fertig“ trägt nur das Ist-Blatt. */
+.pk-kopf {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: flex-start; gap: 8px;
+  background: var(--flaeche); padding: 10px 0 8px; margin-bottom: -8px;
+}
 .pk-titel { flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .pk-titel b { font-size: 14px; }
 .pk-unter { color: var(--text); }
@@ -2061,11 +2088,54 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
   width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--linie-stark);
   border-radius: var(--radius-klein); background: var(--flaeche); font-size: 13px;
 }
-.pk-tasten { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 16 px zwischen den Zeilen, 8 px nebeneinander: bricht die Reihe schmal um,
+   steht die Gefahrtaste sonst dicht unter ihrem Nachbarn. */
+.pk-tasten { display: flex; flex-wrap: wrap; gap: 16px 8px; }
 .pk-tasten .knopf { flex: 1 1 auto; margin: 0; }
+/* „Zurücknehmen“ und „Löschen“ wirken sofort und lagen mit 6 px Abstand
+   gleich groß neben „Fertig“ – ein Griff mit dem Handschuh nahm die eben
+   eingetragene Aufnahme zurück. Sie wachsen deshalb nicht mit, rücken um
+   16 px von ihrem Nachbarn ab und landen so am Ende ihrer Zeile; „Fertig“
+   steht allein eine Zeile tiefer. */
+.pk-tasten .knopf.gefahr { flex: 0 1 auto; margin-left: 16px; }
+/* Der Abschluss bleibt beim Rollen stehen: er ist neben dem Kreuz der zweite
+   Ausstieg, und ausgerechnet er stand vorher unter der Kante des Blattes.
+   Eigene Zeile, volle Breite – der Griff, der ohne Hinsehen zu finden sein
+   muss, hat keinen Nachbarn mehr. Das Polster oben ist größer als das unten:
+   zusammen mit der Lücke des Kastens hält es die Gefahrtaste der Reihe
+   darüber auf Abstand, und 16 px auf den Bildpunkt genau wären an den
+   Bruchteilen der Knopfhöhen gescheitert. */
+.pk-abschluss {
+  position: sticky; bottom: 0; z-index: 2;
+  display: flex; background: var(--flaeche); padding: 14px 0 10px;
+}
+.pk-abschluss .knopf { flex: 1 1 auto; margin: 0; }
 /* Die drei Aufnahmegriffe des offenen Punktes – dieselben Maße wie in der
-   Liste (`.knopf.bau-taste`), es sind dieselben Griffe. */
+   Liste (`.knopf.bau-taste`), es sind dieselben Griffe. Sie sind zugleich der
+   Fuß des Soll-Blattes und bleiben deshalb ebenfalls stehen. */
+.pk-aufnahme {
+  position: sticky; bottom: 0; z-index: 2;
+  background: var(--flaeche); padding: 8px 0 10px; margin-top: -8px;
+}
 .pk-aufnahme .knopf { flex: 1 1 0; min-width: 0; }
+
+/* Quer auf dem Telefon bleibt vom Kartenbereich so wenig übrig, dass Kopf und
+   Tastenreihe des Blattes einander überdeckten: bei 667×375 sind es 59 px, der
+   Kopf allein misst 62. Das Blatt rückt dort über Maßstab, Quellenzeile und
+   Statusleiste. Das ist vertretbar, solange es steht: die Koordinate des
+   Punktes trägt es selbst, die Statusleiste nennt nur die zuletzt angetippte
+   Stelle. Der Umschalter Liste/Karte bleibt frei – er ist der Rückweg. */
+@media (max-height: 560px) {
+  .punktkarte {
+    bottom: calc(max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) + 8px);
+    max-height: calc(100% - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 16px);
+  }
+  /* Enger geht es nicht: 44 px Griff, darüber und darunter je 6 px. Der
+     Abstand zur Gefahrtaste bleibt auch hier über 16 px. */
+  .pk-kopf { padding: 6px 0; margin-bottom: -8px; }
+  .pk-abschluss { padding: 10px 0 6px; }
+  .pk-aufnahme { padding: 6px 0; }
+}
 
 /* ---------------------------------------------------------------- Schmale Fenster */
 
@@ -2312,10 +2382,18 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
   .fbp-istpunkt::before { content: ''; position: absolute; inset: -15px; }
   .fbp-istpunkt.mit-kurz::before { inset: -13px; }
   /* Die Chips der Punktkarte sind die Griffe, mit denen am Bauort benannt
-     wird – Handschuhmaß, und nur senkrecht aufgezogen, damit Nachbarn sich
-     nicht überdecken. */
-  .pk-chip { position: relative; min-height: 40px; padding: 8px 12px; }
-  .pk-chip::after { content: ''; position: absolute; inset: -2px 0; }
+     wird, und ein Fehlgriff auf den Nachbarn ändert die Art des gebauten
+     Punktes stillschweigend – gemeldet wird er nie. Sie tragen ihre 44 px
+     deshalb selbst; die `::after`-Krücke von vorher lief in die Lücke zum
+     Nachbarn und blieb bei 40 px stecken. */
+  .pk-chip { min-height: 44px; padding: 8px 12px; font-size: 14px; }
+  .pk-chips { gap: 8px; }
+  /* Derselbe Block hebt die Bauleiste an und ließ das Blatt auf
+     Schreibtischmaß stehen: 11,5 px für den Streckennamen und für die
+     MGRS-Angabe, die am Bauort abgelesen und über Funk durchgegeben wird. */
+  .punktkarte { font-size: 14px; }
+  .pk-strecke, .pk-befund span, .pk-frage { font-size: 14px; }
+  .pk-befund .mono { font-size: 15px; }
   .pk-felder input { min-height: 44px; }
   /* Der Schließgriff des Blattes trägt seine 44 px selbst: die `::after`-
      Aufweitung des `.mini-knopf` läuft rechts in die Polsterung des Blattes

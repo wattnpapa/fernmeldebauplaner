@@ -20,7 +20,7 @@ import { store, punktartById } from './state.js';
 import { QUERUNG_BAUWEISEN } from './vorschrift.js';
 import {
   istPunkte, istZuSoll, sollZuIst, istPunktSetzen, istArtSetzen, bauabschnittById,
-  baustrecke, baustreckeSetzen, aktiverBauabschnitt, quelleText, uhrzeit,
+  baustrecke, baustreckeSetzen, aktiverBauabschnitt, quelleText,
   punktartText, ABWEICHUNG_SCHWELLE
 } from './baudoku.js';
 import { toMGRS, formatLaenge, distanz } from './geo.js';
@@ -233,15 +233,19 @@ function knopf(text, tun, klasse = '') {
 
 function kopf(titel, untertitel, s) {
   const k = el('header', 'pk-kopf');
-  k.innerHTML =
-    `<div class="pk-titel"><b>${escapeHtml(titel)}</b>` +
-    (untertitel ? `<span class="pk-unter">${escapeHtml(untertitel)}</span>` : '') +
-    `<span class="pk-strecke">${escapeHtml(s.name)}</span></div>`;
+  /* Der Schließgriff steht links, und zwar vor dem Titel im Baum: rechts oben
+     liegt Leaflets Zoomsteuerung über dem Blatt, und von den 44 px des
+     Kreuzes waren dort nur 25 wirksam – die rechte Hälfte zoomte aus, statt
+     zu schließen. Links steht bei keiner Breite etwas von Leaflet. */
   const zu = el('button', 'mini-knopf pk-zu', '✕');
   zu.type = 'button';
   zu.setAttribute('aria-label', 'Schließen');
   zu.onclick = punktkarteSchliessen;
   k.appendChild(zu);
+  k.appendChild(el('div', 'pk-titel',
+    `<b>${escapeHtml(titel)}</b>` +
+    (untertitel ? `<span class="pk-unter">${escapeHtml(untertitel)}</span>` : '') +
+    `<span class="pk-strecke">${escapeHtml(s.name)}</span>`));
   return k;
 }
 
@@ -304,15 +308,17 @@ function istBlatt(s, ist, soll) {
   box.appendChild(kopf(soll ? `Punkt ${nr}` : 'Zusätzlicher Punkt',
     soll ? punktartText(soll) + (soll.name ? ` · ${soll.name}` : '') : '', s));
 
-  /* Der Befund in einer Zeile: gebaut, woher die Koordinate stammt, wann,
-     und – die Zahl, um die es geht – wie weit vom Plan. */
+  /* Der Befund in einer Zeile: woher die Koordinate stammt, wo sie liegt und
+     – die Zahl, um die es geht – wie weit vom Plan. „✓ gebaut“ und die
+     Uhrzeit standen hier und sagten dem Trupp nichts, was er nicht wüsste;
+     auf einem Blatt, das nicht auf den Schirm passt, kostet jede Pille die
+     Zeile, die die Punktart braucht. In der Liste des Bau-Reiters bleiben
+     beide – dort wird über Punkte gelesen, die man nicht eben gesetzt hat. */
   const abw = soll ? distanz(soll, ist) : null;
   const abschnitt = bauabschnittById(s, ist.abschnitt);
   const befund = el('div', 'pk-befund');
   befund.innerHTML =
-    `<span class="bp-haken">✓ gebaut</span>` +
     `<span>${escapeHtml(quelleText(ist))}</span>` +
-    (uhrzeit(ist.zeit) ? `<span>${escapeHtml(uhrzeit(ist.zeit))}</span>` : '') +
     `<span class="mono">${escapeHtml(toMGRS(ist.lat, ist.lng, 5))}</span>` +
     (abw !== null && abw >= ABWEICHUNG_SCHWELLE
       ? `<span class="bp-abweichung">${escapeHtml(formatLaenge(abw))} vom Plan</span>` : '') +
@@ -351,6 +357,11 @@ function istBlatt(s, ist, soll) {
     w => schreib(() => { ist.bemerkung = w; })));
   box.appendChild(felder);
 
+  /* Zwei Reihen statt einer: die Korrekturen oben, der Abschluss darunter
+     allein und in voller Breite. Vorher stand „Zurücknehmen“ mit 6 px Abstand
+     gleich groß neben „Fertig“ – mit dem Handschuh nimmt dieser Fehlgriff die
+     eben eingetragene Aufnahme zurück, und der Rückweg dafür liegt oben in
+     der Kopfzeile. */
   const tasten = el('div', 'pk-tasten');
   tasten.appendChild(knopf('◉ Neu orten', () =>
     istPunktAusStandort(s.id, ist.sollPunkt, { ersetzt: ist.id }), 'klein'));
@@ -368,8 +379,11 @@ function istBlatt(s, ist, soll) {
       ? `Punkt ${nr} wieder offen – „Rückgängig“ in der Kopfzeile holt ihn zurück`
       : 'Punkt gelöscht – „Rückgängig“ in der Kopfzeile holt ihn zurück');
   }, 'klein gefahr'));
-  tasten.appendChild(knopf('Fertig', punktkarteSchliessen, 'klein primaer'));
   box.appendChild(tasten);
+
+  const abschluss = el('div', 'pk-abschluss');
+  abschluss.appendChild(knopf('Fertig', punktkarteSchliessen, 'primaer'));
+  box.appendChild(abschluss);
   return box;
 }
 

@@ -377,6 +377,38 @@ geplant und noch offen, stehen dort die drei Wege ihn aufzunehmen. Kein
 Dialog: die Karte bleibt sichtbar und bedienbar, denn der Trupp will sehen,
 WO der Punkt liegt, den er benennt; ein Tipp neben das Blatt schließt es.
 
+**Kopf und Abschluss bleiben stehen, der Rest rollt.** Das Blatt war höher als
+die Karte und rollte als Ganzes: bei 390×690 lag „Fertig“ 56 px unter der
+Kante, quer fiel sogar die Chipreihe darunter, derentwegen das Blatt
+aufschlägt. Kopf und Abschlusszeile sind deshalb festgehalten – dieselbe
+Arbeitsteilung wie `dialog-kopf`/`dialog-inhalt`/`dialog-fuss` –, gerollt wird
+nur Befund, Chips und Felder. Beide Ausstiege sind damit immer da, in jedem
+Fenster und in jedem Zustand.
+
+**Das Blatt ist gedeckelt, und der Streifen Karte darüber ist Bedienfläche.**
+Höchstens 60 % des Kartenbereichs, vorher bis auf 12 px an dessen Oberkante.
+Die 12 px waren rechnerisch der Rückweg „ein Tipp neben das Blatt schließt es“
+und mit dem Handschuh nicht zu treffen; das Soll-Blatt hat keinen anderen
+Ausstieg als Kreuz und Kartentipp. Bei 390×690 sind es jetzt 74 px, und das
+Blatt reicht nicht mehr hinter die Zoomsteuerung.
+
+**Das Schließkreuz steht links.** Rechts oben liegt Leaflets Zoomsteuerung
+über dem Blatt; von den 44 px des Kreuzes waren dort 25 wirksam, die rechte
+Hälfte zoomte aus statt zu schließen. Links steht bei keiner Breite etwas von
+Leaflet.
+
+**„Fertig“ hat keinen Nachbarn.** Zurücknehmen und Löschen wirken sofort und
+standen mit 6 px Abstand gleich groß daneben – mit dem Handschuh nimmt dieser
+Fehlgriff die eben eingetragene Aufnahme zurück, und der Rückweg dafür liegt
+oben in der Kopfzeile. Die Korrekturen stehen jetzt in der Zeile darüber, die
+Gefahrtaste an deren rechtem Ende, „Fertig“ allein in voller Breite darunter.
+
+**Quer rückt das Blatt über Statusleiste und Maßstab.** Bei 667×375 bleiben
+vom Kartenbereich 59 px – weniger, als Kopf und Abschluss zusammen messen.
+Solange das Blatt steht, trägt es die Koordinate des Punktes selbst; die
+Statusleiste nennt nur die zuletzt angetippte Stelle. Der Umschalter
+Liste/Karte bleibt frei, er ist der Rückweg.
+
 Das Blatt schlägt von selbst auf, sobald ein Punkt aufgenommen ist – aus der
 Bauleiste, vom Kartentipp, aus dem Koordinaten-Popup –, und auf Tipp auf eine
 Marke: an der gebauten mit der Frage, was dort ist, an der geplanten mit den
@@ -411,9 +443,27 @@ am Ende statt am Anfang: das Mitnehmen geschieht im Depot und nie am Bauort.
 Geprüft wird das in `scripts/baumodus-pruefen.mjs` (der zweite Weg zu
 denselben Eintragungen) und `scripts/geraete-pruefen.mjs` (Bauleiste höchstens
 64 px, mehr als die Hälfte der Karte frei, jeder Griff der Punktkarte auf
-Handschuhmaß, quer rollt das Blatt statt überzulaufen).
+Handschuhmaß, quer rollt das Blatt statt überzulaufen). Dort steht das Blatt
+zusätzlich in acht Fenstern auf dem Prüfstand: Kreuz und „Fertig“ ohne Rollen
+im Bild und mit `elementFromPoint` zu treffen, auch mit gesetzter Querung,
+das Kreuz nie unter der Zoomsteuerung, und 16 px um die Gefahrtaste.
 
 ## Verworfene Wege
+
+**Bezeichnung und Bemerkung hinter „Mehr …“.** Hätte die Höhe gebracht, die
+der Deckel jetzt erzwingt – aber Benennen ist am Bauort die Hauptaufgabe und
+nicht das Kleingedruckte. Gespart wird stattdessen an den Pillen: „✓ gebaut“
+und die Uhrzeit sagten dem Trupp nichts, was er nicht wüsste. In der Liste
+des Bau-Reiters stehen beide weiter, dort wird über Punkte gelesen, die man
+nicht eben gesetzt hat.
+
+**Die Zoomsteuerung ausblenden, damit das Kreuz rechts bleiben kann.** Mit
+Handschuh ist sie der einzige brauchbare Zoom, und das Aufziehen mit zwei
+Fingern ist genau das, was der Baumodus vermeiden soll.
+
+**Dem Soll-Blatt ein zweites „Fertig“.** Es hat keine Aufnahme abzuschließen,
+und ein zweiter Ausstieg kostet die Höhe, um die es hier geht. Das Kreuz
+trägt seit dem Wechsel nach links seine vollen 44 px – das genügt.
 
 **Eigene Seite `bau.html`.** Hätte Zustand, Karte, Migration und
 Cloud-Abgleich doppelt anbinden müssen, und der Weg zurück in den Bauauftrag
