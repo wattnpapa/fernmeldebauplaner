@@ -459,6 +459,64 @@ const MESSHILFEN = `
       doku.click();
       return stand;
     },
+    /* Der Bau-Reiter ist länger als jedes Fenster. Getastet wird deshalb in
+       Schritten: die wirksame Trefferzone gibt es nur für das, was gerade im
+       Bild steht, und ein Griff, der nie hineingerollt wurde, wäre ungeprüft
+       durchgegangen. Zugeklappte Blöcke werden vorher aufgeschlagen – dass
+       ihre Griffe zugeklappt nicht zu treffen sind, ist kein Befund. */
+    async reiterGriffe() {
+      const inh = window._g.muss('#inhalt-bau');
+      /* Gemerkt, was zugeklappt war, und am Ende wieder zugeklappt: der
+         Zustand steht modulweit in der Anwendung und überlebte sonst dieses
+         Fenster – das nächste maß dann einen aufgeklappten Reiter. */
+      const warZu = [...inh.querySelectorAll('.fg-klapp.zu .fg-griff')];
+      for (const g of warZu) g.click();
+      const wahl = 'button, select, textarea, ' +
+        'input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=color])';
+      const klein = new Map();
+      const alt = inh.scrollTop;
+      const schritt = Math.max(60, inh.clientHeight - 60);
+      for (let y = 0; y < inh.scrollHeight + schritt; y += schritt) {
+        inh.scrollTop = y;
+        await new Promise(f => requestAnimationFrame(f));
+        for (const e of inh.querySelectorAll(wahl)) {
+          if (!window._g.imBild(e)) continue;
+          const m = window._g.treffer(e);
+          if (m.verdeckt) continue;
+          if (m.breite < 43 || m.hoehe < 43) {
+            klein.set((e.id || e.className || e.tagName).toString().slice(0, 30),
+                      m.breite + '×' + m.hoehe);
+          }
+        }
+      }
+      for (const g of warZu) {
+        if (!g.closest('.fg-klapp').classList.contains('zu')) g.click();
+      }
+      inh.scrollTop = alt;
+      await new Promise(f => requestAnimationFrame(f));
+      return [...klein].map(([k, v]) => k + ' ' + v);
+    },
+    /* Drei bestätigte Punkte, gemessen und wieder zurückgenommen: die Länge
+       des Reiters soll für den Stand gelten, in dem der Trupp ihn benutzt. */
+    async reiterHoehe() {
+      const s = window.fbp.store.projekt.strecken[0];
+      const st = await import('./js/baudoku.js');
+      window.fbp.store.aendern(() => {
+        s.bau = s.bau || null;
+        for (const pt of s.punkte) {
+          st.istPunktSetzen(s, pt.lat, pt.lng, { sollPunkt: pt.id, art: pt.art, quelle: 'plan' });
+        }
+      }, 'bau');
+      await new Promise(f => requestAnimationFrame(f));
+      const inh = window._g.muss('#inhalt-bau');
+      const hoehe = Math.round(inh.scrollHeight);
+      const bestaetigt = document.querySelectorAll('#bau-liste .bp-zeile.bestaetigt').length;
+      window.fbp.store.aendern(p => {
+        if (p.strecken[0].bau) p.strecken[0].bau.punkte = [];
+      }, 'bau');
+      await new Promise(f => requestAnimationFrame(f));
+      return { hoehe, bestaetigt, sicht: inh.clientHeight };
+    },
     async gefahrAbstand() {
       const pk = window._g.muss('#punktkarte');
       const gefahr = window._g.muss('.knopf.gefahr', pk);
@@ -849,8 +907,28 @@ const seitenGriffe = await zuKleineGriffe('.seite',
       });
     await hinweisWeg();
 
-    b.abschnitt(`Fenster ${fenster}: Baumodus mit Bauleiste`);
+    b.abschnitt(`Fenster ${fenster}: Bau-Reiter`);
     await seite.klick('#btn-modus');
+    await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+    await new Promise(r => setTimeout(r, 450));
+    await fall(fenster, 'Bau-Reiter bleibt unter 2500 px',
+      'Mit drei bestätigten Punkten bleibt der Reiter unter 2500 px Rollhöhe',
+      async () => {
+        const m = await seite.auswerten('return await window._g.reiterHoehe();');
+        if (m.bestaetigt < 3) throw new Error(`nur ${m.bestaetigt} Zeilen bestätigt`);
+        return { gut: m.hoehe <= 2500, kurz: m.hoehe + ' px',
+                 text: `${m.hoehe} px bei ${m.sicht} px Sichthöhe, ` +
+                       `also ${(m.hoehe / m.sicht).toFixed(1)} Schirme` };
+      });
+    await fall(fenster, 'Bau-Reiter: jeder Griff trägt 44 px',
+      'Jeder Griff im Bau-Reiter ist mit dem Finger zu treffen',
+      async () => {
+        const klein = await seite.auswerten('return await window._g.reiterGriffe();');
+        return { gut: klein.length === 0, kurz: klein.length ? klein.length + ' zu klein' : '',
+                 text: klein.length ? 'zu klein: ' + klein.join(', ') : 'alle ≥ 44 px' };
+      });
+
+    b.abschnitt(`Fenster ${fenster}: Baumodus mit Bauleiste`);
     await karteVorn();
     await kartenoptionenZu(true);
     await hinweisWeg();

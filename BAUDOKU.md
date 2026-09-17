@@ -480,6 +480,31 @@ Aufsatz zu zählen beginnt – das ist Kopfzeile und Speicherband, nicht die
 Karte. Offen bleibt auch, die Werkzeugleiste erst auf Verlangen zu zeigen;
 das gäbe beim bloßen Lesen weitere 54 px frei.
 
+**Der Weg durch den Reiter ist kurz, nicht vollständig sichtbar.** Der
+Bau-Reiter maß bei 390×690 mit drei aufgenommenen Punkten 4.002 px und wuchs
+mit jeder Bestätigung weiter – rund zehn Schirmhöhen, durch die am Mast
+gewischt wird. Drei Dinge verkürzen ihn. Eine bestätigte Punktzeile zeigt nur
+noch ihren Befund (Nummer, Art, Herkunft der Koordinate, Abweichung) und ihr
+Formular erst auf Tipp: 92 px statt 298 bis 427. Materialnachweis, Prüfung und
+Übergabe und der Kachelvorrat stehen eingeklappt – sie werden einmal am Ende
+gefüllt oder im Depot geholt, nicht laufend; zusammen maßen sie 2.370 px. Und
+der Sprungstreifen trägt zwei Chips mehr: „Absetzen“ für den Rückmeldeblock,
+der als Abschluss jedes Bauabschnitts am häufigsten gebraucht wird und
+ausgerechnet fehlte, und „▤ Doku“, das die Baudokumentation aufschlägt, deren
+einziger Aufruf am Ende der Liste stand. Ein Sprungchip klappt den Block, zu
+dem er führt, mit auf. Gemessen bleiben mit drei bestätigten Punkten 2.115 px.
+
+**Was der Trupp tut, wird quittiert.** „✓ wie geplant“ meldete nichts zurück,
+obwohl es denselben Eintrag erzeugt wie die Standortaufnahme, die quittiert.
+Es meldet jetzt kurz und rollt den nächsten offenen Punkt ins Bild – ohne das
+rutschte der nächste Griff nach jeder Bestätigung aus dem Sichtfeld, und zwei
+Tipps an derselben Bildschirmstelle träfen zwei verschiedene Punkte. Eine
+ungültige Menge im Materialnachweis wird sichtbar abgewiesen, statt still zu
+`null` zu werden und die Zeile mitzunehmen; die Löschkreuze nennen den
+Rückweg über „Rückgängig“. Ohne Strecke zeigt der Reiter kein leeres
+Auswahlfeld mehr, sondern den Weg in den Planungsmodus, und im Baumodus bietet
+der Strecken-Reiter kein Zeichnen an – dort wird der Bauauftrag nachgeschlagen.
+
 **Der Bau-Reiter** hat unter der Summe einen Sprungstreifen (Punkte,
 Meldungen, Material, Übergabe, Karte mitnehmen), und der Kachelvorrat steht
 am Ende statt am Anfang: das Mitnehmen geschieht im Depot und nie am Bauort.

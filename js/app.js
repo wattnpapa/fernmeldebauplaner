@@ -348,7 +348,14 @@ karte.on('click', e => {
   if (sl.zeichenModus || zl.setzModus || bl.setzModus || fl.setzModus) return;
   if (sl.auswahl || zl.auswahl || bl.auswahl || fl.auswahl) {
     sl.auswahl = null; zl.auswahl = null; bl.auswahl = null; fl.auswahl = null;
-    zeichneAlles(); return;
+    zeichneAlles();
+    /* Im Baumodus geht es nach dem Abwählen gleich weiter zum Popup. Die
+       Auswahl hat dort für den Trupp keine sichtbare Wirkung, kostete aber
+       einen Tipp, der scheinbar nichts tut – und die Antwort darauf ist der
+       Doppeltipp, der die Karte zoomt. In der Planung bleibt das Abwählen ein
+       eigener Schritt: dort ist die Auswahl zu sehen, und wer sie aufhebt,
+       will meist nur sie aufheben. */
+    if (!baumodus) return;
   }
   koordinatenPopup(e.latlng);
 });

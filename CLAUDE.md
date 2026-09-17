@@ -191,7 +191,9 @@ Anteil der Fensterhöhe (Planung mit Werkzeugleiste, Baumodus mit Bauleiste,
 Baumodus mit offener Punktkarte), die Punktkarte nach „Punkt hier“ mit und
 ohne Querung, die Meldungspille (sie darf keinen Tipp abfangen und nach einer
 Aufnahme keine Leiste zudecken), die Modusleiste nach „Auf Karte“ (nur
-wirksame Knöpfe, höchstens 64 px hoch), das Koordinaten-Popup, die
+wirksame Knöpfe, höchstens 64 px hoch), der Bau-Reiter (mit drei bestätigten
+Punkten unter 2500 px, jeder Griff darin auf Handschuhmaß – getastet wird in
+Schritten, weil der Reiter länger ist als jedes Fenster), das Koordinaten-Popup, die
 aufgeklappten Kartenoptionen, das Dateimenü, die Zoomsteuerung und die
 Druckvorschau (Lupenhinweis gegen die wirksame Blattschrift, drei
 Einstellungsfelder ganz im Bild, das vergrößerte Blatt übersteht eine

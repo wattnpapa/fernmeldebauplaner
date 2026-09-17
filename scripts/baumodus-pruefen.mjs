@@ -269,6 +269,28 @@ try {
   await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.material.length === 1', 3000);
   b.pruefe(true, 'Das leere Feld nimmt die Zeile wieder heraus');
 
+  b.abschnitt('Eine ungültige Menge wird abgewiesen und nicht still verworfen');
+  /* Vorher wurde jede Eingabe, die keine Zahl ergibt, zu `null` – und `null`
+     nimmt die Zeile aus der Planung. Wer sich am Bauort um ein Minus vertat,
+     sah seine eingetragene Menge verschwinden, ohne zu erfahren warum. */
+  await materialFeld('Feldkabel FKb', -5);
+  await seite.ruhe();
+  b.gleich(await bau("bau.material.find(z => z.artikel === 'fkb').menge"), 1450,
+    'Die eingetragene Menge bleibt stehen');
+  b.pruefe(await seite.auswerten(`
+    const f = [...document.querySelectorAll('.bau-material .mat-zeile')]
+      .find(x => x.querySelector('.feld-titel').textContent === 'Feldkabel FKb');
+    return !!f && !!f.querySelector('.feld-abgewiesen');`),
+    'Das Feld zeigt sichtbar, dass die Eingabe nicht angenommen wurde');
+  b.pruefe(/keine Menge unter|keine zahl/i.test(
+    await seite.auswerten('document.getElementById("hinweisbox").textContent') || ''),
+    'Und die Meldung sagt, warum');
+  /* Zurück auf einen gültigen Wert: die Abweisung darf das Feld nicht sperren. */
+  await materialFeld('Feldkabel FKb', 1450);
+  await seite.ruhe();
+  b.gleich(await bau("bau.material.find(z => z.artikel === 'fkb').menge"), 1450,
+    'Nach der Abweisung nimmt das Feld wieder an');
+
   b.abschnitt('Eine freie Zeile für das, was der Katalog nicht kennt');
   await taste('.bau-material', '+ Zeile');
   b.gleich(await bau('bau.material.length'), 2, 'Die freie Zeile steht in der Planung');

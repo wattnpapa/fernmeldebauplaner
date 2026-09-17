@@ -566,6 +566,14 @@ body.seite-zu .seite { display: none; }
 .gruppen-kopf .gruppen-titel { border: 0; padding: 0; }
 
 .feld { display: flex; flex-direction: column; gap: 3px; position: relative; }
+/* Dieselbe Zeile wie an .knopf und .punktkarte: ohne sie schlägt das `display`
+   darüber das `hidden` des Browsers, und ein abgeschaltetes Feld steht weiter
+   da – im Bau-Reiter war das ein leeres Auswahlfeld mit der Überschrift
+   „Diese Strecke wird gebaut“ in einer Planung ohne Strecke. */
+.feld[hidden] { display: none; }
+/* Eine abgewiesene Zahl bleibt sichtbar abgewiesen, statt still zu
+   verschwinden – gemeldet wird zusätzlich einmal in der Pille. */
+.feld-abgewiesen input { border-color: var(--gefahr); background: var(--gefahr-flaeche); }
 .feld-titel { font-size: 11.5px; font-weight: 600; color: var(--text-schwach); }
 .feld input, .feld select, .feld textarea {
   width: 100%; padding: 6px 9px; border: 1px solid var(--linie-stark);
@@ -1837,6 +1845,11 @@ body.baumodus .wz.nur-bau { display: flex; }
 /* Die Planungszeilen der Kartenoptionen gehen im Baumodus vom Schirm – bleiben
    die vier, die am Bauort umgestellt werden: Karte, Gitter, Nummern, Namen. */
 body.baumodus .ko-zeile.nur-planung { display: none; }
+/* Der Strecken-Reiter dient im Baumodus dem Nachschlagen des Bauauftrags. Das
+   Zeichnen einer neuen Trasse gehört nicht dazu – es ist Planung, und der
+   gefüllte Knopf stand ganz oben, wo am Bauort gesucht wird. */
+body.baumodus #btn-neue-strecke,
+body.baumodus #btn-neuer-abschnitt { display: none; }
 
 /* Die gebaute Trasse auf der Karte: gefüllt, wo der geplante Punkt hohl ist.
    Kein Schlagschatten – Firefox gibt Seitenbereiche mit CSS-`filter` beim
@@ -2057,12 +2070,57 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
    „Meldung jetzt“ stand auf der fünften. Die Chips springen an den Block; sie
    ersetzen keine Gliederung, sie ersetzen das Rollen. Eine Reihe, die rollt,
    statt umzubrechen: zwei Reihen kosteten den Platz, den sie sparen sollen. */
+/* Die Chips brechen um, statt waagerecht zu rollen. Vorher ragte die Reihe
+   469 px in eine 296 px breite Ansicht, und weil der Rollbalken ausgeblendet
+   war, verriet bei 320 px nichts, dass da noch etwas steht: der letzte Chip
+   war unsichtbar, bei 390 px waren zwei Buchstaben zu sehen. Zwei Reihen
+   kosten eine Zeilenhöhe und sparen das Suchen. */
 .bau-sprung {
-  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  display: flex; flex-wrap: wrap; gap: 6px;
   margin: -4px 0 10px; padding: 2px 0;
 }
-.bau-sprung::-webkit-scrollbar { display: none; }
-.bau-sprung .knopf.klein { flex: 0 0 auto; border-radius: 999px; }
+.bau-sprung .knopf.klein { flex: 0 0 auto; border-radius: 999px; margin: 0; }
+/* Der Chip, der nicht springt, sondern aufschlägt: das Sinnbild unterscheidet
+   ihn von den Sprungzielen daneben – dasselbe ▤ wie an den anderen Blättern. */
+.bau-sprung-doku { border-color: var(--thw); color: var(--thw); }
+
+/* Die bestätigte Punktzeile zeigt ihr Formular erst auf Tipp. Der Kopf ist
+   der Griff dafür und trägt die ganze Zeile – mit dem Handschuh wird nicht auf
+   einen Pfeil gezielt. */
+.bp-auf {
+  flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0;
+  border: 0; background: none; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.bp-pfeil {
+  margin-left: auto; font-size: 10px; color: var(--text-schwach); transition: transform .12s;
+}
+.bp-zeile.zu .bp-pfeil { transform: rotate(-90deg); }
+.bp-zeile.zu .bp-mehr { display: none; }
+/* Eingeklappt bleibt der Befund stehen, aber nur, was ihn ausmacht: Herkunft
+   der Koordinate und Abweichung. Uhrzeit und Trupp stehen aufgeklappt und auf
+   dem Blatt – beim Überfliegen sucht niemand nach ihnen. */
+.bp-zeile.zu .bp-zeit, .bp-zeile.zu .bp-trupp { display: none; }
+.bp-mehr { display: flex; flex-direction: column; gap: 8px; }
+
+/* Ein Block des Bau-Reiters, der auf seine Überschrift zusammenfällt. Der
+   Griff trägt die ganze Zeile: mit dem Handschuh wird nicht auf einen Pfeil
+   gezielt. */
+.fg-griff {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  border: 0; background: none; padding: 0; margin: 0; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.fg-pfeil { font-size: 10px; color: var(--text-schwach); transition: transform .12s; }
+.fg-klapp.zu .fg-pfeil { transform: rotate(-90deg); }
+.fg-klapp.zu .fg-koerper { display: none; }
+.fg-koerper { display: flex; flex-direction: column; gap: 8px; }
+
+/* Die Vorschau der Baumeldung: was der Planer lesen wird, bevor abgesetzt
+   wird – die Abweichungen, nicht die Stückzahlen. */
+.bau-vorschau { margin: 8px 0 10px; padding-left: 18px; font-size: 12.5px; }
+.bau-vorschau li { margin: 2px 0; }
+.bau-vorschau-gleich { color: var(--text-schwach); }
 
 /* ---------------------------------------------------------------- Punktkarte
 
@@ -2456,6 +2514,35 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
      ist 14 bzw. 18 px groß, die Zone rechnet auf 44 auf. */
   .fbp-istpunkt::before { content: ''; position: absolute; inset: -15px; }
   .fbp-istpunkt.mit-kurz::before { inset: -13px; }
+  /* Der „⋯“-Griff der Abschnittszeile maß 26×19 px und öffnet die einzige
+     Stelle, an der Trupp und Zuteilung stehen; der Klappgriff daneben trägt
+     die Zeile. Beide auf Handschuhmaß. */
+  .ea-mehr { min-width: 44px; min-height: 44px; padding: 2px 6px; }
+  .ea-name { min-height: 44px; }
+  .bp-auf, .fg-griff { min-height: 44px; }
+
+  /* Die Knöpfe des Koordinaten-Popups maßen 23 px bei 11,5 px Schrift und
+     sind der einzige Weg von einer angetippten Koordinate zur Aufnahme oder
+     zum Zeichnen – einen Umweg gibt es dafür nicht.
+
+     Sie bleiben nebeneinander, obwohl untereinander mehr Breite brächte: das
+     Popup muss in das freie Band der Karte passen, und drei Griffe
+     untereinander machen es 150 px hoch. Gemessen fiel der Primärknopf damit
+     bei 320 px und quer ganz aus dem Bild – die Breite gewänne man sich dort
+     mit Höhe, die es nicht gibt. In einer Reihe bricht sie um, wenn sie muss. */
+  .koord-popup .kp-tasten button { min-height: 44px; font-size: 13px; }
+  .koord-popup code { font-size: 13px; }
+  .leaflet-popup-close-button { width: 44px !important; height: 44px !important; font-size: 20px; }
+
+  /* Flächenmarke und Drehgriff trugen 10 und 18 px wirksame Zone, ohne jede
+     Aufweitung – und die Hinweispille verweist ausdrücklich auf den Drehgriff.
+     Dieselbe Krücke wie am Trassenpunkt: unsichtbar aufgezogen, sichtbar
+     bleibt die Marke so klein, wie die Fläche sie braucht. */
+  .fl-marke, .fbp-flaeche-griff span { position: relative; }
+  .fl-marke::before, .fbp-flaeche-griff span::before {
+    content: ''; position: absolute; inset: -15px;
+  }
+
   /* Die Chips der Punktkarte sind die Griffe, mit denen am Bauort benannt
      wird, und ein Fehlgriff auf den Nachbarn ändert die Art des gebauten
      Punktes stillschweigend – gemeldet wird er nie. Sie tragen ihre 44 px
