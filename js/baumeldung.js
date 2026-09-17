@@ -63,6 +63,10 @@ export function vorschlag(projekt, name) {
 /** Wer gemeldet hat – aus den Bauabschnitten der Meldung, für die Vorschau */
 export function truppText(meldung) {
   const namen = new Set();
+  /* Der Absender, den der Trupp am Gerät eingetragen hat, geht vor: er steht
+     auch dann da, wenn die Strecke ohne Bauabschnitt gebaut wurde – der Fall,
+     in dem der Planer vorher niemanden genannt bekam. */
+  if (meldung.von) namen.add(String(meldung.von));
   for (const m of meldung.strecken || []) {
     for (const a of (m.bau && m.bau.abschnitte) || []) {
       if (a && a.trupp) namen.add(a.trupp);

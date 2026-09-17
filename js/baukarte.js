@@ -79,7 +79,10 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
         ersetzt,
         sollPunkt: sollPunkt ? sollPunkt.id : null,
         ...(ersetzt ? {} : {
-          art: sollPunkt ? sollPunkt.art : 'punkt',
+          /* Ohne geplanten Punkt bleibt die Art OFFEN: „Punkt hier“ sagt, WO
+             der Trupp steht, nicht WAS dort ist. Die Frage danach stellt das
+             Blatt, das gleich darauf aufschlägt. */
+          art: sollPunkt ? sollPunkt.art : 'offen',
           bauweise: sollPunkt && sollPunkt.art === 'querung' ? sollPunkt.bauweise : null,
           name: sollPunkt ? sollPunkt.name : ''
         }),
@@ -107,8 +110,40 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
          fertigen Punkt schon zeigt. */
       hinweisAus();
     }
-  }, err => hinweis('Position nicht verfügbar: ' + err.message, 'fehler'),
+  }, err => ortungFehlerMelden(err, sid, sollPunktId, o),
      { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
+}
+
+/**
+ * Was der Trupp liest, wenn die Ortung nicht kommt.
+ *
+ * Vorher stand da „Position nicht verfügbar: “ und dahinter das, was der
+ * Browser mitgab – auf dem Telefon oft nichts. Ein Satz, der mit einem
+ * Doppelpunkt endet, nennt weder die Ursache noch den nächsten Schritt, und den
+ * gibt es: der Punkt lässt sich auf der Karte setzen. Deshalb sagt jeder der
+ * drei Fälle, was zu tun ist, und der Ausweg steht als Griff in der Meldung –
+ * am Bauort wird nicht gesucht, wo er sonst noch stünde.
+ */
+function ortungFehlerMelden(err, sid, sollPunktId, o = {}) {
+  const codes = {
+    1: 'Der Standort ist für diese Seite gesperrt. Im Browser die Freigabe für ' +
+       'den Standort erlauben – oder den Punkt auf der Karte setzen.',
+    2: 'Kein Standort zu bekommen – unter Bewuchs, im Fahrzeug oder zwischen ' +
+       'Wänden findet das Gerät keinen. Ins Freie treten oder den Punkt auf ' +
+       'der Karte setzen.',
+    3: 'Der Standort kam in zwölf Sekunden nicht – das Gerät sucht noch. ' +
+       'Noch einmal versuchen oder den Punkt auf der Karte setzen.'
+  };
+  const text = codes[err && err.code] ||
+    'Standort nicht zu bekommen. Den Punkt auf der Karte setzen.';
+  hinweis(text, 'fehler');
+  /* Der Ausweg steht als GRIFF und nicht nur als Satz. In die Meldungspille
+     gehört er nicht: die nimmt seit dem Gerätelauf ausdrücklich keine Tipps
+     mehr entgegen, weil sie sonst die Griffe darunter abfing. Also trägt ihn
+     das Blatt, das an dieser Stelle ohnehin aufschlüge, wenn die Ortung
+     gelungen wäre – dieselbe Stelle, derselbe Daumen. */
+  const s = store.strecke(sid);
+  if (s) punktkarteFehlerOeffnen(s, { text, sollPunktId, ersetzt: o.ersetzt || null });
 }
 
 // ---------------------------------------------------------------- Bauleiste
@@ -168,7 +203,7 @@ export function punktAusKoordinate(lat, lng) {
    ganzen Baum. `istPunktSetzen` behält beim Ersetzen die Kennung – deshalb
    bleibt das Blatt über ein „Neu orten“ hinweg am selben Punkt. */
 
-let offen = null;   // { sid, istId, sollId } oder null
+let offen = null;   // { sid, istId, sollId, fehler } oder null
 
 const blatt = () => document.getElementById('punktkarte');
 
@@ -192,9 +227,17 @@ export function punktkarteOeffnen(s, { ist = null, soll = null } = {}) {
   offen = {
     sid: s.id,
     istId: ist ? ist.id : null,
-    sollId: soll ? soll.id : (ist && ist.sollPunkt) || null
+    sollId: soll ? soll.id : (ist && ist.sollPunkt) || null,
+    fehler: null
   };
-  punktkarteZeichnen();
+  punktkarteZeichnen(true);
+  if (ctx.zurKarte) ctx.zurKarte();
+}
+
+/** Das Blatt zu einer gescheiterten Ortung: der Grund und die beiden Auswege */
+export function punktkarteFehlerOeffnen(s, fehler) {
+  offen = { sid: s.id, istId: null, sollId: fehler.sollPunktId || null, fehler };
+  punktkarteZeichnen(true);
   if (ctx.zurKarte) ctx.zurKarte();
 }
 
@@ -209,16 +252,37 @@ export function punktkarteNachfuehren(grund) {
   if (!offen || grund === 'formular') return;
   const s = store.strecke(offen.sid);
   if (!s) return punktkarteSchliessen();
+  /* Das Fehlerblatt hängt an keinem Punkt – es steht, bis der Trupp einen der
+     beiden Auswege nimmt oder es schließt. Ein Neuzeichnen bräuchte es nicht,
+     und die Prüfung darunter schlösse es, weil sie nichts fände. */
+  if (offen.fehler) return;
   const ist = offen.istId ? istPunkte(s).find(pt => pt.id === offen.istId) : null;
   const soll = offen.sollId ? s.punkte.find(pt => pt.id === offen.sollId) : null;
   if (!ist && !soll) return punktkarteSchliessen();
   punktkarteZeichnen();
 }
 
-function punktkarteZeichnen() {
+function punktkarteZeichnen(neuAufgeschlagen = false) {
   const b = blatt();
   const s = store.strecke(offen.sid);
   if (!b || !s) return punktkarteSchliessen();
+  /* Der Rollstand wird über den Neuaufbau gerettet und nicht dem Browser
+     überlassen. Zwei Gründe, und beide sind am Gerät aufgefallen: ein frisch
+     aufgeschlagenes Blatt beginnt oben, sonst stünde der Kopf unerreichbar
+     darüber; und wer unten bei der Bemerkung war, soll nach einem Tipp auf
+     einen Chip nicht wieder oben landen. Dazwischen liegt der Fall, den die
+     Geräteprüfung fand: beim Neuaufbau verschob die Rollverankerung des
+     Browsers das Blatt um 2 bis 18 px, und damit stand das Schließkreuz nicht
+     mehr ungerollt im Bild. */
+  const rollstand = neuAufgeschlagen ? 0 : b.scrollTop;
+  if (offen.fehler) {
+    b.innerHTML = '';
+    b.appendChild(fehlerBlatt(s, offen.fehler));
+    b.hidden = false;
+    b.scrollTop = rollstand;
+    document.body.classList.add('punktkarte-offen');
+    return;
+  }
   const soll = offen.sollId ? s.punkte.find(pt => pt.id === offen.sollId) : null;
   let ist = offen.istId ? istPunkte(s).find(pt => pt.id === offen.istId) : null;
   /* Ein geplanter Punkt, der inzwischen bestätigt wurde – etwa über „wie
@@ -228,6 +292,7 @@ function punktkarteZeichnen() {
   b.innerHTML = '';
   b.appendChild(ist ? istBlatt(s, ist, soll || sollZuIst(s, ist)) : sollBlatt(s, soll));
   b.hidden = false;
+  b.scrollTop = Math.min(rollstand, Math.max(0, b.scrollHeight - b.clientHeight));
   document.body.classList.add('punktkarte-offen');
 }
 
@@ -277,6 +342,35 @@ const CHIP_NAMEN = {
   start: 'Anfang', ziel: 'Ende'
 };
 const CHIP_ARTEN = ['punkt', 'muffe', 'reserve', 'mast', 'querung', 'verteiler', 'sonstiges'];
+
+/**
+ * Eine Stelle des Blattes ins Bild rollen.
+ *
+ * Das Blatt ist gedeckelt (höchstens 60 % des Kartenbereichs) und rollt innen;
+ * bei 390×690 sind 313 px sichtbar und der Inhalt misst 636. Was eine Wahl erst
+ * ERZEUGT, liegt deshalb regelmäßig unter der festgehaltenen Abschlusszeile –
+ * und wird dann nicht beantwortet. Genau das ist mit der Bauweise geschehen:
+ * Wer „Querung“ antippte, sah die Frage „Wie gequert?“ nicht, drückte „Fertig“,
+ * und die eine Angabe, wegen der die Querung aufgenommen wird, fehlte still.
+ *
+ * Gerollt wird nach dem Neuzeichnen (ein Bild später), sonst zielte es auf das
+ * Blatt von vorhin. Dass der Kopf festgehalten ist, wird abgezogen – sonst
+ * landete die Zeile darunter.
+ */
+function zeigeImBlatt(wahl) {
+  requestAnimationFrame(() => {
+    const b = blatt();
+    const ziel = b && b.querySelector(wahl);
+    if (!ziel) return;
+    const kopfHoehe = (b.querySelector('.pk-kopf') || {}).offsetHeight || 0;
+    /* Sprunghaft und nicht weich: das Blatt misst gedeckelt 313 px, die
+       Bewegung wäre kürzer als ihre eigene Dauer. Wer mit dem Handschuh einen
+       Chip trifft, soll die nächste Frage sofort lesen und nicht auf eine
+       Animation warten – und solange sie läuft, steht der Rollstand weder für
+       den Trupp noch für die Geräteprüfung fest. */
+    b.scrollTo({ top: Math.max(0, ziel.offsetTop - kopfHoehe - 8), behavior: 'auto' });
+  });
+}
 
 function chips(werte, gewaehlt, beiWahl, beschriftung) {
   const reihe = el('div', 'pk-chips');
@@ -330,6 +424,16 @@ function istBlatt(s, ist, soll) {
      auf einem Blatt, das nicht auf den Schirm passt, kostet jede Pille die
      Zeile, die die Punktart braucht. In der Liste des Bau-Reiters bleiben
      beide – dort wird über Punkte gelesen, die man nicht eben gesetzt hat. */
+  /* Zwei Spalten, die hochkant keine sind: `.pk-spalte` steht dort auf
+     `display: contents`, die Kinder liegen also unmittelbar im Blatt wie
+     vorher. Quer auf dem Telefon rücken sie nebeneinander – bei 667×375 blieb
+     zwischen festgehaltenem Kopf und festgehaltenem Abschluss ein Fenster von
+     rund 40 px für Befund, Chips und Felder, und die Chipreihe, wegen der das
+     Blatt aufschlägt, war darin nicht zu sehen. Nebeneinander steht links, was
+     angetippt wird, und rechts, was geschrieben wird. */
+  const links = el('div', 'pk-spalte pk-links');
+  const rechts = el('div', 'pk-spalte pk-rechts');
+
   const abw = soll ? distanz(soll, ist) : null;
   const abschnitt = bauabschnittById(s, ist.abschnitt);
   const befund = el('div', 'pk-befund');
@@ -339,23 +443,37 @@ function istBlatt(s, ist, soll) {
     (abw !== null && abw >= ABWEICHUNG_SCHWELLE
       ? `<span class="bp-abweichung">${escapeHtml(formatLaenge(abw))} vom Plan</span>` : '') +
     (abschnitt ? `<span>${escapeHtml(abschnitt.trupp || abschnitt.name)}</span>` : '');
-  box.appendChild(befund);
+  links.appendChild(befund);
 
-  box.appendChild(el('div', 'pk-frage', 'Was ist hier?'));
+  links.appendChild(el('div', 'pk-frage' + (ist.art === 'offen' ? ' pk-frage-offen' : ''),
+    ist.art === 'offen' ? 'Was ist hier? <span>fehlt noch</span>' : 'Was ist hier?'));
   /* Anfang und Ende stehen zur Wahl, wenn der Punkt sie trägt ODER der
      geplante Punkt sie trug: wer am Anfangspunkt versehentlich „Muffe“
      antippt, muss zum Anfang zurückkönnen, ohne Rückgängig zu suchen. */
-  const extra = [ist.art, soll ? soll.art : null].filter(a => a && !CHIP_ARTEN.includes(a));
+  /* „Art noch offen“ steht NICHT als Chip da: sie ist keine Antwort auf „Was
+     ist hier?“, sondern deren Ausbleiben – ein Griff, der sie setzt, wäre eine
+     Aussage über nichts. Dass sie offen ist, sagt die Frage darüber. */
+  const extra = [ist.art, soll ? soll.art : null]
+    .filter(a => a && a !== 'offen' && !CHIP_ARTEN.includes(a));
   const arten = [...new Set(extra), ...CHIP_ARTEN];
-  box.appendChild(chips(
+  links.appendChild(chips(
     arten.map(a => [a, CHIP_NAMEN[a] || punktartById(a).name]), ist.art,
-    art => store.aendern(() => istArtSetzen(ist, art), 'bau'), 'Punktart'));
+    art => {
+      store.aendern(() => istArtSetzen(ist, art), 'bau');
+      /* Die Querung stellt eine zweite Frage, und sie entsteht unter dem
+         sichtbaren Ausschnitt. Wer sie nicht sieht, beantwortet sie nicht. */
+      if (art === 'querung') zeigeImBlatt('.pk-bauweise');
+    }, 'Punktart'));
 
   /* Die Bauweise nur an der Querung, und erst nach der Wahl: vier Griffe
-     mehr für jeden Punkt hätten das Blatt auf drei Reihen wachsen lassen. */
+     mehr für jeden Punkt hätten das Blatt auf drei Reihen wachsen lassen.
+     Sie ist an der Querung die Angabe, um die es geht – Überbau oder Unterbau
+     entscheidet, was der nächste Trupp dort vorfindet –, deshalb nennt die
+     Frage sich selbst als offen, solange keine steht. */
   if (ist.art === 'querung') {
-    box.appendChild(el('div', 'pk-frage', 'Wie gequert?'));
-    box.appendChild(chips(
+    links.appendChild(el('div', 'pk-frage pk-bauweise' + (ist.bauweise ? '' : ' pk-frage-offen'),
+      ist.bauweise ? 'Wie gequert?' : 'Wie gequert? <span>fehlt noch</span>'));
+    links.appendChild(chips(
       QUERUNG_BAUWEISEN.map(b => [b.id, b.id === 'trasse' ? 'wie die Trasse'
         : b.id === 'bauwerk' ? 'an Brücke' : b.name.replace(/ \(.*\)$/, '')]),
       ist.bauweise,
@@ -371,7 +489,7 @@ function istBlatt(s, ist, soll) {
   }
   felder.appendChild(textfeld('pk-bemerkung', ist.bemerkung, 'Bemerkung – was hier anders war',
     w => schreib(() => { ist.bemerkung = w; })));
-  box.appendChild(felder);
+  rechts.appendChild(felder);
 
   /* Zwei Reihen statt einer: die Korrekturen oben, der Abschluss darunter
      allein und in voller Breite. Vorher stand „Zurücknehmen“ mit 6 px Abstand
@@ -395,11 +513,68 @@ function istBlatt(s, ist, soll) {
       ? `Punkt ${nr} wieder offen – „Rückgängig“ in der Kopfzeile holt ihn zurück`
       : 'Punkt gelöscht – „Rückgängig“ in der Kopfzeile holt ihn zurück');
   }, 'klein gefahr'));
-  box.appendChild(tasten);
+  rechts.appendChild(tasten);
+  box.appendChild(links);
+  box.appendChild(rechts);
 
+  /* „Fertig“ schließt in jedem Fall – am Bauort wird nicht verhandelt, und ein
+     Blatt, das sich nicht schließen lässt, ist schlimmer als eine Lücke. Es
+     sagt aber, was offen bleibt: der Trupp geht sonst weiter im Glauben, den
+     Punkt beschrieben zu haben, und erfährt es erst beim Planer. */
   const abschluss = el('div', 'pk-abschluss');
-  abschluss.appendChild(knopf('Fertig', punktkarteSchliessen, 'primaer'));
+  abschluss.appendChild(knopf('Fertig', () => {
+    const fehlt = [];
+    if (ist.art === 'offen') fehlt.push('die Art');
+    if (ist.art === 'querung' && !ist.bauweise) fehlt.push('die Bauweise');
+    punktkarteSchliessen();
+    if (fehlt.length) {
+      hinweis(`Punkt steht, ${fehlt.join(' und ')} fehlt – der Bau-Reiter führt hin.`,
+        'warnung');
+    }
+  }, 'primaer'));
   box.appendChild(abschluss);
+  return box;
+}
+
+// ------------------------------------------------------------ Das Fehlerblatt
+
+/* Die Ortung ist der eine der drei Wege, der scheitern kann – im Fahrzeug,
+   unter Bewuchs, ohne Freigabe. Vorher blieb davon ein Satz in der Pille, der
+   mit einem Doppelpunkt endete, und der Trupp drückte noch einmal denselben
+   Griff. Jetzt steht der Grund im Blatt und darunter beides, was hilft: noch
+   einmal orten (das Gerät sucht oft schon, nur langsamer als die zwölf
+   Sekunden) und den Punkt auf der Karte setzen – und zwar mit allem, was die
+   Aufnahme sonst mitbekommen hätte: geplanter Punkt, Bauweise, Bauabschnitt.
+   Ohne das verlöre der Trupp mit dem Fehlversuch auch die Zuordnung. */
+function fehlerBlatt(s, f) {
+  const box = el('div', 'pk-ist pk-fehler');
+  const soll = f.sollPunktId ? s.punkte.find(pt => pt.id === f.sollPunktId) : null;
+  const nr = soll ? s.punkte.indexOf(soll) + 1 : 0;
+  box.appendChild(kopf(soll ? `Punkt ${nr}` : 'Kein Standort',
+    soll ? punktartText(soll) : '', s));
+  box.appendChild(el('p', 'pk-fehlertext', escapeHtml(f.text)));
+
+  const tasten = el('div', 'pk-tasten pk-aufnahme');
+  tasten.appendChild(knopf('◉ Noch einmal orten', () => {
+    punktkarteSchliessen();
+    istPunktAusStandort(s.id, f.sollPunktId || null, {
+      ersetzt: f.ersetzt || null,
+      danach: (st, pt) => punktkarteOeffnen(st, { ist: pt })
+    });
+  }, 'bau-taste'));
+  tasten.appendChild(knopf('✛ Auf Karte setzen', () => {
+    const a = aktiverBauabschnitt(s);
+    punktkarteSchliessen();
+    ctx.sl.starteIstSetzen(s.id, {
+      ersetzt: f.ersetzt || null,
+      sollPunkt: f.sollPunktId || null,
+      ...(soll ? { art: soll.art, bauweise: soll.art === 'querung' ? soll.bauweise : null } : {}),
+      abschnitt: a ? a.id : null
+    });
+    ctx.modusAnzeigen();
+    hinweis('Auf die Karte tippen, wo der Punkt wirklich liegt.');
+  }, 'bau-taste primaer'));
+  box.appendChild(tasten);
   return box;
 }
 

@@ -1303,14 +1303,20 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                    : p.ueber.length ? 'Meldung liegt über ' + p.ueber.join(', ')
                    : `Meldung ${p.hoehe} px hoch, frei von Leisten und Blatt` };
       });
+    /* `zusatz` heißt: die Punktart Querung ist gewählt, und damit steht im Blatt
+       eine zweite Frage, zu der es selbst hinrollt (siehe `zeigeImBlatt` in
+       js/baukarte.js). Ungerollt ist das Blatt dann mit Absicht nicht mehr –
+       gefordert bleibt, dass die beiden festgehaltenen Ausstiege trotzdem im
+       Bild und zu treffen sind, und dass die Frage, um die es geht, dasteht. */
     const punktkarteFaelle = async zusatz => {
       const spalte = zusatz ? ' (Querung)' : '';
+      const ungerollt = p => zusatz || p.gerollt === 0;
       await fall(fenster, 'Punktkarte: ✕ im Bild und treffbar' + spalte,
         `Nach „Punkt hier“${zusatz ? ' mit Punktart Querung' : ''}: ` +
         'das Schließkreuz steht ohne Rollen im Bild und ist zu treffen',
         async () => {
           const p = await seite.auswerten('return await window._g.punktkarte();');
-          const gut = griffGut(p.zu) && p.gerollt === 0;
+          const gut = griffGut(p.zu) && ungerollt(p);
           return { gut,
                    kurz: gut ? '' : p.zu.imBild ? `${prozent(p.zu.verdeckt)} zu` : `bis ${p.zu.unten}`,
                    text: griffText('✕', p.zu) +
@@ -1328,12 +1334,36 @@ const seitenGriffe = await zuKleineGriffe('.seite',
         '„Fertig“ steht ohne Rollen im Bild und ist zu treffen',
         async () => {
           const p = await seite.auswerten('return await window._g.punktkarte();');
-          const gut = griffGut(p.fertig) && p.gerollt === 0;
+          const gut = griffGut(p.fertig) && ungerollt(p);
           return { gut,
                    kurz: gut ? '' : p.fertig.imBild ? `${prozent(p.fertig.verdeckt)} zu`
                                                     : `bis ${p.fertig.unten}`,
                    text: griffText('„Fertig“', p.fertig) };
         });
+      if (zusatz) {
+        /* Die Frage „Wie gequert?“ entsteht erst mit der Wahl und lag darunter:
+           gemessen stand sie bei 390×690 hinter der festgehaltenen
+           Abschlusszeile, und die Bauweise – an der Querung die Angabe, um die
+           es geht – blieb leer, ohne dass jemand es merkte. */
+        await fall(fenster, 'Punktkarte: „Wie gequert?“ im Bild',
+          'Nach der Wahl „Querung“ steht die Frage nach der Bauweise im Bild',
+          async () => {
+            const m = await seite.auswerten(`
+              const b = window._g.muss('#punktkarte');
+              const f = b.querySelector('.pk-bauweise');
+              if (!f) return { gut: false, text: 'keine Frage im Blatt' };
+              const r = f.getBoundingClientRect(), k = b.getBoundingClientRect();
+              const chip = b.querySelector('.pk-chip[data-wert=ueberbau]');
+              const cr = chip ? chip.getBoundingClientRect() : null;
+              return { gut: r.top >= k.top - 1 && r.bottom <= k.bottom + 1 &&
+                            !!cr && cr.top >= k.top - 1 && cr.bottom <= k.bottom + 1,
+                       oben: Math.round(r.top - k.top),
+                       unten: Math.round(k.bottom - (cr ? cr.bottom : r.bottom)) };`);
+            return { gut: m.gut, kurz: m.gut ? '' : 'außerhalb',
+                     text: m.text || `Frage ${m.oben} px unter der Blattkante, ` +
+                                     `Chips ${m.unten} px über dessen Unterkante` };
+          });
+      }
       await fall(fenster, 'Punktkarte: Gefahrtaste ≥ 16 px entfernt' + spalte,
         '„Zurücknehmen“ bzw. „Löschen“ hält 16 px Abstand zur nächsten Taste',
         async () => {

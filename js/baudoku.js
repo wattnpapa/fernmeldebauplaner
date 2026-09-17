@@ -21,6 +21,10 @@ import {
 } from './state.js';
 import { distanz, streckenlaenge } from './geo.js';
 import { MATERIALKATALOG, PRUEFART_JE_KABEL, bauweiseById } from './vorschrift.js';
+/* Der Abdruck kommt aus dem Codec und wird nicht hier gebildet: er muss über
+   genau das laufen, was hinausgeht, und das weiß `teilen.js`. Kein Ring –
+   `teilen.js` kennt nur `state.js`. */
+import { bauAbdruck } from './teilen.js';
 
 export { bauBegonnen, pruefungGehaltvoll };
 
@@ -437,6 +441,116 @@ export function uebergabestand(strecke) {
   };
 }
 
+// ---------------------------------------------------------- Wer am Gerät steht
+
+/* Trupp und Truppführer gehören nicht in die Planung: sie sagen, WER GERADE AM
+   GERÄT STEHT, und nicht, was gebaut wurde – dieselbe Unterscheidung wie beim
+   aktiven Bauabschnitt weiter unten. Anders als der überlebt dieser Vermerk
+   aber das Neuladen, denn am Bauort wird neu geladen, und ein Trupp, der sich
+   nach jedem Wackler neu benennen muss, benennt sich gar nicht.
+
+   Gebraucht wird er, weil die Baumeldung sonst niemanden nennt. Ohne
+   Bauabschnitt ging sie anonym hinaus, und beim Planer ersetzte die zweite
+   Meldung die Eintragungen der ersten – gewarnt wurde nur er, nicht der Trupp.
+   Wer meldet, muss am Bauort einmal gefragt werden.
+
+   Er liegt im Gerätespeicher und nicht im Projekt: eine Planung, die
+   weitergereicht wird, trägt sonst den Namen eines fremden Trupps mit sich. */
+const TRUPP_SCHLUESSEL = 'fbp.trupp.v1';
+let truppVermerk = null;
+
+export function truppAmGeraet() {
+  if (truppVermerk) return truppVermerk;
+  try {
+    const roh = JSON.parse(localStorage.getItem(TRUPP_SCHLUESSEL) || 'null');
+    truppVermerk = roh && typeof roh === 'object'
+      ? { trupp: String(roh.trupp || ''), fuehrer: String(roh.fuehrer || '') }
+      : { trupp: '', fuehrer: '' };
+  } catch {
+    /* Ein privates Fenster oder ein voller Speicher darf den Baumodus nicht
+       aufhalten – dann steht der Name eben nur für diese Sitzung. */
+    truppVermerk = { trupp: '', fuehrer: '' };
+  }
+  return truppVermerk;
+}
+
+export function truppAmGeraetSetzen(o) {
+  truppVermerk = { trupp: String(o.trupp || ''), fuehrer: String(o.fuehrer || '') };
+  try {
+    if (truppVermerk.trupp || truppVermerk.fuehrer) {
+      localStorage.setItem(TRUPP_SCHLUESSEL, JSON.stringify(truppVermerk));
+    } else {
+      localStorage.removeItem(TRUPP_SCHLUESSEL);
+    }
+  } catch { /* siehe oben */ }
+  return truppVermerk;
+}
+
+/** Wer die Meldung absetzt, in einer Zeile – Bauabschnitte gehen vor, denn sie
+ *  stehen in der Planung und sagen, wer welchen Teil gebaut hat */
+export function absenderText(strecken) {
+  const ausAbschnitten = new Set();
+  for (const s of strecken) {
+    for (const a of bauabschnitte(s)) if (a.trupp) ausAbschnitten.add(a.trupp);
+  }
+  if (ausAbschnitten.size) return [...ausAbschnitten].join(', ');
+  const v = truppAmGeraet();
+  return [v.trupp, v.fuehrer].filter(Boolean).join(' · ');
+}
+
+// ------------------------------------------------------------ Was hinausging
+
+/* Der Vermerk über die abgesetzte Baumeldung. Er ist die Antwort auf die eine
+   Frage, die der Truppführer nach jeder Unterbrechung stellt: „Habe ich das
+   schon gemeldet?“ Vorher sah der Rückmeldeblock vor und nach dem Absetzen
+   gleich aus, und der Bau-Block war zeichengleich – die Frage war am Gerät
+   nicht zu beantworten. */
+
+/** Festhalten, dass die Baumeldung dieser Strecke hinausgegangen ist.
+ *  Nur innerhalb von `store.aendern` aufrufen. */
+export function absetzenVermerken(strecke, weg) {
+  const bau = bauSichern(strecke);
+  bau.abgesetzt = {
+    zeit: new Date().toISOString(),
+    weg: weg === 'datei' ? 'datei' : 'link',
+    abdruck: bauAbdruck(strecke)
+  };
+  return bau.abgesetzt;
+}
+
+/**
+ * Wo das Absetzen steht.
+ *
+ * `nie` heißt: an dieser Strecke ist noch nichts hinausgegangen. `aktuell`:
+ * abgesetzt, und seither hat sich nichts geändert. `veraltet`: seit dem
+ * Absetzen ist etwas dazugekommen – das ist der Fall, der eine zweite Meldung
+ * verlangt, und der einzige, in dem die Anzeige drängt.
+ *
+ * Fehlt der Abdruck (ein Vermerk aus einem Stand vor Schema 16 hat keinen),
+ * gilt `aktuell`: „abgesetzt, ob seither geändert ist nicht bekannt“ ist die
+ * ehrlichere Auskunft als eine Änderung zu behaupten, die niemand gemessen hat.
+ */
+export function absetzstand(strecke) {
+  const a = (strecke.bau && strecke.bau.abgesetzt) || null;
+  if (!a || !a.zeit) return { stand: 'nie', zeit: '', weg: '' };
+  const jetzt = bauAbdruck(strecke);
+  const geaendert = !!(a.abdruck && jetzt && a.abdruck !== jetzt);
+  return { stand: geaendert ? 'veraltet' : 'aktuell', zeit: a.zeit, weg: a.weg };
+}
+
+/** Der jüngste Absetz-Vermerk über mehrere Strecken – der Stand des Trupps */
+export function absetzstandGesamt(strecken) {
+  const staende = strecken.map(absetzstand).filter(x => x.stand !== 'nie');
+  if (!staende.length) return { stand: 'nie', zeit: '', weg: '' };
+  const juengster = staende.reduce((a, b) => (b.zeit > a.zeit ? b : a));
+  /* Eine einzige veraltete Strecke macht den ganzen Stand veraltet: gemeldet
+     wird über alle zusammen, und der Planer bekäme sonst eine Strecke ohne die
+     Punkte, die seit der letzten Meldung dazugekommen sind. */
+  const veraltet = staende.some(x => x.stand === 'veraltet') ||
+    strecken.some(s => bauBegonnen(s) && absetzstand(s).stand === 'nie');
+  return { ...juengster, stand: veraltet ? 'veraltet' : 'aktuell' };
+}
+
 // ---------------------------------------------------------------- Kennzahlen
 
 /**
@@ -456,6 +570,14 @@ export function baukennzahlen(strecke) {
 
   const bestaetigt = soll.filter(pt => istZuSoll(strecke, pt.id)).length;
   const zusaetzlich = ist.filter(pt => !pt.sollPunkt).length;
+
+  /* Was der Trupp aufgenommen, aber nicht ausgesagt hat. Beides ist eine Lücke
+     im Nachweis und keine Nebensache: die Art sagt, WAS an der Stelle steht,
+     die Bauweise an der Querung, WIE gequert wurde – und die ist dort die
+     Angabe, wegen der die Querung überhaupt aufgenommen wird. Gezählt wird
+     hier, damit Liste, Rückmeldeblock und Blatt dieselbe Zahl nennen. */
+  const ohneArt = ist.filter(pt => pt.art === 'offen');
+  const querungOhneBauweise = ist.filter(pt => pt.art === 'querung' && !pt.bauweise);
 
   const abweichungen = [];
   for (const pt of ist) {
@@ -484,6 +606,11 @@ export function baukennzahlen(strecke) {
     laengenUnterschied: (laenge && sollLaenge) ? laenge - sollLaenge : 0,
     abweichungen,
     groessteAbweichung: abweichungen.length ? abweichungen[0].meter : 0,
+    ohneArt,
+    querungOhneBauweise,
+    /* Eine Zahl für beides: der Trupp fragt vor dem Absetzen „fehlt noch was?“
+       und nicht „wie viele Arten und wie viele Bauweisen“. */
+    luecken: ohneArt.length + querungOhneBauweise.length,
     vollstaendig: soll.length > 0 && bestaetigt === soll.length,
     /* Material, Meldungen und Übergabe stehen hier nur als Zahl. Die Zeilen
        selbst holt sich, wer sie braucht – die Kennzahlen laufen bei jedem

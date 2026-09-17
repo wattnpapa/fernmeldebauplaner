@@ -688,8 +688,9 @@ export class StreckenLayer {
   starteIstSetzen(sid, o = {}) {
     /* `art` bleibt leer, wenn keine mitkommt: beim Verschieben eines
        aufgenommenen Punktes (`ersetzt`) behält er dann, was der Trupp
-       eingetragen hat; ein neuer Punkt wird ohne Art ohnehin zum Trassenpunkt
-       (`neuerIstPunkt`). */
+       eingetragen hat; ein neuer Punkt bleibt ohne Art und wird nicht
+       stillschweigend zum Trassenpunkt (`neuerIstPunkt`, Schema 16) – die
+       Frage stellt das Blatt, das der Tipp aufschlägt. */
     this.istSetzModus = { sid, sollPunkt: o.sollPunkt || null, art: o.art || null,
                           bauweise: o.bauweise || null, abschnitt: o.abschnitt || null,
                           ersetzt: o.ersetzt || null };

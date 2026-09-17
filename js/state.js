@@ -12,7 +12,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 15;
+export const SCHEMA = 16;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -68,8 +68,21 @@ export const PUNKTARTEN = [
      all das als „Trassenpunkt“ mit Bemerkung, und der Bogen unterschied es nicht
      mehr von einem Punkt, an dem nichts weiter war. */
   { id: 'sonstiges', name: 'Sonstiges',                 kurz: 'S'  },
-  { id: 'ziel',      name: 'Endpunkt',                  kurz: 'E'  }
+  { id: 'ziel',      name: 'Endpunkt',                  kurz: 'E'  },
+  /* „Art noch offen“ gibt es nur am AUFGENOMMENEN Punkt, deshalb `nurIst`: die
+     Planung kennt keinen Punkt ohne Art, dort setzt ihn jemand am Schreibtisch.
+     Am Bauort ist es der Ausgangszustand jeder Aufnahme. Vorher stand dort
+     „Trassenpunkt“ vorbelegt – wer an der Muffe steht, unterbrochen wird und
+     „Fertig“ drückt, hatte damit eine Muffe als Trassenpunkt dokumentiert, und
+     zwar als Aussage des Trupps. Dasselbe Argument, aus dem die Bauweise keine
+     Vorgabe bekommt (siehe `neuerIstPunkt`): ein leeres Feld sagt „hier gehört
+     etwas hin“, ein vorbelegtes behauptet etwas. Das Fragezeichen steht dafür
+     auch auf der Marke – so ist am Verlauf abzulesen, wo noch etwas fehlt. */
+  { id: 'offen',     name: 'Art noch offen',            kurz: '?', nurIst: true }
 ];
+
+/** Die Arten, die ein GEPLANTER Punkt annehmen kann – ohne die des Bauorts */
+export const PLANPUNKTARTEN = PUNKTARTEN.filter(a => !a.nurIst);
 
 export const FARBEN = [
   '#d32f2f', '#1976d2', '#388e3c', '#f57c00', '#7b1fa2',
@@ -327,7 +340,23 @@ export function neuerBau() {
     material: [],
     meldungen: [],
     pruefung: null,
-    abweichung: ''
+    abweichung: '',
+    /* Was zuletzt an den Planer hinausging: `{ zeit, weg, abdruck }`, sonst
+       `null`. Ohne diesen Vermerk war nach einer Unterbrechung nicht zu
+       entscheiden, ob die Baumeldung schon abgesetzt ist – der Block sah vor
+       und nach dem Absetzen gleich aus. Dann wird entweder doppelt gemeldet,
+       und beim Planer ersetzt die zweite Meldung Eintragungen, oder gar nicht.
+
+       Der `abdruck` ist der Fingerabdruck des Bau-Blocks zum Zeitpunkt des
+       Absetzens (`bauAbdruck()` in `teilen.js`). Nur über ihn lässt sich
+       „seither ist etwas dazugekommen“ von „unverändert abgesetzt“
+       unterscheiden; eine Anzahl von Eintragungen bekäme eine geänderte Menge
+       oder eine nachgetragene Bemerkung nicht mit.
+
+       Er reist NICHT mit: für den Planer wäre er die Auskunft, wann der Trupp
+       gemeldet hat – und die steht als `gemeldet` schon in der Meldung selbst,
+       aus erster Hand. Der Codec in `teilen.js` wirft ihn deshalb weg. */
+    abgesetzt: null
   };
 }
 
@@ -362,7 +391,12 @@ export function neuerIstPunkt(lat, lng, o = {}) {
   return {
     id: id(),
     lat, lng,
-    art: PUNKTARTEN.some(a => a.id === o.art) ? o.art : 'punkt',
+    /* Ohne Angabe bleibt die Art OFFEN und wird nicht „Trassenpunkt“: was der
+       Trupp nicht angetippt hat, hat er nicht ausgesagt (siehe `PUNKTARTEN`).
+       Die Bestätigung eines geplanten Punktes bringt ihre Art mit, die beiden
+       anderen Wege nicht – dort steht die Frage „Was ist hier?“ auf dem Blatt,
+       und sie ist der Grund, warum es aufschlägt. */
+    art: PUNKTARTEN.some(a => a.id === o.art) ? o.art : 'offen',
     /* Die Bauweise gibt es nur an der Querung: Überbau, Unterbau, an einem
        Bauwerk entlang. Vorgabe ist `null` und nicht „wie die Trasse“ wie beim
        geplanten Punkt – am Bauort heißt kein Eintrag „nicht angegeben“, und
@@ -952,7 +986,23 @@ export function bauNormalisieren(roh) {
       zeit: String(m?.zeit || '')
     })),
     pruefung: pruefungNormalisieren(roh.pruefung),
-    abweichung: String(roh.abweichung || '')
+    abweichung: String(roh.abweichung || ''),
+    abgesetzt: abgesetztNormalisieren(roh.abgesetzt)
+  };
+}
+
+/* Der Absetz-Vermerk kommt aus derselben Fremde wie der Rest und wird deshalb
+   ebenso aufgebaut. `weg` landet in einem Satz auf dem Schirm und ist auf die
+   beiden Wege begrenzt, die es gibt – ein fremder Wert stünde sonst als
+   Tatsache im Block. */
+function abgesetztNormalisieren(roh) {
+  if (!roh || typeof roh !== 'object' || Array.isArray(roh)) return null;
+  const zeit = String(roh.zeit || '');
+  if (!zeit) return null;
+  return {
+    zeit,
+    weg: roh.weg === 'datei' ? 'datei' : 'link',
+    abdruck: String(roh.abdruck || '')
   };
 }
 
@@ -1016,16 +1066,29 @@ export function migrieren(p) {
            Reservepunkten weist danach mehr Kabelbedarf aus als sein
            ausgedrucktes Blatt. Das ist gewollt: die Reserve war vorher nirgends
            gerechnet, das alte Blatt nennt zu wenig Kabel. */
+        /* Geprüft wird gegen die PLANPUNKTARTEN und nicht gegen alle: „Art noch
+           offen“ gibt es nur am aufgenommenen Punkt (Schema 16). Stünde sie an
+           einem geplanten, trüge der Bauauftrag einen Punkt ohne Art – und den
+           kann niemand ansteuern. */
         punkte: (s.punkte || []).map(pt => ({
           ...neuerPunkt(pt.lat, pt.lng), ...pt, id: pt.id || id(),
-          art: PUNKTARTEN.some(a => a.id === pt.art) ? pt.art : 'punkt'
+          art: PLANPUNKTARTEN.some(a => a.id === pt.art) ? pt.art : 'punkt'
         })),
         /* Schema 13 hat die Baudokumentation eingeführt. Ältere Stände bringen
            sie nicht mit und öffnen ohne sie – eine Planung, an der noch nicht
            gebaut wurde, sieht genauso aus wie vorher. Schema 15 hat dem
            aufgenommenen Punkt die Bauweise gegeben und die Punktart
            „Sonstiges“; `bauNormalisieren()` füllt beides aus der Vorgabe auf,
-           ein Stand von 13 oder 14 braucht deshalb keinen eigenen Schritt. */
+           ein Stand von 13 oder 14 braucht deshalb keinen eigenen Schritt.
+
+           Schema 16 hat die Art „noch offen“ und den Absetz-Vermerk ergänzt.
+           Beide brauchen ebenfalls keinen Schritt, und zwar mit Bedacht: ein
+           aufgenommener Punkt aus einem älteren Stand trägt „Trassenpunkt“,
+           weil die Oberfläche das damals eingetragen hat – ihn nachträglich auf
+           „offen“ zu setzen machte aus einer dokumentierten Aussage eine Lücke,
+           die nie eine war. Und wer vor dem Wechsel gemeldet hat, bekommt den
+           Block ohne Vermerk zu sehen: „nicht bekannt, ob abgesetzt“ ist die
+           richtige Auskunft, nicht „nie abgesetzt“. */
         bau: bauNormalisieren(s.bau)
       };
     }),

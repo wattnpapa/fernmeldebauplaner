@@ -2130,6 +2130,13 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   background: var(--warnung-flaeche) !important; color: var(--warnung-tief) !important;
   font-weight: 650;
 }
+/* Was aufgenommen, aber nicht ausgesagt ist – dieselbe Marke wie die
+   Abweichung, denn beides ist eine Nachfrage an den Trupp. Sie steht im
+   eingeklappten Befund, weil dort vor dem Absetzen gesucht wird, was fehlt. */
+.bp-luecke {
+  background: var(--warnung-flaeche) !important; color: var(--warnung-tief) !important;
+  font-weight: 650;
+}
 .bp-trupp-wahl { margin-top: 8px; }
 .bp-felder { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .bp-felder .feld, .bp-bemerkung { margin: 8px 0 0; min-width: 0; }
@@ -2290,6 +2297,32 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
 .bau-vorschau { margin: 8px 0 10px; padding-left: 18px; font-size: 12.5px; }
 .bau-vorschau li { margin: 2px 0; }
 .bau-vorschau-gleich { color: var(--text-schwach); }
+.bau-vorschau-luecke { color: var(--warnung-tief); }
+/* Unter welchem Namen abgesetzt wird und wann zuletzt etwas hinausging: zwei
+   Sätze, die vor dem Griff stehen und nicht dahinter. Der zweite beantwortet
+   die Frage nach jeder Unterbrechung – „habe ich das schon gemeldet?“ */
+.bau-absender, .bau-abgesetzt { margin: 8px 0 0; }
+.bau-abgesetzt { color: var(--gut); }
+
+/* Wer an diesem Gerät baut. Der Block steht oben bei den Bauabschnitten und
+   hebt sich ab, solange niemand eingetragen ist und schon aufgenommen wurde:
+   ohne Namen geht die Baumeldung anonym hinaus, und beim Planer ersetzt sie
+   die Aufnahme eines anderen Trupps, ohne dass einer der beiden es erfährt. */
+.bau-geraet { margin-bottom: 12px; }
+.bau-geraet .bau-untertitel { margin-top: 0; }
+.bau-geraet-offen {
+  padding: 8px 10px; border-radius: var(--radius-klein);
+  background: var(--warnung-flaeche); border: 1px solid var(--warnung-linie);
+}
+.bau-geraet-offen .bau-untertitel, .bau-geraet-offen .klein { color: var(--warnung-tief); }
+
+/* Das Feld und sein „Jetzt“ in einer Zeile. Ohne den Griff blieben Baubeginn,
+   Bauende und der Zeitpunkt der Übergabe leer – Datum und Uhrzeit sind am
+   Bauplatz die teuerste Eingabe, und der Kopf der Baudokumentation lebt von
+   genau diesen drei Angaben. */
+.zeit-reihe { display: flex; align-items: flex-end; gap: 6px; min-width: 0; }
+.zeit-reihe .feld { flex: 1 1 auto; margin: 0; min-width: 0; }
+.zeit-reihe .knopf { flex: 0 0 auto; margin: 0; }
 
 /* ---------------------------------------------------------------- Punktkarte
 
@@ -2326,6 +2359,11 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   max-height: min(60%, calc(100% - var(--sl-hoehe) - var(--karten-fuss)
                    - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 24px));
   overflow-y: auto; overscroll-behavior: contain;
+  /* Ohne das rückt die Rollverankerung des Browsers das Blatt beim Neuaufbau
+     um ein paar Bildpunkte nach – gemessen 2 bis 18 –, und der festgehaltene
+     Kopf stand nicht mehr ganz im Bild. Den Rollstand setzt `baukarte.js`
+     selbst, und zwar auf das, was der Trupp vorher sah. */
+  overflow-anchor: none;
   display: flex; flex-direction: column; gap: 8px;
   background: var(--flaeche); border: 1px solid var(--thw); border-radius: var(--radius);
   padding: 0 12px; box-shadow: var(--schatten-stark); font-size: 12.5px;
@@ -2360,6 +2398,25 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
 }
 .pk-befund .pk-offen { background: var(--warnung-flaeche); color: var(--warnung-tief); font-weight: 650; }
 .pk-frage { font-size: 11.5px; font-weight: 600; color: var(--text-schwach); margin-top: 2px; }
+/* Eine Frage, die noch keine Antwort hat, sagt das. „Wie gequert?“ entsteht
+   erst mit der Wahl „Querung“ und lag dabei unter der festgehaltenen
+   Abschlusszeile – das Blatt rollt jetzt hin (siehe `zeigeImBlatt` in
+   js/baukarte.js), und der Zusatz hält fest, dass dort noch etwas fehlt, wenn
+   der Trupp zwischendurch wegsieht. Nicht die Farbe allein: am Bauplatz steht
+   die Sonne auf dem Schirm, und im Schwarz-Weiß-Blick bleibt nur das Wort. */
+.pk-frage-offen { color: var(--warnung-tief); }
+.pk-frage-offen span {
+  margin-left: 6px; padding: 2px 7px; border-radius: 999px;
+  background: var(--warnung-flaeche); font-weight: 650;
+}
+/* Das Fehlerblatt trägt den Grund im Klartext und darunter die beiden Auswege.
+   Kein eigener Kasten: es ist dasselbe Blatt an derselben Stelle, nur ohne
+   Punkt – und der Trupp soll es als die Antwort auf seinen Griff lesen. */
+.pk-fehlertext { margin: 0; color: var(--warnung-tief); font-size: 12.5px; line-height: 1.35; }
+/* Zwei Spalten, die hochkant keine sind: `display: contents` hängt die Kinder
+   unmittelbar ins Blatt, die Reihenfolge bleibt wie gebaut. Quer greift der
+   Block weiter unten und macht echte Spalten daraus. */
+.pk-spalte { display: contents; }
 .pk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 /* Die Chips sind Schalter und keine Knöpfe: gewählt ist gefüllt, sonst
    umrandet – derselbe Stand wie an der Marke des Bauabschnitts. */
@@ -2420,8 +2477,72 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   /* Enger geht es nicht: 44 px Griff, darüber und darunter je 6 px. Der
      Abstand zur Gefahrtaste bleibt auch hier über 16 px. */
   .pk-kopf { padding: 6px 0; margin-bottom: -8px; }
+  /* Der Kopf steht quer in EINER Zeile: Titel, Punktart und Streckenname
+     nebeneinander statt untereinander. Er maß dreizeilig 62 px – bei einem
+     Blatt von 161 px blieben mit der Abschlusszeile 31 px für den Inhalt, und
+     darin ist keine Chipreihe unterzubringen. Abgeschnitten wird der
+     Untertitel und nicht der Streckenname: welche Strecke die Bauleiste
+     bedient, ist die Angabe, die sonst nirgends steht. */
+  .pk-titel { flex-wrap: nowrap; align-items: baseline; overflow: hidden; }
+  .pk-titel b { white-space: nowrap; }
+  .pk-unter { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pk-strecke { flex-basis: auto; white-space: nowrap; }
   .pk-abschluss { padding: 10px 0 6px; }
   .pk-aufnahme { padding: 6px 0; }
+}
+
+/* Quer nutzt das Blatt die BREITE, weil die Höhe fehlt. Gemessen bei 667×375:
+   über der Karte liegen 146 px Kopfzeile und Speicherband, der Kartenbereich
+   misst 229 px, und davon bleiben dem Blatt 161. Kopf und Abschlusszeile
+   nahmen davon 130 – für Befund, Chips und Felder blieben rund 40 px, und die
+   Chipreihe, wegen der das Blatt aufschlägt, stand nicht darin: „Querung“ war
+   quer nicht zu beantworten.
+
+   Drei Handgriffe, die zusammengehören. Die volle Breite bringt mehr Chips in
+   eine Reihe. Kopf und Abschluss rücken auf das Nötigste zusammen (der Kopf
+   steht einzeilig, siehe oben). Und was übrig bleibt, teilt sich in zwei
+   Spalten: links, was angetippt wird, rechts, was geschrieben wird – so
+   braucht die Bemerkung keine eigene Zeile unter den Chips.
+
+   An die Seite gelegt wäre es der falsche Tausch: die schmale Spalte bricht
+   die Chipreihe wieder um, und gewonnen wäre nichts. */
+@media (max-height: 560px) and (min-width: 600px) {
+  /* Quer ist die Kopfzeile einreihig. Sie bricht sonst um – Name oben, die
+     fünf Knöpfe darunter – und nimmt mit dem Speicherband 146 der 375 px
+     Fensterhöhe, bevor die Karte anfängt. Bei 667 px Breite stehen Marke,
+     Namensfeld und Knöpfe nebeneinander; das Feld gibt nach, es trägt seinen
+     Mindestwert weiter unten. Die gewonnenen 46 px bekommt der Kartenbereich,
+     und damit das Blatt, dem quer genau sie fehlten. */
+  .kopf { flex-wrap: nowrap; }
+  /* Zwei Klassen im Wähler, damit die Schmalregel weiter unten mit ihrem
+     `min-width: min-content` nicht dazwischenfährt: bei 667 px Breite gelten
+     beide Blöcke, und das Namensfeld muss hier nachgeben – die Knöpfe können
+     es nicht, sie tragen Handschuhmaß. */
+  .kopf .projektname { min-width: 0; flex-basis: 90px; }
+  .kopf .kopf-tasten { flex-shrink: 0; }
+  /* Die Wortmarke geht: sie trägt 210 px und sagt dem Trupp nichts, was er
+     nicht wüsste – ohne sie passen Marke, Name und die fünf Knöpfe auch bei
+     600 px nebeneinander. Das Zeichen bleibt stehen. */
+  .marke-text { display: none; }
+
+  .punktkarte { max-width: none; }
+  .punktkarte > div {
+    display: grid; grid-template-columns: 1fr 1fr;
+    column-gap: 14px; align-items: start;
+  }
+  .punktkarte > div > .pk-kopf,
+  .punktkarte > div > .pk-abschluss,
+  .punktkarte > div > .pk-aufnahme,
+  .punktkarte > div > .pk-fehlertext { grid-column: 1 / -1; }
+  .pk-spalte { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  /* Der Abschluss gibt 20 px ab: „Fertig“ trägt seine 44 px weiter, nur das
+     Polster darum wird knapper. */
+  .pk-abschluss { padding: 8px 0 4px; }
+  /* Die Tastenreihe der Korrekturen bricht in der halben Breite um. Der
+     Abstand zur Gefahrtaste bleibt bei 16 px: er ist aus einem Fehlgriff
+     entstanden – „Löschen“ neben „Fertig“ nimmt mit dem Handschuh die eben
+     eingetragene Aufnahme zurück – und gilt quer wie hochkant. */
+  .pk-tasten { gap: 16px 8px; }
 }
 
 /* ---------------------------------------------------------------- Schmale Fenster */
@@ -2519,6 +2640,19 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   }
 
   .kartenoptionen { width: 176px; font-size: 11px; }
+
+  /* Der Umschalter Liste/Karte liegt fest über dem rollenden Reiterinhalt.
+     Ohne Polsterung endet die Liste genau an seiner Oberkante: die letzte
+     Zeile – im Bau-Reiter der Kachelvorrat, in den anderen der letzte Griff –
+     klebt dann unter ihm, und ein Tipp, der ihr gilt, wechselt die Ansicht.
+     Gepolstert wird der Rollbereich und nicht die Liste, damit es für jeden
+     Reiter gilt; der Streckenreiter trägt seine Polsterung weiter unten selbst,
+     weil dort eine Zeile am Fuß angeheftet ist. */
+  .reiter-inhalt {
+    padding-bottom: calc(var(--wechsel-hoehe) + 12px);
+  }
+  .reiter-inhalt[data-inhalt="strecken"] { padding-bottom: 0; }
+  #strecken-liste { padding-bottom: calc(var(--wechsel-hoehe) + 12px); }
 
   /* Werkzeuge in den Daumenbereich, mit Beschriftung: Glyphen allein sind
      nicht auseinanderzuhalten, und title-Tooltips zeigt kein Touchgerät an.

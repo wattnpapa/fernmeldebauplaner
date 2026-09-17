@@ -116,6 +116,13 @@ function bauVerschlanken(s) {
   delete raus.material;
   delete raus.meldungen;
   delete raus.pruefung;
+  /* Der Absetz-Vermerk bleibt am Gerät des Trupps. Er sagt „diese Aufnahme ist
+     hinausgegangen“ – eine Auskunft über das eigene Melden, nicht über den Bau.
+     Beim Planer wäre er bestenfalls verwirrend (dessen Stand ist ja gerade der
+     empfangene) und schlimmstenfalls falsch, sobald der Planer die Strecke
+     weiterreicht. Wann gemeldet wurde, steht als `gemeldet` in der Meldung
+     selbst. */
+  delete raus.abgesetzt;
 
   if (bau.abschnitte.length) {
     raus.abschnitte = bau.abschnitte.map((a, i) => {
@@ -206,6 +213,26 @@ function bauVerschlanken(s) {
     raus.pruefung = weg;
   }
   return raus;
+}
+
+/**
+ * Der Fingerabdruck dessen, was von einer Strecke zurückginge.
+ *
+ * Gebildet wird er über genau das, was `bauVerschlanken()` hinausschickt – also
+ * über den Inhalt der Meldung und nicht über den Bau-Block im Ganzen. Sonst
+ * meldete jeder Griff, der nur das Gerät angeht, die Meldung als „veraltet“.
+ *
+ * Es ist eine Prüfsumme (djb2) und keine kryptographische Sicherung: sie soll
+ * eine Änderung am Bauort bemerken und nicht einer Fälschung standhalten. Acht
+ * Zeichen reichen dafür – und der Vermerk bleibt ohnehin auf dem Gerät.
+ */
+export function bauAbdruck(strecke) {
+  const schlank = bauVerschlanken(strecke);
+  if (!schlank) return '';
+  const text = JSON.stringify(schlank);
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = (((h << 5) + h) ^ text.charCodeAt(i)) >>> 0;
+  return h.toString(36);
 }
 
 /* Die Gegenrichtung, vor `migrieren()`: die Stellen werden wieder Kennungen.
@@ -544,11 +571,17 @@ export async function planungAusFragment(fragment = location.hash) {
    dass Bestätigungen ins Leere zeigen könnten, statt sie stillschweigend auf
    den falschen Punkt zu legen. */
 
-export function alsBaumeldung(projekt, strecken) {
+/* `von` ist der Absender: Trupp und Truppführer, wie sie am Gerät stehen. Ohne
+   ihn ging eine Meldung ohne Bauabschnitt anonym hinaus – der Planer las „Ohne
+   Bauabschnitt“ und wusste nicht, wer gemeldet hat, während die Meldung beim
+   Einspielen die Eintragungen eines anderen Trupps ersetzte. Er kostet ein paar
+   Zeichen im Link und beantwortet die erste Frage, die der Planer stellt. */
+export function alsBaumeldung(projekt, strecken, von = '') {
   const gemeldet = (strecken || []).filter(bauBegonnen);
   return {
     fassung: 1,
     planung: projekt.name || '',
+    von: String(von || ''),
     gemeldet: new Date().toISOString(),
     strecken: gemeldet.map(s => ({
       name: s.name,
@@ -559,11 +592,11 @@ export function alsBaumeldung(projekt, strecken) {
 }
 
 /** Eine Baumeldung als Link. Wirft, wenn der Browser nicht packen kann. */
-export async function meldungAlsLink(projekt, strecken) {
+export async function meldungAlsLink(projekt, strecken, von = '') {
   if (!kannPacken())
     throw new Error('Dieser Browser kann keine Links erzeugen – Baumeldung als Datei sichern.');
   return eigeneAdresse() + '#' + KENNUNG_MELDUNG +
-    await packen(JSON.stringify(alsBaumeldung(projekt, strecken)));
+    await packen(JSON.stringify(alsBaumeldung(projekt, strecken, von)));
 }
 
 /**

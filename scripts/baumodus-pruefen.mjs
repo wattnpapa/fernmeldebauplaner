@@ -74,7 +74,7 @@ try {
   await seite.oeffne(adresse);
   await seite.warteAuf('!!window.fbp');
   b.pruefe(await seite.sichtbar('#karte'), 'Karte steht');
-  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 15, 'Schema 15');
+  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 16, 'Schema 16');
   b.gleich(await seite.text('#btn-modus'), 'Baumodus', 'Der Umschalter bietet den Baumodus an');
   b.pruefe(await seite.auswerten('document.querySelector("#reiter-bau").hidden'),
     'Der Bau-Reiter steht im Planungsmodus nicht da');
@@ -409,7 +409,9 @@ try {
 
   b.abschnitt('Die Übergabe wird festgehalten');
   await seite.schreibe('.bu-felder .feld:nth-child(1) input', 'FGr N 2. BA');
-  await seite.schreibe('.bu-felder .feld:nth-child(2) input', '2026-09-15T16:30');
+  /* Der Zeitpunkt sitzt seit dem Griff „Jetzt“ in einer eigenen Reihe neben
+     ihm – gesucht wird deshalb über die Feldart und nicht über die Stelle. */
+  await seite.schreibe('.bu-felder input[type="datetime-local"]', '2026-09-15T16:30');
   await seite.warteAuf(
     "window.fbp.store.projekt.strecken[0].bau.pruefung.uebergabeAn === 'FGr N 2. BA'", 3000);
   b.pruefe(await bau("!!bau.pruefung.uebergabeZeit"), 'Zeitpunkt der Übergabe steht');
@@ -509,6 +511,27 @@ try {
   b.pruefe(await bau('bau.punkte.every(pt => pt.art === "querung" || pt.bauweise === null)'),
     'Zurück zum Trassenpunkt nimmt die Bauweise mit weg');
 
+  /* Die Bauweise entsteht erst mit der Wahl „Querung“, und zwar unterhalb des
+     sichtbaren Ausschnitts: bei 390×690 misst das Blatt 313 px und sein Inhalt
+     636. Wer die Frage nicht sieht, beantwortet sie nicht – und die Bauweise
+     ist an der Querung die Angabe, um die es geht. Geprüft wird deshalb, dass
+     das Blatt hinrollt, nicht nur, dass die Chips im Baum stehen. */
+  b.abschnitt('Die Bauweise-Frage kommt ins Bild');
+  await chipWaehlen('querung');
+  await seite.warteAuf(`
+    const b = document.getElementById('punktkarte');
+    const f = b.querySelector('.pk-bauweise');
+    if (!f) return false;
+    const r = f.getBoundingClientRect(), k = b.getBoundingClientRect();
+    return r.top >= k.top - 1 && r.bottom <= k.bottom + 1;`, 4000);
+  b.pruefe(true, 'Nach der Wahl „Querung“ rollt das Blatt zur Frage „Wie gequert?“');
+  b.pruefe(/fehlt noch/.test(await seite.text('#punktkarte .pk-bauweise') || ''),
+    'Solange keine Bauweise steht, sagt die Frage das');
+  await chipWaehlen('ueberbau');
+  b.pruefe(!/fehlt noch/.test(await seite.text('#punktkarte .pk-bauweise') || ''),
+    'Mit der Bauweise verschwindet der Zusatz');
+  await chipWaehlen('punkt');
+
   b.abschnitt('Die Bemerkung schreibt, ohne das Blatt zu schließen');
   await seite.schreibe('#punktkarte .pk-bemerkung', 'Wurzelwerk');
   await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.punkte.some(pt => pt.bemerkung === "Wurzelwerk")', 3000);
@@ -547,6 +570,21 @@ try {
   await seite.warteAuf('!document.getElementById("punktkarte").hidden');
   b.pruefe(/Zusätzlicher Punkt/.test(await seite.text('#punktkarte .pk-titel') || ''),
     'Der neue Punkt steht als zusätzlicher auf dem Blatt');
+  /* Was der Trupp nicht angetippt hat, steht auch nicht da: vorher trug jeder
+     so aufgenommene Punkt „Trassenpunkt“, und wer an der Muffe unterbrochen
+     wurde und „Fertig“ drückte, hatte eine Muffe als Trassenpunkt
+     dokumentiert – als Aussage des Trupps, nicht als Lücke. */
+  /* Der jüngste Punkt und nicht der letzte der Liste: einsortiert wird nach der
+     Ordnung der Planung, ein zusätzlicher hängt sich neben seine Nachbarn. */
+  const juengster = 'bau.punkte.slice().sort((a, b) => a.zeit < b.zeit ? -1 : 1).pop()';
+  b.gleich(await bau(juengster + '.art'), 'offen',
+    'Ein auf der Karte gesetzter Punkt kommt ohne Art');
+  b.pruefe(/fehlt noch/.test(await seite.text('#punktkarte .pk-frage') || ''),
+    'Das Blatt sagt, dass die Art noch fehlt');
+  b.gleich(await seite.anzahl('#punktkarte .pk-chip[data-wert="offen"]'), 0,
+    '„Art noch offen“ steht nicht als Chip zur Wahl – sie ist keine Antwort');
+  await chipWaehlen('muffe');
+  b.gleich(await bau(juengster + '.art'), 'muffe', 'Ein Tipp trägt die Art ein');
   await blattTaste('Löschen');
   b.gleich(await bau('bau.punkte.length'), 4, '„Löschen“ nimmt ihn wieder weg');
 
@@ -1049,6 +1087,45 @@ try {
   b.pruefe(rundMeldung.laenge < 2000,
     `Die Meldung ist deutlich kürzer als die Planung (${rundMeldung.laenge} Zeichen)`);
 
+  /* Nach einer Unterbrechung ist die erste Frage des Truppführers: habe ich das
+     schon gemeldet? Vorher war sie am Gerät nicht zu beantworten – der Block
+     sah vor und nach dem Absetzen gleich aus, und der Bau-Block war
+     zeichengleich. Doppelt gemeldet ersetzt beim Planer Eintragungen, gar
+     nicht gemeldet fehlt dort alles. */
+  b.abschnitt('Das Absetzen hinterlässt einen Vermerk');
+  const vermerk = await seite.auswerten(`
+    const bd = await import('./js/baudoku.js');
+    const s = window.fbp.store.projekt.strecken[0];
+    const vorher = bd.absetzstand(s).stand;
+    window.fbp.store.aendern(() => bd.absetzenVermerken(s, 'link'), 'bau');
+    const gleich = bd.absetzstand(s).stand;
+    window.fbp.store.aendern(() => {
+      bd.istPunktSetzen(s, s.punkte[0].lat + 0.004, s.punkte[0].lng + 0.004, { quelle: 'karte' });
+    }, 'bau');
+    const danach = bd.absetzstand(s);
+    return { vorher, gleich, danach: danach.stand, weg: danach.weg, zeit: !!danach.zeit };`);
+  b.gleich(vermerk.vorher, 'nie', 'Vor dem ersten Absetzen steht kein Vermerk');
+  b.gleich(vermerk.gleich, 'aktuell', 'Nach dem Absetzen gilt die Meldung als aktuell');
+  b.gleich(vermerk.weg, 'link', 'Der Weg ist festgehalten');
+  b.pruefe(vermerk.zeit, 'Und die Uhrzeit');
+  b.gleich(vermerk.danach, 'veraltet',
+    'Eine Aufnahme nach dem Absetzen macht den Vermerk veraltet – der Abdruck merkt es');
+  b.pruefe(await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const s = window.fbp.store.projekt.strecken[0];
+    const schlank = JSON.parse(JSON.stringify(t.alsBaumeldung(window.fbp.store.projekt, [s])));
+    return schlank.strecken[0].bau.abgesetzt === undefined;`),
+    'Der Vermerk bleibt am Gerät und reist nicht mit der Meldung');
+
+  b.abschnitt('Die Meldung nennt, wer sie absetzt');
+  b.pruefe(await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const m = await import('./js/baumeldung.js');
+    const s = window.fbp.store.projekt.strecken[0];
+    const meldung = t.alsBaumeldung(window.fbp.store.projekt, [s], '2. FmTr · Gruppenführer');
+    return m.truppText(meldung).includes('2. FmTr');`),
+    'Der Absender des Geräts steht in der Meldung – auch ohne Bauabschnitt');
+
   b.abschnitt('Der Planer sieht die Vorschau, bevor etwas geschrieben wird');
   await seite.auswerten(`
     const t = await import('./js/teilen.js');
@@ -1160,7 +1237,9 @@ try {
   b.gleich(gehaertet.stand, 'offen', 'Ein unbekannter Baustand fällt auf „offen“ zurück');
   b.pruefe(/^#[0-9a-f]{3,8}$/i.test(gehaertet.farbe),
     'Eine präparierte Farbe wird durch eine echte ersetzt');
-  b.gleich(gehaertet.art, 'punkt', 'Eine präparierte Punktart wird zurückgeschnitten');
+  /* Seit Schema 16 fällt eine unbekannte Art auf „offen“ zurück und nicht auf
+     „Trassenpunkt“: was nicht lesbar ankommt, ist keine Aussage des Trupps. */
+  b.gleich(gehaertet.art, 'offen', 'Eine präparierte Punktart wird zurückgeschnitten');
   b.gleich(gehaertet.quelle, 'karte', 'Eine unbekannte Herkunft fällt auf die Vorgabe zurück');
   b.gleich(gehaertet.artikel, 'sonstiges',
     'Ein Artikel, den der Katalog nicht kennt, fällt auf „Sonstiges“ zurück');

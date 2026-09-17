@@ -763,6 +763,13 @@ awKarte.onclick = () => ansichtSetzen(true);
    nicht prüfbar; die Bedingung selbst kommt weiter aus derselben Abfrage. */
 window.addEventListener('resize', () => {
   if (!schmalAbfrage.matches && document.body.classList.contains('seite-zu')) ansichtSetzen(false);
+  /* Wird das Fenster schmal, gilt die Wahl von vorhin nicht mehr: sie fiel für
+     eine Breite, in der die Tafel neben dem Verlauf steht statt darüber. Schmal
+     deckt sie die Trasse zu und nimmt den Marken darunter den Tipp ab – der
+     Griff, der einen geplanten Punkt bestätigen sollte, traf dann eine
+     Einstellung. Der Vorgabezustand der neuen Breite gewinnt; die gemerkte
+     Wahl bleibt liegen und gilt wieder, sobald es breit wird. */
+  if (schmalAbfrage.matches) kartenoptionenSetzen(true);
 });
 
 const dateiKnopf = $('#btn-datei'), dateiMenu = $('#menu-datei');
@@ -1222,11 +1229,25 @@ function modusAnwenden() {
   sl.baumodus = baumodus;
   sl.zeichne();
   const schalter = $('#btn-modus');
-  schalter.textContent = baumodus ? 'Planung' : 'Baumodus';
+  /* Der Schalter nennt den ZUSTAND und nicht das Ziel. Vorher stand im
+     Baumodus „Planung“ darauf, während `aria-pressed` „gedrückt“ meldete –
+     für die Sprachausgabe ein Widerspruch, und am Schirm die einzige Stelle,
+     die den Modus überhaupt nannte: wer nach der Einblendung dazukam, konnte
+     „Planung“ ebenso gut als „hier bin ich“ lesen. Jetzt sagt die Beschriftung,
+     wo man ist, der gedrückte Zustand bestätigt es, und der Titel sagt, wohin
+     der Griff führt. */
+  schalter.textContent = 'Baumodus';
   schalter.setAttribute('aria-pressed', String(baumodus));
   schalter.title = baumodus
     ? 'Zurück zur Planung'
     : 'Dokumentieren, was am Bauort gebaut wurde';
+  /* Schmal steht die Tafel der Kartenoptionen über dem Verlauf, und die
+     geplanten Marken darunter nehmen den Tipp nicht mehr an: gemessen lagen
+     bei 390×690 zwei von vier Punkten hinter ihr, und der Tipp, der einen
+     Punkt bestätigen sollte, schaltete das Koordinatengitter ein. Im Baumodus
+     ist die Karte die Bedienfläche – also klappt die Tafel beim Umschalten zu.
+     Die gemerkte Wahl bleibt unberührt: wer sie danach öffnet, behält sie. */
+  if (baumodus && schmalAbfrage.matches) kartenoptionenSetzen(true);
   document.querySelectorAll('.reiter button').forEach(b => {
     b.hidden = baumodus ? !REITER_BAU.has(b.dataset.reiter) : b.dataset.reiter === 'bau';
   });

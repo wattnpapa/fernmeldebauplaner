@@ -7,7 +7,7 @@ import {
   streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar, bilderBelegung, bildmarkenAn,
   flaechenIm, flaecheSichtbar, relaisstellenIm, relaisstelleSichtbar,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id, neuerPunkt,
-  BAUSTAENDE, baustandById, mengeOderNichts
+  BAUSTAENDE, baustandById, mengeOderNichts, PLANPUNKTARTEN
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
 import {
@@ -75,7 +75,8 @@ import {
   materialzeilen, materialzeile, materialSetzen, materialFreiAnlegen, materialZeileLoeschen,
   materialSumme, materialSoll, baumeldungen,
   baumeldungAnlegen, baumeldungLoeschen, meldungenNachZeit,
-  pruefungSichern, pruefzeilen, pruefzeileAnlegen, pruefzeileLoeschen
+  pruefungSichern, pruefzeilen, pruefzeileAnlegen, pruefzeileLoeschen,
+  absetzenVermerken, absetzstandGesamt, absenderText, truppAmGeraet, truppAmGeraetSetzen
 } from './baudoku.js';
 import {
   vorschlag, truppText, befund, einspielen, berichtText
@@ -2121,7 +2122,10 @@ function punktTabelle(s, frisch) {
     kopf.appendChild(el('span', 'pz-nr', String(i + 1)));
 
     const sel = el('select', 'mini-select pz-art');
-    PUNKTARTEN.forEach(a => {
+    /* Die PLANpunktarten: „Art noch offen“ gibt es nur am Bauort (Schema 16).
+       Ein geplanter Punkt ohne Art stünde im Bauauftrag, und den kann niemand
+       ansteuern. */
+    PLANPUNKTARTEN.forEach(a => {
       const o = document.createElement('option');
       o.value = a.id; o.textContent = a.name; o.selected = pt.art === a.id;
       sel.appendChild(o);
@@ -3901,13 +3905,26 @@ export function zeichneBauListe() {
   }
 
   const k = baukennzahlen(s);
+  /* Der Zähler nennt BEIDE Zahlen. Vorher stand dort „0 von 4 Punkten“ neben
+     „gebaut 65 m“, wenn der Trupp zwei zusätzliche Punkte aufgenommen hatte –
+     zwei Angaben über denselben Sachverhalt, die einander widersprechen. Wer
+     vor dem Absetzen am Zähler prüft, ob alles drin ist, las die Null.
+     „Bestätigt“ statt bloß „von“: die Zahl sagt, wie viele GEPLANTE Punkte
+     angesteuert wurden, und nicht, wie viel aufgenommen ist. */
   summe.innerHTML =
     `<span>Stand <b>${escapeHtml(k.stand.name)}</b></span>
-     <span><b>${k.bestaetigt}</b> von ${k.sollPunkte} Punkten</span>` +
+     <span><b>${k.bestaetigt}</b> von ${k.sollPunkte} geplanten bestätigt</span>` +
+    (k.zusaetzlich
+      ? `<span><b>${k.zusaetzlich}</b> zusätzlich aufgenommen</span>` : '') +
     (k.laenge ? `<span>gebaut <b>${escapeHtml(formatLaenge(k.laenge))}</b></span>` : '') +
     (k.abweichungen.length
       ? `<span class="bau-abw"><b>${k.abweichungen.length}</b> ${k.abweichungen.length === 1 ? 'Abweichung' : 'Abweichungen'}</span>`
-      : '');
+      : '') +
+    /* Was aufgenommen, aber nicht ausgesagt ist, steht neben den Abweichungen
+       und nicht darunter: beides ist eine Nachfrage an den Trupp, und diese
+       hier lässt sich am Bauort noch beantworten. */
+    (k.luecken
+      ? `<span class="bau-abw"><b>${k.luecken}</b> ohne Angabe</span>` : '');
 
   const bloecke = {
     punkte: bauPunktBlock(s),
@@ -3917,8 +3934,18 @@ export function zeichneBauListe() {
     rueckweg: bauRueckwegBlock(s),
     vorrat: klappbar(kartenvorratBlock(s), 'vorrat')
   };
-  liste.appendChild(baukopfBlock(s, k));
+  /* Der Sprungstreifen steht VOR dem Kopfblock. Dahinter lag er bei 390×690 in
+     der Grundstellung des Reiters mit seiner zweiten Reihe – „Absetzen“,
+     „Karte mitnehmen“, „▤ Doku“ – halb unter dem Umschalter Liste/Karte, der
+     dort festliegt: sichtbar genug, um danach zu greifen, und ein Tipp darauf
+     traf den Umschalter und warf den Trupp auf die Karte. Betroffen war
+     ausgerechnet der Chip, der am häufigsten gebraucht wird.
+
+     Die Reihenfolge stimmt auch sachlich: erst wohin, dann die Zahlen. Wer den
+     Reiter öffnet, sucht eine Stelle darin – die Kennzahlen liest er, wenn er
+     dort ist. */
   liste.appendChild(sprungstreifen(bloecke, s));
+  liste.appendChild(baukopfBlock(s, k));
   liste.appendChild(bauabschnittBlock(s));
   liste.appendChild(bloecke.punkte);
   /* Die Baumeldungen stehen VOR dem Materialnachweis, obwohl der Ablauf
@@ -3964,9 +3991,13 @@ export function zeichneBauListe() {
 function sprungstreifen(bloecke, s) {
   const streifen = el('nav', 'bau-sprung');
   streifen.setAttribute('aria-label', 'Im Bau-Reiter springen');
+  /* „Karte mitnehmen“ und nicht „Karte“: der Umschalter zwischen Liste und
+     Karte steht schmal gleichzeitig im Bild und heißt ebenso. Ein Tipp auf den
+     falschen der beiden führte in den Kachelvorrat statt auf die Karte – und
+     der Rückweg kostete am Bauort zwei weitere Griffe. */
   const ziele = [
     ['punkte', 'Punkte'], ['meldungen', 'Meldungen'], ['material', 'Material'],
-    ['uebergabe', 'Übergabe'], ['rueckweg', 'Absetzen'], ['vorrat', 'Karte']
+    ['uebergabe', 'Übergabe'], ['rueckweg', 'Absetzen'], ['vorrat', 'Karte mitnehmen']
   ];
   for (const [schluessel, text] of ziele) {
     streifen.appendChild(knopf(text, () => {
@@ -3988,6 +4019,37 @@ function sprungstreifen(bloecke, s) {
   }
   streifen.appendChild(doku);
   return streifen;
+}
+
+/* Datum und Uhrzeit sind am Bauplatz die teuerste Eingabe überhaupt: ein
+   schmales Feld, ein Kalenderaufsatz darüber, zwei Hände. Baubeginn, Bauende
+   und der Zeitpunkt der Übergabe blieben deshalb leer – und damit fehlten im
+   Kopf der Baudokumentation genau die Zeiten, die sie belegen soll. Den Griff
+   gab es im Bestand schon, aber nur am Planungskopf.
+
+   Gerechnet wird mit der ORTSZEIT und nicht über `toISOString()`: das Feld
+   `datetime-local` erwartet sie so, wie die Uhr sie zeigt, und eine
+   UTC-Angabe säße im Sommer zwei Stunden daneben. */
+const jetztFuerFeld = () => {
+  const d = new Date();
+  const zwei = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${zwei(d.getMonth() + 1)}-${zwei(d.getDate())}` +
+         `T${zwei(d.getHours())}:${zwei(d.getMinutes())}`;
+};
+
+/** Ein Zeitfeld mit dem Griff „Jetzt“ daneben */
+function zeitfeld(titel, wert, beiAenderung, marke = '') {
+  const reihe = el('div', 'zeit-reihe');
+  const f = feld(titel, wert, beiAenderung, { typ: 'datetime-local' });
+  const ein = f.querySelector('input');
+  if (marke) ein.dataset.bauFeld = marke;
+  reihe.appendChild(f);
+  reihe.appendChild(knopf('Jetzt', () => {
+    const jetzt = jetztFuerFeld();
+    ein.value = jetzt;
+    beiAenderung(jetzt);
+  }, 'klein'));
+  return reihe;
 }
 
 /** Ein Feld, das den Fokus über den Neuaufbau der Liste behält */
@@ -4195,13 +4257,24 @@ function baukopfBlock(s, k) {
   const zeile = (titel, wert, klasse = '') =>
     `<div class="bz ${klasse}"><span class="bz-titel">${escapeHtml(titel)}</span>
      <span class="bz-wert">${wert}</span></div>`;
+  /* Hervorgehoben wird der Unterschied erst, wenn die Aufnahme steht. Während
+     des Baus ist er keine Abweichung, sondern der Rest des Weges: bei zwei von
+     vier aufgenommenen Punkten stand dort „−702 m“ in Warnfarbe, und das las
+     sich wie ein Befund über eine Trasse, die noch gar nicht fertig
+     dokumentiert ist. Maßgeblich ist der Baustand und nicht die Punktzahl – der
+     Trupp setzt ihn, wenn er fertig ist, und nur er weiß das. */
+  const fertigGebaut = k.stand.id === 'gebaut' || k.stand.id === 'uebergeben';
   zahlen.innerHTML =
     zeile('geplant', escapeHtml(formatLaenge(k.sollLaenge))) +
     zeile('gebaut', k.laenge ? escapeHtml(formatLaenge(k.laenge)) : '–') +
-    zeile('Unterschied', k.laengenUnterschied
+    /* Die Beschriftung sagt, dass die Zahl noch nicht gilt – das spart den
+       Erklärsatz darunter, den der Reiter am Bauort nicht auch noch tragen
+       kann. */
+    zeile(fertigGebaut ? 'Unterschied' : 'Unterschied (offen)', k.laengenUnterschied
       ? `${k.laengenUnterschied > 0 ? '+' : '−'}${escapeHtml(formatLaenge(Math.abs(k.laengenUnterschied)))}`
-      : '–', Math.abs(k.laengenUnterschied) > 0 ? 'bz-merken' : '');
+      : '–', fertigGebaut && Math.abs(k.laengenUnterschied) > 0 ? 'bz-merken' : '');
   box.appendChild(zahlen);
+
 
   if (k.laenge) {
     box.appendChild(el('p', 'klein',
@@ -4222,8 +4295,7 @@ function bauabschnittBlock(s) {
   if (!abschnitte.length) {
     box.appendChild(el('p', 'klein',
       'Ohne Bauabschnitt gilt die ganze Strecke als ein Auftrag. Bauen zwei ' +
-      'Trupps aufeinander zu, bekommt jeder seinen Abschnitt – dann steht an ' +
-      'jedem aufgenommenen Punkt, wer ihn gebaut hat.'));
+      'Trupps aufeinander zu, bekommt jeder seinen.'));
   }
 
   for (const a of abschnitte) {
@@ -4261,10 +4333,8 @@ function bauabschnittBlock(s) {
     felder.appendChild(feld('Trupp', a.trupp, w => schreib(() => { a.trupp = w; }),
       { platzhalter: 'z. B. 1. FmTr' }));
     felder.appendChild(feld('Truppführer', a.fuehrer, w => schreib(() => { a.fuehrer = w; }), {}));
-    felder.appendChild(feld('Baubeginn', a.beginn, w => schreib(() => { a.beginn = w; }),
-      { typ: 'datetime-local' }));
-    felder.appendChild(feld('Bauende', a.ende, w => schreib(() => { a.ende = w; }),
-      { typ: 'datetime-local' }));
+    felder.appendChild(zeitfeld('Baubeginn', a.beginn, w => schreib(() => { a.beginn = w; })));
+    felder.appendChild(zeitfeld('Bauende', a.ende, w => schreib(() => { a.ende = w; })));
     zeile.appendChild(felder);
     box.appendChild(zeile);
   }
@@ -4277,6 +4347,43 @@ function bauabschnittBlock(s) {
     zeichneBauListe();
   }, 'klein'));
   box.appendChild(tasten);
+  return box;
+}
+
+/**
+ * Wer an diesem Gerät baut – zwei Felder im Rückmeldeblock.
+ *
+ * Die Frage wurde vorher nirgends gestellt: Trupp und Truppführer standen nur
+ * am Bauabschnitt, und der ist freiwillig. Wer ohne Abschnitt baute – der
+ * Regelfall bei einer Strecke, die ein Trupp allein macht –, setzte eine
+ * Meldung ab, die niemanden nennt. Beim Planer hieß sie dann „ohne
+ * Bauabschnitt“, und meldete ein zweiter Trupp an derselben Strecke, trat
+ * dessen Aufnahme an die Stelle der ersten. Gewarnt wurde nur der Planer.
+ *
+ * Sie steht hier und nicht oben bei den Bauabschnitten, und zwar aus zwei
+ * Gründen: hier WIRKT der Name – er geht in diesem Augenblick hinaus –, und
+ * der Reiter trägt am Bauort keine Zeile, die nur ein Feld weiter oben
+ * ankündigt. Wer Abschnitte angelegt hat, braucht ihn nicht: dann sagt der
+ * Abschnitt, wer gebaut hat.
+ *
+ * Der Name liegt im GERÄTESPEICHER und nicht in der Planung (siehe
+ * `truppAmGeraet` in `baudoku.js`) – er sagt, wer gerade am Gerät steht, und
+ * geht mit der Baumeldung hinaus, nicht mit der weitergereichten Planung.
+ */
+function truppAmGeraetFelder() {
+  const v = truppAmGeraet();
+  const box = el('div', 'bau-geraet' + (v.trupp || v.fuehrer ? '' : ' bau-geraet-offen'));
+  const felder = el('div', 'ba-felder');
+  /* Geschrieben wird sofort und nicht über `schreib()`: der Vermerk liegt im
+     Gerätespeicher und nicht in der Planung – es gibt keinen Undo-Schritt, der
+     hier aufliefe. Die Liste wird erst beim nächsten Neuaufbau nachgezogen,
+     damit das Feld den Fokus behält; beim Absetzen steht der Name richtig da. */
+  felder.appendChild(feld('Trupp', v.trupp,
+    w => truppAmGeraetSetzen({ ...truppAmGeraet(), trupp: w }),
+    { platzhalter: 'z. B. 1. FmTr' }));
+  felder.appendChild(feld('Truppführer', v.fuehrer,
+    w => truppAmGeraetSetzen({ ...truppAmGeraet(), fuehrer: w }), {}));
+  box.appendChild(felder);
   return box;
 }
 
@@ -4372,7 +4479,12 @@ function bauPunktZeile(s, pt, i) {
       (abschnitt ? `<span class="bp-trupp">${escapeHtml(abschnitt.trupp || abschnitt.name)}</span>` : '') +
       (abw >= ABWEICHUNG_SCHWELLE
         ? `<span class="bp-abweichung">${escapeHtml(formatLaenge(abw))} abweichend</span>`
-        : '');
+        : '') +
+      /* Was aufgenommen, aber nicht ausgesagt ist, steht im eingeklappten
+         Befund und nicht erst im Formular darunter: sonst fiele es beim
+         Überfliegen der Liste durch, und genau dort wird vor dem Absetzen
+         gesucht, was noch fehlt. */
+      luecketext(ist);
     zeile.appendChild(befund);
 
     /* Alles, was über den Befund hinausgeht, steht im Formular – und das
@@ -4461,14 +4573,26 @@ function naechsteOffeneZeigen() {
 }
 
 /** Eine Zeile je zusätzlich aufgenommenem Punkt */
+/** Die offene Angabe eines aufgenommenen Punktes als Marke für die Liste –
+ *  leer, wenn nichts fehlt */
+function luecketext(ist) {
+  if (ist.art === 'offen') return '<span class="bp-luecke">Art fehlt</span>';
+  if (ist.art === 'querung' && !ist.bauweise) {
+    return '<span class="bp-luecke">Bauweise fehlt</span>';
+  }
+  return '';
+}
+
 function bauZusatzZeile(s, pt) {
   const zeile = el('div', 'bp-zeile bestaetigt bp-zusatz');
   zeile.style.setProperty('--farbe', s.farbe);
   const kopf = el('div', 'bp-kopf');
   kopf.innerHTML =
     `<span class="bp-nr">+</span>
+     <span class="bp-art">${escapeHtml(punktartText(pt))}</span>
      <span class="bp-quelle">${escapeHtml(quelleText(pt))}</span>` +
-    (uhrzeit(pt.zeit) ? `<span class="bp-zeit">${escapeHtml(uhrzeit(pt.zeit))}</span>` : '');
+    (uhrzeit(pt.zeit) ? `<span class="bp-zeit">${escapeHtml(uhrzeit(pt.zeit))}</span>` : '') +
+    luecketext(pt);
   const zeigen = el('button', 'mini-knopf bp-karte', '◎');
   zeigen.title = 'Auf der Karte zeigen';
   zeigen.onclick = () => { ctx.karte.setView([pt.lat, pt.lng], Math.max(ctx.karte.getZoom(), 16)); ctx.zurKarte?.(); };
@@ -4476,6 +4600,9 @@ function bauZusatzZeile(s, pt) {
   zeile.appendChild(kopf);
 
   const felder = el('div', 'bp-felder');
+  /* Hier steht „Art noch offen“ mit zur Wahl: der aufgenommene Punkt kommt mit
+     ihr aus der Aufnahme, und sie muss im Feld lesbar dastehen – als Lücke, die
+     jemand füllt, und nicht als Wert, der zufällig oben in der Liste steht. */
   felder.appendChild(merkeFeld(feld('Art', pt.art, w => {
     store.aendern(() => istArtSetzen(pt, w), 'bau');
   }, { typ: 'select', werte: PUNKTARTEN.map(a => [a.id, a.name]) }), 'art-' + pt.id));
@@ -4787,9 +4914,9 @@ function bauUebergabeBlock(s, k) {
   felder.appendChild(merkeFeld(feld('Übergeben an', u.an,
     w => store.aendern(() => { pruefungSichern(s).uebergabeAn = w; }, 'bau'),
     { platzhalter: 'Einheit, für die gebaut wurde' }), 'uebergabe-an'));
-  felder.appendChild(merkeFeld(feld('Zeitpunkt', u.zeit,
+  felder.appendChild(zeitfeld('Zeitpunkt', u.zeit,
     w => store.aendern(() => { pruefungSichern(s).uebergabeZeit = w; }, 'bau'),
-    { typ: 'datetime-local' }), 'uebergabe-zeit'));
+    'uebergabe-zeit'));
   felder.appendChild(feld('Übergeben durch', u.durch,
     w => schreib(() => { pruefungSichern(s).uebergabeName = w; }),
     { platzhalter: 'Truppführer' }));
@@ -4881,6 +5008,46 @@ function bauRueckwegBlock(s) {
     `mit: der Planer hat sie schon, und ohne sie bleibt die Meldung klein genug für ` +
     `einen Link.`));
 
+  /* Unter welchem Namen die Meldung hinausgeht – die Frage, die der Planer als
+     erste stellt und die vorher niemand beantwortete. Steht kein Name da,
+     spiegelt der Block, was der Planer dann liest, und sagt, was das für den
+     anderen Trupp bedeutet. */
+  const absender = absenderText(alle);
+  if (absender) {
+    box.appendChild(el('p', 'klein bau-absender',
+      `Abgesetzt wird als <b>${escapeHtml(absender)}</b>.`));
+  } else {
+    box.appendChild(el('p', 'klein',
+      'Diese Meldung nennt bisher keinen Trupp – meldet ein zweiter an ' +
+      'derselben Strecke, tritt seine Aufnahme an die Stelle dieser hier.'));
+  }
+  /* Die Felder stehen auch dann da, wenn schon ein Name gefunden wurde: der
+     Truppführer wechselt, das Gerät bleibt. Aus Bauabschnitten gelesene Namen
+     überschreiben sie nicht – dort steht, wer welchen Teil gebaut hat. */
+  if (!bauabschnitte(s).some(a => a.trupp)) box.appendChild(truppAmGeraetFelder());
+
+  /* Was aufgenommen, aber nicht ausgesagt wurde. Am Bauort lässt sich das noch
+     beantworten, beim Planer nicht mehr – deshalb steht es VOR den beiden
+     Absetzgriffen und nicht hinter ihnen. */
+  const luecken = alle.map(x => ({ name: x.name, k: baukennzahlen(x) })).filter(x => x.k.luecken);
+  if (luecken.length) {
+    const ul = el('ul', 'bau-vorschau');
+    for (const x of luecken) {
+      const teile = [];
+      if (x.k.ohneArt.length) {
+        teile.push(`${x.k.ohneArt.length} ${x.k.ohneArt.length === 1
+          ? 'Punkt ohne Art' : 'Punkte ohne Art'}`);
+      }
+      if (x.k.querungOhneBauweise.length) {
+        teile.push(`${x.k.querungOhneBauweise.length} ` +
+          `${x.k.querungOhneBauweise.length === 1 ? 'Querung' : 'Querungen'} ohne Bauweise`);
+      }
+      ul.appendChild(el('li', 'bau-vorschau-luecke',
+        `<b>${escapeHtml(x.name)}</b>: ${escapeHtml(teile.join(', '))}.`));
+    }
+    box.appendChild(ul);
+  }
+
   /* Was der Planer wissen muss, sind nicht die Stückzahlen, sondern die
      Abweichungen: der Unterschied zwischen Plan und Bauort ist der Grund, aus
      dem überhaupt zurückgemeldet wird. Vor dem Absetzen steht deshalb hier,
@@ -4904,10 +5071,38 @@ function bauRueckwegBlock(s) {
   }
   box.appendChild(vorschau);
 
+  /* Was zuletzt hinausging. Vorher sah der Block vor und nach dem Absetzen
+     gleich aus, und der Bau-Block war zeichengleich – nach einer Unterbrechung
+     war am Gerät nicht zu entscheiden, ob gemeldet ist. Dann wird entweder
+     doppelt gemeldet, und beim Planer ersetzt die zweite Meldung Eintragungen,
+     oder gar nicht. „Veraltet“ ist dabei kein Zustand des Absetzens, sondern
+     einer der Aufnahme: seit der Meldung ist etwas dazugekommen. */
+  const ab = absetzstandGesamt(alle);
+  if (ab.stand !== 'nie') {
+    const wann = `${zeitpunkt(ab.zeit)} ${ab.weg === 'datei' ? 'als Datei' : 'als Link'}`;
+    box.appendChild(ab.stand === 'veraltet'
+      ? el('p', 'bau-warnung',
+          `Zuletzt abgesetzt ${escapeHtml(wann)} – seither ist etwas dazugekommen. ` +
+          'Noch einmal absetzen, sonst fehlt es beim Planer.')
+      : el('p', 'klein bau-abgesetzt',
+          `Abgesetzt ${escapeHtml(wann)}. Seither unverändert.`));
+  }
+
+  /* Was der Trupp beim Absetzen tut, wird festgehalten: Zeit, Weg und ein
+     Fingerabdruck der Aufnahme. Der Vermerk hängt an jeder Strecke, die in der
+     Meldung steckt – sonst stünde er an einer, die gar nicht mitging. */
+  const vermerken = weg => store.aendern(() => {
+    for (const s of alle) absetzenVermerken(s, weg);
+  }, 'bau');
+
   const tasten = el('div', 'tastenreihe bau-tasten');
-  tasten.appendChild(knopf('Als Link', () => meldungAlsLinkZeigen(alle), 'klein primaer bau-taste'));
+  tasten.appendChild(knopf('Als Link', () => meldungAlsLinkZeigen(alle, absender, vermerken),
+    'klein primaer bau-taste'));
   tasten.appendChild(knopf('Als Datei', () => {
-    if (io.baumeldungExportieren(alle)) hinweis('Baumeldung als Datei gesichert');
+    if (io.baumeldungExportieren(alle, absender)) {
+      vermerken('datei');
+      hinweis('Baumeldung als Datei gesichert und als abgesetzt vermerkt');
+    }
   }, 'klein bau-taste'));
   box.appendChild(tasten);
 
@@ -4931,7 +5126,7 @@ function bauRueckwegBlock(s) {
 /* Der Link steht in einem Feld und wird nicht stillschweigend in die
    Zwischenablage gelegt: am Bauort ist oft kein Mailprogramm zur Hand, und der
    Truppführer diktiert ihn dann über Funk ab – dafür muss er ihn sehen. */
-function meldungAlsLinkZeigen(strecken) {
+function meldungAlsLinkZeigen(strecken, absender = '', vermerken = null) {
   const box = el('div', 'meldung-link');
   const feldLink = document.createElement('textarea');
   feldLink.readOnly = true;
@@ -4943,29 +5138,54 @@ function meldungAlsLinkZeigen(strecken) {
   box.appendChild(el('p', 'klein',
     'Der Planer öffnet den Link und bekommt eine Vorschau, bevor etwas eingespielt wird.'));
 
-  dialog({
-    titel: 'Baumeldung als Link',
-    inhalt: box,
-    breit: true,
-    fuss: [
-      { text: 'Kopieren', tun: () => {
-        const wert = feldLink.value;
-        if (!wert || wert.startsWith('wird erzeugt')) return false;
-        feldLink.select();
-        const lauf = navigator.clipboard?.writeText(wert);
-        if (!lauf) {
-          hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler');
-          return false;
-        }
-        lauf.then(() => hinweis('Baumeldung kopiert'))
-          .catch(() => hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler'));
-        return false;
-      } },
-      { text: 'Schließen', primaer: true }
-    ]
-  });
+  /* Abgesetzt ist die Meldung, wenn sie das Gerät verlassen hat – kopiert oder
+     weitergegeben. Beides vermerkt es, und der Vermerk läuft nur einmal: ein
+     zweiter Griff im selben Dialog änderte sonst nichts als die Uhrzeit. */
+  let vermerkt = false;
+  const abgesetzt = () => {
+    if (vermerkt || !vermerken) return;
+    vermerkt = true;
+    vermerken('link');
+  };
 
-  meldungAlsLink(store.projekt, strecken).then(link => {
+  /* „Teilen“ übergibt den Link an das Gerät – Messenger, Mail, was der Trupp
+     ohnehin benutzt. Vorher endete der Weg beim Kopieren: die richtige App
+     suchen und einfügen sind zwei weitere Griffe, und zwar in dem Augenblick,
+     in dem die Meldung unter Zeitdruck hinausgeht. Wo der Browser das nicht
+     kennt (Firefox auf dem Rechner), steht der Griff gar nicht erst da –
+     „Kopieren“ bleibt in jedem Fall. */
+  const kannTeilen = typeof navigator.share === 'function';
+  const fuss = [];
+  if (kannTeilen) {
+    fuss.push({ text: 'Teilen', tun: () => {
+      const wert = feldLink.value;
+      if (!wert || wert.startsWith('wird erzeugt')) return false;
+      navigator.share({ title: 'Baumeldung', text: 'Baumeldung vom Bauort', url: wert })
+        .then(() => { abgesetzt(); hinweis('Baumeldung weitergegeben und als abgesetzt vermerkt'); })
+        /* Ein Abbruch im Teilen-Blatt des Geräts ist kein Fehler und wird
+           deshalb auch nicht gemeldet – der Trupp hat sich anders entschieden. */
+        .catch(() => {});
+      return false;
+    } });
+  }
+  fuss.push({ text: 'Kopieren', tun: () => {
+    const wert = feldLink.value;
+    if (!wert || wert.startsWith('wird erzeugt')) return false;
+    feldLink.select();
+    const lauf = navigator.clipboard?.writeText(wert);
+    if (!lauf) {
+      hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler');
+      return false;
+    }
+    lauf.then(() => { abgesetzt(); hinweis('Baumeldung kopiert und als abgesetzt vermerkt'); })
+      .catch(() => hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler'));
+    return false;
+  } });
+  fuss.push({ text: 'Schließen', primaer: true });
+
+  dialog({ titel: 'Baumeldung als Link', inhalt: box, breit: true, fuss });
+
+  meldungAlsLink(store.projekt, strecken, absender).then(link => {
     if (!box.isConnected) return;
     feldLink.value = link;
     /* Dieselbe Ampel wie beim Planungslink, aus derselben Quelle: nicht der
@@ -5640,10 +5860,16 @@ export function hilfeDialog() {
           <li>Nach jeder Aufnahme fragt die <b>Punktkarte</b> „Was ist hier?“ – ein Tipp auf
               Trassenpunkt, Muffe, Reserve, Mast, Querung, Verteiler oder Sonstiges genügt;
               an der Querung noch einer auf Überbau, Unterbau oder an Brücke. Dazu die
-              Bemerkung. Ein Tipp auf eine gebaute Marke öffnet sie wieder.</li>
+              Bemerkung. Ohne Tipp bleibt die Art offen: der Punkt steht dann mit einem
+              Fragezeichen auf der Karte und als Lücke in der Liste – so ist am Ende zu
+              sehen, wo noch etwas fehlt. Ein Tipp auf eine gebaute Marke öffnet sie wieder.</li>
           <li>Im Reiter <b>Bau</b> steht dasselbe als Liste, dazu Bauabschnitte,
               Baumeldungen, Materialnachweis, Meldung an den S 6, Übergabe und ganz unten
-              die Karte zum Mitnehmen. Der Sprungstreifen unter der Summe führt hin.</li>
+              die Karte zum Mitnehmen. Der Sprungstreifen oben führt hin.</li>
+          <li>Unter <b>Absetzen</b> geht die Baumeldung an den Planer – als Link, zum
+              Teilen oder als Datei. Dort stehen auch <b>Trupp</b> und <b>Truppführer</b>:
+              ohne sie nennt die Meldung niemanden. Nach dem Absetzen steht dort, wann
+              zuletzt etwas hinausging und ob seither etwas dazugekommen ist.</li>
         </ul>
         <h3>Koordinaten</h3>
         <p>Unten steht die Koordinate der Stelle, über der die Maus steht oder die zuletzt

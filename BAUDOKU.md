@@ -99,7 +99,8 @@ strecke.bau = {
   meldungen:  [ { id, zeit, text, abschnitt } ],
   pruefung:   { staemme: [ { id, stamm, art, ergebnis, bestanden, zeit, pruefer } ],
                 uebergabeAn, uebergabeZeit, uebergabeName },
-  abweichung: ''
+  abweichung: '',
+  abgesetzt:  { zeit, weg: 'link' | 'datei', abdruck } | null
 }
 ```
 
@@ -126,6 +127,20 @@ etwa 5 bis 10 m unter freiem Himmel, deutlich schlechter unter Bewuchs. Wer
 später eine Abweichung von 15 m beurteilt, muss wissen, ob sie gemessen oder
 getippt ist.
 
+**`abgesetzt`** hält fest, dass die Baumeldung dieser Strecke hinausgegangen
+ist: wann, auf welchem Weg und mit welchem Inhalt. Der `abdruck` ist eine
+Prüfsumme über genau das, was `bauVerschlanken()` verschickt (`bauAbdruck()` in
+`js/teilen.js`) – nur über ihn lässt sich „seit dem Absetzen ist etwas
+dazugekommen“ von „unverändert abgesetzt“ unterscheiden. Eine Anzahl von
+Eintragungen bekäme eine geänderte Menge nicht mit.
+
+Der Vermerk bleibt am Gerät und reist nicht mit: für den Planer wäre er die
+Auskunft, wann der Trupp gemeldet hat, und die steht als `gemeldet` in der
+Meldung selbst. Ohne ihn sah der Rückmeldeblock vor und nach dem Absetzen
+gleich aus – nach einer Unterbrechung war am Bauort nicht zu entscheiden, ob
+gemeldet ist. Dann wird entweder doppelt gemeldet, und beim Planer ersetzt die
+zweite Meldung Eintragungen, oder gar nicht.
+
 **`art` und `bauweise`** sagen, was an der Stelle gebaut wurde. Die Art kommt
 aus derselben Liste wie beim geplanten Punkt (`PUNKTARTEN`), seit Schema 15
 um **Sonstiges** ergänzt – der Trupp nimmt auf, was am Ort steht, und nicht
@@ -135,6 +150,18 @@ Feld wie am geplanten Punkt, nur mit der Vorgabe `null` statt „wie die
 Trasse“: am Bauort heißt kein Eintrag „nicht angegeben“, und eine Vorgabe
 stünde auf dem Bogen wie eine Aussage des Trupps. Bestätigt der Trupp eine
 geplante Querung „wie geplant“, geht ihre Bauweise mit.
+
+Seit Schema 16 hat die Art einen dritten Zustand: **noch offen**. Ein Punkt,
+der über „Punkt hier“ oder den Kartentipp entsteht, trägt sie, bis der Trupp
+einen Chip antippt – vorher stand dort „Trassenpunkt“ vorbelegt. Das war
+dieselbe Vorbelegung, die bei der Bauweise aus gutem Grund unterblieb: wer an
+der Muffe steht, unterbrochen wird und „Fertig“ drückt, hatte damit eine Muffe
+als Trassenpunkt dokumentiert – als Aussage des Trupps und nicht als Lücke. Die
+offene Art gibt es nur am aufgenommenen Punkt (`nurIst` in `PUNKTARTEN`, die
+Planung wählt aus `PLANPUNKTARTEN`), sie trägt auf der Marke ein Fragezeichen
+und wird in Liste, Rückmeldeblock und Blatt als offen geführt. Ein Stand von
+vor Schema 16 wird NICHT umgeschrieben: was damals als Trassenpunkt eingetragen
+wurde, ist eine dokumentierte Aussage und keine Lücke.
 
 ## Wie der Verlauf entsteht
 
@@ -219,6 +246,21 @@ Dazu die **Baumeldungen** als Zeitschiene: nach einer abgesprochenen Anzahl
 Kabellängen oder nach befohlener Zeit ist eine Baumeldung an die Anfangsstelle
 durchzugeben (3.5). Wer sie im Werkzeug mitschreibt, hat am Ende die
 Bauzeiten, die sonst niemand rekonstruiert.
+
+## Wer meldet
+
+Trupp und Truppführer standen nur am Bauabschnitt, und der ist freiwillig. Wer
+ohne Abschnitt baute – der Regelfall bei einer Strecke, die ein Trupp allein
+macht –, setzte damit eine Meldung ab, die niemanden nennt: beim Planer hieß
+sie „ohne Bauabschnitt“, und meldete ein zweiter Trupp an derselben Strecke,
+trat dessen Aufnahme an die Stelle der ersten. Gewarnt wurde nur der Planer.
+
+Deshalb trägt die Meldung ein Feld `von`, und der Rückmeldeblock fragt danach –
+zwei Felder unmittelbar über den Absetzgriffen, keine Pflicht. Der Name liegt
+im GERÄTESPEICHER (`fbp.trupp.v1`, verzeichnet in `datenschutz.html`) und nicht
+in der Planung: er sagt, wer gerade am Gerät steht, und geht mit der Baumeldung
+hinaus, nicht mit einer weitergereichten Planung. Wo Bauabschnitte angelegt
+sind, gehen deren Trupps vor – dort steht, wer welchen Teil gebaut hat.
 
 ## Der Weg hin und zurück
 
@@ -389,6 +431,39 @@ geplant und noch offen, stehen dort die drei Wege ihn aufzunehmen. Kein
 Dialog: die Karte bleibt sichtbar und bedienbar, denn der Trupp will sehen,
 WO der Punkt liegt, den er benennt; ein Tipp neben das Blatt schließt es.
 
+**Was eine Wahl erst erzeugt, wird ins Bild gerollt.** „Wie gequert?“ entsteht
+mit dem Chip „Querung“ – und entstand unterhalb der festgehaltenen
+Abschlusszeile: das Blatt misst gedeckelt 313 px, sein Inhalt 636. Wer die
+Frage nicht sah, beantwortete sie nicht, drückte „Fertig“, und die eine Angabe,
+wegen der die Querung aufgenommen wird, fehlte still. Das Blatt rollt jetzt
+hin (`zeigeImBlatt`), sprunghaft und nicht weich – die Bewegung wäre kürzer als
+ihre eigene Dauer, und solange sie läuft, steht der Rollstand weder für den
+Trupp noch für die Geräteprüfung fest. Die Frage nennt sich selbst offen,
+solange keine Bauweise steht, und „Fertig“ sagt beim Schließen, was fehlt.
+
+**Der Rollstand wird gesetzt und nicht dem Browser überlassen.** Ein frisch
+aufgeschlagenes Blatt beginnt oben; wer unten bei der Bemerkung war, bleibt
+dort. Dazwischen lag der Fall, den die Geräteprüfung fand: die Rollverankerung
+des Browsers verschob das Blatt beim Neuaufbau um 2 bis 18 px, und damit stand
+das Schließkreuz nicht mehr ungerollt im Bild (`overflow-anchor: none`).
+
+**Ein Blatt für die gescheiterte Ortung.** „Position nicht verfügbar:“ endete
+mit einem Doppelpunkt, hinter dem auf dem Telefon oft nichts stand – weder
+Ursache noch nächster Schritt. Jetzt nennt jeder der drei Fälle (gesperrt, kein
+Fix, Zeitüberschreitung) den Grund, und das Blatt trägt beide Auswege: noch
+einmal orten und auf der Karte setzen, Letzteres mit allem, was die Aufnahme
+sonst mitbekommen hätte. In die Meldungspille gehört der Griff nicht – die
+nimmt seit dem Gerätelauf ausdrücklich keine Tipps mehr entgegen.
+
+**Quer nutzt das Blatt die Breite.** Bei 667×375 blieben ihm 161 px, davon
+nahmen Kopf und Abschlusszeile 130: rund 40 px für Befund, Chips und Felder,
+und die Chipreihe stand nicht darin – „Querung“ war quer nicht zu beantworten.
+Drei Handgriffe zusammen: die Kopfzeile der Anwendung steht quer einreihig
+(ohne Wortmarke, das Namensfeld gibt nach) und gibt 46 px frei, der Kopf des
+Blattes steht einzeilig, und der Inhalt teilt sich in zwei Spalten – links, was
+angetippt wird, rechts, was geschrieben wird. An die Seite gelegt wäre es der
+falsche Tausch: die schmale Spalte bricht die Chipreihe wieder um.
+
 **Kopf und Abschluss bleiben stehen, der Rest rollt.** Das Blatt war höher als
 die Karte und rollte als Ganzes: bei 390×690 lag „Fertig“ 56 px unter der
 Kante, quer fiel sogar die Chipreihe darunter, derentwegen das Blatt
@@ -517,12 +592,38 @@ Rückweg über „Rückgängig“. Ohne Strecke zeigt der Reiter kein leeres
 Auswahlfeld mehr, sondern den Weg in den Planungsmodus, und im Baumodus bietet
 der Strecken-Reiter kein Zeichnen an – dort wird der Bauauftrag nachgeschlagen.
 
-**Der Bau-Reiter** hat unter der Summe einen Sprungstreifen (Punkte,
-Meldungen, Material, Übergabe, Karte mitnehmen), und der Kachelvorrat steht
-am Ende statt am Anfang: das Mitnehmen geschieht im Depot und nie am Bauort.
+**Der Bau-Reiter** hat einen Sprungstreifen (Punkte, Meldungen, Material,
+Übergabe, Absetzen, Karte mitnehmen, ▤ Doku), und der Kachelvorrat steht am
+Ende statt am Anfang: das Mitnehmen geschieht im Depot und nie am Bauort.
+
+**Der Streifen steht VOR den Kennzahlen.** Dahinter lag seine zweite Reihe bei
+390×690 in der Grundstellung des Reiters halb unter dem festliegenden
+Umschalter Liste/Karte: sichtbar genug, um danach zu greifen, und ein Tipp
+darauf traf den Umschalter und warf den Trupp auf die Karte – betroffen war
+ausgerechnet „Absetzen“. Die Reihenfolge stimmt auch sachlich: erst wohin, dann
+die Zahlen. Aus demselben Grund trägt der Rollbereich jedes Reiters schmal eine
+Polsterung in Höhe des Umschalters – sonst klebt die letzte Zeile unter ihm.
+
+**Der Chip heißt „Karte mitnehmen“ und nicht „Karte“.** Der Umschalter unten
+heißt ebenso und steht gleichzeitig im Bild; ein Tipp auf den falschen führte
+in den Kachelvorrat statt auf die Karte.
+
+**Der Zähler nennt beide Zahlen.** „0 von 4 Punkten“ stand neben „gebaut
+65 m“, wenn der Trupp zwei zusätzliche Punkte aufgenommen hatte – zwei Angaben
+über denselben Sachverhalt, die einander widersprechen. Jetzt steht dort
+„0 von 4 geplanten bestätigt · 2 zusätzlich aufgenommen“, dazu die Zahl der
+Eintragungen ohne Angabe. Der Längenunterschied wird erst ab dem Baustand
+„gebaut“ hervorgehoben: während des Baus ist er keine Abweichung, sondern der
+Rest des Weges.
+
+**Die Zeitfelder haben ein „Jetzt“.** Baubeginn, Bauende und der Zeitpunkt der
+Übergabe blieben leer, weil Datum und Uhrzeit am Bauplatz die teuerste Eingabe
+sind – und damit fehlten im Kopf der Baudokumentation genau die Zeiten, die sie
+belegen soll. Den Griff gab es im Bestand schon, aber nur am Planungskopf.
 
 Geprüft wird das in `scripts/baumodus-pruefen.mjs` (der zweite Weg zu
-denselben Eintragungen) und `scripts/geraete-pruefen.mjs` (Bauleiste höchstens
+denselben Eintragungen, dazu die offene Art, der Absetz-Vermerk samt Abdruck
+und der Absender der Meldung) und `scripts/geraete-pruefen.mjs` (Bauleiste höchstens
 64 px, mehr als die Hälfte der Karte frei, jeder Griff der Punktkarte auf
 Handschuhmaß, quer rollt das Blatt statt überzulaufen). Dort steht das Blatt
 zusätzlich in acht Fenstern auf dem Prüfstand: Kreuz und „Fertig“ ohne Rollen
@@ -674,6 +775,9 @@ Leere laufen lässt.
 | Viertes Blatt | Baudokumentation, ersetzt die Technische Fernmeldeskizze |
 | Bedienung am Telefon | die Karte: Bauleiste und Punktkarte; die Liste bleibt der Bogen |
 | Was am Punkt steht | Art aus `PUNKTARTEN` samt „Sonstiges“, an der Querung die Bauweise; ein Tipp schreibt |
+| Ohne Tipp | keine Art – „noch offen“ statt vorbelegtem Trassenpunkt (Schema 16) |
+| Nach dem Absetzen | Vermerk mit Zeit, Weg und Abdruck im `bau`-Block; bleibt am Gerät |
+| Wer meldet | Trupp und Truppführer im Gerätespeicher, als `von` in der Meldung |
 | Der Plan im Baumodus | angetippt, nicht gezogen – ändern heißt umschalten |
 | Lichtbilder | vertagt in Stufe 6 |
 
@@ -693,6 +797,13 @@ Leere laufen lässt.
   dann, die Baumeldung nimmt sie aber nicht mit. Sie braucht ihre volle
   Soll-Geometrie und beim Planer einen eigenen Entschluss; bis dahin ist der
   Weg für diesen Fall die ganze Planungsdatei.
+
+- **Quer bleibt die Chipreihe angeschnitten.** Kopfzeile und Blattkopf sind
+  einreihig, der Inhalt steht zweispaltig – die erste Chipreihe reicht damit
+  bis an die Abschlusszeile und ist mit einer kurzen Rollbewegung zu treffen,
+  nicht ohne. Was wirklich fehlt, ist Höhe über der Karte: quer liegen
+  Kopfzeile und Speicherband vor ihr. Der nächste Schritt wäre, die Kopfzeile
+  im Baumodus auf Verlangen einzuklappen.
 
 - **Die Werkzeugleiste der Planung deckt am Telefon quer ein Fünftel der
   Karte.** Im Baumodus ist das gelöst – dort ist sie ein Streifen –, in der
