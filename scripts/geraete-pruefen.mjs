@@ -7,11 +7,20 @@
 // (die `::after`-Aufweitungen also eingerechnet), Überdeckungen und ob eine
 // Fläche, die höher ist als der Schirm, überhaupt rollt.
 //
-// Vier Größen, jede aus einem Grund:
+// Vier Gerätemaße, jedes aus einem Grund:
 //   360×740  kleines Android – die engste Ansicht, die vorkommt
 //   390×844  iPhone hoch     – der Normalfall am Bauort
 //   844×390  iPhone quer     – dort war das Dateimenü eine Sackgasse
 //   820×1180 iPad hoch       – zwischen Schmal- und Breitansicht
+//
+// Dazu vier Fenster, bei denen die Browserleisten schon abgezogen sind – das
+// Gerätemaß ist das Glas, die Anwendung bekommt weniger. Die Nutzerfotos des
+// Mobil-Audits entstanden in Safari mit Adressleiste, und die meisten
+// Höhenbefunde entstehen erst dort:
+//   320×568  iPhone SE der ersten Generation – die engste Höhe, die vorkommt
+//   375×667  iPhone 8 mit Leisten
+//   390×690  iPhone 12–15 in Safari mit Adressleiste – so sahen die Fotos aus
+//   667×375  iPhone 8 quer mit Leisten
 //
 //     node scripts/geraete-pruefen.mjs
 //     CHROMIUM=/usr/bin/chromium node scripts/geraete-pruefen.mjs
@@ -36,6 +45,26 @@ const TASTFEHLER = 1;
 /* Unter 16 px zoomt Safari auf iOS beim Fokus in ein Feld hinein und kehrt
    nicht von selbst zurück. Das ist keine Empfehlung, sondern eine Grenze. */
 const SCHRIFT = 16;
+
+/* Alle acht Fenster, in denen die Kartenaufsätze durchgemessen werden. Die
+   Gerätemaße stehen mit dabei: was am Glas noch passt, kann mit Leisten schon
+   vom Blatt fallen, und die Tabelle am Ende zeigt beides nebeneinander. */
+const FENSTER = [
+  [320, 568], [360, 740], [375, 667], [390, 690], [390, 844], [820, 1180],
+  [667, 375], [844, 390]
+];
+
+/* Die freie Kartenfläche als Anteil der Fensterhöhe – das ist die Abnahme für
+   die Pakete, die auf das Mobil-Audit folgen. Sie darf heute rot sein: sie
+   benennt den Ausgangsstand, gegen den gebaut wird, und bricht den Lauf nicht
+   ab. Die Zahlen kommen aus der Bauleiste: dort hält das Projekt „mehr als die
+   Hälfte der Karte frei“ schon am Gerätemaß, mit Leisten bleiben davon rund
+   45 %. Der Planungsmodus trägt sechs Werkzeuge statt vier, das offene Blatt
+   der Punktkarte braucht selbst die Hälfte – deshalb die beiden kleineren
+   Werte. */
+const FREI_PLANUNG = 0.35;
+const FREI_BAU = 0.45;
+const FREI_PUNKTKARTE = 0.30;
 
 const server = await starteServer(WURZEL);
 const browser = await starteBrowser();
@@ -126,6 +155,186 @@ const MESSHILFEN = `
         if (suche(regeln)) return true;
       }
       return false;
+    },
+    /* Was kein Element findet, hat nichts bestanden – dieselbe Regel wie bei
+       felderListe unten: eine Prüfung, die ins Leere greift, ließe genau die
+       Änderung durch, die das Element umbenannt oder entfernt hat. Deshalb
+       wirft jeder Zugriff der Fensterprüfungen, statt still null zu liefern;
+       der Fall wird dann als durchgefallen gezählt, nicht als bestanden. */
+    muss(wahl, raum) {
+      const e = (raum || document).querySelector(wahl);
+      if (!e) throw new Error('Nicht gefunden: ' + wahl);
+      return e;
+    },
+    /* Das Rechteck eines Elements, das wirklich da ist – sonst null. Ein
+       ausgeblendetes hat keine Client-Rechtecke, ein leeres deckt nichts. */
+    kasten(el) {
+      if (!el || !el.getClientRects().length) return null;
+      if (getComputedStyle(el).visibility === 'hidden') return null;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 ? r : null;
+    },
+    /* Ein kurzer Name für das, was elementFromPoint geliefert hat: so steht
+       im Befund, WAS den Griff verdeckt, nicht nur, dass er verdeckt ist. Ein
+       namenloses span (das „+“ der Zoomsteuerung) sagt nichts – genannt wird
+       der nächste Vorfahr, der eine Kennung oder Klasse trägt. Die
+       Zeichenkette liegt in einem Template-Literal, deshalb der doppelte
+       Rückstrich vor dem s. */
+    name(p) {
+      while (p && !p.id && !(typeof p.className === 'string' && p.className.trim())) {
+        p = p.parentElement;
+      }
+      if (!p) return 'außerhalb';
+      if (p.id) return '#' + p.id;
+      return '.' + p.className.trim().split(/\\s+/).slice(0, 2).join('.');
+    },
+    /* Ein Griff ist treffbar, wenn jeder Punkt seiner Fläche ihn trifft – nicht
+       nur die Mitte. Halb verdeckt heißt am Bauort: die eine Hälfte zoomt, die
+       andere schließt. Getastet im 4-px-Raster; zurück kommt der Anteil und,
+       was stattdessen getroffen wurde – das ist der Befund. Ein Vorfahr zählt
+       nicht als Verdeckung: an einer abgerundeten Ecke liegt das Elternelement
+       frei, und das ist die Form des Knopfes, nichts, was auf ihm liegt. */
+    deckung(el) {
+      const r = el.getBoundingClientRect();
+      const fremd = new Map();
+      let punkte = 0;
+      for (let y = r.top + 3; y < r.bottom - 1; y += 4) {
+        for (let x = r.left + 3; x < r.right - 1; x += 4) {
+          punkte++;
+          const p = document.elementFromPoint(x, y);
+          if (p === el || el.contains(p) || (p && p.contains(el))) continue;
+          const n = window._g.name(p);
+          fremd.set(n, (fremd.get(n) || 0) + 1);
+        }
+      }
+      const verdeckt = [...fremd.values()].reduce((a, b) => a + b, 0);
+      return {
+        anteil: punkte ? verdeckt / punkte : 1,
+        durch: [...fremd.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n)
+      };
+    },
+    /* Lage eines Griffs in einem Satz Zahlen: ganz im Bild (auch innerhalb
+       seiner rollenden Hülle), Ober- und Unterkante, wovon er verdeckt ist –
+       und welcher Rahmen ihn abschneidet, wenn er nicht im Bild ist: das
+       Fenster oder eine rollende Hülle wie das Blatt der Punktkarte. Ohne
+       den Rahmen liest sich „Unterkante 611 im 690 hohen Fenster“ wie ein
+       Widerspruch. */
+    lage(el) {
+      const d = window._g.deckung(el);
+      const r = el.getBoundingClientRect();
+      let rahmen = 'Fenster 0–' + innerHeight;
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        const c = getComputedStyle(p);
+        if (!/auto|scroll|hidden/.test(c.overflowY + c.overflowX)) continue;
+        const h = p.getBoundingClientRect();
+        if (r.top < h.top || r.bottom > h.bottom) {
+          rahmen = window._g.name(p) + ' zeigt ' + Math.round(h.top) + '–' + Math.round(h.bottom);
+          break;
+        }
+      }
+      return { imBild: window._g.imBild(el), oben: Math.round(r.top), unten: Math.round(r.bottom),
+               verdeckt: d.anteil, durch: d.durch, rahmen };
+    },
+    /* Die freie Kartenfläche: die Höhe von #karte abzüglich des Bandes, das
+       oben belegt ist (Kartenoptionen, Zoomsteuerung, Popup), und dessen, was
+       unten darüberliegt (Statusleiste, Werkzeuge bzw. Bauleiste, Punktkarte,
+       Modusleiste, Maßstab, Quellenzeile, Hinweisbox). Gerechnet in Bändern,
+       nicht in Flächen: der Streifen Karte neben der Zoomsteuerung ist keine
+       Arbeitsfläche, auf der sich eine Trasse antippen ließe. Als Anteil der
+       Fensterhöhe, damit die Zahl zwischen den Fenstern vergleichbar bleibt –
+       und weil das Fenster ist, was der Nutzer in der Hand hat. */
+    freieKarte() {
+      const karte = window._g.muss('#karte').getBoundingClientRect();
+      const OBEN = ['.kartenoptionen', '.leaflet-control-zoom', '.leaflet-popup'];
+      const UNTEN = ['.statusleiste', '.werkzeuge', '#punktkarte', '.zeichen-hinweis',
+                     '.leaflet-control-scale', '.leaflet-control-attribution', '.hinweisbox'];
+      const ueberlappt = r => r.bottom > karte.top && r.top < karte.bottom &&
+                              r.right > karte.left && r.left < karte.right;
+      const belegt = [];
+      let oben = karte.top, unten = karte.bottom;
+      for (const wahl of OBEN) for (const el of document.querySelectorAll(wahl)) {
+        const r = window._g.kasten(el);
+        if (!r || !ueberlappt(r)) continue;
+        oben = Math.max(oben, Math.min(r.bottom, karte.bottom));
+        belegt.push(wahl + ' bis ' + Math.round(r.bottom));
+      }
+      for (const wahl of UNTEN) for (const el of document.querySelectorAll(wahl)) {
+        const r = window._g.kasten(el);
+        if (!r || !ueberlappt(r)) continue;
+        unten = Math.min(unten, Math.max(r.top, karte.top));
+        belegt.push(wahl + ' ab ' + Math.round(r.top));
+      }
+      const frei = Math.max(0, unten - oben);
+      return { frei: Math.round(frei), karte: Math.round(karte.height),
+               oben: Math.round(oben), unten: Math.round(unten),
+               anteil: frei / innerHeight, belegt };
+    },
+    /* Ein freier Fleck in der oberen rechten Kartenhälfte, auf den sich tippen
+       lässt: Kacheln oder der Kartenboden, keine Marke, kein Aufsatz. Gesucht
+       wird in einem kleinen Raster, denn wo die Trasse liegt, hängt vom
+       Fenster ab. Findet sich keiner, ist das selbst der Befund. */
+    freierFleck() {
+      const karte = window._g.muss('#karte').getBoundingClientRect();
+      const versuche = [];
+      /* Von oben nach unten: je höher der Tipp, desto eher schiebt sich das
+         Popup unter die Kartenoptionen – dort fand das Audit den Fall. */
+      for (const fy of [0.2, 0.3, 0.4, 0.5]) for (const fx of [0.65, 0.55, 0.8, 0.9]) {
+        const x = Math.round(karte.left + karte.width * fx);
+        const y = Math.round(karte.top + karte.height * fy);
+        const p = document.elementFromPoint(x, y);
+        const frei = !!p && !!p.closest('#karte') &&
+          !p.closest('.leaflet-marker-pane, .leaflet-overlay-pane, ' +
+                     '.leaflet-control, .leaflet-popup');
+        if (frei) return { x, y };
+        versuche.push(window._g.name(p));
+      }
+      return { x: null, y: null, getroffen: [...new Set(versuche)] };
+    },
+    kartenoptionen() {
+      const tafel = window._g.muss('#kartenoptionen');
+      const zeilen = [...tafel.querySelectorAll('.ko-zeile')].filter(z => window._g.kasten(z));
+      if (!zeilen.length) throw new Error('Keine Zeile in den Kartenoptionen');
+      const rollt = [tafel, tafel.querySelector('.ko-koerper')].some(e => e &&
+        /auto|scroll/.test(getComputedStyle(e).overflowY) && e.scrollHeight > e.clientHeight + 1);
+      /* Eine Zeile im Bild muss zu treffen sein; eine außerhalb ist nur dann
+         in Ordnung, wenn die Tafel rollt und sie so heranzuholen ist. */
+      const fehl = zeilen
+        .filter(z => window._g.imBild(z) ? window._g.deckung(z).anteil > 0 : !rollt)
+        .map(z => (z.querySelector('span') || z).textContent.trim().slice(0, 22));
+      return { unten: Math.round(tafel.getBoundingClientRect().bottom), schirm: innerHeight,
+               rollt, zeilen: zeilen.length, fehl };
+    },
+    dateimenue() {
+      const m = window._g.muss('.menu');
+      if (m.hidden) throw new Error('Das Dateimenü ist zu');
+      /* Ans Ende gerollt: erreichbar heißt hier nicht „gerade zu sehen“,
+         sondern „nach dem Rollen zu treffen“ – das Menü rollt absichtlich. */
+      m.scrollTop = m.scrollHeight;
+      const letzter = [...m.querySelectorAll('button, a')].filter(e => window._g.kasten(e)).pop();
+      if (!letzter) throw new Error('Kein Eintrag im Dateimenü');
+      return { text: letzter.textContent.trim(), ...window._g.lage(letzter) };
+    },
+    zoom() {
+      const griffe = [...document.querySelectorAll('.leaflet-control-zoom a')]
+        .filter(window._g.imBild);
+      if (!griffe.length) throw new Error('Keine Zoomsteuerung im Bild');
+      const masse = griffe.map(a => window._g.treffer(a));
+      return {
+        kleinste: Math.min(...masse.map(m => Math.min(m.breite, m.hoehe))),
+        griffe: griffe.map((a, i) => (a.title || a.className).slice(0, 12) +
+                                     ' ' + masse[i].breite + '×' + masse[i].hoehe)
+      };
+    },
+    async punktkarte() {
+      const pk = window._g.muss('#punktkarte');
+      if (pk.hidden) throw new Error('Die Punktkarte ist zu');
+      /* Das Blatt kommt von unten herein – gemessen wird, wo es steht. */
+      await Promise.all(pk.getAnimations().map(a => a.finished.catch(() => {})));
+      const zu = window._g.muss('.pk-zu', pk);
+      const fertig = [...pk.querySelectorAll('.pk-tasten button')]
+        .find(b => b.textContent.trim() === 'Fertig');
+      if (!fertig) throw new Error('Kein „Fertig“ in der Punktkarte');
+      return { gerollt: pk.scrollTop, zu: window._g.lage(zu), fertig: window._g.lage(fertig) };
     }
   };
   return true;`;
@@ -363,6 +572,243 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
   await seite.ruhe();
 
+  // ------------------------------------------------------------ Acht Fenster
+
+  /* Jedes Fenster bekommt denselben Satz Messungen: erst die Planung mit
+     Werkzeugleiste, dann der Baumodus mit Bauleiste, Popup und Punktkarte.
+     Ein Fall, der in der Seite ins Leere greift, fällt durch und der Lauf
+     geht weiter – wer acht Fenster misst, will alle Befunde sehen und nicht
+     den ersten je Lauf. Die Werte sammeln sich für die Tabelle am Ende. */
+  const uebersicht = new Map();
+  const fensterName = (br, ho) => `${br}×${ho}`;
+  async function fall(fenster, zeile, text, messen) {
+    let gut = false, kurz = '';
+    try {
+      const erg = await messen();
+      gut = erg.gut; kurz = erg.kurz || ''; text += erg.text ? ' – ' + erg.text : '';
+    } catch (f) {
+      kurz = 'Fehler'; text += ' – ' + f.message.replace(/^In der Seite: Error: /, '');
+    }
+    b.pruefe(gut, text);
+    if (!uebersicht.has(zeile)) uebersicht.set(zeile, new Map());
+    uebersicht.get(zeile).set(fenster, (gut ? '✓' : '✗') + (kurz ? ' ' + kurz : ''));
+  }
+  const prozent = a => Math.round(a * 100) + ' %';
+  const freiText = m => `${m.frei} von ${m.karte} px Karte frei (${m.oben}–${m.unten}), ` +
+    `${prozent(m.anteil)} des Fensters; belegt: ${m.belegt.join(', ')}`;
+  const hinweisWeg = () => seite.warteAuf('document.getElementById("hinweisbox").hidden', 8000);
+  const kartenoptionenZu = async zu => {
+    const istZu = await seite.auswerten(
+      'document.getElementById("kartenoptionen").classList.contains("zu")');
+    if (istZu !== zu) await seite.klick('#ko-kopf');
+    await seite.ruhe();
+  };
+  const karteVorn = async () => {
+    await seite.auswerten('document.getElementById("aw-karte").click(); return true;');
+    /* Die Liste schiebt sich in 280 ms zur Seite – gemessen wird, wo alles
+       stehen bleibt. */
+    await new Promise(r => setTimeout(r, 450));
+  };
+  const griffText = (name, l) => !l.imBild
+    ? `${name} nicht ohne Rollen im Bild (${l.oben}–${l.unten}, ${l.rahmen})`
+    : l.verdeckt ? `${name} im Bild, zu ${prozent(l.verdeckt)} verdeckt von ${l.durch.join(', ')}`
+    : `${name} im Bild und treffbar`;
+  const griffGut = l => l.imBild && l.verdeckt === 0;
+  /* Der Gerätestandort für „Punkt hier“ – ohne ihn gäbe es keine Punktkarte
+     zu messen. */
+  await seite.standort(51.802, 10.618, 7);
+
+  for (const [breite, hoehe] of FENSTER) {
+    const fenster = fensterName(breite, hoehe);
+    b.abschnitt(`Fenster ${fenster}: Planung mit Werkzeugleiste`);
+    await stelleEin(breite, hoehe);
+    await karteVorn();
+    await kartenoptionenZu(true);
+    await hinweisWeg();
+
+    await fall(fenster, 'Karte frei – Planung mit Werkzeugleiste',
+      `Freie Kartenfläche ≥ ${prozent(FREI_PLANUNG)}`,
+      async () => {
+        const m = await seite.auswerten('window._g.freieKarte()');
+        return { gut: m.anteil >= FREI_PLANUNG, kurz: prozent(m.anteil),
+                 text: freiText(m) };
+      });
+    await fall(fenster, 'Zoomsteuerung ≥ 44 px',
+      'Leaflet-Zoomsteuerung trägt 44 px unter pointer: coarse',
+      async () => {
+        if (!(await seite.auswerten('matchMedia("(pointer: coarse)").matches'))) {
+          throw new Error('kein grober Zeiger – die Regeln für den Finger gelten nicht');
+        }
+        const z = await seite.auswerten('window._g.zoom()');
+        return { gut: z.kleinste >= GRIFF - TASTFEHLER, kurz: z.kleinste + ' px',
+                 text: z.griffe.join(', ') };
+      });
+    await kartenoptionenZu(false);
+    await fall(fenster, 'Kartenoptionen (Planung) im Fenster oder rollbar',
+      'Kartenoptionen aufgeklappt: ganz im Fenster oder innen rollbar',
+      async () => {
+        const k = await seite.auswerten('window._g.kartenoptionen()');
+        const gut = k.unten <= k.schirm && k.fehl.length === 0;
+        return { gut, kurz: gut ? '' : k.unten > k.schirm ? `bis ${k.unten}`
+                   : `${k.fehl.length} Zeile${k.fehl.length === 1 ? '' : 'n'}`,
+                 text: `Unterkante ${k.unten} im ${k.schirm} hohen Fenster, ${k.zeilen} Zeilen, ` +
+                       (k.rollt ? 'rollt' : 'rollt nicht') +
+                       (k.fehl.length ? `; nicht zu treffen: ${k.fehl.join(', ')}` : '') };
+      });
+    await kartenoptionenZu(true);
+
+    await seite.klick('#btn-datei');
+    await seite.warteAuf('!document.querySelector(".menu").hidden');
+    await fall(fenster, 'Dateimenü: „Datenschutz“ treffbar',
+      'Dateimenü: der letzte Eintrag „Datenschutz“ ist nach dem Rollen zu treffen',
+      async () => {
+        const d = await seite.auswerten('window._g.dateimenue()');
+        if (!/Datenschutz/.test(d.text)) throw new Error('Letzter Eintrag ist „' + d.text + '“');
+        return { gut: griffGut(d),
+                 kurz: griffGut(d) ? '' : d.imBild ? 'verdeckt' : `bis ${d.unten}`,
+                 text: griffText('„Datenschutz“', d) };
+      });
+    await seite.taste('Escape');
+
+    b.abschnitt(`Fenster ${fenster}: Baumodus mit Bauleiste`);
+    await seite.klick('#btn-modus');
+    await karteVorn();
+    await kartenoptionenZu(true);
+    await hinweisWeg();
+    await fall(fenster, 'Karte frei – Baumodus mit Bauleiste',
+      `Freie Kartenfläche ≥ ${prozent(FREI_BAU)}`,
+      async () => {
+        const m = await seite.auswerten('window._g.freieKarte()');
+        return { gut: m.anteil >= FREI_BAU, kurz: prozent(m.anteil),
+                 text: freiText(m) };
+      });
+    await kartenoptionenZu(false);
+    await fall(fenster, 'Kartenoptionen (Bau) im Fenster oder rollbar',
+      'Kartenoptionen im Baumodus: ganz im Fenster oder innen rollbar',
+      async () => {
+        const k = await seite.auswerten('window._g.kartenoptionen()');
+        const gut = k.unten <= k.schirm && k.fehl.length === 0;
+        return { gut, kurz: gut ? '' : k.unten > k.schirm ? `bis ${k.unten}`
+                   : `${k.fehl.length} Zeile${k.fehl.length === 1 ? '' : 'n'}`,
+                 text: `Unterkante ${k.unten} im ${k.schirm} hohen Fenster, ${k.zeilen} Zeilen, ` +
+                       (k.rollt ? 'rollt' : 'rollt nicht') +
+                       (k.fehl.length ? `; nicht zu treffen: ${k.fehl.join(', ')}` : '') };
+      });
+    await kartenoptionenZu(true);
+
+    /* Ein Tipp auf die Karte hebt zuerst eine Auswahl auf und öffnet erst
+       beim zweiten das Popup – die Strecke ist seit dem Zeichnen gewählt. */
+    await seite.auswerten('window.fbp.sl.waehle(null); return true;');
+    await seite.ruhe();
+    await fall(fenster, 'Koordinaten-Popup: Primärknopf frei',
+      'Koordinaten-Popup oben rechts: „Punkt hier aufnehmen“ nicht verdeckt',
+      async () => {
+        const fleck = await seite.auswerten('window._g.freierFleck()');
+        if (fleck.x === null) {
+          throw new Error('kein freier Fleck in der oberen rechten Kartenhälfte, getroffen: ' +
+                          fleck.getroffen.join(', '));
+        }
+        await seite.tippe(fleck.x, fleck.y);
+        await seite.warteAuf('!!document.querySelector(".leaflet-popup .kp-primaer")', 3000)
+          .catch(() => {
+            throw new Error(`nach dem Tipp auf (${fleck.x}, ${fleck.y}) öffnet kein Popup`);
+          });
+        await seite.ruhe();
+        const l = await seite.auswerten(
+          'window._g.lage(window._g.muss(".leaflet-popup .kp-primaer"))');
+        return { gut: griffGut(l),
+                 kurz: griffGut(l) ? '' : l.imBild ? `${prozent(l.verdeckt)} zu` : `bis ${l.unten}`,
+                 text: griffText('Primärknopf', l) + ` nach Tipp auf (${fleck.x}, ${fleck.y})` };
+      });
+    await seite.auswerten('window.fbp.karte.closePopup(); return true;');
+    await seite.ruhe();
+
+    b.abschnitt(`Fenster ${fenster}: Baumodus mit offener Punktkarte`);
+    /* Nicht auf das Verschwinden der Meldung „Aufgenommen: …“ warten: sie steht
+       3,2 s, und genau in dieser Zeit tippt der Trupp auf „Fertig“ oder eine
+       Punktart. Verdeckt sie den Griff, ist das der Befund, nicht ein Zufall
+       der Messung. */
+    await seite.klick('#wz-punkt-hier');
+    await seite.warteAuf('!document.getElementById("punktkarte").hidden', 8000)
+      .catch(() => {});
+    await new Promise(r => setTimeout(r, 450));
+    const punktkarteFaelle = async zusatz => {
+      const spalte = zusatz ? ' (Querung)' : '';
+      await fall(fenster, 'Punktkarte: ✕ im Bild und treffbar' + spalte,
+        `Nach „Punkt hier“${zusatz ? ' mit Punktart Querung' : ''}: ` +
+        'das Schließkreuz steht ohne Rollen im Bild und ist zu treffen',
+        async () => {
+          const p = await seite.auswerten('return await window._g.punktkarte();');
+          const gut = griffGut(p.zu) && p.gerollt === 0;
+          return { gut,
+                   kurz: gut ? '' : p.zu.imBild ? `${prozent(p.zu.verdeckt)} zu` : `bis ${p.zu.unten}`,
+                   text: griffText('✕', p.zu) +
+                         (p.gerollt ? `, Blatt um ${p.gerollt} px gerollt` : '') };
+        });
+      await fall(fenster, 'Punktkarte: ✕ nicht unter dem Zoom' + spalte,
+        'Das Schließkreuz liegt nicht unter der Leaflet-Zoomsteuerung',
+        async () => {
+          const p = await seite.auswerten('return await window._g.punktkarte();');
+          const zoom = p.zu.durch.filter(n => /leaflet-control-zoom/.test(n));
+          return { gut: zoom.length === 0,
+                   text: zoom.length ? 'verdeckt von ' + zoom.join(', ') : 'frei' };
+        });
+      await fall(fenster, 'Punktkarte: „Fertig“ im Bild und treffbar' + spalte,
+        '„Fertig“ steht ohne Rollen im Bild und ist zu treffen',
+        async () => {
+          const p = await seite.auswerten('return await window._g.punktkarte();');
+          const gut = griffGut(p.fertig) && p.gerollt === 0;
+          return { gut,
+                   kurz: gut ? '' : p.fertig.imBild ? `${prozent(p.fertig.verdeckt)} zu`
+                                                    : `bis ${p.fertig.unten}`,
+                   text: griffText('„Fertig“', p.fertig) };
+        });
+    };
+    await punktkarteFaelle(false);
+    await fall(fenster, 'Karte frei – Punktkarte offen',
+      `Freie Kartenfläche bei offener Punktkarte ≥ ${prozent(FREI_PUNKTKARTE)}`,
+      async () => {
+        if (await seite.auswerten('document.getElementById("punktkarte").hidden')) {
+          throw new Error('Die Punktkarte ist zu');
+        }
+        const m = await seite.auswerten('window._g.freieKarte()');
+        return { gut: m.anteil >= FREI_PUNKTKARTE, kurz: prozent(m.anteil),
+                 text: freiText(m) };
+      });
+    /* Die Querung bringt die zweite Chipreihe – „Wie gequert?“ – und damit
+       die Höhe, bei der das Blatt auf dem Foto vom Blatt fiel. */
+    await seite.auswerten(
+      'window._g.muss("#punktkarte .pk-chip[data-wert=querung]").click(); return true;')
+      .catch(() => {});
+    await seite.warteAuf('!!document.querySelector("#punktkarte .pk-frage")', 3000).catch(() => {});
+    await punktkarteFaelle(true);
+    await seite.taste('Escape');
+    /* Jedes Fenster beginnt mit derselben Planung: der eben aufgenommene
+       Punkt geht wieder, sonst stapeln sich acht Marken auf einem Fleck. */
+    await seite.auswerten(`
+      window.fbp.store.aendern(p => {
+        if (p.strecken[0].bau) p.strecken[0].bau.punkte = [];
+      }, 'bau');
+      return true;`);
+    await seite.klick('#btn-modus');
+    await hinweisWeg();
+  }
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.ruhe();
+
+  /* Die Tabelle: eine Zeile je Prüfung, eine Spalte je Fenster – so ist auf
+     einen Blick zu sehen, ab welcher Höhe ein Griff vom Blatt fällt. „zu“
+     heißt: zu diesem Anteil verdeckt; „bis“ nennt die Unterkante in einem
+     Fenster, das darüber endet. */
+  console.log('\n  Übersicht je Fenster (zu = Anteil verdeckt, bis = Unterkante außerhalb)');
+  const spalten = FENSTER.map(([br, ho]) => fensterName(br, ho));
+  const sb = 11, sz = 52;
+  console.log('  ' + ''.padEnd(sz) + spalten.map(f => f.padStart(sb)).join(''));
+  for (const [zeile, werte] of uebersicht) {
+    console.log('  ' + zeile.padEnd(sz) +
+      spalten.map(f => (werte.get(f) || '–').padStart(sb)).join(''));
+  }
+
   // ------------------------------------------------------------ Querformat
 
   b.abschnitt('Querformat: das Dateimenü war eine Sackgasse');
@@ -446,7 +892,7 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   // ------------------------------------------------------------ Kein Überlauf
 
   b.abschnitt('Keine Ansicht läuft waagerecht über');
-  for (const [breite, hoehe] of [[360, 740], [390, 844], [844, 390], [768, 1024], [820, 1180]]) {
+  for (const [breite, hoehe] of [...FENSTER, [768, 1024]]) {
     await stelleEin(breite, hoehe);
     const ueber = await seite.auswerten(
       'document.documentElement.scrollWidth - document.documentElement.clientWidth');

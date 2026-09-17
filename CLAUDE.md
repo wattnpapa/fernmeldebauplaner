@@ -178,16 +178,26 @@ Nach jeder Änderung an der Oberfläche, die Maße, Abstände, Schriftgrößen o
 node scripts/geraete-pruefen.mjs
 ```
 
-Misst die Anwendung in vier Gerätegrößen mit Fingerbedienung: 360×740,
-390×844, 844×390 und 820×1180. Geprüft werden die wirksamen Trefferzonen
-(die `::after`-Aufweitungen also eingerechnet, getastet mit
+Misst die Anwendung in vier Gerätegrößen mit Fingerbedienung (360×740,
+390×844, 844×390 und 820×1180) und in vier Fenstern, bei denen die
+Browserleisten schon abgezogen sind (320×568, 375×667, 390×690 und 667×375 –
+so entstanden die Nutzerfotos des Mobil-Audits). Geprüft werden die wirksamen
+Trefferzonen (die `::after`-Aufweitungen also eingerechnet, getastet mit
 `elementFromPoint`), die Schriftgröße jedes Eingabefeldes gegen die
 16-Pixel-Grenze von iOS, der sichere Rand des Geräts, ob eine Fläche, die
 höher ist als der Schirm, überhaupt rollt, und ob eine Ansicht waagerecht
-überläuft. Zwei Regeln dieser Prüfung sind aus Fehlern entstanden und
-stehen dort kommentiert: `offsetParent` taugt in der Schmalansicht nicht als
-Sichtbarkeitsprobe, und seit CSS-Nesting trägt jede Stilregel eine – leere,
-also wahre – `cssRules`-Liste.
+überläuft. In jedem der acht Fenster kommt dazu die freie Kartenfläche als
+Anteil der Fensterhöhe (Planung mit Werkzeugleiste, Baumodus mit Bauleiste,
+Baumodus mit offener Punktkarte), die Punktkarte nach „Punkt hier“ mit und
+ohne Querung, das Koordinaten-Popup, die aufgeklappten Kartenoptionen, das
+Dateimenü und die Zoomsteuerung; die Tabelle am Ende des Laufs zeigt alles je
+Fenster nebeneinander. Die Schwellen für die freie Kartenfläche sind die
+Abnahme für die Pakete nach dem Audit und dürfen so lange rot sein. Drei
+Regeln dieser Prüfung sind aus Fehlern entstanden und stehen dort kommentiert:
+`offsetParent` taugt in der Schmalansicht nicht als Sichtbarkeitsprobe, seit
+CSS-Nesting trägt jede Stilregel eine – leere, also wahre – `cssRules`-Liste,
+und ein Fall, der kein einziges Element findet, gilt als durchgefallen, nicht
+als bestanden.
 
 Nach jeder Änderung am Offline-Weg (`sw.js`, `js/kacheln.js`, die Kachelebene in
 `js/map.js`, die Registrierung in `js/app.js`):

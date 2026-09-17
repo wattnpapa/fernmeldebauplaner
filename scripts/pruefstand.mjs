@@ -334,6 +334,17 @@ async function neueSeite(befehl, horcher) {
       await seite.ruhe();
     },
 
+    /* Ein Fingertipp, kein Mausklick: in der Schmalansicht mit Berührung wird
+       so getippt, wie am Bauort – und was unter dem Finger liegt, entscheidet
+       der Browser mit seiner Trefferprüfung, nicht `click()` auf einem Element,
+       das die Prüfung sich ausgesucht hat. Nur so fällt auf, wenn eine Leiste
+       oder eine Meldung den Tipp abfängt. */
+    async tippe(x, y) {
+      await an('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await an('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await seite.ruhe();
+    },
+
     /* Der Wert wird gesetzt und beide Ereignisse werden ausgelöst: die
        Oberfläche hört teils auf `input`, teils auf `change`. Wer nur eines
        schickt, prüft die halbe Verdrahtung. */
