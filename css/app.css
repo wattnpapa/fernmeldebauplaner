@@ -301,6 +301,11 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 /* ---------------------------------------------------------------- Layout */
 
 .hauptbereich { position: relative; display: grid; grid-template-columns: var(--seite-breite) 1fr; min-height: 0; }
+/* Die dritte Zeile des Rasters ausdrücklich, nicht der Reihe nach: schmal
+   verschwindet das Speicherband darüber, und ohne diese Zeile rückte der
+   Hauptbereich in dessen auto-Zeile – die Karte fiel dann auf die Höhe ihres
+   Inhalts zusammen, also auf nichts. */
+.hauptbereich { grid-row: 3; }
 body.seite-zu .hauptbereich { grid-template-columns: 0 1fr; }
 body.seite-zu .seite { display: none; }
 /* Der Kartenbereich steht in der zweiten Spalte, und zwar ausdrücklich. Ohne
@@ -2453,6 +2458,17 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
      statt als Punkt, den niemand deuten kann. */
   .speicherstatus { display: none; }
   .sb-stand { display: inline; flex-shrink: 0; }
+  /* Schmal ist dieses Band die teuerste Zeile der Anwendung: es liegt zwischen
+     Kopfzeile und Karte und nimmt der Karte Höhe, sagte aber im Regelfall nur,
+     was ohnehin immer gilt. Deshalb erscheint es hier nur, wenn es etwas zu
+     entscheiden gibt – eine nie gesicherte Planung, ein Speicherfehler oder
+     eine Meldung des eigenen Speichers. Der Satz über den Browserspeicher
+     entfällt schmal ganz: er ändert sich nie, steht im Dialog „Gespeicherte
+     Planungen“ und unter „Datenschutz“, und „Noch nie als Datei gesichert.“
+     sagt daneben das Handfeste. Gesichert wird weiterhin über das Dateimenü. */
+  .speicherband { display: none; }
+  .speicherband.mahnung, .speicherband:has(.sb-cloud:not([hidden])) { display: flex; }
+  .speicherband .sb-text { display: none; }
   .speicherband.mahnung { background: var(--warnung-flaeche); border-bottom-color: var(--warnung-linie); color: var(--warnung-tief); }
   .speicherband.mahnung .sb-stand { font-weight: 650; }
   .speicherband.mahnung .knopf { border-color: var(--warnung-linie-stark); color: var(--warnung-tief); }
@@ -2549,12 +2565,13 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
 }
 
 @media (max-width: 600px) {
-  /* Der Hinweis darf umbrechen statt abgeschnitten zu werden – auf kleinen
-     Geräten ist die Aussage wichtiger als die eine Zeile. */
-  .speicherband { flex-wrap: wrap; gap: 4px 10px; }
-  .speicherband .sb-text { white-space: normal; flex: 1 1 100%; }
-  /* Stand und Sicherungsknopf teilen sich die zweite Zeile */
-  .sb-stand { flex: 1 1 auto; min-width: 0; }
+  /* Stand und Sicherungsknopf teilen sich eine Zeile: der Satz über den
+     Browserspeicher ist hier schon weg (siehe 760 px), und was bleibt, darf
+     die Karte nicht ein zweites Mal um eine Zeile kürzen. Lieber abgeschnitten
+     als zweizeilig: der Stand steht ausgeschrieben auch im Kopfzeilen-Status,
+     sobald das Fenster breit genug dafür ist. */
+  .speicherband { gap: 4px 10px; }
+  .sb-stand { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .speicherband .knopf { margin: 0 0 0 auto; }
   /* Nur MGRS in die Leiste: die GPS-Angabe passt daneben nicht mehr in eine
      Zeile und steht beim Antippen ohnehin im Popup und in der Punktliste. */
@@ -2614,7 +2631,12 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   .pz-weg { width: 38px; height: 38px; }
   .pz-weg::after { inset: -3px; }
   .farbe { position: relative; }
-  .farbe::after { content: ''; position: absolute; inset: -4px; }
+  /* -6px, nicht -4 wie bei den übrigen Griffen: das Farbfeld trägt einen 2 px
+     breiten durchsichtigen Rand für die Auswahl, und `inset` misst vom
+     Innenkasten, also von innerhalb dieses Randes. Mit -4 blieb die Zone bei
+     40 px stehen – gemessen, nicht geschätzt. Die Zonen zweier Nachbarn
+     stoßen damit genau aneinander, sie überlappen nicht. */
+  .farbe::after { content: ''; position: absolute; inset: -6px; }
   .augen { position: relative; padding: 8px 10px; font-size: 15px; }
   .augen::after { content: ''; position: absolute; inset: -5px; }
   .farbe { width: 36px; height: 36px; }

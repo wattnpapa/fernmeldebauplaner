@@ -668,7 +668,11 @@ async function zuKleineGriffe(raum, wahl) {
         const a = document.querySelector('.tastenreihe.ausgabe');
         if (!a) return true;
         const ar = a.getBoundingClientRect(), er = e.getBoundingClientRect();
-        return er.bottom <= ar.top || er.top >= ar.bottom;
+        /* Die 6 px sind die groesste Aufweitung, die ein Griff in dieser
+           Anwendung traegt (.farbe::after). Ein Feld, das so nah an die
+           festgehaltene Zeile heranreicht, misst sich unten beschnitten –
+           gemessen waere dann der Rollstand und nicht die Trefferflaeche. */
+        return er.bottom + 6 <= ar.top || er.top >= ar.bottom;
       })
       .filter(e => window._g.imBild(e))
       .map(e => ({ e, m: window._g.treffer(e) }))

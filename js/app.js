@@ -1478,6 +1478,12 @@ function speicherstatusZeigen(zustand = 'ruhe') {
   if (zustand === 'laeuft') {
     st.textContent = 'wird gespeichert …';
     st.classList.add('offen');
+    /* Der Mahnton wird auch hier nachgeführt: schmal entscheidet er nicht nur
+       die Farbe des Bandes, sondern ob es überhaupt steht. Erst beim Rückruf
+       des Browserspeichers nachzuführen ließe die Planung, die mit diesem
+       Punkt gehaltvoll geworden ist, bis zum nächsten Schreibvorgang ohne
+       Hinweis auf die fehlende Dateisicherung. */
+    bandNachfuehren();
     return;
   }
   if (zustand === 'fehler') {
@@ -1489,10 +1495,16 @@ function speicherstatusZeigen(zustand = 'ruhe') {
   }
   const zeit = dateisicherung(store.projekt.id);
   st.textContent = 'zuletzt als Datei gesichert: ' + (zeit ? zeitpunktKurz(zeit) : '—');
-  /* Schmal trägt das Band den Stand: dort ist die Kopfzeile zu eng für Worte,
-     und ein Punkt allein wäre kein Hinweis, sondern ein Rätsel. */
+  st.classList.toggle('mahnung', !zeit && istGehaltvoll(store.projekt));
+  bandNachfuehren();
+}
+
+/* Schmal trägt das Band den Stand: dort ist die Kopfzeile zu eng für Worte,
+   und ein Punkt allein wäre kein Hinweis, sondern ein Rätsel. */
+function bandNachfuehren() {
+  const band = $('#speicherband'), stand = $('#sb-stand');
+  const zeit = dateisicherung(store.projekt.id);
   const mahnen = !zeit && istGehaltvoll(store.projekt);
-  st.classList.toggle('mahnung', mahnen);
   band.classList.toggle('mahnung', mahnen);
   /* Immer ein ganzer Satz: schmal ist dieses Band die einzige Auskunft über
      den Verbleib der Arbeit, und eine leere Stelle liest sich wie „gesichert“. */
