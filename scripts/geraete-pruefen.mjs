@@ -410,6 +410,55 @@ const MESSHILFEN = `
                anzahl: knoepfe.length,
                sichtbar: knoepfe.filter(k => window._g.kasten(k)).map(k => k.dataset.akt) };
     },
+    /* Die Druckvorschau in Zahlen: der Maßstab, mit dem das Blatt eingepasst
+       ist, die Grundschrift des Blattes und was von beidem am Auge ankommt –
+       daran hängt, ob der Hinweis auf die Lupe stehen bleiben muss. Dazu, wie
+       viele Einstellungsfelder ganz im Rollfenster der Leiste stehen. */
+    druckvorschau() {
+      const doku = window._g.muss('.druck-doku');
+      const lupe = window._g.muss('.druck-lupe');
+      const blatt = window._g.muss('.blatt', doku);
+      const skala = parseFloat(getComputedStyle(doku).getPropertyValue('--vorschau-skala')) || 1;
+      const grund = parseFloat(getComputedStyle(blatt).fontSize) || 0;
+      const kasten = window._g.muss('.ds-felder').getBoundingClientRect();
+      const felder = [...document.querySelectorAll('.ds-feld')].filter(window._g.kasten);
+      if (!felder.length) throw new Error('Kein Einstellungsfeld in der Leiste');
+      const ganz = felder.filter(e => {
+        const r = e.getBoundingClientRect();
+        return r.top >= kasten.top - 1 && r.bottom <= kasten.bottom + 1;
+      });
+      const b = window._g.muss('.druck-buehne').getBoundingClientRect();
+      return {
+        skala, grund, wirksam: Math.round(grund * skala * 100) / 100,
+        lupe: !lupe.hidden, gross: doku.classList.contains('gross'),
+        felder: felder.length, ganzSichtbar: ganz.length,
+        blattAnteil: Math.round((b.width * b.height) / (innerWidth * innerHeight) * 100)
+      };
+    },
+    /* Befund 18: das Blatt vergrößern, dann eine Einstellung ändern. Der
+       Neuaufbau überschrieb die Klassenliste des Blattes und nahm dabei den
+       Lesezustand mit. */
+    async druckUmstellen() {
+      const doku = window._g.muss('.druck-doku');
+      const buehne = window._g.muss('.druck-buehne');
+      doku.click();
+      await new Promise(f => requestAnimationFrame(f));
+      if (!doku.classList.contains('gross')) {
+        throw new Error('Der Tipp vergrößert das Blatt nicht');
+      }
+      buehne.scrollTop = 200;
+      const haken = [...document.querySelectorAll('.ds-haken input')].filter(window._g.kasten)[0];
+      if (!haken) throw new Error('Kein Haken in der Steuerleiste');
+      haken.click();
+      await new Promise(f => setTimeout(f, 300));
+      const skala = getComputedStyle(doku).getPropertyValue('--vorschau-skala');
+      const stand = { gross: doku.classList.contains('gross'),
+                      skala: parseFloat(skala), gerollt: Math.round(buehne.scrollTop) };
+      haken.click();
+      await new Promise(f => setTimeout(f, 300));
+      doku.click();
+      return stand;
+    },
     async gefahrAbstand() {
       const pk = window._g.muss('#punktkarte');
       const gefahr = window._g.muss('.knopf.gefahr', pk);
@@ -981,6 +1030,36 @@ const seitenGriffe = await zuKleineGriffe('.seite',
       return true;`);
     await seite.klick('#btn-modus');
     await hinweisWeg();
+
+    b.abschnitt(`Fenster ${fenster}: Druckvorschau`);
+    await oeffneBauauftrag();
+    await fall(fenster, 'Druckvorschau: Lupenhinweis solange unlesbar',
+      'Der Hinweis auf die Lupe steht genau dann, wenn die Blattschrift unter 11 px ankommt',
+      async () => {
+        const d = await seite.auswerten('window._g.druckvorschau()');
+        const gut = d.lupe === (d.wirksam < 11);
+        return { gut, kurz: d.wirksam + ' px',
+                 text: `Grundschrift ${d.grund} px × Maßstab ${d.skala.toFixed(3)} = ` +
+                       `${d.wirksam} px, Hinweis ${d.lupe ? 'steht' : 'ist weg'}` };
+      });
+    await fall(fenster, 'Druckvorschau: drei Einstellungen ganz im Bild',
+      'Von den Einstellungsfeldern stehen mindestens drei vollständig im Rollfenster',
+      async () => {
+        const d = await seite.auswerten('window._g.druckvorschau()');
+        return { gut: d.ganzSichtbar >= 3, kurz: d.ganzSichtbar + ' von ' + d.felder,
+                 text: `${d.ganzSichtbar} von ${d.felder} Feldern ganz im Bild, ` +
+                       `dem Blatt bleiben ${d.blattAnteil} % der Fensterfläche` };
+      });
+    await fall(fenster, 'Druckvorschau: Umstellen behält die Originalgröße',
+      'Eine geänderte Einstellung wirft das vergrößerte Blatt nicht in die Einpassung zurück',
+      async () => {
+        const u = await seite.auswerten('return await window._g.druckUmstellen();');
+        return { gut: u.gross && u.skala === 1, kurz: u.gross ? '' : 'eingepasst',
+                 text: u.gross
+                   ? `bleibt groß (Maßstab ${u.skala}), Rollstand ${u.gerollt}`
+                   : `fällt auf Maßstab ${u.skala} zurück` };
+      });
+    await schliesseBauauftrag();
   }
   await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
   await seite.ruhe();

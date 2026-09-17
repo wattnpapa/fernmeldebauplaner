@@ -338,6 +338,13 @@ karte.on('click', e => {
   /* Ein Tipp neben die Punktkarte schließt sie – und tut sonst nichts. Wer
      die Koordinate will, tippt noch einmal. */
   if (punktkarteOffen()) return punktkarteSchliessen();
+  /* Dasselbe für die offene Kartenoptionen-Tafel, und aus demselben Grund:
+     schmal steht sie über dem Verlauf, und der Kopfgriff ganz oben ist sonst
+     der einzige Weg zurück. Gemerkt wird das nicht – gemerkt wird nur die
+     ausdrückliche Wahl am Kopf. */
+  if (schmalesFenster.matches && !koTafel.classList.contains('zu')) {
+    return kartenoptionenSetzen(true);
+  }
   if (sl.zeichenModus || zl.setzModus || bl.setzModus || fl.setzModus) return;
   if (sl.auswahl || zl.auswahl || bl.auswahl || fl.auswahl) {
     sl.auswahl = null; zl.auswahl = null; bl.auswahl = null; fl.auswahl = null;
@@ -345,6 +352,25 @@ karte.on('click', e => {
   }
   koordinatenPopup(e.latlng);
 });
+
+/* Wieviel oben und unten der Karte belegt ist. Leaflet braucht die Zahlen, um
+   das Popup ins freie Band zu schieben; gerechnet wird aus den Rechtecken und
+   nicht aus den gemessenen Variablen, weil dieselbe Kante je nach Modus von
+   Werkzeugleiste, Bauleiste oder Statusleiste gehalten wird. */
+function kartenRand() {
+  const k = karte.getContainer().getBoundingClientRect();
+  const hoch = (wahl, vonUnten) => {
+    const e = document.querySelector(wahl);
+    if (!e || !e.offsetHeight) return 0;
+    const r = e.getBoundingClientRect();
+    return Math.max(0, Math.round(vonUnten ? k.bottom - r.top : r.bottom - k.top));
+  };
+  return {
+    oben: Math.max(hoch('.leaflet-top.leaflet-right'), hoch('.kartenoptionen')) + 12,
+    unten: Math.max(hoch('.werkzeuge', true), hoch('.statusleiste', true),
+                    hoch('.leaflet-bottom.leaflet-right', true)) + 12
+  };
+}
 
 function koordinatenPopup(ll) {
   const f = alleFormate(ll.lat, ll.lng);
@@ -364,8 +390,21 @@ function koordinatenPopup(ll) {
       <div class="kp-zeile"><span>Dezimal</span><code>${escapeHtml(f.latlng)}</code></div>
       <div class="kp-tasten">${tasten}</div>
     </div>`;
-  const popup = L.popup({ className: 'fbp-popup', maxWidth: 320 })
-    .setLatLng(ll).setContent(html).openOn(karte);
+  /* Das Popup öffnet nach oben und landete damit unter den Kartenaufsätzen:
+     Leaflets Kartenebene bildet durch ihr `transform` einen eigenen
+     Stapelkontext, und die Popup-Ebene gilt nur innerhalb davon – Werkzeuge,
+     Kartenoptionen und Zoomsteuerung liegen darüber. Ein Tipp auf den
+     sichtbaren Rest klappte die Tafel auf, statt den Punkt aufzunehmen. An der
+     Stapelordnung zu drehen hülfe nicht: die Aufsätze SOLLEN über der Karte
+     liegen. Leaflet bekommt stattdessen gesagt, wieviel belegt ist, und
+     schiebt die Karte beim Öffnen so weit, dass das Popup im freien Band
+     steht. */
+  const rand = kartenRand();
+  const popup = L.popup({
+    className: 'fbp-popup', maxWidth: 320,
+    autoPanPaddingTopLeft: [12, rand.oben],
+    autoPanPaddingBottomRight: [12, rand.unten]
+  }).setLatLng(ll).setContent(html).openOn(karte);
 
   setTimeout(() => {
     const wurzel = popup.getElement();
@@ -472,7 +511,12 @@ function kartenKantenMessen() {
   const st = document.documentElement.style;
   st.setProperty('--sl-hoehe', statusLeiste.offsetHeight + 'px');
   if (kartenFuss) st.setProperty('--karten-fuss', kartenFuss.offsetHeight + 'px');
-  if (kartenKopf) st.setProperty('--karten-kopf', kartenKopf.offsetHeight + 'px');
+  if (kartenKopf) {
+    st.setProperty('--karten-kopf', kartenKopf.offsetHeight + 'px');
+    /* Die Breite trägt die Kartenoptionen neben die Zoomsteuerung statt unter
+       sie – gemessen, weil dort ein Bedienelement dazukommen kann. */
+    st.setProperty('--karten-kopf-breite', kartenKopf.offsetWidth + 'px');
+  }
 }
 const kantenWaechter = new ResizeObserver(kartenKantenMessen);
 kantenWaechter.observe(statusLeiste);
@@ -569,6 +613,7 @@ basisSelect.onchange = () => {
    Tafel klappt zu und merkt sich das je Sitzung (nur auf diesem Gerät, wie
    alles hier). Schmal beginnt sie geschlossen – dort ist die Kartenfläche
    das Produkt; breit offen, damit die Schalter auffindbar bleiben. */
+const schmalesFenster = window.matchMedia('(max-width: 900px)');
 const koTafel = $('#kartenoptionen'), koKopf = $('#ko-kopf');
 function kartenoptionenSetzen(zu) {
   koTafel.classList.toggle('zu', zu);
@@ -584,8 +629,7 @@ koKopf.onclick = () => {
 };
 let koGemerkt = null;
 try { koGemerkt = sessionStorage.getItem('fmbauplaner.kartenoptionen'); } catch { }
-kartenoptionenSetzen(koGemerkt ? koGemerkt === 'zu'
-  : window.matchMedia('(max-width: 900px)').matches);
+kartenoptionenSetzen(koGemerkt ? koGemerkt === 'zu' : schmalesFenster.matches);
 
 const optionsFelder = [
   ['#opt-gitter', 'gitter'],

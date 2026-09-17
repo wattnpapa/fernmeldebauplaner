@@ -139,8 +139,14 @@ body.druckansicht { overflow: hidden; }
    Umbruchpunkt für beide. */
 @media (max-width: 900px) {
   #druck { flex-direction: column; }
+  /* Der Deckel bekommt eine Untergrenze: Titel und Tastenzeile haben feste
+     Höhe und zehrten die zwei Fünftel auf, bis bei 320×568 von 1111 px Inhalt
+     135 px Rollfenster blieben – zwei von 21 Feldern standen ganz im Bild.
+     288 px sind gemessen Titel, Tastenzeile und drei volle Zeilen à 44 px mit
+     ihren Abständen. Der Wert greift nur dort, wo zwei Fünftel weniger sind:
+     ab 655 px Fensterhöhe rechnet wieder `44vh`. */
   .druck-steuerung {
-    flex: 0 1 auto; max-height: 44vh;
+    flex: 0 1 auto; max-height: max(44vh, 288px);
     border-right: 0; border-bottom: 1px solid var(--linie);
   }
   .ds-titel { padding: 6px 10px; }
@@ -161,6 +167,26 @@ body.druckansicht { overflow: hidden; }
   .ds-format { grid-column: 1 / -1; text-align: center; padding: 2px 8px; }
   /* Der Rand um das Blatt ist Platz, den die Vorschau besser gebrauchen kann. */
   .druck-buehne { padding: 10px 8px; }
+}
+
+/* Quer auf dem Telefon ist Höhe knapp und Breite reichlich – genau umgekehrt
+   zur Annahme des Blocks darüber, und der Deckel scheiterte dort an beiden
+   Enden zugleich: bei 667×375 blieben 50 px Rollfenster für 814 px Inhalt,
+   von 21 Einstellungsfeldern stand kein einziges ganz im Bild, und unter der
+   Leiste war vom Blatt nur der Kopf zu sehen. Quer ist aber die natürliche
+   Haltung für den A4-quer-Bauauftrag. Die Spalte neben dem Blatt löst beides
+   auf einmal: die Einstellungen stehen in voller Höhe untereinander und rollen
+   normal, das Blatt bekommt die Breite, die quer ohnehin da ist. Eine
+   Einstellungs-Klappe wäre der Weg, den die Spalte oben schon verworfen hat –
+   sie kostet je Prüfung einen Griff mehr. */
+@media (max-width: 900px) and (max-height: 500px) {
+  #druck { flex-direction: row; }
+  .druck-steuerung {
+    flex: 0 0 272px; max-height: none;
+    border-right: 1px solid var(--linie); border-bottom: 0;
+  }
+  .ds-titel { padding: 8px 10px; }
+  .ds-felder { display: flex; flex-direction: column; gap: 12px; padding: 10px; }
 }
 
 /* ------------------------------------------------- Bedienung ohne Maus
@@ -188,19 +214,30 @@ body.druckansicht { overflow: hidden; }
    lesen können, was er unterschreibt – dafür reicht kein Blatt bei 29 %. */
 .druck-doku { cursor: zoom-in; }
 .druck-doku.gross { cursor: zoom-out; transform-origin: top left; }
-.druck-buehne.gross { justify-content: flex-start; }
 /* Der Hinweis gehört zum Fenster, nicht zum Blatt: in der scrollenden Bühne
    wanderte er in Originalgröße mit dem Papier aus dem Bild. */
 .druck-lupe {
-  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 3;
+  position: absolute; left: 50%; z-index: 3;
+  /* Quer liegt der untere Rand des Geräts auf der Gestenleiste – dort wäre
+     die Pille zwar zu sehen, aber halb vom Balken überzeichnet. */
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
   margin: 0; padding: 4px 11px; border-radius: 999px;
   background: rgba(20,28,40,.9); color: #fff; font-size: 11px;
   white-space: nowrap; pointer-events: none;
 }
 .druck-lupe[hidden] { display: none; }
 
+/* `safe center` statt einer zweiten Klasse am Kasten: ein zentrierter
+   Flex-Kasten schneidet überbreiten Inhalt links ab, und in Originalgröße ist
+   das Blatt überbreit. Vorher trug die Bühne dafür ein eigenes `gross`, das
+   beim Neuaufbau stehen blieb, während das Blatt seines verlor – „eingepasst,
+   aber linksbündig“ hat niemand so entschieden. `safe` fällt von selbst auf
+   den Anfang zurück, sobald der Inhalt nicht mehr passt; die Zeile darüber
+   ist der Rückfall für Browser, die das Schlüsselwort nicht kennen. */
 .druck-buehne {
-  flex: 1; overflow: auto; padding: 24px; display: flex; justify-content: center;
+  flex: 1; overflow: auto; padding: 24px; display: flex;
+  justify-content: center; justify-content: safe center;
   align-items: flex-start;
 }
 .druck-doku {

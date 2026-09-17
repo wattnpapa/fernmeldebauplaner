@@ -48,6 +48,10 @@ const FORMATE = {
   a4: [210, 297], a3: [297, 420], a2: [420, 594], a1: [594, 841], a0: [841, 1189]
 };
 const MM_PX = 96 / 25.4;         // CSS-Pixel je Millimeter
+/* Unter dieser Größe ist die Blattschrift am Telefon nicht mehr zu lesen –
+   dieselbe Zusage, die PRODUCT.md und DESIGN.md für die Oberfläche führen.
+   Sie entscheidet, ob der Hinweis auf die Lupe stehen bleibt. */
+const LESBAR_PX = 11;
 const SCHAERFE = 2;              // Karte doppelt rendern und halbieren -> ~192 dpi
 
 /* Der Bauauftrag geht in der Tasche zum Bauplatz – dort sind A4 und A3 die
@@ -609,10 +613,7 @@ function oeffneDruckansicht(auftrag) {
   wurzel.querySelector('.druck-buehne').addEventListener('click', e => {
     const doku = wurzel.querySelector('.druck-doku');
     if (!doku || !doku.contains(e.target)) return;
-    const gross = doku.classList.toggle('gross');
-    /* Ein zentrierter Flex-Kasten schneidet überbreiten Inhalt links ab –
-       in Originalgröße rückt das Blatt deshalb an den Anfang. */
-    e.currentTarget.classList.toggle('gross', gross);
+    doku.classList.toggle('gross');
     passeVorschauAn(wurzel, opt);
   });
 
@@ -1061,8 +1062,16 @@ function aufbauen(ziel, auftrag, opt, karten, druckKnopf) {
   /* Die Lagekarte trägt kein Formatkennwort: die Regeln zu `.a3` gelten dem
      Satzspiegel des Bauauftrags, und auf dem Lageblatt richtet sich alles
      nach dem Blattfaktor. */
-  ziel.className = 'druck-doku ' + (lage ? 'lage' : opt.format) +
-    ' ' + opt.ausrichtung + (sw ? ' sw' : '');
+  /* Die Kennwörter austauschen, statt `className` zu überschreiben: das
+     Überschreiben nahm `gross` mit, und jede geänderte Einstellung warf das
+     Blatt mitten im Lesen aus der Originalgröße zurück in die Einpassung.
+     Der Rollstand steht in Bildpunkten und zeigte danach auf ein ganz anderes
+     Blatt – im Versuch aus „Blatt 1 von 16“ ein „Blatt 4 von 12“. */
+  for (const k of [...ziel.classList]) {
+    if (k !== 'druck-doku' && k !== 'gross') ziel.classList.remove(k);
+  }
+  ziel.classList.add(lage ? 'lage' : opt.format, opt.ausrichtung);
+  if (sw) ziel.classList.add('sw');
   ziel.innerHTML = '';
 
   const kartenbau = [];
@@ -2735,7 +2744,20 @@ function passeVorschauAn(wurzel, opt) {
   doku.style.margin = skala < 1 ? `0 ${-uebrigB / 2}px ${-uebrigH}px` : '';
   const lupe = wurzel.querySelector('.druck-lupe');
   if (lupe) {
-    lupe.hidden = passend >= 0.62;
+    /* Die Pille ging ab Maßstab 0,62 vom Schirm – also genau in dem Band, in
+       dem das Blatt schon unlesbar ist, aber noch nicht in Originalgröße
+       steht: bei 768×1024 trug die Grundschrift dort 7,35 px, quer bei
+       844×390 8,13 px, und die einzige Auskunft über die einzige Lesehilfe
+       fehlte ausgerechnet da. 0,62 ist eine Maßstabs-, keine
+       Lesbarkeitsgrenze.
+
+       Gemessen wird deshalb die Schrift, die am Ende ankommt. Sie kommt aus
+       dem Blatt selbst und nicht aus einer Zahl hier: der Bauauftrag setzt
+       8,6 pt, auf A3 sind es 10 pt, und die Lagekarte rechnet über den
+       Blattfaktor – eine eingetragene Zahl wäre für zwei von dreien falsch. */
+    const blatt = doku.querySelector('.blatt');
+    const grund = blatt ? parseFloat(getComputedStyle(blatt).fontSize) : 0;
+    lupe.hidden = grund > 0 && grund * passend >= LESBAR_PX;
     lupe.textContent = doku.classList.contains('gross')
       ? 'Tippen: ganzes Blatt' : 'Tippen: Originalgröße';
   }

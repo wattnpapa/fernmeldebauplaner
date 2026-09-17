@@ -77,9 +77,12 @@
   --wechsel-hoehe: 0px;
   /* Höhe von Maßstab und Quellenangabe unten rechts – ebenfalls gemessen */
   --karten-fuss: 36px;
-  /* Höhe der Leaflet-Bedienelemente oben rechts (Zoom) – gemessen, damit die
-     Kartenoptionen darunter passen, auch wenn dort ein Element dazukommt */
+  /* Maße der Leaflet-Bedienelemente oben rechts (Zoom) – gemessen, weil dort
+     ein Element dazukommen kann. Die Breite trägt die Kartenoptionen neben
+     ihnen an dieselbe Kante, die Höhe sagt dem Koordinaten-Popup, wieviel
+     oben belegt ist. */
   --karten-kopf: 74px;
+  --karten-kopf-breite: 44px;
   /* Bewegung. Vier Dauern statt frei gewählter Zahlen, weil sie eine Aussage
      tragen: je weiter der Weg und je größer die Folge, desto länger. Der
      Verlauf bremst ab und schwingt nicht nach – die Oberfläche ist Gerät, kein
@@ -1110,13 +1113,22 @@ body.ist-setzen .zeichen-hinweis .knopf { flex: 0 1 auto; white-space: nowrap; }
 @keyframes leiste-an { from { opacity: 0; transform: translateY(10px); } }
 .zeichen-hinweis:not([hidden]) { animation: leiste-an var(--zeit-zustand) var(--weg); }
 
-/* Der Abstand nach oben ist die gemessene Höhe der Leaflet-Zoomsteuerung plus
-   derselbe Rand von 12 px, den alle Kartenaufsätze zur Kante halten. Vorher
-   stand hier ein auf die Zoomsteuerung eingepasster Festwert – er wäre bei der
-   ersten Änderung an ihr falsch geworden. */
+/* Die Tafel steht an der oberen Kante NEBEN der Zoomsteuerung, nicht unter
+   ihr. Vorher begann sie 12 px unter deren gemessener Höhe und stand damit
+   rund 90 px in der Karte – mitten in dem Band, in dem am Bauort die Trasse
+   verläuft, und zwar auch zugeklappt und über das Neuladen hinweg, weil der
+   Zustand in der sessionStorage steht. Neben der Steuerung teilt sie sich mit
+   ihr dasselbe belegte Band; die Karte darunter bleibt frei.
+
+   Der Deckel bindet sie an den Raum, der wirklich da ist: aufgeklappt stand
+   sie mit neun Zeilen über der Statusleiste hinaus, und die unteren Zeilen
+   waren weder zu sehen noch zu treffen. Gerollt wird im Körper, damit der
+   Kopfgriff stehen bleibt – er ist der Weg zurück. */
 .kartenoptionen {
-  position: absolute; top: calc(var(--karten-kopf) + 12px); z-index: 700; width: 214px;
-  right: calc(12px + env(safe-area-inset-right, 0px));
+  position: absolute; top: 12px; z-index: 700; width: 214px;
+  right: calc(12px + var(--karten-kopf-breite) + env(safe-area-inset-right, 0px));
+  max-height: calc(100% - var(--sl-hoehe) - var(--karten-fuss)
+                   - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 24px);
   background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
   padding: 8px 10px; box-shadow: var(--schatten); display: flex; flex-direction: column; gap: 6px;
 }
@@ -1130,7 +1142,13 @@ body.ist-setzen .zeichen-hinweis .knopf { flex: 0 1 auto; white-space: nowrap; }
 .ko-kopf:hover { color: var(--thw); }
 .ko-pfeil { font-size: 10px; transition: transform .12s; }
 .kartenoptionen.zu .ko-pfeil { transform: rotate(-90deg); }
-.ko-koerper { display: flex; flex-direction: column; gap: 6px; }
+/* `min-height: 0` ist die Bedingung dafür, dass ein Flex-Kind unter seinen
+   Inhalt schrumpfen darf – ohne sie liefe die Tafel über ihren Deckel hinaus
+   und die Rollbewegung käme nie zustande. */
+.ko-koerper {
+  display: flex; flex-direction: column; gap: 6px;
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+}
 .kartenoptionen.zu .ko-koerper { display: none; }
 .kartenoptionen.zu { width: auto; }
 .ko-zeile { display: flex; align-items: center; gap: 7px; font-size: 12px; }
@@ -1179,6 +1197,12 @@ body.modus-aktiv .kartenoptionen { display: none; }
 /* ---------------------------------------------------------------- Leaflet-Anpassungen */
 
 .leaflet-container { font-family: var(--schrift); }
+/* Der Maßstab wird abgelesen, nicht bedient. Er steht unten rechts unter der
+   Quellenzeile, und seit die Zoomsteuerung ihre 44 px trägt, reicht sie quer
+   bis in ihn hinein: gemessen bei 667×375 kamen von den 44 px des
+   Verkleinerns nur 27 an, den Rest nahm die Maßstabsleiste entgegen und tat
+   nichts damit. */
+.leaflet-control-scale { pointer-events: none; }
 .leaflet-control-attribution { font-size: 11px; background: rgba(255,255,255,.82) !important; }
 /* --sl-hoehe wird gemessen: die Statusleiste bricht schmal zweizeilig um und
    verdeckte mit dem früheren Festwert die Maßstabsleiste. */
@@ -2252,33 +2276,42 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
 
   .kartenoptionen { width: 176px; font-size: 11px; }
 
-  /* Werkzeuge in den Daumenbereich, mit Beschriftung: vier Glyphen allein sind
-     nicht auseinanderzuhalten, und title-Tooltips zeigt kein Touchgerät an. */
+  /* Werkzeuge in den Daumenbereich, mit Beschriftung: Glyphen allein sind
+     nicht auseinanderzuhalten, und title-Tooltips zeigt kein Touchgerät an.
+
+     EINE Reihe mit gleich breiten Spalten, so viele wie Griffe sichtbar sind –
+     im Baumodus vier, in der Planung sechs. `grid-auto-flow: column` zählt das
+     selbst, und ein ausgeblendeter Griff nimmt seine Spalte mit; eine feste
+     Spaltenzahl wäre an zwei Stellen zu pflegen. Vorher standen die
+     Planungswerkzeuge in zwei Spalten à drei Zeilen: 152 px, bei 690 px
+     Fensterhöhe fast ein Drittel der Karte – und wer nur den Verlauf lesen
+     wollte, bekam sechs Werkzeuge, die er nicht anfasst, über den Inhalt
+     gelegt. Das Maß ist jetzt das der Bauleiste, für die es längst galt. */
   .werkzeuge {
     top: auto; bottom: calc(var(--sl-hoehe) + var(--wechsel-hoehe) + var(--karten-fuss) + 12px);
-    left: 12px; right: auto; width: min(calc(100% - 24px), 340px);
-    display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+    left: 12px; right: auto; width: calc(100% - 24px); max-width: 440px;
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    gap: 2px; padding: 4px;
   }
+  /* Zwei Klassen im Wähler, damit der `pointer: coarse`-Block weiter unten
+     mit seinem `.wz { padding: 12px 10px }` nicht dazwischenfährt – der gilt
+     der Breitansicht auf dem Tablet, wo Platz ist. */
+  .werkzeuge .wz {
+    flex-direction: column; gap: 3px; padding: 5px 2px; min-height: 44px;
+    font-size: 11px; line-height: 1.15; text-align: center; white-space: normal;
+    /* „Koordinate“ passt in keine der sechs Spalten, sobald das Fenster
+       320 px schmal ist, und stünde ohne Trennung über den Rand hinaus. */
+    hyphens: auto;
+  }
+  .werkzeuge .wz-icon { font-size: 17px; height: 18px; }
+  /* Sechs Spalten lassen für das Tastenkürzel keinen Platz, und wer schmal
+     arbeitet, hat es ohnehin selten auf der Tastatur. */
+  .werkzeuge .wz-taste { display: none; }
   /* Im Zeichen- oder Setzmodus zählt nur die Modusleiste; die Werkzeugleiste
      würde denselben Platz beanspruchen. Dasselbe gilt für die Punktkarte des
      Baumodus: sie steht an derselben Stelle. */
   body.modus-aktiv .werkzeuge,
   body.punktkarte-offen .werkzeuge { display: none; }
-
-  /* Die Bauleiste: vier Griffe in EINER Reihe, Sinnbild über dem Wort. Zwei
-     Reihen à zwei – wie die Planungswerkzeuge – nahmen der Karte auf dem
-     Telefon ein Fünftel; so bleibt es ein Streifen von gut 50 px. Die
-     Beschriftung bleibt: vier Glyphen allein sind nicht auseinanderzuhalten,
-     und `title` zeigt kein Touchgerät an. */
-  body.baumodus .werkzeuge {
-    grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 4px;
-    width: calc(100% - 24px); max-width: 440px;
-  }
-  body.baumodus .wz {
-    flex-direction: column; gap: 3px; padding: 5px 2px; min-height: 44px;
-    font-size: 11px; line-height: 1.15; text-align: center; white-space: normal;
-  }
-  body.baumodus .wz-icon { font-size: 17px; height: 18px; }
 
   .sl-dez { display: none; }
 }
@@ -2354,7 +2387,10 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
   .pz-querung select { padding: 9px 7px; min-height: 40px; }
   /* Auch die Kartenoptionen werden dort umgestellt – die Zeilen wachsen auf
      Trefferhöhe, die Tafel bleibt sichtbar kompakt. Vorher: 19 px. */
-  .ko-zeile, .ko-kopf { min-height: 36px; }
+  .ko-zeile { min-height: 36px; }
+  /* Der Kopf ist bei zugeklappter Tafel der einzige Griff und trägt deshalb
+     das volle Maß, nicht das der Zeilen darunter. */
+  .ko-kopf { min-height: 44px; }
   .mini-input { padding: 10px 8px; }
   .koord-knopf { padding: 10px 6px; }
   .sl-kopie::after { content: ''; position: absolute; inset: -9px -4px; }
@@ -2395,8 +2431,11 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
      `.menu button` ließ sie bei 33 px stehen. */
   .menu a { padding: 11px 12px; }
   /* Leaflets eigene Zoomsteuerung bleibt bei 30 px, solange niemand sie
-     nachzieht. Am Bauort wird mit ihr der Maßstab gesetzt. */
-  .leaflet-control-zoom a { width: 44px; height: 44px; line-height: 44px; }
+     nachzieht. Am Bauort wird mit ihr der Maßstab gesetzt. Der Wähler trägt
+     `.leaflet-touch` mit: `vendor/leaflet/leaflet.css` setzt dort
+     `.leaflet-touch .leaflet-bar a` auf 30 px und überstimmt mit zwei Klassen
+     jede Regel, die nur eine mitbringt – gemessen waren es weiter 30×30. */
+  .leaflet-touch .leaflet-control-zoom a { width: 44px; height: 44px; line-height: 44px; }
 
   /* Das Meldungsfeld steckt als einziges nicht in einer `.feld`-Umhüllung –
      seine Beschriftung zählt also nicht zur Trefferfläche, und gleich daneben

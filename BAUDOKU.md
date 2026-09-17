@@ -460,6 +460,26 @@ aufnehmen“ statt „Zeichen setzen“ und „Neue Strecke“; die Tasten S, T,
 der Zeichenwerkzeuge sind aus – sie starteten sonst einen Modus, dessen
 Leiste es dort nicht gibt.
 
+**Die Kartenaufsätze halten dasselbe Maß wie die Bauleiste.** Die
+Werkzeugleiste der Planung stand in zwei Spalten à drei Zeilen und nahm 152 px
+– bei 690 px Fensterhöhe fast ein Drittel der Karte, und wer nur den Verlauf
+lesen wollte, bekam sechs Werkzeuge über den Inhalt gelegt. Sie steht jetzt
+wie die Bauleiste in einer Reihe, Sinnbild über dem Wort, und zählt ihre
+Spalten selbst: vier im Baumodus, sechs in der Planung. Die Kartenoptionen
+sitzen an der oberen Kante neben der Zoomsteuerung statt 90 px darunter, sind
+an den verfügbaren Kartenraum gedeckelt und rollen innen; ein Tipp auf die
+Karte schließt sie wie die Punktkarte. Die Zoomsteuerung trägt ihre 44 px –
+Leaflets eigene Touch-Regel hatte sie mit zwei Klassen auf 30 px gehalten –,
+und der Maßstab daneben nimmt keine Tipps mehr entgegen, er wird abgelesen.
+Das Koordinaten-Popup bekommt schließlich gesagt, wieviel oben und unten
+belegt ist, damit es im freien Band landet statt unter den Aufsätzen.
+
+Bei 390×690 bleiben damit 231 von 522 px Karte frei statt 95. Quer bleibt es
+bei null: dort liegen 146 von 375 px Fensterhöhe über der Karte, ehe ein
+Aufsatz zu zählen beginnt – das ist Kopfzeile und Speicherband, nicht die
+Karte. Offen bleibt auch, die Werkzeugleiste erst auf Verlangen zu zeigen;
+das gäbe beim bloßen Lesen weitere 54 px frei.
+
 **Der Bau-Reiter** hat unter der Summe einen Sprungstreifen (Punkte,
 Meldungen, Material, Übergabe, Karte mitnehmen), und der Kachelvorrat steht
 am Ende statt am Anfang: das Mitnehmen geschieht im Depot und nie am Bauort.
