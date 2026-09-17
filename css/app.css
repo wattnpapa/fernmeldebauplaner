@@ -1204,6 +1204,15 @@ body.modus-aktiv .kartenoptionen { display: none; }
 /* Die Zahl, die über Funk durchgegeben wird – sie trägt die größte Schrift der Leiste */
 .sl-wert { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 550; }
 .sl-quelle { margin-left: auto; color: var(--text-schwach); font-size: 12px; }
+/* Der Ausfall der Kacheln: still und dauerhaft, im Mahnton und nicht im
+   Gefahrton – ohne Netz zu arbeiten ist am Bauort der Normalfall und keine
+   Störung. Er steht am rechten Ende der Leiste, weil links die Gitterangabe
+   abgelesen wird; bricht die Leiste schmal um, nimmt er die zweite Zeile. */
+.sl-netz {
+  margin-left: auto; font-size: 12px; font-weight: 650; color: var(--warnung-tief);
+  white-space: nowrap;
+}
+.sl-netz[hidden] { display: none; }
 
 /* MGRS und GPS sind antippbar: ein Tipp legt die Angabe in die Zwischenablage */
 .sl-kopie {
@@ -1480,6 +1489,24 @@ body.modus-aktiv .fbp-bild { pointer-events: none; }
 }
 .mini-bild img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
+/* Im Bilderreiter trägt die Kopfzeile zwei Zeilen: den Namen und darunter,
+   was zwei Aufnahmen desselben Ortes unterscheidet. Der Name bricht auf zwei
+   Zeilen um, statt am Ende abgeschnitten zu werden – dort steht bei einer
+   zusammengesetzten Ortsbezeichnung gerade das Unterscheidende. */
+.bild-name {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  white-space: normal; overflow: visible;
+}
+.bild-name b {
+  font-weight: 600; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+.bild-kennung {
+  font-size: 11.5px; font-weight: 500; color: var(--text-schwach);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Das geöffnete Bild in der Liste ist selbst der Knopf zur großen Ansicht –
    ein Bild, das man anklickt, ist die naheliegendste Bedienung, die es gibt. */
 .bild-schau {
@@ -1491,19 +1518,41 @@ body.modus-aktiv .fbp-bild { pointer-events: none; }
 /* Gedeckelt und nicht beschnitten: ein hochkant aufgenommenes Bild füllte in
    der schmalen Ansicht sonst den ganzen Schirm, und Beschriftung, Bemerkung
    und Löschknopf lägen darunter außer Sicht. Beschneiden verbietet sich – ein
-   Beleg vom Bauort zeigt gerade an den Rändern, worauf es ankommt. */
+   Beleg vom Bauort zeigt gerade an den Rändern, worauf es ankommt.
+
+   Der Deckel ist ein Anteil der Sichthöhe und keine feste Zahl: 240 px waren
+   quer höher als die ganze Listenfläche (bei 844×390 bleiben ihr 229 px), und
+   dann stand unter dem Bild nichts mehr, wozu es gehört. */
 .bild-schau img {
-  display: block; width: 100%; height: auto; max-height: 240px; object-fit: contain;
+  display: block; width: 100%; height: auto; object-fit: contain;
+  max-height: min(38dvh, 300px);
 }
 
-/* Der Dialog misst höchstens 88vh; davon gehen Kopf, Fuß, Polsterung und die
-   Angabenzeile darunter ab. Ohne diesen Abzug schöbe ein hochkant aufgenommenes
-   Bild Aufnahmezeit und Gitterangabe unter die Kante – und dort sucht sie
-   niemand. */
-.bild-gross img {
-  display: block; max-width: 100%; max-height: calc(88vh - 180px); margin: 0 auto;
+/* Die Großansicht ist ein Blatt: Kopf und Fuß des Dialogs stehen fest, das
+   Bild bekommt, was dazwischen übrig bleibt, und die Angaben stehen darunter.
+   Vorher war das Bild auf `88vh - 180px` gedeckelt – ein hochkant
+   aufgenommenes schob Aufnahmezeit und Gitterangabe unter die Blattkante, und
+   quer war es kleiner als die Vorschau in der Liste, aus der man es geöffnet
+   hatte (218×163 bei 804 px freier Breite). */
+.bild-gross { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1; }
+.bg-bild {
+  flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--flaeche-2); border-radius: var(--radius-klein); overflow: auto;
+  /* Am Bauort wird in das Bild hineingezogen, um eine Beschriftung oder eine
+     Klemmennummer zu lesen. `pinch-zoom` lässt genau das zu und nimmt dem
+     einen Finger das Rollen – sonst schöbe der Zoomversuch das Blatt weg. */
+  touch-action: pinch-zoom;
+}
+.bg-bild img {
+  display: block; max-width: 100%; max-height: 100%; object-fit: contain;
   border-radius: var(--radius-klein);
 }
+.bg-angaben { flex: 0 0 auto; max-height: 34%; overflow-y: auto; overscroll-behavior: contain; }
+/* Die Bemerkung ist ein Satz vom Bauort und keine Angabe – zwischen zwei
+   Zahlen mit Mittelpunkten gelesen ginge sie unter. */
+.bg-bemerkung { margin: 0 0 .4em; font-size: 13px; line-height: 1.45; }
+.bg-angaben .klein { margin: 0 0 .3em; }
+.bg-angaben .klein:last-child { margin-bottom: 0; }
 
 /* Ohne Ortsangabe der Kamera steht das Bild nicht auf der Karte. Das ist kein
    Ausblenden, sondern eine offene Aufgabe – deshalb Warnton statt Dämpfung. */
@@ -1601,6 +1650,17 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   max-height: 88vh; max-height: 88dvh;
 }
 .dialog.breit { width: min(880px, 100%); }
+/* Ein füllender Dialog nimmt die erlaubte Höhe ganz ein, statt sich auf seinen
+   Inhalt zusammenzuziehen: nur dann hat „der Rest“ ein Maß, das ein Bild füllen
+   kann. Der Inhalt rollt dabei nicht – er teilt sich auf, und was rollen muss,
+   rollt in sich (siehe `.bg-angaben`).
+
+   Nicht `.blatt`: so heißt in `css/print.css` das Papier, und das Stilblatt
+   liegt mit `media="all"` über der ganzen Anwendung – der Dialog bekam damit
+   Seitenbreite und 12 mm Papierrand, und sein Kopf stand 91 px schmaler als
+   er selbst. */
+.dialog.fuellend { height: 88vh; height: 88dvh; }
+.dialog.fuellend .dialog-inhalt { flex: 1; min-height: 0; overflow: hidden; }
 .dialog-kopf {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 13px 16px; border-bottom: 1px solid var(--linie);
@@ -1650,6 +1710,12 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
      sind der Knopf, und unter das Handschuhmaß geht er nicht. */
   .dialog-fuss { padding: 2px 12px; border-top: 0; box-shadow: inset 0 1px 0 var(--linie); }
   .dialog-inhalt { padding: 10px 12px; gap: 8px; }
+  .dialog.fuellend { height: 96vh; height: 96dvh; }
+  /* Quer steht das Bild links und die Angaben daneben: untereinander blieben
+     dem Bild bei 844×390 keine 150 px, und es wäre kleiner gewesen als die
+     Vorschau, aus der man es geöffnet hat. */
+  .bild-gross { flex-direction: row; }
+  .bg-angaben { flex: 0 0 34%; max-height: 100%; }
 }
 
 .koord-dialog .koord-liste { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; }
@@ -2455,6 +2521,10 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   /* Nur MGRS in die Leiste: die GPS-Angabe passt daneben nicht mehr in eine
      Zeile und steht beim Antippen ohnehin im Popup und in der Punktliste. */
   #sl-gps-kopie { display: none; }
+  /* Und ohne Netz weicht auch die Höhe: sie kommt aus einer Kachel und steht
+     dann auf „–“, während die Auskunft über den Ausfall gebraucht wird.
+     Gemessen: mit beidem bricht die Leiste bei 390 px zweizeilig um. */
+  .statusleiste.ohne-netz .sl-elev { display: none; }
   /* Gitterangabe und Herkunftszeile sollen in eine Zeile passen */
   .statusleiste { padding: 3px 8px; gap: 4px 10px; }
   /* Die Herkunftszeile („zuletzt angetippte Position“) geht: mit gefüllter
@@ -2533,7 +2603,11 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   .palette-knopf { min-height: 108px; }
   /* Am Bauort wird das Bild mit dem Handschuh geöffnet – die Zeile ist der
      Griff, das Vorschaubild wächst mit. */
-  .mini-bild { width: 40px; height: 40px; }
+  /* In einer Liste, deren Inhalt das Bild ist, ist die Kachel die eigentliche
+     Beschriftung – bei 40 px trug sie die Unterscheidung nicht mit, und jeder
+     Eintrag musste geöffnet werden. Die Zeile trägt die 56 px: sie steht
+     ohnehin zweizeilig. */
+  .mini-bild { width: 56px; height: 56px; }
 
   /* Jedes Feld im Reiterinhalt auf Trefferhöhe. Einzeln nachgezogen waren
      bisher nur `.mini-input`, `.mini-select` und die Querungsart; die

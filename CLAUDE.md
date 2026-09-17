@@ -199,7 +199,9 @@ Schritten, weil der Reiter länger ist als jedes Fenster), das Koordinaten-Popup
 aufgeklappten Kartenoptionen, das Dateimenü (letzter Eintrag treffbar, und jeder
 Eintrag auf 44 px – auch hier über die Rollstände getastet), die drei Dialoge
 „Neue Planung“, „Gespeicherte Planungen“ und „Baumeldung eingegangen“ mit Kopf
-und Fuß im Bild und treffbaren Fußknöpfen, die Zoomsteuerung und die
+und Fuß im Bild und treffbaren Fußknöpfen, die Großansicht eines Lichtbilds
+(Bild, Angaben und „Schließen“ zugleich im Bild, ohne dass das Blatt rollt),
+die Zoomsteuerung und die
 Druckvorschau (Lupenhinweis gegen die wirksame Blattschrift, drei
 Einstellungsfelder ganz im Bild, das vergrößerte Blatt übersteht eine
 geänderte Einstellung); die Tabelle am Ende des Laufs zeigt alles je Fenster
@@ -219,6 +221,10 @@ node scripts/offline-pruefen.mjs
 ```
 
 Schaltet das Netz im Browser ab und prüft, dass die Anwendung trotzdem startet.
+Dazu, dass sie den Ausfall der Kacheln still in der Statusleiste nennt – samt
+der Zahl, die dann zählt: wie viele Kacheln im Gerät liegen –, und dass
+„Karte holen“ ohne Netz mit „nicht mitgenommen“ endet statt mit einem vollen
+Balken.
 Eine Warnung dazu: `Page.reload` mit `ignoreCache` umgeht den Service Worker
 vollständig — wer im Prüfstand hart neu lädt, prüft genau das nicht, wofür der
 Wächter da ist. Der Prüfstand steht in `scripts/pruefstand.mjs` und

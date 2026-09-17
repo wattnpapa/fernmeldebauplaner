@@ -428,6 +428,71 @@ try {
   b.pruefe(true, 'Die Oberfläche warnt, wenn der Vorrat zur eingestellten Karte nicht passt');
   await seite.auswerten('return (await import("./js/kacheln.js")).leeren();');
 
+  b.abschnitt('Ohne Netz sagt die Statusleiste, dass die Kacheln ausbleiben');
+  /* Der Browser gilt weiter als online – geprüft wird gerade der Fall, in dem
+     `navigator.onLine` nichts merkt und nur die Kacheln ausbleiben: schwaches
+     Netz, Funkloch, gesperrter Anbieter. Der Server schweigt dazu. */
+  server.netzAus();
+  /* Der Befund, um den es geht: die Karte blieb grau und die Anwendung sagte
+     nichts dazu – der Ausfall ging an Leaflet und endete dort. Im Prüfstand
+     kommen die Kacheln ohnehin nie an (sie liegen bei einem fremden Server),
+     die Anzeige muss also von selbst stehen. Angestoßen wird sie durch ein
+     Neuzeichnen, damit der Fall nicht daran hängt, wie viele Kacheln der
+     Aufbau zufällig schon versucht hat. */
+  /* Die Pille eines früheren Schrittes vorher abräumen: geprüft wird, dass der
+     Kachelausfall selbst keine erzeugt, nicht der Nachhall von „Vorrat
+     gelöscht“. */
+  await seite.auswerten('return (await import("./js/ui.js")).hinweisAus();');
+  await seite.warteAuf('document.getElementById("hinweisbox").hidden', 5000);
+  await seite.auswerten('window.fbp.karte._fbpBasis.redraw(); return true;');
+  await seite.warteAuf('!document.getElementById("sl-netz").hidden', 15000);
+  const netzText = (await seite.text('#sl-netz') || '');
+  b.pruefe(/kein Netz/.test(netzText), `Die Leiste nennt den Ausfall („${netzText}“)`);
+  b.pruefe(/Vorrat/.test(netzText),
+    'Und den Vorrat – das ist die Zahl, die am Bauort darüber entscheidet, ' +
+    'ob die Karte trotzdem etwas zeigt');
+  b.pruefe(await seite.auswerten('document.getElementById("hinweisbox").hidden'),
+    'Ohne Hinweispille: der Zustand dauert die ganze Baustelle, die Pille 3,2 s');
+
+  b.abschnitt('„Karte holen“ ohne Netz meldet, dass nichts mitgenommen wurde');
+  /* Der Abruf lief bis zum vollen Balken durch und meldete „Karte
+     mitgenommen: 0 Kacheln“ – im Vorbeigehen liest man das erste Wort und
+     rückt ein zweites Mal ohne Karte aus.
+
+     Geholt wird für die Prüfung von diesem Server, nicht vom BKG: `netzAus()`
+     weist seine Verbindungen sofort ab, und damit ist der Fall in Sekunden
+     entschieden statt in den Zeitüberschreitungen eines fremden Servers. Die
+     Adresse wird danach zurückgesetzt. */
+  const holText = await seite.auswerten(`
+    const m = await import('./js/map.js');
+    const ui = await import('./js/ui.js');
+    const basis = m.BASISKARTEN.find(k => k.id === window.fbp.store.projekt.ansicht.basemap);
+    const echt = basis.url;
+    basis.url = location.origin + '/gibt-es-nicht/{z}/{x}/{y}.png';
+    try {
+      ui.zeichneBauListe();
+      const knopf = [...document.querySelectorAll('.bau-vorrat button')]
+        .find(k => k.textContent.includes('Karte holen'));
+      if (!knopf) throw new Error('Kein Knopf „Karte holen“ im Bau-Reiter');
+      knopf.click();
+      const box = document.getElementById('hinweisbox');
+      const ende = Date.now() + 45000;
+      while (Date.now() < ende) {
+        const t = box.textContent || '';
+        if (!box.hidden && /mitgenommen|voll|Abgebrochen/.test(t)) return t;
+        await new Promise(f => setTimeout(f, 200));
+      }
+      return 'keine Schlussmeldung';
+    } finally {
+      basis.url = echt;
+    }`);
+  b.pruefe(/nicht/.test(holText), `Die Schlussmeldung sagt „nicht“ („${holText}“)`);
+  b.pruefe(/nicht mitgenommen/.test(holText),
+    'Und zwar in den ersten beiden Wörtern, nicht als Null hinter einem „mitgenommen“');
+  b.pruefe(!/^Karte mitgenommen/.test(holText),
+    'Keine Erfolgsmeldung für einen Lauf, aus dem nichts geworden ist');
+  server.netzAn();
+
   // ------------------------------------------------------------ Konsole
 
   b.abschnitt('Die Konsole bleibt still');

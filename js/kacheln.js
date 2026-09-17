@@ -223,7 +223,10 @@ export function kacheladresse(vorlage, { z, x, y }) {
 /**
  * Den Kachelvorrat für eine Trasse anlegen.
  *
- * `beiFortschritt(fertig, gesamt)` wird nach jeder Kachel gerufen. Das
+ * `beiFortschritt(fertig, gesamt, stand)` wird nach jeder Kachel gerufen;
+ * `stand` trägt `geholt`, `vorhanden` und `fehler`. Ohne diese Zahlen wüsste
+ * die Anzeige nur, wie viele Abrufe durch sind – und ein Lauf ohne Netz lief
+ * bis zum vollen Balken durch, obwohl keine einzige Kachel ankam. Das
  * zurückgegebene Objekt trägt `abbrechen()`; ein abgebrochener Lauf lässt
  * liegen, was schon da ist – halb geholte Karte ist besser als keine.
  *
@@ -237,7 +240,10 @@ export function vorladen(vorlage, kartenId, punkte, o = {}) {
   const abbruch = new AbortController();
   let abgebrochen = false;
   let speicherVoll = false;
-  let fertig = 0, geholt = 0, bytes = 0, fehler = 0;
+  /* `vorhanden` zählt, was schon im Gerät lag: zusammen mit `geholt` ist das
+     die Zahl, die am Ende wirklich mitgeht. Ohne sie sähe ein zweiter Lauf
+     über denselben Ausschnitt aus wie ein misslungener – null geholt. */
+  let fertig = 0, geholt = 0, vorhanden = 0, bytes = 0, fehler = 0;
 
   const lauf = (async () => {
     /* Der Reihe nach von grob nach fein: bricht der Lauf ab oder reißt das
@@ -252,7 +258,9 @@ export function vorladen(vorlage, kartenId, punkte, o = {}) {
         const url = kacheladresse(vorlage, kachel);
         let ausDemNetz = false;
         try {
-          if (!(await kachelHolen(url))) {
+          if (await kachelHolen(url)) {
+            vorhanden++;
+          } else {
             ausDemNetz = true;
             const antwort = await fetch(url, {
               mode: 'cors', credentials: 'omit', signal: abbruch.signal
@@ -281,7 +289,7 @@ export function vorladen(vorlage, kartenId, punkte, o = {}) {
           fehler++;
         }
         fertig++;
-        beiFortschritt(fertig, gedeckelt.length);
+        beiFortschritt(fertig, gedeckelt.length, { geholt, vorhanden, fehler });
         /* Gedrosselt wird nur, was wirklich beim Anbieter geholt wurde. Wer
            denselben Ausschnitt ein zweites Mal mitnimmt, säße sonst minutenlang
            vor einem Balken, hinter dem nichts geschieht. */
@@ -290,7 +298,7 @@ export function vorladen(vorlage, kartenId, punkte, o = {}) {
     }
 
     await Promise.all(Array.from({ length: GLEICHZEITIG }, arbeiter));
-    return { fertig, geholt, bytes, fehler, gesamt: gedeckelt.length,
+    return { fertig, geholt, vorhanden, bytes, fehler, gesamt: gedeckelt.length,
              ausgelassen: alle.length - gedeckelt.length, abgebrochen, speicherVoll };
   })();
 

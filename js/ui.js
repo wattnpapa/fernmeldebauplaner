@@ -181,11 +181,17 @@ let dialogOeffner = null;
    Querhalten die Daumen liegen. */
 let dialogSchutz = '';
 
-export function dialog({ titel, inhalt, fuss = [], breit = false, geteilt = false, schutz = '' }) {
+export function dialog({ titel, inhalt, fuss = [], breit = false, geteilt = false,
+                         schutz = '', fuellend = false }) {
   const huelle = document.getElementById('dialog');
   const aktiv = document.activeElement;
   if (aktiv instanceof HTMLElement && !huelle.contains(aktiv)) dialogOeffner = aktiv;
   huelle.querySelector('.dialog').classList.toggle('breit', breit);
+  /* Ein füllender Dialog nimmt die erlaubte Höhe ganz ein, statt sich auf
+     seinen Inhalt zusammenzuziehen. Nur so kann ein Bild „den Rest“ füllen:
+     ohne feste Höhe hätte der Rest kein Maß, und `max-height: 100%` am Bild
+     liefe ins Leere. */
+  huelle.querySelector('.dialog').classList.toggle('fuellend', fuellend);
   document.getElementById('dialog-titel').textContent = titel;
   dialogSchutz = schutz;
   /* Ein Kreuz, das nichts tut, ist schlimmer als keines: bei einem
@@ -3601,10 +3607,22 @@ function bildKarte(b) {
   const zustand = b.sichtbar === false ? ' verborgen' : (b.lat === null ? ' ortlos' : '');
   const karte = el('article', 'eintrag' + (gewaehlt ? ' offen' : '') + zustand);
 
+  /* Zweizeilig: abgeschnitten wird am Ende, und dort steht bei einer
+     zusammengesetzten Ortsbezeichnung das Unterscheidende – „…-Nordseite“
+     gegen „…-Suedseite“, „…-vorher“ gegen „…-nachher“. Bei 320 px fehlten
+     210 px des Namens. Darunter steht, was zwei Aufnahmen desselben Ortes
+     ebenfalls trennt: die Uhrzeit und die Gitterangabe. */
+  const kennung = [
+    b.aufgenommen ? zeitpunkt(b.aufgenommen) : '',
+    b.lat === null ? '' : toMGRS(b.lat, b.lng, 3)
+  ].filter(Boolean).join(' · ');
   const kopf = el('header', 'eintrag-kopf');
   kopf.innerHTML =
     `<span class="mini-bild"></span>
-     <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(bildTitel(b))}</button>
+     <button type="button" class="eintrag-name bild-name" aria-expanded="${gewaehlt}">
+       <b>${escapeHtml(bildTitel(b))}</b>
+       ${kennung ? `<span class="bild-kennung">${escapeHtml(kennung)}</span>` : ''}
+     </button>
      ${b.lat === null ? '<span class="eintrag-wert ortlos-marke">ohne Ort</span>' : ''}
      ${augenKnopf(b.sichtbar !== false)}`;
   vorschauEinsetzen(kopf.querySelector('.mini-bild'), b, miniUrl);
@@ -3710,27 +3728,50 @@ function bildFormular(b) {
   return koerper;
 }
 
-/** Das Bild in voller Größe – am Bauort der einzige Weg, es genau anzusehen */
+/**
+ * Das Bild in voller Größe – am Bauort der einzige Weg, es genau anzusehen.
+ *
+ * Ein Blatt und kein gewöhnlicher Dialog: das Bild bekommt, was zwischen Kopf
+ * und Angaben übrig bleibt, und die Angaben stehen fest darunter. Vorher war
+ * das Bild auf `88vh - 180px` gedeckelt und die Angaben rutschten bei einem
+ * hochkant aufgenommenen Bild unter die Blattkante – dort, wo niemand sie
+ * sucht. Quer war es überdies kleiner als die Vorschau in der Liste, aus der
+ * man es geöffnet hatte.
+ */
 export function bildAnsehen(b) {
   const box = el('div', 'bild-gross');
+  const flaeche = el('div', 'bg-bild');
+  box.appendChild(flaeche);
   bildUrl(b.id).then(url => {
     if (!url || !box.isConnected) {
-      box.appendChild(el('p', 'klein fehlertext', 'Zu diesem Eintrag liegen keine Bilddaten vor.'));
+      flaeche.appendChild(el('p', 'klein fehlertext',
+        'Zu diesem Eintrag liegen keine Bilddaten vor.'));
       return;
     }
     const bild = document.createElement('img');
     bild.src = url;
     bild.alt = bildTitel(b);
-    box.insertBefore(bild, box.firstChild);
+    flaeche.appendChild(bild);
   });
 
-  const fuss = [];
-  if (b.bemerkung) fuss.push(escapeHtml(b.bemerkung));
-  if (b.aufgenommen) fuss.push(escapeHtml(zeitpunkt(b.aufgenommen)));
-  if (b.lat !== null) fuss.push(escapeHtml(toMGRS(b.lat, b.lng, 5)));
-  if (fuss.length) box.appendChild(el('p', 'klein', fuss.join(' · ')));
+  /* Untereinander und nicht in einem Satz mit Mittelpunkten: die Bemerkung
+     vom Bauort ist ein Satz und keine Angabe, und zwischen zwei Angaben
+     gelesen geht sie unter. */
+  const angaben = el('div', 'bg-angaben');
+  if (b.bemerkung) angaben.appendChild(el('p', 'bg-bemerkung', escapeHtml(b.bemerkung)));
+  const zeilen = [];
+  if (b.aufgenommen) zeilen.push(`Aufgenommen ${escapeHtml(zeitpunkt(b.aufgenommen))}`);
+  if (b.richtung !== null) {
+    zeilen.push(`Blick ${Math.round(b.richtung)}° (${himmelsrichtung(b.richtung)})`);
+  }
+  if (zeilen.length) angaben.appendChild(el('p', 'klein', zeilen.join(' · ')));
+  angaben.appendChild(el('p', 'klein mono', b.lat === null
+    ? 'Ohne Ort – die Kamera hat keinen aufgezeichnet.'
+    : escapeHtml(toMGRS(b.lat, b.lng, 5))));
+  box.appendChild(angaben);
 
-  dialog({ titel: bildTitel(b), inhalt: box, breit: true, fuss: [{ text: 'Schließen', primaer: true }] });
+  dialog({ titel: bildTitel(b), inhalt: box, breit: true, fuellend: true,
+           fuss: [{ text: 'Schließen', primaer: true }] });
 }
 
 /**
@@ -4038,27 +4079,41 @@ function kartenvorratBlock(s) {
     holen.textContent = 'Abbrechen';
     vorratLaeuft = kachelVorladen(basis.url, basis.id, punkte, {
       zoomBis: bisZoom,
-      beiFortschritt: (fertig, gesamt) =>
-        fortschritt(`Karte wird geholt … ${fertig} von ${gesamt} Kacheln`, fertig / gesamt)
+      /* Gezählt werden die Kacheln, die wirklich im Gerät liegen, und nicht
+         die erledigten Abrufe. Ohne Netz lief der Balken sonst bis ans Ende
+         durch, während nichts ankam – und wer daneben steht, liest den vollen
+         Balken als „fertig“ und rückt aus. */
+      beiFortschritt: (fertig, gesamt, stand) => {
+        const da = stand.geholt + stand.vorhanden;
+        fortschritt(`Karte wird geholt … ${da} von ${gesamt} Kacheln im Gerät` +
+          (stand.fehler ? ` · ${stand.fehler} ohne Antwort` : ''), da / gesamt);
+      }
     });
     vorratLaeuft.lauf.then(e => {
       vorratLaeuft = null;
       holen.textContent = '↓ Karte holen';
+      /* Was am Ende zählt, ist die Zahl im Gerät – das Geholte und das, was
+         schon dalag. Wer denselben Ausschnitt ein zweites Mal mitnimmt, hört
+         sonst „0 Kacheln“, obwohl die Karte vollständig da ist. */
+      const da = e.geholt + e.vorhanden;
       if (e.speicherVoll) {
-        hinweis(`Das Gerät ist voll – ${e.geholt} Kacheln liegen da, der Rest fehlt. ` +
+        hinweis(`Das Gerät ist voll – ${da} Kacheln liegen da, der Rest fehlt. ` +
           'Platz schaffen und noch einmal holen.', 'fehler');
       } else {
-        /* Der Kopf der Meldung richtet sich nach dem Ergebnis: bei null
-           geholten Kacheln ist nichts mitgenommen, und dann gehört die
-           Ursache nach vorn statt die Null hinter ein „mitgenommen“. */
+        /* Der Kopf der Meldung richtet sich nach dem Ergebnis: ist keine
+           Kachel angekommen, ist die Karte NICHT mitgenommen – und das gehört
+           in die ersten beiden Wörter. Im Vorbeigehen liest man nicht weiter,
+           und eine Null hinter einem „mitgenommen“ schickt den Trupp ein
+           zweites Mal ohne Karte los. */
         hinweis(e.abgebrochen
-          ? `Abgebrochen – ${e.geholt} Kacheln liegen im Gerät.`
-          : !e.geholt
-            ? `Keine Kachel angekommen – ${e.fehler} Abrufe blieben ohne Antwort. ` +
-              'Das Netz ist weg oder die Karte lässt sich nicht mitnehmen.'
-            : `Karte mitgenommen: ${e.geholt} Kacheln, ${mengenText(e.bytes)}` +
-              (e.fehler ? ` · ${e.fehler} nicht zu bekommen` : ''),
-          e.fehler && !e.geholt ? 'fehler' : 'info');
+          ? `Abgebrochen – ${da} von ${e.gesamt} Kacheln liegen im Gerät.`
+          : !da
+            ? `Karte nicht mitgenommen – keine von ${e.gesamt} Kacheln angekommen, ` +
+              `${e.fehler} Abrufe ohne Antwort. Das Netz ist weg oder die Karte ` +
+              'lässt sich nicht mitnehmen.'
+            : `Karte mitgenommen: ${da} von ${e.gesamt} Kacheln, ${mengenText(e.bytes)}` +
+              (e.fehler ? ` · ${e.fehler} fehlen` : ''),
+          !da ? 'fehler' : e.fehler ? 'warnung' : 'info');
       }
       standZeigen();
     }).catch(f => {

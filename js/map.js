@@ -343,13 +343,56 @@ function vorratsEbene(url, optionen) {
   return ebene;
 }
 
+/* Drei ausgefallene Kacheln als Schwelle: einzelne Löcher kommen im Betrieb
+   vor – am Rand einer WMS-Abdeckung, bei einer Stufe, die der Anbieter nicht
+   führt. Ohne Netz sind es dagegen sofort alle, und dann sagt `navigator.onLine`
+   es ohnehin schon. */
+const AUSFALL_AB = 3;
+
+/* Ohne Netz blieb die Karte einfach grau. Der Ausfall ging an Leaflet und
+   endete dort; am Bauort stand der Trupp vor einer leeren Fläche und hielt sie
+   für einen Fehler der Anwendung – dabei liegt vielleicht ein Vorrat im Gerät.
+   Gemeldet wird er als Ereignis an der Karte: WO er angezeigt wird, entscheidet
+   die Oberfläche und nicht dieses Modul. Und er wird angezeigt, solange er
+   dauert – eine Hinweispille wäre nach 3,2 s weg, der Zustand hält die ganze
+   Baustelle. */
+function kachelWacht(karte, ebene) {
+  let fehler = 0;
+  const melden = aus => {
+    if (karte._fbpKachelAus === aus) return;
+    karte._fbpKachelAus = aus;
+    karte.fire('fbp:kachelnot', { aus });
+  };
+  const ebenen = ebene.getLayers ? ebene.getLayers() : [ebene];
+  for (const e of ebenen) {
+    /* Gezählt wird je Ladelauf und nicht über die Sitzung: nach drei Löchern
+       am Rand einer Abdeckung bliebe die Anzeige sonst für immer stehen. */
+    e.on('loading', () => { fehler = 0; });
+    e.on('tileerror', () => {
+      fehler++;
+      if (navigator.onLine === false || fehler >= AUSFALL_AB) melden(true);
+    });
+    /* Aufgehoben wird erst, wenn ein ganzer Lauf durch ist und dabei zu wenige
+       Kacheln gefehlt haben. Auf jede einzelne angekommene Kachel zurück-
+       zusetzen ließe die Anzeige flackern, sobald ein Vorrat den Ausschnitt
+       nur teilweise deckt – und genau das ist am Bauort der Normalfall. */
+    e.on('load', () => {
+      if (fehler < AUSFALL_AB && navigator.onLine !== false) melden(false);
+    });
+  }
+}
+
 export function setzeBasiskarte(karte, id) {
   const def = basiskarteById(id);
   if (karte._fbpBasis) {
-    // Remove any listeners attached to the previous base layer (e.g., from warteAufKacheln)
+    /* Die Horcher der vorigen Ebene abnehmen – `warteAufKacheln` hängt seine
+       an `load`, die Kachelwacht ihre an `tileerror`. */
     karte._fbpBasis.off('load');
     karte._fbpBasis.off('tileerror');
     karte.removeLayer(karte._fbpBasis);
+    /* Der gemeldete Zustand gehört zur alten Ebene: die neue meldet ihn mit
+       ihrer ersten Kachel neu, ob sie ankommt oder nicht. */
+    karte._fbpKachelAus = undefined;
   }
   if (karte._fbpDopQuelle) { karte.off('moveend', karte._fbpDopQuelle); karte._fbpDopQuelle = null; }
   karte._fbpBasis = def.dop ? dopBuendel(karte, def) : vorratsEbene(def.url, {
@@ -367,6 +410,7 @@ export function setzeBasiskarte(karte, id) {
     className: 'fbp-basis',
     kartenId: def.id
   });
+  kachelWacht(karte, karte._fbpBasis);
   karte._fbpBasis.addTo(karte);
   karte._fbpBasisId = id;
   document.body.classList.toggle('karte-dunkel', !!def.dunkel);

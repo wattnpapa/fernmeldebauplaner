@@ -5,6 +5,7 @@ import {
   dateisicherung, istGehaltvoll, ladeAlle
 } from './state.js';
 import { erstelleKarte, setzeBasiskarte, setzeVorrang, BASISKARTEN } from './map.js';
+import { bestand as kachelBestand } from './kacheln.js';
 import { StreckenLayer, escapeHtml } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
 import { FlaechenLayer } from './flaechen.js';
@@ -486,6 +487,33 @@ function koordLeeren() {
   slMgrs.textContent = slGps.textContent = slDez.textContent = '–';
   slQuelle.textContent = OHNE_KOORD;
 }
+
+/* Ohne Netz sagte die Anwendung nichts: die Karte blieb grau, die Höhe stand
+   auf „–“, und was fehlte, war nicht zu erraten. Die Leiste sagt es jetzt –
+   still, dauerhaft und mit der Zahl, auf die es dann ankommt: wie viele
+   Kacheln im Gerät liegen. Ein Vorrat von null heißt am Bauort, dass die Karte
+   grau bleibt; einer von zweitausend heißt, dass alles da ist. */
+const slNetz = $('#sl-netz');
+function netzstandZeigen(aus) {
+  /* Die Höhe weicht, solange der Ausfall steht: sie kommt aus einer Kachel und
+     zeigt ohne Netz ohnehin „–“. Ohne diesen Tausch bricht die Leiste bei
+     390 px in zwei Zeilen um und nimmt der Karte 21 px – dauerhaft, denn der
+     Ausfall dauert die ganze Baustelle. */
+  slNetz.parentElement.classList.toggle('ohne-netz', aus);
+  if (!aus) { slNetz.hidden = true; return; }
+  slNetz.hidden = false;
+  slNetz.textContent = 'kein Netz';
+  kachelBestand().then(b => {
+    slNetz.textContent = `kein Netz, Vorrat: ${b.anzahl.toLocaleString('de-DE')} Kacheln`;
+  }).catch(() => { /* ohne Bestand bleibt die kurze Form stehen – sie ist die Aussage */ });
+}
+karte.on('fbp:kachelnot', e => netzstandZeigen(e.aus));
+/* Meldet der Browser das Netz zurück, ist die Anzeige sofort falsch – auf die
+   nächste geglückte Kachel zu warten hieße, sie bis zur nächsten Bewegung der
+   Karte stehen zu lassen. */
+window.addEventListener('online', () => netzstandZeigen(false));
+window.addEventListener('offline', () => netzstandZeigen(true));
+if (navigator.onLine === false) netzstandZeigen(true);
 
 karte.on('mousemove', e => koordZeigen(e.latlng, 'Position des Mauszeigers'));
 karte.on('mouseout', koordLeeren);

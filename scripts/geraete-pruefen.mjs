@@ -356,6 +356,32 @@ const MESSHILFEN = `
         knoepfe: knoepfe.map(e => ({ text: e.textContent.trim(), ...window._g.lage(e) }))
       };
     },
+    /* Die Großansicht eines Bildes: das Blatt selbst darf nicht rollen, und
+       Kopf, Bild, Angaben und Schließen müssen nebeneinander Platz finden.
+       Vorher war das Bild auf 88vh abzüglich 180 px gedeckelt und schob bei
+       einer hochkant aufgenommenen Datei Bemerkung, Zeitpunkt und
+       Gitterangabe unter die Kante. Das Maß steht hier ausgeschrieben statt in
+       Quelltextschreibweise: die Messhilfen liegen selbst in einem
+       Template-Literal, und ein Gravis darin beendete es mitten im Satz. */
+    bildschau() {
+      const d = window._g.muss('.dialog');
+      const inhalt = window._g.muss('.dialog-inhalt', d);
+      const bild = window._g.muss('.bg-bild img', d);
+      const angaben = window._g.muss('.bg-angaben', d);
+      const zu = [...d.querySelectorAll('.dialog-fuss button')]
+        .find(k => k.textContent.trim() === 'Schließen');
+      if (!zu) throw new Error('Kein „Schließen“ im Fuß');
+      const bk = bild.getBoundingClientRect();
+      return {
+        rollt: inhalt.scrollHeight > inhalt.clientHeight + 1,
+        angabenRollt: angaben.scrollHeight > angaben.clientHeight + 1,
+        angabenZeilen: angaben.children.length,
+        bild: Math.round(bk.width) + '×' + Math.round(bk.height),
+        bildFlaeche: Math.round(bk.width * bk.height),
+        angabenLage: window._g.lage(angaben),
+        zuLage: window._g.lage(zu)
+      };
+    },
     dateimenue() {
       const m = window._g.muss('.menu');
       if (m.hidden) throw new Error('Das Dateimenü ist zu');
@@ -642,6 +668,29 @@ try {
   await seite.taste('Enter');
   b.gleich(await seite.auswerten('window.fbp.store.projekt.strecken[0].punkte.length'), 3,
     'Drei Trassenpunkte stehen');
+
+  /* Ein Lichtbild für die Großansicht: hochkant und mit langem Namen – genau
+     der Fall, in dem die Angaben unter die Blattkante rutschten. Es wird hier
+     angelegt, weil jedes Fenster es später öffnet. */
+  await seite.auswerten(`
+    const sp = await import('./js/bildspeicher.js');
+    const c = document.createElement('canvas');
+    c.width = 1200; c.height = 1600;
+    const x = c.getContext('2d');
+    x.fillStyle = '#41546b'; x.fillRect(0, 0, 1200, 1600);
+    const blob = await new Promise(f => c.toBlob(f, 'image/jpeg', 0.6));
+    await sp.ablegen('bild-pruef', blob);
+    window.fbp.store.aendern(p => {
+      p.bilder = [{
+        id: 'bild-pruef',
+        name: 'Mastfuss-an-der-Zufahrt-Nordseite-Blickrichtung-Sued-Detail',
+        lat: 51.802, lng: 10.618, ortAusKamera: true, richtung: 190,
+        aufgenommen: new Date('2026-09-14T16:12:00').toISOString(),
+        bemerkung: 'Graben unterquert die Zufahrt, Rohr DN 100 liegt vorhanden.',
+        sichtbar: true
+      }];
+    }, 'bild');
+    return true;`);
 
   // ------------------------------------------------------------ Schriftgröße
 
@@ -953,6 +1002,29 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                    : `alle ${m.anzahl} Einträge ≥ 44 px (kleinster ${m.kleinster})` };
       });
     await seite.taste('Escape');
+
+    await fall(fenster, 'Großansicht: Bild, Angaben und Schließen im Bild',
+      'Die Großansicht zeigt Schließen und alle Angaben, ohne dass das Blatt rollt',
+      async () => {
+        await seite.auswerten(`
+          const ui = await import('./js/ui.js');
+          ui.bildAnsehen(window.fbp.store.projekt.bilder[0]);
+          return true;`);
+        await seite.warteAuf('!!document.querySelector(".bg-bild img")', 5000);
+        await seite.ruhe();
+        const g = await seite.auswerten('window._g.bildschau()');
+        await seite.taste('Escape');
+        await seite.warteAuf('document.getElementById("dialog").hidden', 5000);
+        const gut = !g.rollt && !g.angabenRollt &&
+                    g.angabenLage.imBild && griffGut(g.zuLage);
+        return { gut, kurz: gut ? g.bild : g.rollt ? 'Blatt rollt'
+                   : g.angabenRollt ? 'Angaben rollen'
+                   : g.angabenLage.imBild ? 'Schließen zu' : 'Angaben weg',
+                 text: `Bild ${g.bild}, ${g.angabenZeilen} Angabenzeilen` +
+                       (g.rollt ? ', das Blatt rollt' : ', das Blatt rollt nicht') +
+                       (g.angabenRollt ? ', die Angaben rollen in sich' : '') +
+                       '; ' + griffText('„Schließen“', g.zuLage) };
+      });
 
     /* Die drei Dialoge, an denen das Querformat gemessen wird: einer mit
        Eingabefeld, einer mit Liste, einer mit Entscheidung. Der letzte geht
