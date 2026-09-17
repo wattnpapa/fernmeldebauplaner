@@ -336,10 +336,14 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 **Austausch mit anderen Werkzeugen**
 - Planung als `.json` sichern und laden
 - **Planung als Link teilen:** ein Link, der die Planung selbst enthält – gepackt im
-  Fragment der Adresse, ohne Server und ohne Konto. Wahlweise die ganze Planung, ein
-  einzelner Einsatzabschnitt oder nur der Kartenausschnitt. Eine Längenampel warnt,
-  bevor ein Link so lang wird, dass Mailprogramme ihn umbrechen; Lichtbilder reisen
-  nicht mit. Der Empfänger sieht erst, was ankommt, und entscheidet dann
+  Fragment der Adresse, ohne Server und ohne Konto. Wahlweise die ganze Planung, eine
+  einzelne Strecke, ein einzelner Einsatzabschnitt oder nur der Kartenausschnitt. Eine
+  Längenampel warnt, bevor ein Link so lang wird, dass Mailprogramme ihn umbrechen;
+  Lichtbilder reisen nicht mit. Der Empfänger sieht erst, was ankommt, und entscheidet dann
+- **Link an den Bautrupp:** In der geöffneten Strecke steht „Link an den Bautrupp“.
+  Er trägt genau diese Trasse, den Einsatzabschnitt, in dem sie liegt, und das
+  gemeinsame Lagebild – die Baustelle des Nachbartrupps bleibt zurück. Der Trupp öffnet
+  ihn, schaltet in den Baumodus und baut danach; zurück kommt seine Baumeldung
 - Die Baudokumentation reist auf allen Wegen mit – Datei, Link und eigener Speicher.
   So schickt der Zugführer dem Truppführer dessen Einsatzabschnitt und bekommt zurück,
   was daraus geworden ist
@@ -443,6 +447,11 @@ bleibt im Planer, Google Earth kennt die THW-Zeichen nicht.
 Format und Farbe einstellen, dann „Drucken / Als PDF speichern“. Im Druckdialog des
 Browsers dasselbe Papierformat wählen und die Ränder auf „Standard“ oder „Keine“ lassen –
 das Blatt bringt seine Ränder selbst mit.
+
+**Link an den Bautrupp:** Strecke in der Seitenleiste öffnen → „Link an den Bautrupp“.
+Der Teilen-Dialog steht dann schon auf dieser Strecke; über „Datei → Planung als Link
+teilen“ ist dieselbe Wahl zu treffen, dort nur aus der Liste aller Strecken. Was der
+Link enthält, steht unter dem Auswahlfeld, darunter die Längenampel.
 
 **Sammel-Bauauftrag:** Für einen Einsatzabschnitt über dessen `⋯`, für die ganze Planung
 über „Sammel-PDF (alle Strecken)“ im Reiter „Strecken“ oder über das Menü „Datei“.

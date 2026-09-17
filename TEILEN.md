@@ -51,6 +51,11 @@ wird beim Empfänger aus derselben Vorgabe wieder aufgefüllt. Koordinaten auf
 sechs Nachkommastellen – 11 cm, weit unterhalb dessen, was ein Handempfänger
 hergibt. Das allein bringt Faktor 4 bis 5.
 
+Der `herkunft`-Block reist mit, sobald es einen gibt – also bei jedem
+Zuschnitt, nicht bei der ganzen Planung. Ohne die Projektkennung des Absenders:
+die sagt dem Empfänger nichts, seine übernommene Planung bekommt ohnehin eine
+eigene.
+
 Kennungen von Punkten, Strecken, Zeichen und Flächen reisen **nicht** mit; sie
 werden beim Empfänger neu vergeben. Quer referenziert werden nur
 `abschnitt`, `gruppe` und `verbund` – diese drei behalten eine Kennung, kurz
@@ -75,14 +80,28 @@ die ganze übrige Planung. Ortsangabe, Beschriftung und Aufnahmezeitpunkt der
 Bilder können mitgehen, die Bilddaten nicht. Der Dialog sagt das im Klartext –
 für Bilder bleibt die Datei der Weg.
 
-## Vier Arten von Link
+## Fünf Arten von Link
 
 - **Ganze Planung** (`p1.`) – der Normalfall.
-- **Einsatzabschnitt** (ebenfalls `p1.`) – der eigentlich nützlichste: der
-  Zugführer schickt jedem Truppführer dessen Abschnitt, kürzer und ohne fremde
-  Baustellen. Der Zuschnitt steht in `abschnittAlsProjekt()` – aus
-  `abschnittExportieren()` herausgelöst, damit Datei und Link denselben Weg
-  nehmen.
+- **Einsatzabschnitt** (ebenfalls `p1.`) – der Zugführer schickt jedem
+  Truppführer dessen Abschnitt, kürzer und ohne fremde Baustellen. Der
+  Zuschnitt steht in `abschnittAlsProjekt()` – aus `abschnittExportieren()`
+  herausgelöst, damit Datei und Link denselben Weg nehmen.
+- **Einzelne Strecke** (ebenfalls `p1.`) – der Bauauftrag an einen Trupp: ein
+  Trupp baut eine Trasse, nicht einen Einsatzabschnitt. Der Zuschnitt steht in
+  `streckeAlsProjekt()` und nimmt die
+  Strecke, den Einsatzabschnitt, in dem sie liegt, und die nicht zugeteilten
+  Zeichen, Flächen und Relaisstellen – das gemeinsame Lagebild. Alles, was
+  einem Abschnitt zugeteilt ist, bleibt zurück; Zeichen hängen an Abschnitten
+  und nicht an Strecken, und sie mitzugeben zöge den Zuschnitt wieder auf.
+  Die Karte braucht dafür nichts: der Empfänger zieht sie beim Öffnen auf alles
+  zusammen, was in der Planung steht – und das ist hier genau diese Trasse.
+
+  Der Weg daneben – ein Abschnitt je Trupp – gäbe dasselbe her, solange jeder
+  Abschnitt aus einer Trasse besteht. Sobald er zwei trägt, bekommt der Trupp
+  die Baustelle des Nachbarn mit, und beide melden anschließend an derselben
+  Strecke zurück. Deshalb der eigene Zuschnitt und nicht der Rat, dafür
+  Abschnitte anzulegen.
 - **Nur der Kartenausschnitt** (`k1.`) – Lage, Zoom, Basiskarte, rund 50
   Zeichen. „Schau dir mal die Stelle an“, ohne jede Planungsangabe.
 - **Baumeldung** (`m1.`) – die Gegenrichtung, seit dem Baumodus: der Truppführer
@@ -98,7 +117,10 @@ für Bilder bleibt die Datei der Weg.
 Ein Link darf nichts überschreiben. Vor dem ersten Zugriff auf den Bestand
 erscheint ein Dialog – Name, Umfang, Stand – mit zwei Wegen: **Übernehmen**
 (als *neue* Planung mit neuer Kennung und `herkunft`-Block, wie ihn der
-Abschnittsexport schon schreibt) und **Verwerfen**.
+Abschnittsexport schon schreibt) und **Verwerfen**. Trägt der `herkunft`-Block
+eine Strecke, steht sie im Dialog vor dem Abschnitt: wer einen Bauauftrag für
+eine Trasse bekommt, soll das vor dem Übernehmen lesen und nicht den Abschnitt,
+in dem sie zufällig liegt.
 
 Bei der Baumeldung ist der Dialog ausführlicher, weil mehr auf dem Spiel steht:
 er zeigt je gemeldeter Strecke, welcher Strecke der Planung sie zugeordnet wird
@@ -163,6 +185,7 @@ steht und sichtbar ist, wie lang die Links in echten Planungen werden.
 | Frage | Entscheidung |
 |---|---|
 | Ablage der Daten | im URL-Fragment, nirgends sonst |
+| Zuschnitt für den Bautrupp | die einzelne Strecke, nicht der Einsatzabschnitt |
 | Empfang | Dialog vor dem Zugriff, zwei Knöpfe: Übernehmen oder Verwerfen |
 | Lichtbilder | reisen nicht mit |
 | Verschlusssachengrad | keine Sonderbehandlung im Dialog |

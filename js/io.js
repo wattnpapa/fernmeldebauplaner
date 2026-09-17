@@ -193,6 +193,64 @@ export function abschnittAlsProjekt(aid) {
   return teil;
 }
 
+/**
+ * Eine einzelne Strecke zu einer eigenständigen Planung zuschneiden – der
+ * Zuschnitt für den Bautrupp, der genau diese Trasse baut. Liefert `false`,
+ * wenn es die Strecke nicht mehr gibt.
+ *
+ * Der Weg daneben ist der Einsatzabschnitt (`abschnittAlsProjekt`). Er ist die
+ * Zuteilung der Führung; dieser hier ist der Bauauftrag an einen Trupp, und
+ * beides fällt nur zusammen, solange ein Abschnitt aus einer Trasse besteht.
+ * Sobald er zwei trägt, bekäme der Trupp die Baustelle des Nachbarn mit – und
+ * beide meldeten anschließend an derselben Strecke zurück.
+ *
+ * Mit geht der Einsatzabschnitt, in dem die Strecke liegt: sein Name steht auf
+ * dem Bauauftrag und ordnet später die Baumeldung wieder ein. Dazu die NICHT
+ * zugeteilten Zeichen, Flächen und Relaisstellen – das gemeinsame Lagebild,
+ * das jeder Ausschnitt mitbekommt. Was einem Abschnitt zugeteilt ist, bleibt
+ * hier: Zeichen hängen an Abschnitten, nicht an Strecken, und sie mitzugeben
+ * hieße, den Zuschnitt wieder aufzuziehen, den dieser Weg gerade macht.
+ *
+ * Die Baudokumentation der Strecke reist mit, wie überall. Das ist der Fall,
+ * in dem ein Trupp seinen Stand an einen anderen weitergibt – der zweite baut
+ * weiter, wo der erste aufgehört hat.
+ *
+ * Die Ansicht bleibt, wie sie ist: der Empfänger zieht die Karte beim Öffnen
+ * ohnehin auf alles zusammen, was in der Planung steht (`fitBounds` in
+ * `app.js`), und das ist hier genau diese Trasse. Ein hier gesetzter Mittelpunkt
+ * wäre im selben Atemzug wieder überschrieben.
+ */
+export function streckeAlsProjekt(sid) {
+  const p = store.projekt;
+  const s = (p.strecken || []).find(x => x.id === sid);
+  if (!s) return false;
+  const ea = abschnittById(p, s.abschnitt);
+  const jetzt = new Date().toISOString();
+  const zeichen = zeichenIm(p, null);
+  const benutzt = new Set(zeichen.map(z => z.gruppe).filter(Boolean));
+
+  return {
+    ...p,
+    id: id(),
+    name: `${p.name} – ${s.name}`,
+    erstellt: jetzt,
+    geaendert: jetzt,
+    einsatzabschnitte: ea ? [ea] : [],
+    zeichengruppen: (p.zeichengruppen || []).filter(g => benutzt.has(g.id)),
+    strecken: [s],
+    zeichen,
+    flaechen: flaechenIm(p, null),
+    relaisstellen: relaisstellenIm(p, null),
+    herkunft: {
+      projekt: p.name,
+      projektId: p.id,
+      einsatzabschnitt: ea ? ea.name : '',
+      strecke: s.name,
+      erzeugt: jetzt
+    }
+  };
+}
+
 /** Denselben Ausschnitt als Datei sichern. Die Lichtbilder kommen erst hier
  *  dazu: sie sind keinem Abschnitt zugeteilt und gehören deshalb – wie die
  *  nicht zugeteilten Zeichen – zu jedem Ausschnitt. Der Ausschnitt wird dadurch

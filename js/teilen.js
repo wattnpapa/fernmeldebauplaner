@@ -270,6 +270,18 @@ export function verschlanken(projekt) {
        das Original. Dasselbe gilt für jedes Feld, dessen Vorgabe aus der Uhr
        kommt; zur Zeit ist `datum` das einzige. */
     kopf: entruempeln(p.kopf, vorgabe.kopf, ['datum']),
+    /* Woher der Zuschnitt stammt. Steht nur an einem: die ganze Planung hat
+       keine Herkunft, ein Abschnitt und eine einzelne Strecke schon – und der
+       Empfänger soll vor dem Übernehmen lesen, was er da bekommt. Die
+       Projektkennung des Absenders bleibt zurück: sie sagt ihm nichts, seine
+       Planung bekommt beim Übernehmen ohnehin eine eigene, und was nicht
+       gebraucht wird, hat im Link nichts verloren. */
+    herkunft: entruempeln({
+      projekt: p.herkunft?.projekt || undefined,
+      einsatzabschnitt: p.herkunft?.einsatzabschnitt || undefined,
+      strecke: p.herkunft?.strecke || undefined,
+      erzeugt: p.herkunft?.erzeugt || undefined
+    }, {}),
     ansicht: { ...entruempeln(p.ansicht, vorgabe.ansicht),
                lat: rund(p.ansicht.lat), lng: rund(p.ansicht.lng) },
     optionen: entruempeln(p.optionen, vorgabe.optionen),

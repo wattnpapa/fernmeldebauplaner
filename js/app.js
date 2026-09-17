@@ -1,7 +1,7 @@
 // app.js – Zusammenbau: Karte, Layer, Bedienung, Tastatur
 
 import {
-  store, neueStrecke, neuerPunkt, neuesZeichen,
+  store, neueStrecke, neuerPunkt, neuesZeichen, abschnittById,
   dateisicherung, istGehaltvoll, ladeAlle
 } from './state.js';
 import { erstelleKarte, setzeBasiskarte, setzeVorrang, BASISKARTEN } from './map.js';
@@ -149,6 +149,9 @@ const gl = new GitterLayer(karte);
 initUI({
   karte, sl, zl, bl, fl, rl, weiterzeichnen, zeichenSetzen, flaecheSetzen, relaisSetzen,
   zurKarte, bildOrtSetzen, aufAenderung: () => {},
+  /* Die Seitenleiste teilt eine einzelne Strecke – den Dialog dazu führt
+     dieses Modul, weil er am Projekt und an der Karte hängt. */
+  teilenDialog: vorwahl => teilenDialog(vorwahl),
   /* Die Seitenleiste startet im Baumodus einen Setzmodus („Punkt auf der
      Karte“). Die Modusleiste hängt an der Werkzeugleiste und wird deshalb von
      hier aus geführt – ohne diesen Weg bliebe sie beim Setzen aus, und schmal
@@ -837,7 +840,7 @@ function umfangText(p) {
 /* Die Ampel misst nicht den Browser – der trägt ein Vielfaches –, sondern die
    Mailprogramme: sie brechen lange Zeilen um, und ein umgebrochener Link kommt
    beim Empfänger als Bruchstück an. */
-function teilenDialog() {
+function teilenDialog(vorwahl) {
   if (!teilen.kannPacken()) {
     dialog({
       titel: 'Planung als Link teilen',
@@ -852,11 +855,22 @@ function teilenDialog() {
 
   const p = store.projekt;
   const abschnitte = p.einsatzabschnitte || [];
+  const strecken = p.strecken || [];
   const box = document.createElement('div');
+  /* Die einzelne Strecke steht in einer eigenen Gruppe und ganz oben unter den
+     Zuschnitten: sie ist der Link an den Bautrupp und damit der häufigste –
+     ein Trupp baut eine Trasse, nicht einen Einsatzabschnitt. */
   box.innerHTML = `
     <label class="feld"><span class="feld-titel">Was soll der Link enthalten?</span>
       <select id="tl-was">
         <option value="alles">Die ganze Planung – ${escapeHtml(p.name)}</option>
+        ${strecken.length ? `<optgroup label="Für den Bautrupp – eine einzelne Strecke">
+          ${strecken.map(s => {
+            const ea = abschnittById(p, s.abschnitt);
+            return `<option value="st:${escapeHtml(s.id)}">Nur die Strecke „${escapeHtml(s.name)}“` +
+              `${ea ? ` (${escapeHtml(ea.name)})` : ''}</option>`;
+          }).join('')}
+        </optgroup>` : ''}
         ${abschnitte.map(a =>
           `<option value="ea:${escapeHtml(a.id)}">Nur den Einsatzabschnitt „${escapeHtml(a.name)}“</option>`).join('')}
         <option value="ausschnitt">Nur den Kartenausschnitt – ohne Planungsdaten</option>
@@ -905,10 +919,14 @@ function teilenDialog() {
         merke.textContent = 'Dieser Link enthält keine Planungsdaten – nur den Blick auf die Karte.';
         return;
       }
-      const quelle = wahl === 'alles' ? store.projekt : io.abschnittAlsProjekt(wahl.slice(3));
+      const quelle = wahl === 'alles' ? store.projekt
+        : wahl.startsWith('st:') ? io.streckeAlsProjekt(wahl.slice(3))
+        : io.abschnittAlsProjekt(wahl.slice(3));
       if (!quelle) {
         feldLink.value = '';
-        umfang.textContent = 'In diesem Einsatzabschnitt ist noch nichts geplant.';
+        umfang.textContent = wahl.startsWith('st:')
+          ? 'Diese Strecke gibt es nicht mehr.'
+          : 'In diesem Einsatzabschnitt ist noch nichts geplant.';
         merke.textContent = '';
         return;
       }
@@ -943,6 +961,11 @@ function teilenDialog() {
     lauf.then(() => hinweis('Link kopiert'))
       .catch(() => hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler'));
   };
+
+  /* Kommt der Aufruf von einer Strecke, steht sie schon gewählt da. Fehlt der
+     Eintrag – die Strecke wurde zwischen Klick und Dialog gelöscht –, bleibt
+     das Feld auf der ganzen Planung stehen, statt leer zu sein. */
+  if (vorwahl && [...was.options].some(o => o.value === vorwahl)) was.value = vorwahl;
 
   dialog({ titel: 'Planung als Link teilen', inhalt: box, breit: true,
     fuss: [{ text: 'Schließen', primaer: true }] });
@@ -1013,7 +1036,13 @@ async function geteiltenLinkPruefen() {
 
   const bilder = (roh.bilder || []).length;
   const stand = roh.geaendert ? zeitpunktKurz(roh.geaendert) : '';
-  const herkunft = roh.herkunft?.einsatzabschnitt
+  /* Die Strecke zuerst: Wer einen Bauauftrag für eine Trasse bekommt, soll das
+     vor dem Übernehmen lesen und nicht den Abschnitt, in dem sie zufällig
+     liegt. */
+  const herkunft = roh.herkunft?.strecke
+    ? `<p class="klein">Strecke „${escapeHtml(roh.herkunft.strecke)}“ aus der Planung
+        „${escapeHtml(roh.herkunft.projekt || '')}“.</p>`
+    : roh.herkunft?.einsatzabschnitt
     ? `<p class="klein">Ausschnitt „${escapeHtml(roh.herkunft.einsatzabschnitt)}“ aus der Planung
         „${escapeHtml(roh.herkunft.projekt || '')}“.</p>` : '';
 

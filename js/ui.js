@@ -944,6 +944,11 @@ function streckenKarte(s) {
   tasten.append(
     knopf('Weiterzeichnen', () => ctx.weiterzeichnen(s.id)),
     knopf('Auf Karte zeigen', () => { ctx.sl.zeigeStrecke(s.id); ctx.zurKarte?.(); }),
+    /* Der kurze Weg zum Bautrupp: der Teilen-Dialog öffnet mit dieser Strecke
+       vorgewählt. Er steht hier und nicht nur im Dateimenü, weil dort die
+       Strecke erst wieder aus einer Liste zu suchen wäre – und weil der Trupp
+       an der Strecke hängt, nicht an der Planung. */
+    knopf('Link an den Bautrupp', () => ctx.teilenDialog?.('st:' + s.id)),
     knopf('Richtung umkehren', () => {
       store.aendern(() => {
         s.punkte.reverse();
