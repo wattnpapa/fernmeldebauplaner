@@ -119,6 +119,23 @@ export function hinweis(text, art = 'info') {
 }
 
 /**
+ * Die Pille sofort abräumen, weil ihre Auskunft inzwischen an einer besseren
+ * Stelle steht. Gebraucht wird das, wo eine Ankündigung läuft und das
+ * Ergebnis kein Wort mehr braucht: „Position wird ermittelt …“ bliebe sonst
+ * stehen, nachdem der Punkt längst steht und die Punktkarte ihn zeigt. Sie
+ * geht denselben Weg wie nach Ablauf der Frist, damit kein Aussetzer der
+ * Anzeige daraus wird.
+ */
+export function hinweisAus() {
+  const box = document.getElementById('hinweisbox');
+  clearTimeout(hinweisTimer);
+  clearTimeout(hinweisWeg);
+  if (box.hidden) return;
+  box.classList.add('geht');
+  hinweisWeg = setTimeout(() => { box.hidden = true; box.classList.remove('an', 'geht'); }, 160);
+}
+
+/**
  * Eine laufende Arbeit in derselben Pille zeigen wie die Meldungen – mit Balken
  * und ohne Frist. Eine Übernahme von zwanzig Bildern dauert länger als jede
  * Meldung stehen bleibt; verschwände die Ankündigung vorher, sähe es aus, als

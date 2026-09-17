@@ -1706,6 +1706,14 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .hinweisbox {
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 2500;
   bottom: max(calc(46px + env(safe-area-inset-bottom, 0px)), calc(var(--wechsel-hoehe) + 10px));
+  /* Sie nimmt nichts entgegen – `role="status"`, kein Klickhandler, kein
+     Schließgriff – und fing trotzdem 3,2 s lang jeden Tipp ab, der dem Griff
+     darunter galt; bei einer Fehlermeldung 6 s. Genau in dieser Zeit wird
+     weitergetippt: jede Aufnahme meldet, unmittelbar danach schlägt die
+     Punktkarte auf. Mit Handschuh liest sich das nicht als „Meldung liegt
+     davor“, sondern als kaputter Knopf, und der zweite Tipp zoomt die Karte.
+     Die Pille gewinnt durch das Abfangen nichts – sie verliert nur den Tipp. */
+  pointer-events: none;
   background: rgba(20,28,40,.95); color: #fff; padding: 9px 16px; border-radius: 20px;
   font-size: 13px; box-shadow: var(--schatten-stark); max-width: 88vw; text-align: center;
 }

@@ -349,6 +349,54 @@ const MESSHILFEN = `
        weit darunter im Inhalt liegt: der Abstand wäre eine Zahl über zwei
        Griffe, die niemand zugleich sieht. Getroffen wird die Gefahrtaste
        ohnehin erst, wenn zu ihr gerollt wurde. */
+    /* Eine Meldung einblenden und stehen lassen. Gemessen wird danach die
+       Eigenschaft, an der es lag – ob die Pille den Tipp entgegennimmt oder
+       weiterreicht –, und nicht ein echter Tipp auf das, was zufällig unter
+       ihr liegt: das ist in jedem Fenster ein anderes Element, und in der
+       Quellenzeile wäre es ein Link nach draußen. Der echte Tipp steht im
+       Dialogfall, wo der Griff darunter bekannt ist. */
+    async pilleZeigen(text) {
+      const m = await import('./js/ui.js');
+      m.hinweis(text);
+      const box = window._g.muss('#hinweisbox');
+      await Promise.all(box.getAnimations().map(a => a.finished.catch(() => {})));
+      await new Promise(f => requestAnimationFrame(f));
+      return true;
+    },
+    /* Liefert auch dann etwas, wenn gar keine Meldung steht – das ist im
+       Baumodus der Regelfall und selbst ein Befund, kein Fehlschlag. Wer eine
+       stehende Meldung braucht, prüft das Feld steht – in Gravis setzen
+       ließe es sich nicht, dieser Block steht selbst in einem
+       Template-Literal. */
+    pille() {
+      const box = window._g.muss('#hinweisbox');
+      if (box.hidden) return { steht: false, hoehe: 0, ueber: [], abgefangen: 0 };
+      const r = box.getBoundingClientRect();
+      let punkte = 0, abgefangen = 0;
+      for (let y = r.top + 3; y < r.bottom - 1; y += 4) {
+        for (let x = r.left + 3; x < r.right - 1; x += 4) {
+          punkte++;
+          const p = document.elementFromPoint(x, y);
+          if (p === box || box.contains(p)) abgefangen++;
+        }
+      }
+      /* Worüber sie liegt: die Statusleiste trägt die Gitterangabe, die nach
+         der Aufnahme abgelesen wird, das Blatt die Griffe. Gemeldet wird die
+         Höhe der Überschneidung – daran ist zu sehen, ob sie knapp ist. */
+      const ueber = [];
+      for (const wahl of ['.statusleiste', '#punktkarte', '.werkzeuge',
+                          '.leaflet-control-scale', '.leaflet-control-attribution']) {
+        const k = window._g.kasten(document.querySelector(wahl));
+        if (!k) continue;
+        const dy = Math.min(r.bottom, k.bottom) - Math.max(r.top, k.top);
+        const dx = Math.min(r.right, k.right) - Math.max(r.left, k.left);
+        /* Kein Template-Literal: dieser Block steht selbst in einem, und die
+           Einsetzung liefe in Node statt in der Seite. */
+        if (dx > 0 && dy > 0) ueber.push(wahl + ' um ' + Math.round(dy) + ' px');
+      }
+      return { steht: true, hoehe: Math.round(r.height), ueber,
+               abgefangen: punkte ? abgefangen / punkte : 1 };
+    },
     async gefahrAbstand() {
       const pk = window._g.muss('#punktkarte');
       const gefahr = window._g.muss('.knopf.gefahr', pk);
@@ -701,6 +749,44 @@ const seitenGriffe = await zuKleineGriffe('.seite',
       });
     await seite.taste('Escape');
 
+    await fall(fenster, 'Meldungspille lässt Tipps durch',
+      'Eine stehende Meldung fängt keinen Tipp ab, der dem Griff darunter gilt',
+      async () => {
+        await seite.auswerten(
+          `return await window._g.pilleZeigen('Baumodus: festhalten, was gebaut wurde.');`);
+        const p = await seite.auswerten('window._g.pille()');
+        if (!p.steht) throw new Error('die eingeblendete Meldung steht nicht');
+        return { gut: p.abgefangen === 0,
+                 kurz: p.abgefangen ? prozent(p.abgefangen) + ' zu' : '',
+                 text: p.abgefangen
+                   ? `${prozent(p.abgefangen)} ihrer Fläche nimmt den Tipp selbst entgegen`
+                   : `Pille ${p.hoehe} px hoch, jeder Punkt ihrer Fläche reicht durch` };
+      });
+
+    await fall(fenster, 'Dialogfuß trotz Meldung treffbar',
+      'Steht eine Meldung über dem Dialogfuß, löst ein Tipp den Knopf trotzdem aus',
+      async () => {
+        await seite.klick('#btn-hilfe');
+        await seite.warteAuf('!document.getElementById("dialog").hidden');
+        await seite.auswerten(`return await window._g.pilleZeigen('Planungsmodus.');`);
+        const k = await seite.auswerten(`
+          const f = [...document.querySelectorAll('.dialog-fuss button')]
+            .filter(window._g.kasten).pop() || window._g.muss('.dialog-kopf button');
+          const r = f.getBoundingClientRect();
+          const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
+          const p = document.elementFromPoint(x, y);
+          return { text: f.textContent.trim(), x, y,
+                   trifft: !!p && (p === f || f.contains(p)), was: window._g.name(p) };`);
+        await seite.tippe(k.x, k.y);
+        const zu = await seite.auswerten('document.getElementById("dialog").hidden');
+        if (!zu) await seite.taste('Escape');
+        return { gut: k.trifft && zu, kurz: k.trifft ? (zu ? '' : 'ohne Wirkung') : 'verdeckt',
+                 text: `„${k.text}“ ` +
+                       (k.trifft ? 'ist zu treffen' : 'liefert ' + k.was) +
+                       (zu ? ' und schließt den Dialog' : ', der Dialog bleibt offen') };
+      });
+    await hinweisWeg();
+
     b.abschnitt(`Fenster ${fenster}: Baumodus mit Bauleiste`);
     await seite.klick('#btn-modus');
     await karteVorn();
@@ -763,6 +849,21 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     await seite.warteAuf('!document.getElementById("punktkarte").hidden', 8000)
       .catch(() => {});
     await new Promise(r => setTimeout(r, 450));
+    /* Gemessen wird der wirkliche Stand unmittelbar nach der Aufnahme und
+       keine eingeblendete Meldung: dass dort gar keine steht, ist die
+       Entscheidung, um die es geht – das Blatt trägt Herkunft, Gitterangabe
+       und Abweichung selbst. Stünde doch eine, dürfte sie weder die
+       Statusleiste noch das Blatt zudecken. */
+    await fall(fenster, 'Nach „Punkt hier“ keine Pille über Leisten und Blatt',
+      'Nach „Punkt hier“ deckt keine Meldung Statusleiste, Maßstab oder Blatt zu',
+      async () => {
+        const p = await seite.auswerten('window._g.pille()');
+        return { gut: !p.steht || p.ueber.length === 0,
+                 kurz: !p.steht ? 'keine' : p.ueber.length ? p.ueber.length + ' Leisten' : '',
+                 text: !p.steht ? 'keine Meldung – das Blatt trägt die Auskunft'
+                   : p.ueber.length ? 'Meldung liegt über ' + p.ueber.join(', ')
+                   : `Meldung ${p.hoehe} px hoch, frei von Leisten und Blatt` };
+      });
     const punktkarteFaelle = async zusatz => {
       const spalte = zusatz ? ' (Querung)' : '';
       await fall(fenster, 'Punktkarte: ✕ im Bild und treffbar' + spalte,
@@ -803,6 +904,11 @@ const seitenGriffe = await zuKleineGriffe('.seite',
         });
     };
     await punktkarteFaelle(false);
+    /* Erst die Meldung abwarten: sie zählt als Aufsatz mit, und ob sie beim
+       Messen noch steht, hinge sonst daran, wie lange die Fälle davor
+       gebraucht haben. Die freie Fläche ist eine Aussage über die Aufteilung,
+       nicht über die 3,2 s danach – die misst die Zeile darunter. */
+    await hinweisWeg();
     await fall(fenster, 'Karte frei – Punktkarte offen',
       `Freie Kartenfläche bei offener Punktkarte ≥ ${prozent(FREI_PUNKTKARTE)}`,
       async () => {

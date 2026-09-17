@@ -20,7 +20,8 @@ import {
   initUI, zeichneStreckenListe, zeichneZeichenListe, zeichneProjektReiter, zeichneBilderListe,
   zeichneFlaechenListe, flaechenPalette,
   zeichneRelaisListe, relaisZielAntwort, ueberdeckungUmschalten,
-  symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog, hinweis,
+  symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog,
+  hinweis, hinweisAus,
   abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen, zeichneBauListe,
   baumeldungDialog
 } from './ui.js';
@@ -56,11 +57,13 @@ const sl = new StreckenLayer(karte, {
   aufIstPunkt: (s, pt) => {
     if (!pt) return;
     modusAnzeigen();
-    hinweis(`Aufgenommen: ${toMGRS(pt.lat, pt.lng, 5)}`);
     /* Gleich benennen, was da aufgenommen wurde: die Punktkarte schlägt am
-       frischen Punkt auf. Im Planungsmodus kommt der Weg nicht vor – der
-       Setzmodus wird nur aus dem Baumodus gestartet –, die Meldung genügt. */
-    if (baumodus) punktkarteOeffnen(s, { ist: pt });
+       frischen Punkt auf und nennt Koordinate, Herkunft und Abweichung
+       selbst – eine Pille darüber sagte dasselbe ein zweites Mal und stünde
+       3,2 s über der Karte. Im Planungsmodus kommt der Weg nicht vor – der
+       Setzmodus wird nur aus dem Baumodus gestartet –, dort meldet sie. */
+    if (baumodus) { punktkarteOeffnen(s, { ist: pt }); hinweisAus(); }
+    else hinweis('Punkt aufgenommen');
   },
   /* Im Baumodus schlägt der Tipp auf eine Marke die Punktkarte auf: am
      geplanten Punkt mit den drei Wegen ihn aufzunehmen, am gebauten mit der
@@ -135,7 +138,7 @@ initUI({
 });
 /* Die Karte des Baumodus bekommt, was sie aus der Oberfläche braucht, von
    hier – sie darf `ui.js` nicht einführen, weil `ui.js` sie einführt. */
-initBaukarte({ karte, sl, hinweis, modusAnzeigen: () => modusAnzeigen(), zurKarte });
+initBaukarte({ karte, sl, hinweis, hinweisAus, modusAnzeigen: () => modusAnzeigen(), zurKarte });
 
 // Der Stand steht dauerhaft im Kopf: Wer zu einem gedruckten Bauauftrag
 // zurückfragt, hat dieselbe Nummer vor Augen, die im Blattfuß steht – ohne

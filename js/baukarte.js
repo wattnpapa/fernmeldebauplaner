@@ -26,11 +26,12 @@ import {
 import { toMGRS, formatLaenge, distanz } from './geo.js';
 import { escapeHtml } from './strecken.js';
 
-let ctx = null;   // { karte, sl, hinweis, modusAnzeigen, zurKarte }
+let ctx = null;   // { karte, sl, hinweis, hinweisAus, modusAnzeigen, zurKarte }
 
 export function initBaukarte(kontext) { ctx = kontext; }
 
 const hinweis = (text, art) => ctx && ctx.hinweis(text, art);
+const hinweisAus = () => ctx && ctx.hinweisAus();
 
 // ---------------------------------------------------------------- Ortung
 
@@ -86,11 +87,26 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
         abschnitt: abschnitt ? abschnitt.id : null
       });
     }, 'bau');
-    const abw = sollPunkt ? distanz(sollPunkt, { lat, lng }) : null;
-    hinweis(abw !== null && abw >= ABWEICHUNG_SCHWELLE
-      ? `Aufgenommen: ${toMGRS(lat, lng, 5)} (±${Math.round(accuracy)} m) – ${formatLaenge(abw)} vom Plan`
-      : `Aufgenommen: ${toMGRS(lat, lng, 5)} (±${Math.round(accuracy)} m)`);
     if (o.danach && neu) o.danach(s, neu);
+    /* Gemeldet wird nur, was das Blatt nicht schon zeigt. Schlägt die
+       Punktkarte am frischen Punkt auf, nennt sie Herkunft, Genauigkeit,
+       Gitterangabe und Abweichung – die Pille sagte dasselbe ein zweites Mal
+       und stünde dabei 3,2 s über Statusleiste und Maßstab. Aus der Liste
+       heraus schlägt kein Blatt auf; dort ist sie die einzige Rückmeldung und
+       bleibt. Die Gitterangabe fehlt ihr: mit ihr war sie bei 320 px
+       dreizeilig und deckte zwei Griffe der Bauleiste zu, und die Zahl steht
+       in der Zeile, die gerade entstanden ist. */
+    const abw = sollPunkt ? distanz(sollPunkt, { lat, lng }) : null;
+    if (!neu || !offen || offen.istId !== neu.id) {
+      hinweis(abw !== null && abw >= ABWEICHUNG_SCHWELLE
+        ? `Punkt aufgenommen (±${Math.round(accuracy)} m) – ${formatLaenge(abw)} vom Plan`
+        : `Punkt aufgenommen (±${Math.round(accuracy)} m)`);
+    } else {
+      /* Abräumen, nicht bloß nichts melden: „Position wird ermittelt …“ läuft
+         noch und stünde sonst 3,2 s über der Karte, während das Blatt den
+         fertigen Punkt schon zeigt. */
+      hinweisAus();
+    }
   }, err => hinweis('Position nicht verfügbar: ' + err.message, 'fehler'),
      { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
 }

@@ -403,6 +403,18 @@ Fehlgriff die eben eingetragene Aufnahme zurück, und der Rückweg dafür liegt
 oben in der Kopfzeile. Die Korrekturen stehen jetzt in der Zeile darüber, die
 Gefahrtaste an deren rechtem Ende, „Fertig“ allein in voller Breite darunter.
 
+**Die Meldung schweigt, wo das Blatt spricht.** Jede Aufnahme meldete
+„Aufgenommen: <Gitterangabe> (±7 m)“, und unmittelbar danach schlug die
+Punktkarte mit derselben Auskunft auf. Die Pille sagte damit nichts Neues,
+stand aber 3,2 s über Maßstab, Quellenzeile und Statusleiste – über der
+Gitterangabe also, die nach der Aufnahme abgelesen wird – und fing dabei jeden
+Tipp ab, der dem Griff darunter galt; mit Handschuh liest sich das als
+kaputter Knopf, und der zweite Tipp zoomt die Karte. Sie nimmt jetzt keine
+Tipps mehr entgegen, und wo das Blatt die Auskunft trägt, wird gar nicht erst
+gemeldet – „Position wird ermittelt …“ wird dabei abgeräumt statt stehen
+gelassen. Aus der Liste heraus schlägt kein Blatt auf; dort bleibt die
+Meldung, ohne die Gitterangabe, die eine Zeile weiter in der Liste steht.
+
 **Quer rückt das Blatt über Statusleiste und Maßstab.** Bei 667×375 bleiben
 vom Kartenbereich 59 px – weniger, als Kopf und Abschluss zusammen messen.
 Solange das Blatt steht, trägt es die Koordinate des Punktes selbst; die
@@ -449,6 +461,13 @@ im Bild und mit `elementFromPoint` zu treffen, auch mit gesetzter Querung,
 das Kreuz nie unter der Zoomsteuerung, und 16 px um die Gefahrtaste.
 
 ## Verworfene Wege
+
+**Die Meldungspille an die offene Punktkarte hängen.** Naheliegend, weil
+`body.punktkarte-offen` schon besteht: die Pille rückt dann über das Blatt
+statt darauf. Gemessen fällt sie damit bei 320×568 aus der Karte heraus und
+steht über dem Speicherband – der Streifen über dem Blatt ist dort 16 px hoch,
+die Pille 56. Die doppelte Meldung ganz wegzulassen löst denselben Fall ohne
+ein neues Maß.
 
 **Bezeichnung und Bemerkung hinter „Mehr …“.** Hätte die Höhe gebracht, die
 der Deckel jetzt erzwingt – aber Benennen ist am Bauort die Hauptaufgabe und
