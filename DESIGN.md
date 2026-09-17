@@ -311,11 +311,14 @@ stark; Einheiten (`m`, `%`) stehen im Feld rechts. Fokus überall als
 
 ### Reiter
 Gleich breite Reiter mit 2-px-Unterkante; aktiv: THW-Blau auf weißer Fläche.
-Pfeiltasten wechseln, Tab betritt das Reiterwerk genau einmal. Wo der Platz
-für alle nicht reicht (unter etwa 360 px), rollt die Reihe waagerecht statt
-die Seite aufzuschieben; der angeschnittene Reiter am Rand ist der Hinweis,
-und jeder Wechsel rollt seinen Reiter in den Blick. Zweizeilig geht nicht –
-die Reiterhöhe wird gemessen und trägt die Geometrie der Seitenleiste.
+Pfeiltasten wechseln, Tab betritt das Reiterwerk genau einmal. Unter 360 px
+rückt die waagerechte Polsterung auf 3 px zusammen, damit alle sechs
+nebeneinander stehen: bei 320 px maß die Reihe sonst 352 px, und „Planung“ –
+der Reiter mit den Kopfdaten des Bauauftrags – lag ganz außerhalb. Der
+angeschnittene Reiter war als Hinweis gedacht, aber von ihm blieb dort nichts
+stehen. Rollen kann die Reihe weiter, und jeder Wechsel rollt seinen Reiter in
+den Blick; gebraucht wird es erst, wenn ein siebter dazukommt. Zweizeilig geht
+nicht – die Reiterhöhe wird gemessen und trägt die Geometrie der Seitenleiste.
 
 ### Dialog & Menü
 Dialog mittig (max. 560/880 px), 10 px, starker Schatten, Fuß mit

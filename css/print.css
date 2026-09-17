@@ -132,11 +132,17 @@ body.druckansicht { overflow: hidden; }
    Fünftel der Höhe und scrollen darin – alle bleiben erreichbar, ohne erst
    eine Klappe zu suchen, und das Blatt behält den Rest. Die Gruppen stehen
    nebeneinander in einem Raster, die Tasten teilen sich eine Zeile. */
-/* Bis Fassung … stand hier 780 px, während die Anwendung bei 900 px umbricht.
+/* Bis Fassung … stand hier 780 px, während die Anwendung bei 900 px umbrach.
    Dazwischen – ein Tablet hochkant, 820 px – behielt die Vorschau die Spalte
    neben dem Blatt und passte es auf 0,468 ein: die Tabellen des Bauauftrags
-   waren dort nicht mehr zu lesen, bei 768 px dagegen schon (0,641). Ein
-   Umbruchpunkt für beide. */
+   waren dort nicht mehr zu lesen, bei 768 px dagegen schon (0,641).
+
+   Die Anwendung bricht inzwischen bei 760 px um (`SCHMAL_BIS` in `js/app.js`),
+   das Blatt weiter bei 900 – und das ist Absicht. Nebeneinander brauchen Liste
+   und Karte 372 plus 396 px, und das geht auf dem Tablet auf. Das Blatt
+   dagegen ist ein A4-Bogen: neben einer 272 px breiten Einstellungsspalte
+   bleibt bei 820 px zu wenig, und 0,468 ist keine lesbare Einpassung. Zwei
+   Erzeugnisse, zwei Grenzen. */
 @media (max-width: 900px) {
   #druck { flex-direction: column; }
   /* Der Deckel bekommt eine Untergrenze: Titel und Tastenzeile haben feste

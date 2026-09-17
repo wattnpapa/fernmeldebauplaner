@@ -199,13 +199,19 @@ Schritten, weil der Reiter länger ist als jedes Fenster), das Koordinaten-Popup
 aufgeklappten Kartenoptionen, das Dateimenü (letzter Eintrag treffbar, und jeder
 Eintrag auf 44 px – auch hier über die Rollstände getastet), die drei Dialoge
 „Neue Planung“, „Gespeicherte Planungen“ und „Baumeldung eingegangen“ mit Kopf
-und Fuß im Bild und treffbaren Fußknöpfen, die Großansicht eines Lichtbilds
+und Fuß im Bild und treffbaren Fußknöpfen, die Zeichenpalette (ein einziger
+Rollbereich, hochkant zwei volle Reihen, kein waagerechter Überlauf des
+Gitters), die Großansicht eines Lichtbilds
 (Bild, Angaben und „Schließen“ zugleich im Bild, ohne dass das Blatt rollt),
 die Zoomsteuerung und die
 Druckvorschau (Lupenhinweis gegen die wirksame Blattschrift, drei
 Einstellungsfelder ganz im Bild, das vergrößerte Blatt übersteht eine
 geänderte Einstellung); die Tabelle am Ende des Laufs zeigt alles je Fenster
-nebeneinander. Die Schwellen für die freie Kartenfläche sind die
+nebeneinander. Außerhalb des Durchlaufs stehen die Grenze zur Breitansicht
+(bei 768 und 820 px Liste und Karte nebeneinander und kein Umschalter, bei
+759 px wieder abgelöst), die Reiterreihe bei 320 px und der Strecken-Reiter
+mit zwölf Strecken in vier Einsatzabschnitten – dort muss die erste Strecke
+ohne Rollen im Blatt stehen. Die Schwellen für die freie Kartenfläche sind die
 Abnahme für die Pakete nach dem Audit und dürfen so lange rot sein. Drei
 Regeln dieser Prüfung sind aus Fehlern entstanden und stehen dort kommentiert:
 `offsetParent` taugt in der Schmalansicht nicht als Sichtbarkeitsprobe, seit

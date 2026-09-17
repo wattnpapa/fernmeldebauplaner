@@ -2943,7 +2943,13 @@ export function symbolPalette(beiWahl) {
   katWahl.onchange = bauen;
   bauen();
 
-  dialog({ titel: 'Taktisches Zeichen wählen', inhalt: box, breit: true, fuss: [{ text: 'Abbrechen' }] });
+  /* Füllend, damit es bei EINEM Rollbereich bleibt: der Dialoginhalt rollte
+     bisher selbst, und das Gitter darin noch einmal. Beim Fingerrollen sprang
+     die Bewegung zwischen beiden hin und her, und dabei rollten Suchfeld und
+     Kategorie weg – die Palette ist zum Durchsehen gedacht, und das Suchfeld
+     war nach dem ersten Rollen nicht mehr da. */
+  dialog({ titel: 'Taktisches Zeichen wählen', inhalt: box, breit: true, fuellend: true,
+           fuss: [{ text: 'Abbrechen' }] });
 }
 
 // ---------------------------------------------------------------- Flächen
@@ -5488,7 +5494,9 @@ export function hilfeDialog() {
            <b>„Als PDF speichern“</b> wählen.</p>
         <p>Für mehrere Strecken in einem Dokument gibt es den <b>Sammel-Bauauftrag</b>:
            für einen Einsatzabschnitt über dessen <b>⋯</b>, für die ganze Planung über
-           <b>Sammel-PDF (alle Strecken)</b> im Reiter „Strecken“. Er beginnt mit einem
+           <b>Sammel-PDF (alle Strecken)</b> im Reiter „Strecken“ – auf dem Telefon
+           über <b>Datei → Sammel-Bauauftrag aller Strecken</b>, dort steht der Weg
+           auch dann, wenn der Knopf der schmalen Ansicht weicht. Er beginnt mit einem
            Deckblatt samt Übersichtskarte und Summen, danach folgen das
            Streckenverzeichnis mit dem Materialbedarf nach Leitungsarten und je Strecke
            das gewohnte Kartenblatt. Welche dieser Blätter entstehen, ist oben in der

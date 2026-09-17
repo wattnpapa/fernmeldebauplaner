@@ -303,6 +303,13 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 .hauptbereich { position: relative; display: grid; grid-template-columns: var(--seite-breite) 1fr; min-height: 0; }
 body.seite-zu .hauptbereich { grid-template-columns: 0 1fr; }
 body.seite-zu .seite { display: none; }
+/* Der Kartenbereich steht in der zweiten Spalte, und zwar ausdrücklich. Ohne
+   diese Zeile rutschte er in die erste, sobald `.seite-zu` die Liste
+   ausblendet – und die erste ist dann 0 px breit. Die Karte hatte damit keine
+   Fläche mehr; aufgefallen ist es, als das Tablet die Breitansicht bekam und
+   der Umschalter dort weiter bedienbar war. Schmal steht nur eine Spalte da,
+   deshalb wird die Zeile im Schmalblock zurückgenommen. */
+.hauptbereich > .kartenbereich { grid-column: 2; }
 
 .seite {
   display: flex; flex-direction: column; min-height: 0; min-width: 0;
@@ -1054,6 +1061,13 @@ body.seite-zu .seite { display: none; }
 #karte.modus-zeichnen { cursor: crosshair; }
 #karte.modus-zeichen { cursor: copy; }
 #karte.modus-bild { cursor: copy; }
+
+/* Solange die Punktkarte offen steht, weicht die Bauleiste – in jeder Breite.
+   Schmal steht sie an derselben Stelle wie das Blatt; breit stünde sie zwar
+   daneben, böte aber an, den nächsten Punkt aufzunehmen, während der eben
+   aufgenommene noch unbenannt ist. Das Blatt IST die Fortsetzung von „Punkt
+   hier“, und zwei offene Wege dorthin sind einer zu viel. */
+body.punktkarte-offen .werkzeuge { display: none; }
 
 .werkzeuge {
   position: absolute; top: 12px; left: calc(12px + env(safe-area-inset-left, 0px)); z-index: 700;
@@ -1842,32 +1856,52 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 }
 .konflikt-fassung .klein { margin: 0; }
 
-.palette { display: flex; flex-direction: column; gap: 10px; }
-.palette-kopf { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Suchfeld und Kategorie bleiben stehen, das Gitter rollt – und zwar als
+   einziges. Zwei ineinander rollende Bereiche hatten dazu geführt, dass die
+   Fingerbewegung zwischen beiden übersprang und dabei den Kopf wegrollte. */
+.palette { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1; }
+.palette-kopf { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
 .palette-suche, .palette-kat-wahl {
   padding: 8px 11px; border: 1px solid var(--linie-stark);
   border-radius: var(--radius-klein); font-size: 13px; background: var(--flaeche);
+  min-width: 0;
 }
-.palette-suche { flex: 2 1 220px; }
-.palette-kat-wahl { flex: 1 1 180px; }
+/* Schmale Grundbreiten, damit beide in eine Zeile passen: zweizeilig kostete
+   der Kopf bei 390 px 44 px, und die fehlten dem Gitter als halbe Kachelreihe. */
+.palette-suche { flex: 2 1 120px; }
+.palette-kat-wahl { flex: 1 1 100px; }
 .palette-kat-wahl:disabled { opacity: .5; }
 .palette-gitter {
-  display: flex; flex-direction: column; gap: 6px;
-  max-height: 58vh; max-height: 58dvh; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .palette-kat {
   font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-schwach);
   margin-top: 6px; padding-bottom: 3px; border-bottom: 1px solid var(--linie);
 }
-.palette-reihe { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px; }
+/* 88 statt 112 px Mindestbreite: bei 390 px ergeben sich drei Spalten statt
+   zwei, und erst damit stehen acht Zeichen zugleich im Bild. Bei 108 Zeichen je
+   Kategorie und zwei sichtbaren wurde die Suche zur Pflicht. */
+.palette-reihe {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 6px;
+}
 .palette-knopf {
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px;
-  padding: 10px 6px; border: 1px solid var(--linie); border-radius: var(--radius);
-  background: var(--flaeche); cursor: pointer; min-height: 96px;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px;
+  padding: 8px 4px; border: 1px solid var(--linie); border-radius: var(--radius);
+  background: var(--flaeche); cursor: pointer; min-height: 92px;
+  /* Ein Rasterfeld ist ohne diese Zeile nie schmaler als sein längstes Wort –
+     „Fernmeldebetriebsstelle“ trieb die Spalte über den Rahmen hinaus, und das
+     Gitter stand 7 px breiter als seine Fläche und wackelte seitwärts. */
+  min-width: 0;
 }
 .palette-knopf:hover { border-color: var(--thw); background: var(--thw-blass); }
 .palette-knopf svg { flex-shrink: 0; }
-.palette-knopf span { font-size: 11px; line-height: 1.25; text-align: center; color: var(--text-schwach); }
+/* `anywhere` und nicht `break-word`: nur ersteres zählt beim Mindestmaß mit,
+   und genau das ist hier die Frage. */
+.palette-knopf span {
+  font-size: 11px; line-height: 1.25; text-align: center; color: var(--text-schwach);
+  hyphens: auto; overflow-wrap: anywhere;
+}
 
 .hilfe h3 { font-size: 13.5px; margin: 14px 0 5px; color: var(--thw); }
 .hilfe h3:first-child { margin-top: 0; }
@@ -2387,7 +2421,12 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
 
 /* ---------------------------------------------------------------- Schmale Fenster */
 
-@media (max-width: 900px) {
+/* 760 px ist die Grenze, unterhalb derer Liste und Karte einander ablösen.
+   Dieselbe Zahl steht in `js/app.js` als `SCHMAL_BIS` – eine Medienabfrage
+   nimmt keine Variable entgegen, deshalb der Verweis statt einer gemeinsamen
+   Definition. Dort steht auch, warum es 760 sind und warum `css/print.css`
+   weiter bei 900 umbricht. */
+@media (max-width: 760px) {
   :root {
     --seite-breite: 100%;
     --wechsel-hoehe: calc(52px + env(safe-area-inset-bottom, 0px));
@@ -2421,6 +2460,7 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   /* Seitenleiste und Karte teilen sich den Platz nicht, sie lösen einander ab.
      Ohne .seite-zu liegt die Seitenleiste über der Karte, mit .seite-zu die Karte frei. */
   .hauptbereich, body.seite-zu .hauptbereich { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  .hauptbereich > .kartenbereich { grid-column: 1; }
   .seite {
     /* füllt den Hauptbereich über dem Umschalter – Kopfzeile und Band bleiben sichtbar */
     position: absolute; inset: 0 0 var(--wechsel-hoehe) 0;
@@ -2496,10 +2536,8 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
      arbeitet, hat es ohnehin selten auf der Tastatur. */
   .werkzeuge .wz-taste { display: none; }
   /* Im Zeichen- oder Setzmodus zählt nur die Modusleiste; die Werkzeugleiste
-     würde denselben Platz beanspruchen. Dasselbe gilt für die Punktkarte des
-     Baumodus: sie steht an derselben Stelle. */
-  body.modus-aktiv .werkzeuge,
-  body.punktkarte-offen .werkzeuge { display: none; }
+     würde denselben Platz beanspruchen. */
+  body.modus-aktiv .werkzeuge { display: none; }
 
   .sl-dez { display: none; }
 }
@@ -2535,6 +2573,14 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
   /* Vier Kennzahlen nebeneinander lassen „309,67 km“ umbrechen – zu zweit
      stehen die Zahlen, auf die es ankommt, ungebrochen und größer da. */
   .kennzahlen { grid-template-columns: 1fr 1fr; }
+
+  /* Die beiden Druckknöpfe weichen schmal ins Datei-Menü, wo sie ohnehin
+     stehen. Ihre Beschriftungen brachen die zweite Knopfreihe bei 320 px in
+     drei volle Zeilen um: der Kopf maß 216 px, und mit der Summenzeile davor
+     stand im ersten Schirm keine einzige Strecke – bei zwölf Strecken null
+     von zwölf. Gedruckt wird nicht im Stehen am Bauort; gesucht wird dort die
+     Trasse. */
+  #btn-sammel-pdf, #btn-lagekarte, #sammel-grund { display: none; }
 
   /* „Gespeicherte Planungen“: „Öffnen“ und „Löschen“ behielten ihre 161 px,
      dem Namen blieben bei 320 px 116 px – er zerfiel in Ein-Wort-Zeilen, und
@@ -2600,7 +2646,10 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
      mittig, auch wenn ein langer Eintrag zweizeilig umbricht. */
   .menu button, .menu a { display: flex; align-items: center; min-height: 44px; }
   .menu button { padding: 11px 12px; }
-  .palette-knopf { min-height: 108px; }
+  /* Die Kachel trägt ihre Trefferfläche über die Breite mit; in der Höhe
+     reichen 96 px für Zeichen und zweizeilige Beschriftung. 108 px kosteten
+     bei 390 px eine ganze Reihe. */
+  .palette-knopf { min-height: 96px; }
   /* Am Bauort wird das Bild mit dem Handschuh geöffnet – die Zeile ist der
      Griff, das Vorschaubild wächst mit. */
   /* In einer Liste, deren Inhalt das Bild ist, ist die Kachel die eigentliche
@@ -2725,6 +2774,22 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
      dann innerhalb des Knopfes um, was sie lesbar lässt. */
   .zeichen-hinweis { gap: 8px; }
   .zeichen-hinweis .knopf { flex: 1 1 0; min-width: 0; padding: 9px 6px; white-space: normal; }
+}
+
+/* ------------------------------------------------- Die engste Breite
+
+   Sechs Reiter in 320 px. Mit 6 px Polsterung je Seite maß die Reihe 352 px im
+   320 px breiten Fenster: „Planung“ – der Reiter mit den Kopfdaten des
+   Bauauftrags – lag ganz außerhalb, und dass die Leiste eine Wischfläche ist,
+   ist am Telefon nicht selbstverständlich. Verringert wird nur die waagerechte
+   Polsterung: die Trefferhöhe bleibt, und in der Breite endet die Zone eines
+   Reiters ohnehin an der seines Nachbarn.
+
+   Dieser Block steht NACH dem Block für grobe Zeiger, nicht darin: dort setzt
+   `.reiter button` seine Polsterung als Kurzform, und die überschriebe eine
+   Langform gleicher Gewichtung, die weiter oben stünde. */
+@media (max-width: 360px) {
+  .reiter button { padding-left: 3px; padding-right: 3px; }
 }
 
 /* ------------------------------------------------- Bewegung zurücknehmen

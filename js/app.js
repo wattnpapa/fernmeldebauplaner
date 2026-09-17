@@ -40,6 +40,24 @@ const $ = s => document.querySelector(s);
 
 store.starten();
 
+/* Die Grenze zwischen Schmal- und Breitansicht, an einer Stelle. Schmal lösen
+   sich Liste und Karte über einen Umschalter ab, breit stehen sie nebeneinander.
+
+   760 und nicht mehr: nebeneinander brauchen sie die 372 px der Seitenleiste
+   und eine Karte, auf der sich noch arbeiten lässt – bei 768 px bleiben ihr
+   396 px, mehr als die Hälfte. Mit 900 bekam das iPad hochkant die
+   Telefon-Aufteilung: Liste ODER Karte, dazu ein Umschalter, der 52 px kostete,
+   obwohl beides nebeneinander gepasst hätte.
+
+   Dieselbe Zahl steht in `css/app.css` als `@media (max-width: 760px)` – eine
+   Medienabfrage nimmt keine Variable entgegen. Wer sie hier ändert, ändert sie
+   dort mit. NICHT mitgeändert wird `css/print.css`: die Druckvorschau bricht
+   weiter bei 900 px um, weil das Blatt neben der Einstellungsspalte auf einem
+   820 px breiten Tablet auf 0,468 eingepasst würde – dort sind die Tabellen des
+   Bauauftrags nicht mehr zu lesen. Der Grund steht dort. */
+const SCHMAL_BIS = 760;
+const schmalAbfrage = window.matchMedia(`(max-width: ${SCHMAL_BIS}px)`);
+
 // ---------------------------------------------------------------- Karte & Layer
 
 const karte = erstelleKarte($('#karte'), store.projekt.ansicht);
@@ -343,7 +361,7 @@ karte.on('click', e => {
      schmal steht sie über dem Verlauf, und der Kopfgriff ganz oben ist sonst
      der einzige Weg zurück. Gemerkt wird das nicht – gemerkt wird nur die
      ausdrückliche Wahl am Kopf. */
-  if (schmalesFenster.matches && !koTafel.classList.contains('zu')) {
+  if (schmalAbfrage.matches && !koTafel.classList.contains('zu')) {
     return kartenoptionenSetzen(true);
   }
   if (sl.zeichenModus || zl.setzModus || bl.setzModus || fl.setzModus) return;
@@ -658,7 +676,6 @@ basisSelect.onchange = () => {
    Tafel klappt zu und merkt sich das je Sitzung (nur auf diesem Gerät, wie
    alles hier). Schmal beginnt sie geschlossen – dort ist die Kartenfläche
    das Produkt; breit offen, damit die Schalter auffindbar bleiben. */
-const schmalesFenster = window.matchMedia('(max-width: 900px)');
 const koTafel = $('#kartenoptionen'), koKopf = $('#ko-kopf');
 function kartenoptionenSetzen(zu) {
   koTafel.classList.toggle('zu', zu);
@@ -674,7 +691,7 @@ koKopf.onclick = () => {
 };
 let koGemerkt = null;
 try { koGemerkt = sessionStorage.getItem('fmbauplaner.kartenoptionen'); } catch { }
-kartenoptionenSetzen(koGemerkt ? koGemerkt === 'zu' : schmalesFenster.matches);
+kartenoptionenSetzen(koGemerkt ? koGemerkt === 'zu' : schmalAbfrage.matches);
 
 const optionsFelder = [
   ['#opt-gitter', 'gitter'],
@@ -741,7 +758,6 @@ awKarte.onclick = () => ansichtSetzen(true);
    Streckenliste wäre unerreichbar. Am resize-Ereignis statt am change der
    Media Query: Letzteres bleibt unter Geräte-Emulation stumm und wäre so
    nicht prüfbar; die Bedingung selbst kommt weiter aus derselben Abfrage. */
-const schmalAbfrage = window.matchMedia('(max-width: 900px)');
 window.addEventListener('resize', () => {
   if (!schmalAbfrage.matches && document.body.classList.contains('seite-zu')) ansichtSetzen(false);
 });
@@ -1138,7 +1154,7 @@ document.querySelectorAll('.reiter button').forEach(b => {
 setzeVorrang(karte, document.querySelector('.reiter button.aktiv')?.dataset.reiter);
 /** Auf schmalen Geräten die Karte in den Vordergrund holen */
 function zurKarte() {
-  if (window.matchMedia('(max-width: 900px)').matches) ansichtSetzen(true);
+  if (schmalAbfrage.matches) ansichtSetzen(true);
 }
 
 // ------------------------------------------------- Planungsmodus / Baumodus

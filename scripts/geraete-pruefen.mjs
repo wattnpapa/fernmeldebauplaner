@@ -245,24 +245,31 @@ const MESSHILFEN = `
        und weil das Fenster ist, was der Nutzer in der Hand hat. */
     freieKarte() {
       const karte = window._g.muss('#karte').getBoundingClientRect();
-      const OBEN = ['.kartenoptionen', '.leaflet-control-zoom', '.leaflet-popup'];
-      const UNTEN = ['.statusleiste', '.werkzeuge', '#punktkarte', '.zeichen-hinweis',
-                     '.leaflet-control-scale', '.leaflet-control-attribution', '.hinweisbox'];
+      /* Aufsätze der Karte. Welcher oben und welcher unten liegt, steht nicht
+         fest: die Werkzeugleiste ist schmal ein Streifen über der Statusleiste
+         und breit eine Spalte oben links. Entschieden wird deshalb nach der
+         gemessenen Lage – liegt die Mitte eines Aufsatzes in der oberen Hälfte
+         der Karte, zehrt er von oben, sonst von unten. Fest zugeordnet ergab
+         das in der Breitansicht eine Untergrenze über der Obergrenze und damit
+         null freie Fläche, wo die Karte in Wahrheit fast leer war. */
+      const AUFSAETZE = ['.kartenoptionen', '.leaflet-control-zoom', '.leaflet-popup',
+                         '.statusleiste', '.werkzeuge', '#punktkarte', '.zeichen-hinweis',
+                         '.leaflet-control-scale', '.leaflet-control-attribution', '.hinweisbox'];
       const ueberlappt = r => r.bottom > karte.top && r.top < karte.bottom &&
                               r.right > karte.left && r.left < karte.right;
       const belegt = [];
       let oben = karte.top, unten = karte.bottom;
-      for (const wahl of OBEN) for (const el of document.querySelectorAll(wahl)) {
+      const mitte = karte.top + karte.height / 2;
+      for (const wahl of AUFSAETZE) for (const el of document.querySelectorAll(wahl)) {
         const r = window._g.kasten(el);
         if (!r || !ueberlappt(r)) continue;
-        oben = Math.max(oben, Math.min(r.bottom, karte.bottom));
-        belegt.push(wahl + ' bis ' + Math.round(r.bottom));
-      }
-      for (const wahl of UNTEN) for (const el of document.querySelectorAll(wahl)) {
-        const r = window._g.kasten(el);
-        if (!r || !ueberlappt(r)) continue;
-        unten = Math.min(unten, Math.max(r.top, karte.top));
-        belegt.push(wahl + ' ab ' + Math.round(r.top));
+        if (r.top + r.height / 2 < mitte) {
+          oben = Math.max(oben, Math.min(r.bottom, karte.bottom));
+          belegt.push(wahl + ' bis ' + Math.round(r.bottom));
+        } else {
+          unten = Math.min(unten, Math.max(r.top, karte.top));
+          belegt.push(wahl + ' ab ' + Math.round(r.top));
+        }
       }
       const frei = Math.max(0, unten - oben);
       return { frei: Math.round(frei), karte: Math.round(karte.height),
@@ -380,6 +387,33 @@ const MESSHILFEN = `
         bildFlaeche: Math.round(bk.width * bk.height),
         angabenLage: window._g.lage(angaben),
         zuLage: window._g.lage(zu)
+      };
+    },
+    /* Die Zeichenpalette: wie viele Zeichen stehen zugleich im Bild, und rollt
+       wirklich nur ein Bereich? Zwei ineinander rollende Flächen ließen die
+       Fingerbewegung zwischen ihnen überspringen, und dabei rollte der Kopf
+       mit Suchfeld und Kategorie weg. */
+    palette() {
+      const gitter = window._g.muss('.palette-gitter');
+      const inhalt = window._g.muss('.dialog-inhalt');
+      const knoepfe = [...document.querySelectorAll('.palette-knopf')];
+      if (!knoepfe.length) throw new Error('Kein Zeichen in der Palette');
+      const gr = gitter.getBoundingClientRect();
+      const ganz = knoepfe.filter(b => {
+        const r = b.getBoundingClientRect();
+        return r.top >= gr.top - 1 && r.bottom <= gr.bottom + 1;
+      });
+      const reihe = window._g.muss('.palette-reihe');
+      const spalten = getComputedStyle(reihe).gridTemplateColumns.split(' ').filter(Boolean).length;
+      return {
+        sichtbar: ganz.length, gesamt: knoepfe.length, spalten,
+        gitterRollt: gitter.scrollHeight > gitter.clientHeight + 1,
+        inhaltRollt: inhalt.scrollHeight > inhalt.clientHeight + 1,
+        /* Der waagerechte Überlauf des Gitters und nicht der der Seite: das
+           Gitter stand bei 320 px 7 px breiter als sein Rahmen und wackelte
+           seitwärts. Was die Seite sonst überlaufen lässt, misst der eigene
+           Abschnitt am Ende des Laufs. */
+        ueberlauf: gitter.scrollWidth - gitter.clientWidth
       };
     },
     dateimenue() {
@@ -623,6 +657,19 @@ async function zuKleineGriffe(raum, wahl) {
     if (!r) return ['Bereich fehlt: ' + ${JSON.stringify(raum)}];
     return [...r.querySelectorAll(${JSON.stringify(wahl)})]
       .filter(e => !(e.closest('.eintrag-kopf') && !e.classList.contains('eintrag-kopf')))
+      /* Die festgehaltene Ausgabezeile liegt mit Absicht über dem Durchlauf –
+         sie ist der Griff, auf den die Streckenkarte zuläuft. Ein Feld, dessen
+         Unterkante darunter gerät, ist deshalb nicht zu klein, sondern
+         verdeckt, und ein Tipp hinein rollt es frei – dafür steht in
+         css/app.css eine Rollreserve am unteren Rand jedes Feldes. Welches
+         Feld das gerade trifft, hängt allein am Rollstand und ist kein Maß.
+         (Ohne Gravis geschrieben: der Rumpf liegt in einem Template-Literal.) */
+      .filter(e => {
+        const a = document.querySelector('.tastenreihe.ausgabe');
+        if (!a) return true;
+        const ar = a.getBoundingClientRect(), er = e.getBoundingClientRect();
+        return er.bottom <= ar.top || er.top >= ar.bottom;
+      })
       .filter(e => window._g.imBild(e))
       .map(e => ({ e, m: window._g.treffer(e) }))
       .filter(x => !x.m.verdeckt &&
@@ -1002,6 +1049,29 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                    : `alle ${m.anzahl} Einträge ≥ 44 px (kleinster ${m.kleinster})` };
       });
     await seite.taste('Escape');
+
+    await fall(fenster, 'Zeichenpalette: ein Rollbereich, volle Reihen',
+      'Die Zeichenpalette rollt an einer Stelle und zeigt hochkant zwei volle Reihen',
+      async () => {
+        await seite.auswerten(`
+          const ui = await import('./js/ui.js');
+          ui.symbolPalette(() => {});
+          return true;`);
+        await seite.warteAuf('!!document.querySelector(".palette-knopf")', 5000);
+        await seite.ruhe();
+        const p = await seite.auswerten('window._g.palette()');
+        await seite.taste('Escape');
+        await seite.warteAuf('document.getElementById("dialog").hidden', 5000);
+        /* Quer trägt eine Reihe, hochkant zwei – darunter wird aus dem
+           Durchsehen ein Suchen, und genau das war der Befund. */
+        const soll = hoehe < breite ? p.spalten : p.spalten * 2;
+        const gut = !p.inhaltRollt && p.sichtbar >= soll && p.ueberlauf <= 0;
+        return { gut, kurz: p.sichtbar + ' von ' + p.gesamt,
+                 text: `${p.sichtbar} Zeichen ganz im Bild (verlangt ${soll}), ` +
+                       `${p.spalten} Spalten, ` +
+                       (p.inhaltRollt ? 'zwei Rollbereiche' : 'ein Rollbereich') +
+                       (p.ueberlauf > 0 ? `, ${p.ueberlauf} px waagerechter Überlauf` : '') };
+      });
 
     await fall(fenster, 'Großansicht: Bild, Angaben und Schließen im Bild',
       'Die Großansicht zeigt Schließen und alle Angaben, ohne dass das Blatt rollt',
@@ -1388,6 +1458,97 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     `Der Fußknopf ist erreichbar (Unterkante ${dialog.unten}, Fenster ${dialog.schirm})`);
   await seite.taste('Escape');
 
+  // ------------------------------------------------------------ Tablet nebeneinander
+
+  b.abschnitt('Tablet hochkant: Liste und Karte stehen nebeneinander');
+  /* 768 px sind 372 px Seitenleiste und 396 px Karte – mehr als die Hälfte
+     bleibt der Karte. Mit der alten Grenze von 900 px bekam das iPad die
+     Telefonaufteilung: Liste ODER Karte, dazu ein Umschalter, der 52 px kostete,
+     obwohl beides nebeneinander gepasst hätte. Der Kern der Arbeit am Bauort
+     ist, zu bestätigen und zugleich zu sehen, wo der Punkt liegt. */
+  for (const [breite, hoehe] of [[768, 1024], [820, 1180]]) {
+    await stelleEin(breite, hoehe);
+    const neben = await seite.auswerten(`
+      const s = window._g.muss('.seite').getBoundingClientRect();
+      const k = window._g.muss('#karte').getBoundingClientRect();
+      const w = document.getElementById('ansicht-wechsel');
+      return { seite: Math.round(s.width), karte: Math.round(k.width),
+               neben: s.right <= k.left + 1 && s.width > 0 && k.width > 0,
+               wechsel: w.getClientRects().length > 0 };`);
+    b.pruefe(neben.neben,
+      `${breite}×${hoehe}: Liste (${neben.seite} px) und Karte (${neben.karte} px) nebeneinander`);
+    b.pruefe(!neben.wechsel, `${breite}×${hoehe}: der Umschalter unten fehlt`);
+    b.pruefe(neben.karte >= 380, `${breite}×${hoehe}: der Karte bleiben ${neben.karte} px`);
+  }
+  /* Und die Grenze selbst: einen Bildpunkt darunter löst wieder ab. */
+  await stelleEin(759, 1024);
+  b.pruefe(await seite.auswerten(
+    'document.getElementById("ansicht-wechsel").getClientRects().length > 0'),
+    '759 px: darunter lösen Liste und Karte einander wieder ab');
+
+  b.abschnitt('Bei 320 px passen alle sechs Reiter nebeneinander');
+  await stelleEin(320, 568);
+  const reiter = await seite.auswerten(`
+    const n = window._g.muss('.reiter');
+    const b = [...n.querySelectorAll('button')].filter(e => e.getClientRects().length);
+    return { ueber: n.scrollWidth - n.clientWidth, anzahl: b.length,
+             letzter: b[b.length - 1].textContent.trim(),
+             schmalster: Math.min(...b.map(e => window._g.treffer(e).breite)) };`);
+  b.gleich(reiter.anzahl, 6, `Sechs Reiter stehen da (letzter: „${reiter.letzter}“)`);
+  b.pruefe(reiter.ueber <= 0,
+    `Die Reihe läuft nicht über (${reiter.ueber} px; vorher 32 px, ` +
+    '„Planung“ lag außerhalb)');
+  b.pruefe(reiter.schmalster >= 40,
+    `Der schmalste Reiter trägt ${reiter.schmalster} px – gezielt wird auf ` +
+    'ein Wort, nicht auf ein Zeichen');
+
+  b.abschnitt('Volle Planung: die erste Strecke steht im ersten Schirm');
+  /* Zwölf Strecken in vier Einsatzabschnitten – der Fall des Audits. Sie
+     werden danach wieder abgeräumt, damit die folgenden Abschnitte dieselbe
+     Planung vorfinden wie bisher. */
+  await stelleEin(390, 690);
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.ruhe();
+  const erste = await seite.auswerten(`
+    const zu = await import('./js/state.js');
+    window.fbp.store.aendern(p => {
+      const ids = [];
+      for (let i = 0; i < 4; i++) {
+        const a = zu.neuerEinsatzabschnitt(p);
+        a.name = 'Abschnitt ' + (i + 1);
+        p.einsatzabschnitte.push(a); ids.push(a.id);
+      }
+      for (let i = 0; i < 12; i++) {
+        const s = zu.neueStrecke(p);
+        s.name = 'Probestrecke ' + (i + 1);
+        s.abschnitt = ids[i % 4];
+        s.punkte.push(zu.neuerPunkt(51.80 + i * 0.01, 10.60),
+                      zu.neuerPunkt(51.806 + i * 0.01, 10.61));
+        p.strecken.push(s);
+      }
+    }, 'strecke');
+    await new Promise(f => requestAnimationFrame(f));
+    const inh = window._g.muss('#inhalt-strecken');
+    const e = window._g.muss('#strecken-liste .eintrag').getBoundingClientRect();
+    const r = inh.getBoundingClientRect();
+    const kopf = Math.round(window._g.muss('.seite-kopf', inh).getBoundingClientRect().height);
+    const sicht = Math.max(0, Math.min(e.bottom, r.bottom) - Math.max(e.top, r.top));
+    return { kopf, blatt: Math.round(r.height), gerollt: Math.round(inh.scrollTop),
+             anteil: Math.round(sicht / (e.bottom - e.top) * 100) };`);
+  b.gleich(erste.gerollt, 0, 'Der Reiter steht ungerollt');
+  b.pruefe(erste.kopf <= 120,
+    `Die Knopfzeile über der Liste misst ${erste.kopf} px (vorher 216 – drei volle Zeilen)`);
+  b.gleich(erste.anteil, 100,
+    `Die erste Strecke steht ganz im Blatt (${erste.anteil} % bei ${erste.blatt} px Blatthöhe)`);
+  await seite.auswerten(`
+    window.fbp.store.aendern(p => {
+      p.strecken = p.strecken.filter(s => !/^Probestrecke /.test(s.name));
+      p.einsatzabschnitte = [];
+      for (const s of p.strecken) s.abschnitt = null;
+    }, 'strecke');
+    return true;`);
+  await seite.ruhe();
+
   // ------------------------------------------------------------ Druckansicht
 
   b.abschnitt('Die Druckansicht wird im Fahrzeug mit dem Finger freigegeben');
@@ -1415,12 +1576,17 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     (haken.length ? ' – gemessen: ' + haken.join(', ') : ''));
   await schliesseBauauftrag();
 
-  b.abschnitt('Tablet hochkant: ein Umbruchpunkt für Anwendung und Blatt');
+  b.abschnitt('Tablet hochkant: das Blatt behält seinen eigenen Umbruchpunkt');
+  /* Anwendung und Blatt brechen seit der Senkung von `SCHMAL_BIS` nicht mehr
+     bei derselben Breite um, und das ist Absicht: Liste und Karte stehen bei
+     768 px nebeneinander, das Blatt aber braucht neben der 272 px breiten
+     Einstellungsspalte mehr, als ein 820 px breites Tablet hergibt – 0,468
+     ist keine lesbare Einpassung. Die Begründung steht in `css/print.css`. */
   await stelleEin(820, 1180);
   await oeffneBauauftrag();
   b.gleich(await seite.auswerten(
     'getComputedStyle(document.getElementById("druck")).flexDirection'), 'column',
-    'Die Einstellungen stehen über dem Blatt wie im Rest der Anwendung');
+    'Die Einstellungen stehen über dem Blatt, obwohl die Anwendung hier schon breit aufteilt');
   b.pruefe(await seite.auswerten(`
     const s = document.querySelector('.druck-doku').style.transform || '';
     const m = /scale\\(([\\d.]+)\\)/.exec(s);
