@@ -288,8 +288,10 @@
       <div class="zeichen-hinweis" id="zeichen-hinweis" hidden>
         <span class="zh-text"></span>
         <button class="knopf klein" data-akt="zurueck">Letzten Punkt zurück</button>
-        <button class="knopf klein primaer" data-akt="fertig">Fertig (Enter)</button>
-        <button class="knopf klein" data-akt="abbruch">Abbrechen (Esc)</button>
+        <button class="knopf klein primaer" data-akt="fertig">Fertig<i class="zh-taste">Enter</i></button>
+        <!-- Beschriftung und Kürzel setzt `modusAnzeigen` in app.js: der Griff
+             heißt im Ist-Setzmodus anders, weil er dort etwas anderes tut. -->
+        <button class="knopf klein" data-akt="abbruch">Abbrechen<i class="zh-taste">Esc</i></button>
       </div>
 
       <!-- Die Punktkarte des Baumodus: ein aufgenommener oder ein noch offener

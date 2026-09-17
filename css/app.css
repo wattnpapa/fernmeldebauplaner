@@ -137,6 +137,13 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .knopf:hover:not(:disabled) { background: var(--flaeche-2); border-color: var(--thw-hell); }
 .knopf:active:not(:disabled) { transform: translateY(1px); }
 .knopf:disabled { opacity: .42; cursor: default; }
+/* Ohne diese Zeile schlägt das `display` oben das `hidden` des Browsers, und
+   ein Knopf, den der Code abgeschaltet hat, steht weiter da – im Ist-Setzmodus
+   waren das „Fertig“ und „Letzten Punkt zurück“, beide wirkungslos und einer
+   davon gefüllt im Daumenbereich. Dieselbe Zeile tragen .punktkarte,
+   .hinweisbox, .dialog-huelle, .zeichen-hinweis und .cloudstatus; für .knopf
+   fehlte sie als einzige. */
+.knopf[hidden] { display: none; }
 .knopf:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
 button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; }
 /* Auf der blauen Kopfleiste wäre derselbe Ring nicht zu sehen – dort in Weiß. */
@@ -1044,16 +1051,24 @@ body.seite-zu .seite { display: none; }
   font-size: 15px; line-height: 1;
 }
 /* Das Kürzel steht als Taste neben dem Wort – erkennbar als Tastatursache und
-   leise genug, dass die Beschriftung die Reihe weiterhin führt. */
-.wz-taste {
+   leise genug, dass die Beschriftung die Reihe weiterhin führt. Dieselbe Form
+   trägt `.zh-taste` in der Modusleiste: dort stand das Kürzel als „(Enter)“
+   und „(Esc)“ im Wort und ließ die Beschriftung umbrechen, womit die Leiste
+   wuchs und Karte verdeckte. */
+.wz-taste, .zh-taste {
   display: inline-block; margin-left: 7px; padding: 0 4px; min-width: 15px;
   border: 1px solid var(--linie-stark); border-radius: 3px;
   font-size: 11px; font-style: normal; font-weight: 600; line-height: 15px;
   text-align: center; color: var(--text-schwach); background: var(--flaeche-2);
 }
-.wz.aktiv .wz-taste { border-color: rgba(255,255,255,.5); color: #fff; background: rgba(255,255,255,.16); }
-/* Touchgeräte haben keine Tastatur – dort ist das Kürzel nur Ballast. */
-@media (pointer: coarse) { .wz-taste { display: none; } }
+.wz.aktiv .wz-taste,
+.knopf.primaer .zh-taste {
+  border-color: rgba(255,255,255,.5); color: #fff; background: rgba(255,255,255,.16);
+}
+/* Touchgeräte haben keine Tastatur – dort ist das Kürzel nur Ballast. Am
+   Bauort gibt es weder Enter noch Esc, und in der Modusleiste kostete der
+   Hinweis genau die Breite, an der die Beschriftung umbrach. */
+@media (pointer: coarse) { .wz-taste, .zh-taste { display: none; } }
 
 /* Die Modusleiste sitzt an der unteren Kante, über Statusleiste und Maßstab:
    oben teilt sie sich die Kante mit Werkzeugen und Kartenoptionen und stößt
@@ -1073,6 +1088,19 @@ body.seite-zu .seite { display: none; }
   max-width: min(620px, calc(100% - 24px));
 }
 .zeichen-hinweis .zh-text { color: var(--text); }
+/* `.klein` ist auch die Klasse für kleinen Fließtext und bringt `margin: .4em 0`
+   mit – am Knopf sind das 10 px, und die Leiste wird um eine halbe Zeile höher,
+   ohne dass etwas darin steht. Die Tastenreihe der Punktkarte räumt sie aus
+   demselben Grund weg. */
+.zeichen-hinweis .knopf { margin: 0; }
+/* Beim Setzen eines Ist-Punktes steht nur noch ein Knopf in der Leiste. Er
+   behält seine Beschriftung auf einer Zeile, und der Merker daneben bricht
+   um: umgekehrt stünde bei 320 px „Setzen abbrechen“ zweizeilig in einem
+   86 px schmalen Knopf. Ohne `nowrap` an der Leiste käme es dazu gar nicht –
+   Flexbox verteilt auf Zeilen, bevor es schrumpft, und schöbe den Knopf unter
+   den Merker statt ihn neben ihm schmaler werden zu lassen. */
+body.ist-setzen .zeichen-hinweis { flex-wrap: nowrap; }
+body.ist-setzen .zeichen-hinweis .knopf { flex: 0 1 auto; white-space: nowrap; }
 .zeichen-hinweis[hidden] { display: none; }
 /* Der Wechsel in den Zeichenmodus vertauscht unten am Kartenrand zwei Leisten:
    die Werkzeuge weichen, die Modusleiste tritt an. Sie kommt deshalb von der

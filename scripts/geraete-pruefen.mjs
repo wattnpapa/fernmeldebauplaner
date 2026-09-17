@@ -397,6 +397,19 @@ const MESSHILFEN = `
       return { steht: true, hoehe: Math.round(r.height), ueber,
                abgefangen: punkte ? abgefangen / punkte : 1 };
     },
+    /* Die Modusleiste im Ist-Setzmodus. Gemeldet werden die Knöpfe über ihre
+       Kennung und nicht über die Beschriftung: das Tastenkürzel steckt als
+       eigenes Element in ihr und zählt zum Text, auch wenn es am Finger vom
+       Schirm ist. */
+    modusleiste() {
+      const box = window._g.muss('#zeichen-hinweis');
+      if (box.hidden) throw new Error('Die Modusleiste steht nicht');
+      const knoepfe = [...box.querySelectorAll('button')];
+      if (!knoepfe.length) throw new Error('Kein Knopf in der Modusleiste');
+      return { hoehe: Math.round(box.getBoundingClientRect().height),
+               anzahl: knoepfe.length,
+               sichtbar: knoepfe.filter(k => window._g.kasten(k)).map(k => k.dataset.akt) };
+    },
     async gefahrAbstand() {
       const pk = window._g.muss('#punktkarte');
       const gefahr = window._g.muss('.knopf.gefahr', pk);
@@ -816,6 +829,13 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     /* Ein Tipp auf die Karte hebt zuerst eine Auswahl auf und öffnet erst
        beim zweiten das Popup – die Strecke ist seit dem Zeichnen gewählt. */
     await seite.auswerten('window.fbp.sl.waehle(null); return true;');
+    /* Und die Karte auf eine feste Lage: die Breite des Popups hängt an den
+       Koordinatentexten, die an der Kartenmitte hängen – und die wandert über
+       den Lauf, weil `autoPan` sie beim Öffnen verschiebt. Ohne diese Zeile
+       fällt derselbe Fall je nach Vorgeschichte einmal auf 0 % und einmal auf
+       6 % Überdeckung, und die Tabelle wackelt von Lauf zu Lauf. */
+    await seite.auswerten(
+      'window.fbp.karte.setView([51.8, 10.6], 8, { animate: false }); return true;');
     await seite.ruhe();
     await fall(fenster, 'Koordinaten-Popup: Primärknopf frei',
       'Koordinaten-Popup oben rechts: „Punkt hier aufnehmen“ nicht verdeckt',
@@ -838,6 +858,31 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                  text: griffText('Primärknopf', l) + ` nach Tipp auf (${fleck.x}, ${fleck.y})` };
       });
     await seite.auswerten('window.fbp.karte.closePopup(); return true;');
+    await seite.ruhe();
+
+    /* „Auf Karte“ startet den Ist-Setzmodus: die Bauleiste weicht, und schmal
+       ist die Modusleiste dann das einzige Bedienelement auf der Karte. */
+    await seite.klick('#wz-punkt-karte');
+    await seite.warteAuf('!document.querySelector("#zeichen-hinweis").hidden', 5000);
+    await seite.ruhe();
+    await fall(fenster, 'Modusleiste: nur wirksame Knöpfe',
+      'Nach „Auf Karte“ steht in der Modusleiste nur der Abbruch – ' +
+      'der Kartentipp ist dort das „Fertig“',
+      async () => {
+        const m = await seite.auswerten('window._g.modusleiste()');
+        const gut = m.sichtbar.length === 1 && m.sichtbar[0] === 'abbruch';
+        return { gut, kurz: m.sichtbar.join('+') || 'keiner',
+                 text: `von ${m.anzahl} Knöpfen sind sichtbar: ` +
+                       (m.sichtbar.join(', ') || 'keiner') };
+      });
+    await fall(fenster, 'Modusleiste ≤ 64 px hoch',
+      'Die Modusleiste bleibt ein Streifen wie die Bauleiste an derselben Kante',
+      async () => {
+        const m = await seite.auswerten('window._g.modusleiste()');
+        return { gut: m.hoehe <= 64, kurz: m.hoehe + ' px',
+                 text: `${m.hoehe} px hoch (höchstens 64)` };
+      });
+    await seite.taste('Escape');
     await seite.ruhe();
 
     b.abschnitt(`Fenster ${fenster}: Baumodus mit offener Punktkarte`);

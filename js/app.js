@@ -269,6 +269,11 @@ function modusAnzeigen() {
   // schmal weicht die Werkzeugleiste der Modusleiste – beide sitzen unten
   document.body.classList.toggle('modus-aktiv',
     zeichnet || setzt || flaecht || relais || istSetzen);
+  /* Die Modusleiste teilen sich zwei Lagen mit verschiedener Besetzung: beim
+     Zeichnen drei Knöpfe, beim Setzen eines Ist-Punktes einer. Die Klasse
+     macht den Unterschied im Stilblatt greifbar – ohne sie müsste die Leiste
+     für drei Knöpfe ausgelegt bleiben, auch wenn nur einer darin steht. */
+  document.body.classList.toggle('ist-setzen', istSetzen);
   /* Ein Setzmodus wartet auf den nächsten Kartentipp – die Punktkarte
      wartet auf denselben und würde ihn schlucken. Sie geht zu. */
   if (zeichnet || setzt || flaecht || relais || istSetzen) punktkarteSchliessen();
@@ -279,11 +284,22 @@ function modusAnzeigen() {
      Leiste bliebe am Bauort kein einziges Bedienelement übrig – kein Weg
      zurück außer der Esc-Taste, die es dort nicht gibt. */
   box.hidden = !zeichnet && !istSetzen;
+  /* Der Griff heißt nach seiner Wirkung. „Abbrechen“ allein liest sich beim
+     Setzen eines Ist-Punktes wie „das Aufgenommene verwerfen“ – verworfen wird
+     aber nur das Setzen, das noch gar nicht geschehen ist. Esc tut in beiden
+     Modi dasselbe, das Kürzel bleibt deshalb stehen (und geht am Finger von
+     selbst vom Schirm, siehe .zh-taste). */
+  box.querySelector('[data-akt="abbruch"]').innerHTML =
+    (istSetzen ? 'Setzen abbrechen' : 'Abbrechen') + '<i class="zh-taste">Esc</i>';
   if (istSetzen) {
     const s = store.strecke(sl.istSetzModus.sid);
+    /* Kurz, weil die Leiste am unteren Kartenrand steht und jede Zeile dort
+       Karte kostet: der ganze Satz „auf die Karte tippen, wo der Punkt
+       wirklich liegt“ steht einmal als Meldung, wenn der Modus beginnt. Hier
+       bleibt der Merker – und der Streckenname, weil blind an die im
+       Bau-Reiter gewählte Strecke geschrieben wird. */
     box.querySelector('.zh-text').innerHTML =
-      `<b>${escapeHtml(s ? s.name : '')}</b> – auf die Karte tippen, wo der Punkt
-       wirklich liegt.`;
+      `<b>${escapeHtml(s ? s.name : '')}</b> – auf die Karte tippen`;
     box.querySelector('[data-akt="fertig"]').hidden = true;
     box.querySelector('[data-akt="zurueck"]').hidden = true;
     return;

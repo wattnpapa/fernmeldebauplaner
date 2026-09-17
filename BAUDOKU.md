@@ -426,6 +426,18 @@ Bauleiste, vom Kartentipp, aus dem Koordinaten-Popup –, und auf Tipp auf eine
 Marke: an der gebauten mit der Frage, was dort ist, an der geplanten mit den
 drei Wegen. Das ersetzt am Bauort die Tooltips, die kein Touchgerät zeigt.
 
+**Die Modusleiste beim Setzen zeigt nur, was wirkt.** „Auf Karte“ startet den
+Ist-Setzmodus; schmal weicht die Bauleiste, und die Leiste am unteren
+Kartenrand ist dann das einzige Bedienelement. Dort standen „Fertig“ und
+„Letzten Punkt zurück“ weiter, obwohl der Code sie längst abgeschaltet hatte –
+beide ohne Wirkung und ohne Rückmeldung, der gefüllte „Fertig“ mitten im
+Daumenbereich. Im Ist-Setzmodus ist der Kartentipp das „Fertig“; es bleibt der
+eine Griff, und er heißt nach seiner Wirkung: „Setzen abbrechen“, nicht
+„Abbrechen“, das nach Verwerfen des Aufgenommenen klänge. Der Merker daneben
+ist kurz, den ganzen Satz sagt die Meldung beim Beginn des Modus. Die Leiste
+misst damit 58 px statt 94 bis 147 – so hoch wie die Bauleiste an derselben
+Kante.
+
 **Der Plan wird angetippt, nicht gezogen.** Im Baumodus sind die geplanten
 Punkte nicht ziehbar und die Einfügegriffe fehlen. Der Griff, der den Plan
 verschöbe, wäre mit dem Handschuh der häufigste Fehlgriff, und der Soll-
@@ -458,9 +470,18 @@ denselben Eintragungen) und `scripts/geraete-pruefen.mjs` (Bauleiste höchstens
 Handschuhmaß, quer rollt das Blatt statt überzulaufen). Dort steht das Blatt
 zusätzlich in acht Fenstern auf dem Prüfstand: Kreuz und „Fertig“ ohne Rollen
 im Bild und mit `elementFromPoint` zu treffen, auch mit gesetzter Querung,
-das Kreuz nie unter der Zoomsteuerung, und 16 px um die Gefahrtaste.
+das Kreuz nie unter der Zoomsteuerung, und 16 px um die Gefahrtaste. Ebenso
+die Modusleiste nach „Auf Karte“ – nur der Abbruch sichtbar, höchstens 64 px
+hoch – und die Meldungspille, die keinen Tipp abfangen und nach einer Aufnahme
+keine Leiste zudecken darf.
 
 ## Verworfene Wege
+
+**Eine eigene Leiste für den Ist-Setzmodus, oder die beiden abgeschalteten
+Knöpfe mit Wirkung füllen.** Beides baute Bedienung nach, die es schon gibt:
+der Kartentipp setzt den Punkt, ein falsch gesetzter wird über das Blatt neu
+geortet, verschoben oder gelöscht, und Rückgängig steht in der Kopfzeile. Die
+Leiste trägt deshalb im Setzmodus einen einzigen Griff.
 
 **Die Meldungspille an die offene Punktkarte hängen.** Naheliegend, weil
 `body.punktkarte-offen` schon besteht: die Pille rückt dann über das Blatt

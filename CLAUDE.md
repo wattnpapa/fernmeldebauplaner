@@ -190,9 +190,10 @@ höher ist als der Schirm, überhaupt rollt, und ob eine Ansicht waagerecht
 Anteil der Fensterhöhe (Planung mit Werkzeugleiste, Baumodus mit Bauleiste,
 Baumodus mit offener Punktkarte), die Punktkarte nach „Punkt hier“ mit und
 ohne Querung, die Meldungspille (sie darf keinen Tipp abfangen und nach einer
-Aufnahme keine Leiste zudecken), das Koordinaten-Popup, die aufgeklappten
-Kartenoptionen, das Dateimenü und die Zoomsteuerung; die Tabelle am Ende des Laufs zeigt alles je
-Fenster nebeneinander. Die Schwellen für die freie Kartenfläche sind die
+Aufnahme keine Leiste zudecken), die Modusleiste nach „Auf Karte“ (nur
+wirksame Knöpfe, höchstens 64 px hoch), das Koordinaten-Popup, die
+aufgeklappten Kartenoptionen, das Dateimenü und die Zoomsteuerung; die Tabelle
+am Ende des Laufs zeigt alles je Fenster nebeneinander. Die Schwellen für die freie Kartenfläche sind die
 Abnahme für die Pakete nach dem Audit und dürfen so lange rot sein. Drei
 Regeln dieser Prüfung sind aus Fehlern entstanden und stehen dort kommentiert:
 `offsetParent` taugt in der Schmalansicht nicht als Sichtbarkeitsprobe, seit
