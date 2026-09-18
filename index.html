@@ -85,14 +85,16 @@
     <div class="kopf-tasten">
       <!-- Der Umschalter steht vorn und nicht im Datei-Menü: am Bauort wird er
            mit dem Handschuh getroffen, und wer dort in die Planungsansicht
-           gerät, muss in einem Griff zurück. Die Beschriftung nennt den
-           ZUSTAND („Baumodus“, gedrückt oder nicht), den Wechsel sagt der
-           Titel: im Baumodus stand vorher „Planung“ darauf, während
-           `aria-pressed` „gedrückt“ meldete – für die Sprachausgabe ein
-           Widerspruch, und am Schirm die einzige Stelle, die den Modus
-           überhaupt nannte. -->
-      <button class="knopf modus-schalter" id="btn-modus" aria-pressed="false"
-              title="Zwischen Planung und Baudokumentation umschalten">Baumodus</button>
+           gerät, muss in einem Griff zurück. Die Beschriftung nennt den Modus,
+           in dem man IST – am Schirm ist sie die einzige Stelle, die ihn
+           überhaupt nennt, und ein Knopf, auf dem der andere Modus steht, liest
+           sich ebenso gut als Zustandsanzeige. Dass gewechselt wird, sagt das
+           Zeichen ⇄ daneben; dass es kein Zustandsknopf mehr ist, sagt das
+           fehlende `aria-pressed` – Beschriftung und Druckzustand widersprachen
+           sich sonst, sobald die Beschriftung den Modus nennt. -->
+      <button class="knopf modus-schalter" id="btn-modus"
+              title="Zum Baumodus wechseln"><span class="modus-name">Planung</span><span
+              class="modus-pfeil" aria-hidden="true">⇄</span></button>
       <button class="knopf" id="btn-hilfe" title="Kurzanleitung" aria-label="Kurzanleitung">?</button>
       <button class="knopf" id="btn-undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">↶</button>
       <button class="knopf" id="btn-redo" title="Wiederholen (Strg+Umschalt+Z)" aria-label="Wiederholen">↷</button>

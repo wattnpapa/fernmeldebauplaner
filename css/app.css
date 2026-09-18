@@ -2004,11 +2004,24 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
    Planungsansicht bleibt beim Verlassen des Modus derselbe. */
 
 .modus-schalter { font-weight: 650; }
-.modus-schalter[aria-pressed="true"] {
+/* Die Hervorhebung hängt an der Modusklasse und nicht mehr an `aria-pressed`:
+   der Schalter nennt den Modus jetzt selbst, und ein Zustandsknopf, dessen
+   Beschriftung denselben Zustand nennt, meldet ihn der Sprachausgabe doppelt. */
+body.baumodus .modus-schalter {
   background: var(--warnung-auf-blau-flaeche);
   border-color: var(--warnung-auf-blau-linie);
   color: var(--warnung-auf-blau);
 }
+/* Ohne Zeigegerät gibt es keinen Titel zu lesen. Das Zeichen ist am Bauort die
+   einzige Zusage, dass der Knopf umschaltet und nicht nur anzeigt – es tritt
+   aber hinter den Modusnamen zurück, um den es geht. */
+.modus-pfeil { margin-left: .25em; font-weight: 400; opacity: .7; }
+/* Unter 340 px ist die Kopfzeile voll: gemessen bei 320×568 stand „Baumodus ⇄“
+   16 px über dem Rand, und die Reihe daneben – Hilfe, Rückgängig, Datei – gibt
+   nichts her. Dort trägt der Modus sich allein: das Wort steht, im Baumodus
+   dazu die Warnfarbe; nur die Zusage des Wechsels entfällt. Ab 360 px, wo jedes
+   heutige Telefon liegt, ist sie wieder da. */
+@media (max-width: 339px) { .modus-pfeil { display: none; } }
 
 /* Im Baumodus wird nicht geplant: die vier Zeichenwerkzeuge gehen vom Schirm,
    Koordinate und Standort bleiben – beide werden am Bauort gebraucht. */

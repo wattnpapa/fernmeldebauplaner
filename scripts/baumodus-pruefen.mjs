@@ -75,7 +75,8 @@ try {
   await seite.warteAuf('!!window.fbp');
   b.pruefe(await seite.sichtbar('#karte'), 'Karte steht');
   b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 16, 'Schema 16');
-  b.gleich(await seite.text('#btn-modus'), 'Baumodus', 'Der Umschalter bietet den Baumodus an');
+  b.gleich(await seite.text('#btn-modus.modus-schalter > .modus-name'), 'Planung',
+    'Der Umschalter nennt den Modus, in dem man ist');
   b.pruefe(await seite.auswerten('document.querySelector("#reiter-bau").hidden'),
     'Der Bau-Reiter steht im Planungsmodus nicht da');
 
@@ -97,6 +98,8 @@ try {
   await seite.klick('#btn-modus');
   b.pruefe(await seite.auswerten('document.body.classList.contains("baumodus")'),
     'body trägt die Modusklasse');
+  b.gleich(await seite.text('#btn-modus.modus-schalter > .modus-name'), 'Baumodus',
+    'Der Umschalter nennt jetzt den Baumodus');
   b.gleich(await seite.auswerten(
     '[...document.querySelectorAll(".reiter button")].filter(x => !x.hidden)' +
     '.map(x => x.dataset.reiter).join(",")'),

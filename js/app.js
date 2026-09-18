@@ -1229,18 +1229,21 @@ function modusAnwenden() {
   sl.baumodus = baumodus;
   sl.zeichne();
   const schalter = $('#btn-modus');
-  /* Der Schalter nennt den ZUSTAND und nicht das Ziel. Vorher stand im
-     Baumodus „Planung“ darauf, während `aria-pressed` „gedrückt“ meldete –
-     für die Sprachausgabe ein Widerspruch, und am Schirm die einzige Stelle,
-     die den Modus überhaupt nannte: wer nach der Einblendung dazukam, konnte
-     „Planung“ ebenso gut als „hier bin ich“ lesen. Jetzt sagt die Beschriftung,
-     wo man ist, der gedrückte Zustand bestätigt es, und der Titel sagt, wohin
-     der Griff führt. */
-  schalter.textContent = 'Baumodus';
-  schalter.setAttribute('aria-pressed', String(baumodus));
-  schalter.title = baumodus
-    ? 'Zurück zur Planung'
-    : 'Dokumentieren, was am Bauort gebaut wurde';
+  /* Der Schalter nennt den Modus, in dem man IST, nicht den, in den er führt.
+     Am Schirm ist er die einzige Stelle, die den Modus überhaupt nennt – stand
+     dort in der Planung „Baumodus“, las sich das ebenso gut als „hier bin ich“,
+     und wer nach der Einblendung dazukam, hielt sich für den Baumodus.
+     `aria-pressed` ist deshalb weg: ein Zustandsknopf, dessen Beschriftung
+     denselben Zustand nennt, meldet ihn der Sprachausgabe zweimal und beim
+     Umschalten widersprüchlich („Planung, nicht gedrückt“). Was der Griff tut,
+     steht jetzt im Titel und im Namen für die Sprachausgabe – und am Schirm im
+     Zeichen ⇄, das ohne Zeigegerät die einzige Zusage ist, dass hier gewechselt
+     und nicht nur angezeigt wird. */
+  schalter.querySelector('.modus-name').textContent = baumodus ? 'Baumodus' : 'Planung';
+  schalter.title = baumodus ? 'Zurück zur Planung' : 'Zum Baumodus wechseln';
+  schalter.setAttribute('aria-label', baumodus
+    ? 'Baumodus. Zurück zur Planung wechseln'
+    : 'Planungsmodus. Zum Baumodus wechseln');
   /* Schmal steht die Tafel der Kartenoptionen über dem Verlauf, und die
      geplanten Marken darunter nehmen den Tipp nicht mehr an: gemessen lagen
      bei 390×690 zwei von vier Punkten hinter ihr, und der Tipp, der einen

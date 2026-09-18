@@ -5848,9 +5848,11 @@ export function hilfeDialog() {
               in GeoJSON, GPX oder KML.</li>
         </ul>
         <h3>Baumodus</h3>
-        <p>In der Kopfzeile auf <b>Baumodus</b> schalten: die Anwendung zeigt dann, was am
-           Bauort gebraucht wird, und hält fest, was gebaut wurde – die Planung bleibt
-           unangetastet. Am Bauort geht es über die Karte:</p>
+        <p>Der Schalter links oben nennt den Modus, in dem man gerade ist – in der
+           Planung steht <b>Planung ⇄</b> darauf, ein Tipp darauf führt in den
+           <b>Baumodus</b>. Dort zeigt die Anwendung, was am Bauort gebraucht wird, und
+           hält fest, was gebaut wurde – die Planung bleibt unangetastet. Am Bauort geht
+           es über die Karte:</p>
         <ul>
           <li>Unten <b>Punkt hier</b>: der Standort des Geräts wird als gebauter Punkt
               aufgenommen. <b>Auf Karte</b>: der nächste Tipp auf die Karte ist der Punkt.</li>
