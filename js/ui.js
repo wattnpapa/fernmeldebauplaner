@@ -5409,7 +5409,7 @@ export function zeichneProjektReiter() {
 
   const standReihe = el('div', 'kopf-stand');
   const standFeld = feld('Stand (Datum-Zeit-Gruppe)', p.kopf.stand,
-    v => schreib(() => { p.kopf.stand = v; }), { platzhalter: 'z. B. 301430aug26' });
+    v => schreib(() => { p.kopf.stand = v; }), { platzhalter: 'z. B. 301430AUG26' });
   const standEingabe = standFeld.querySelector('input');
   standReihe.append(standFeld, knopf('Jetzt', () => {
     const jetzt = dtg();

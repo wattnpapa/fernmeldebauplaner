@@ -530,11 +530,13 @@ export const VS_GRADE = [
   ['VS – VERTRAULICH', 'VS – VERTRAULICH']
 ];
 
-const MONATSKUERZEL = ['jan', 'feb', 'mrz', 'apr', 'mai', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dez'];
+const MONATSKUERZEL = ['JAN', 'FEB', 'MRZ', 'APR', 'MAI', 'JUN', 'JUL', 'AUG', 'SEP', 'OKT', 'NOV', 'DEZ'];
 
 const zwei = n => String(n).padStart(2, '0');
 
-/** Datum-Zeit-Gruppe im Muster der Anlage 7, Ortszeit: „301430aug26“ */
+/* Datum-Zeit-Gruppe im Muster der Anlage 7, Ortszeit: „301430AUG26“. Das
+   Monatskuerzel steht gross – so ist es im Fernmeldewesen ueblich, und im
+   Diktat am Fernsprecher haelt es die Ziffernbloecke auseinander. */
 export function dtg(datum = new Date()) {
   return zwei(datum.getDate()) + zwei(datum.getHours()) + zwei(datum.getMinutes()) +
     MONATSKUERZEL[datum.getMonth()] + zwei(datum.getFullYear() % 100);
