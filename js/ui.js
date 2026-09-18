@@ -71,7 +71,7 @@ import {
   istPunktSetzen, istArtSetzen, bauabschnittAnlegen, bauabschnittLoeschen, bauSichern,
   sollPunktGeloescht, bauUmkehren, bauBegonnen, baustandKurz, baustrecke, baustreckeSetzen,
   aktiverBauabschnitt, bauabschnittAktivId, bauabschnittAktivSetzen, punktartText,
-  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE,
+  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE, istSollZuordnen, offeneSollPunkte,
   materialzeilen, materialzeile, materialSetzen, materialFreiAnlegen, materialZeileLoeschen,
   materialSumme, materialSoll, baumeldungen,
   baumeldungAnlegen, baumeldungLoeschen, meldungenNachZeit,
@@ -4679,6 +4679,22 @@ function bauZusatzZeile(s, pt) {
   zeile.appendChild(kopf);
 
   const felder = el('div', 'bp-felder');
+  /* Zuerst die Frage, ob der Punkt überhaupt ein zusätzlicher ist. Über die
+     Bauleiste aufgenommen, landet jede Aufnahme hier – sie kann nicht wissen,
+     welchen geplanten Punkt der Trupp meint. Wer den Bogen später durchgeht,
+     räumt es hier auf: die offenen Punkte stehen mit ihrer Entfernung zu
+     diesem, der nächstliegende zuerst. Gewählt bleibt „zusätzlicher Punkt“,
+     bis jemand etwas anderes sagt. */
+  const offeneSoll = offeneSollPunkte(s, pt);
+  if (offeneSoll.length) {
+    felder.appendChild(merkeFeld(feld('Gehört zu', '', w => {
+      store.aendern(() => istSollZuordnen(s, pt, w || null), 'bau');
+    }, { typ: 'select', klasse: 'bp-soll-wahl',
+         werte: [['', 'zusätzlicher Punkt'],
+                 ...offeneSoll.map(e => [e.punkt.id,
+                   `Punkt ${e.nr}${e.punkt.name ? ' ' + e.punkt.name : ''} – ${formatLaenge(e.weg)}`])] }),
+      'sollwahl-' + pt.id));
+  }
   /* Hier steht „Art noch offen“ mit zur Wahl: der aufgenommene Punkt kommt mit
      ihr aus der Aufnahme, und sie muss im Feld lesbar dastehen – als Lücke, die
      jemand füllt, und nicht als Wert, der zufällig oben in der Liste steht. */

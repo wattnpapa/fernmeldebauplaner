@@ -2453,6 +2453,13 @@ body.baumodus #btn-neuer-abschnitt { display: none; }
 }
 .pk-chip:hover { border-color: var(--thw-hell); color: var(--thw); }
 .pk-chip[aria-pressed="true"] { background: var(--thw); border-color: var(--thw); color: #fff; }
+/* Die Zuordnung zum Plan steht als einzige Frage in einer Zeile mit ihren
+   Chips. Sie ist der Ausweg aus „0 von 3 Punkten“ und muss deshalb da sein –
+   aber als eigene Zeile über den Chips kostete sie das Blatt zwei Zeilen, und
+   auf dem Tablet fiel die freie Kartenfläche damit unter die Abnahme. */
+.pk-zuordnung { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.pk-zuordnung .pk-frage { margin-top: 0; flex: none; }
+
 .pk-felder { display: flex; flex-direction: column; gap: 6px; }
 .pk-felder input {
   width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--linie-stark);

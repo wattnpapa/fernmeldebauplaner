@@ -127,6 +127,65 @@ export function istArtSetzen(pt, art) {
   if (art !== 'querung') pt.bauweise = null;
 }
 
+/**
+ * Einen aufgenommenen Punkt nachträglich einem geplanten zuordnen – oder die
+ * Zuordnung wieder lösen (`pid === null`).
+ *
+ * Der Grund, dass es diesen Griff gibt: die Bauleiste nimmt den Standort auf,
+ * ohne zu wissen, welcher geplante Punkt gemeint ist. Sie KANN es nicht wissen
+ * – und raten darf sie nicht, denn bei eng gesetzten Punkten rät die
+ * Entfernung falsch. Jede Aufnahme über „Punkt hier“ und „Auf Karte“ war
+ * deshalb ein zusätzlicher Punkt, und „0 von 3 Punkten“ blieb stehen, auch
+ * wenn der Trupp auf dem geplanten Punkt stand. Der Weg heraus ist nicht die
+ * Automatik, sondern der Tipp: die Anwendung stellt die offenen Punkte nach
+ * Entfernung sortiert hin, der Trupp sagt, welcher es ist.
+ *
+ * Ein geplanter Punkt trägt genau eine Aufnahme. Eine bereits bestätigte wird
+ * hier nicht verdrängt – sonst verschwände sie ohne Meldung; angeboten werden
+ * deshalb nur offene Punkte, und diese Prüfung ist der Riegel dahinter.
+ *
+ * Neu einsortiert wird in jedem Fall: die Stelle in der Liste folgt der
+ * Ordnung der Planung, und mit der Zuordnung ändert sich diese Stelle.
+ *
+ * Nur innerhalb von `store.aendern` aufrufen.
+ */
+export function istSollZuordnen(strecke, ist, pid) {
+  const bau = bauSichern(strecke);
+  if (!bau.punkte.includes(ist)) return ist;
+  if (pid) {
+    const soll = strecke.punkte.find(pt => pt.id === pid);
+    if (!soll) return ist;
+    if (bau.punkte.some(pt => pt !== ist && pt.sollPunkt === pid)) return ist;
+    ist.sollPunkt = pid;
+    /* Der bestätigte Punkt heißt, wie er im Bauauftrag heißt – so wird er am
+       Bauort gesucht. Was der Trupp selbst eingetragen hat, bleibt: er stand
+       davor und hat den Namen mit Absicht vergeben. */
+    if (!ist.name) ist.name = soll.name || '';
+  } else {
+    ist.sollPunkt = null;
+  }
+  const i = bau.punkte.indexOf(ist);
+  bau.punkte.splice(i, 1);
+  bau.punkte.splice(einsortierStelle(strecke, bau, ist), 0, ist);
+  return ist;
+}
+
+/**
+ * Die geplanten Punkte, die noch keine Aufnahme tragen – zu `bei` hin
+ * aufsteigend sortiert, damit der nächstliegende zuerst zur Wahl steht.
+ * Jeder Eintrag nennt seine Stelle in der Planung (`nr`, ab 1) und die
+ * Entfernung in Metern; ohne `bei` bleibt die Reihenfolge die der Planung.
+ */
+export function offeneSollPunkte(strecke, bei = null) {
+  if (!strecke) return [];
+  const belegt = new Set(istPunkte(strecke).map(pt => pt.sollPunkt).filter(Boolean));
+  const offen = strecke.punkte
+    .map((pt, i) => ({ punkt: pt, nr: i + 1, weg: bei ? distanz(pt, bei) : null }))
+    .filter(e => !belegt.has(e.punkt.id));
+  if (bei) offen.sort((a, b) => a.weg - b.weg);
+  return offen;
+}
+
 /** Wohin der neue Ist-Punkt in der Liste gehört (Index) */
 function einsortierStelle(strecke, bau, neu) {
   const ordnung = new Map(strecke.punkte.map((pt, i) => [pt.id, i]));

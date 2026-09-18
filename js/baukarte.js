@@ -20,6 +20,7 @@ import { store, punktartById } from './state.js';
 import { QUERUNG_BAUWEISEN } from './vorschrift.js';
 import {
   istPunkte, istZuSoll, sollZuIst, istPunktSetzen, istArtSetzen, bauabschnittById,
+  istSollZuordnen, offeneSollPunkte,
   baustrecke, baustreckeSetzen, aktiverBauabschnitt, quelleText,
   punktartText, ABWEICHUNG_SCHWELLE
 } from './baudoku.js';
@@ -444,6 +445,35 @@ function istBlatt(s, ist, soll) {
       ? `<span class="bp-abweichung">${escapeHtml(formatLaenge(abw))} vom Plan</span>` : '') +
     (abschnitt ? `<span>${escapeHtml(abschnitt.trupp || abschnitt.name)}</span>` : '');
   links.appendChild(befund);
+
+  /* Der Punkt weiß nicht, welchen geplanten er bestätigt: über die Bauleiste
+     aufgenommen, kennt er nur seine Koordinate. Genau hier wird das
+     entschieden, und zwar im Augenblick der Aufnahme – das Blatt schlägt
+     dafür ohnehin auf. Die offenen Punkte stehen nach Entfernung sortiert, der
+     nächstliegende zuerst und mit seiner Entfernung daneben; geraten wird
+     nichts. Ohne diese Reihe blieb „0 von 3 Punkten“ stehen, auch wenn der
+     Trupp genau auf Punkt 2 stand, und die gemeldete Abweichung war die
+     Trassenlänge statt der Abweichung.
+
+     Nur die drei nächsten, und die Frage in derselben Zeile: das Blatt ist
+     gedeckelt, und jede Zeile geht der Karte ab – am Bauort will der Trupp
+     sehen, WO der Punkt liegt, den er benennt. Wer weiter greifen muss, findet
+     die ganze Liste im Bau-Reiter: die Liste ist der Bogen, die Karte der
+     Griff. */
+  if (!soll) {
+    const offeneSoll = offeneSollPunkte(s, ist).slice(0, 3);
+    if (offeneSoll.length) {
+      const reihe = el('div', 'pk-zuordnung');
+      reihe.appendChild(el('span', 'pk-frage', 'Welcher Punkt?'));
+      reihe.appendChild(chips(
+        [...offeneSoll.map(e => [e.punkt.id, `Punkt ${e.nr} · ${formatLaenge(e.weg)}`]),
+         ['', 'zusätzlich']],
+        '',
+        pid => store.aendern(() => istSollZuordnen(s, ist, pid || null), 'bau'),
+        'Zuordnung zum Plan'));
+      links.appendChild(reihe);
+    }
+  }
 
   links.appendChild(el('div', 'pk-frage' + (ist.art === 'offen' ? ' pk-frage-offen' : ''),
     ist.art === 'offen' ? 'Was ist hier? <span>fehlt noch</span>' : 'Was ist hier?'));
