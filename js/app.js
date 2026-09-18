@@ -1355,6 +1355,14 @@ document.addEventListener('keydown', e => {
     if (zl.setzModus) { zl.beendeSetzen(); return modusAnzeigen(); }
     if (fl.setzModus) { fl.beendeSetzen(); return modusAnzeigen(); }
     if (bl.setzModus) { bl.beendeSetzen(); return hinweis('Ort setzen abgebrochen.'); }
+    /* Zuletzt die aufgeklappte Zeile: sie geht am Kopf wieder zu, und der
+       Winkel dort sagt das auch – wer aber am Schreibtisch sitzt, erwartet
+       Esc und muss dafür nicht erst die Zeile wiederfinden. */
+    if (!imFeld && (sl.auswahl || zl.auswahl || bl.auswahl || fl.auswahl || rl.auswahl)) {
+      sl.auswahl = null; zl.auswahl = null; bl.auswahl = null;
+      fl.auswahl = null; rl.auswahl = null;
+      zeichneAlles();
+    }
     return;
   }
 
