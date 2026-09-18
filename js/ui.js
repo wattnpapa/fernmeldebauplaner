@@ -286,6 +286,27 @@ function el(tag, klasse, inhalt) {
   return e;
 }
 
+/* Eine Zahl, wie sie hier getippt wird: Komma als Trenner, und der Punkt
+   daneben weiter erlaubt – der Bogen kommt auch einmal aus einer Tabelle.
+   Geliefert wird, was aus dem Feld zu machen ist:
+     `unfertig`  die Eingabe ist auf dem Weg („2,“, „-“) – nichts tun
+     `zahl`      die gelesene Zahl, oder `null`, wenn es keine ist
+     `text`      die bereinigte Eingabe; leer heißt „nichts eingetragen“ */
+function zahlLesen(roh) {
+  const text = String(roh ?? '').trim();
+  if (text === '') return { unfertig: false, zahl: null, text: '' };
+  if (/^[-+]?$/.test(text) || /^[-+]?\d*[.,]$/.test(text)) return { unfertig: true, zahl: null, text };
+  if (!/^[-+]?(\d+([.,]\d+)?|[.,]\d+)$/.test(text)) return { unfertig: false, zahl: null, text };
+  const zahl = Number(text.replace(',', '.'));
+  return { unfertig: false, zahl: Number.isFinite(zahl) ? zahl : null, text };
+}
+
+/** Eine Zahl für das Eingabefeld: deutsch mit Komma, leer bleibt leer */
+function zahlText(wert) {
+  if (wert === null || wert === undefined || wert === '') return '';
+  return Number.isFinite(Number(wert)) ? String(wert).replace('.', ',') : String(wert);
+}
+
 /** Beschriftetes Eingabefeld, das direkt in den Store schreibt */
 function feld(titel, wert, beiAenderung, o = {}) {
   const wrap = el('label', 'feld' + (o.klasse ? ' ' + o.klasse : ''));
@@ -302,42 +323,100 @@ function feld(titel, wert, beiAenderung, o = {}) {
       ein.appendChild(op);
     }
   } else {
+    /* Eine Zahl wird als `text` mit Zifferntastatur eingegeben, nicht als
+       `number` – zwei Fehler am Bauort hängen daran, und beide waren nicht zu
+       sehen:
+
+       Das Komma. Die deutsche Tastatur liefert „2,5“, und ein
+       `type="number"` wirft das Komma weg: aus „2,5“ wird der Wert „25“, ohne
+       Warnung, ohne rote Umrandung. Im Materialnachweis stand damit die
+       zehnfache Menge auf dem Bogen. Erst als `text` ist das Komma überhaupt
+       zu sehen und in einen Punkt zu setzen.
+
+       Das Raster. `step` galt als Gültigkeitsregel, und `min` ist dabei der
+       Anfang des Rasters: bei `min: 1, step: 10` waren nur 1, 11, 21 … gültig
+       und ausgerechnet die runden Betriebswerte 250, 500, 1000 nicht. Sie
+       wurden mit „Das ist keine Zahl“ abgewiesen, und gerechnet wurde still
+       mit dem alten Wert weiter – der Bauauftrag trug eine Trommellänge, die
+       im Feld nicht stand. `o.step` ist deshalb nur noch eine Angabe über die
+       sinnvolle Feinheit und keine Regel; geprüft werden Zahl, `min` und
+       `max`.
+
+       Was dabei wegfällt, ist das Pfeilchen am Feld. Auf dem Zielgerät gibt
+       es das nicht, und am Rechner hat es Werte verstellt, wenn das Rad über
+       dem Feld lief. */
     ein = document.createElement('input');
-    ein.type = o.typ || 'text';
-    /* Die Zifferntastatur des Geräts statt der Volltastatur: am Bauort wird
-       die Menge im Stehen mit Handschuh getippt, und `type="number"` allein
-       öffnet auf iOS weiter das ganze Feld. */
-    if (ein.type === 'number') ein.inputMode = 'decimal';
-    if (o.min !== undefined) ein.min = o.min;
-    if (o.max !== undefined) ein.max = o.max;
-    if (o.step !== undefined) ein.step = o.step;
+    ein.type = o.typ === 'number' ? 'text' : (o.typ || 'text');
+    if (o.typ === 'number') {
+      ein.inputMode = 'decimal';
+      ein.autocomplete = 'off';
+      /* Die Grenzen bleiben am Element stehen, damit die Prüfung in
+         `geraete-pruefen.mjs` und der Blick in die Entwicklerwerkzeuge sie
+         weiter finden – ausgewertet werden sie hier, nicht vom Browser. */
+      if (o.min !== undefined) ein.dataset.min = o.min;
+      if (o.max !== undefined) ein.dataset.max = o.max;
+    } else {
+      if (o.min !== undefined) ein.min = o.min;
+      if (o.max !== undefined) ein.max = o.max;
+      if (o.step !== undefined) ein.step = o.step;
+    }
     if (o.platzhalter) ein.placeholder = o.platzhalter;
   }
-  if (o.typ !== 'select') ein.value = wert ?? '';
+  /* Angezeigt wird deutsch, mit Komma: das Feld nimmt jetzt beides an, und ein
+     Punkt in einem Feld, in das der Trupp Komma tippt, sähe nach Tausender
+     aus. */
+  if (o.typ === 'number') ein.value = zahlText(wert);
+  else if (o.typ !== 'select') ein.value = wert ?? '';
   if (o.einheit) wrap.classList.add('mit-einheit');
+
+  /* Der letzte angenommene Wert, und der Grund, dass er mitgeführt wird: ein
+     abgewiesener Text blieb im Feld stehen, während weiter mit dem alten Wert
+     gerechnet wurde. Auf dem Schirm stand dann „500“ und im Bauauftrag 800 –
+     ein Blatt, das dem Trupp eine Trommellänge nennt, die er nirgends
+     eingestellt hat. Beim Verlassen des Feldes zählt deshalb wieder, was
+     wirklich gespeichert ist. */
+  let angenommen = o.typ === 'number' ? zahlText(wert) : null;
+  if (o.typ === 'number') {
+    ein.addEventListener('blur', () => {
+      if (!wrap.classList.contains('feld-abgewiesen')) return;
+      wrap.classList.remove('feld-abgewiesen');
+      ein.value = angenommen;
+    });
+  }
+
   ein.addEventListener(o.typ === 'select' ? 'change' : 'input', () => {
-    if (ein.type === 'number') {
-      /* Was keine Zahl ergibt, wurde bisher still zu `null` – und nahm im
-         Materialnachweis die ganze Zeile mit. Wer „1,5“ mit Komma tippte oder
-         sich um ein Minus vertat, sah seine Menge verschwinden, ohne zu
-         erfahren warum. Die Eingabe wird jetzt abgewiesen: das Feld färbt
-         sich, der bisherige Wert bleibt stehen, und gemeldet wird beim
-         Übergang – nicht bei jedem Tastendruck, sonst stünde die Pille
-         dauerhaft. */
-      const schlecht = ein.validity.badInput || (ein.value !== '' && !ein.checkValidity());
+    if (o.typ === 'number') {
+      /* Was keine Zahl ergibt, wurde einmal still zu `null` – und nahm im
+         Materialnachweis die ganze Zeile mit. Wer sich um ein Minus vertat,
+         sah seine Menge verschwinden, ohne zu erfahren warum. Die Eingabe wird
+         deshalb abgewiesen: das Feld färbt sich, der bisherige Wert bleibt
+         stehen, und gemeldet wird beim Übergang – nicht bei jedem Tastendruck,
+         sonst stünde die Pille dauerhaft.
+
+         Eine halb getippte Zahl ist dabei kein Fehler: „2,“ und das einzelne
+         Minus sind der Weg zu „2,5“ und „-3“. Sie färben nichts und schreiben
+         nichts; der nächste Anschlag entscheidet. */
+      const gelesen = zahlLesen(ein.value);
       const vorher = wrap.classList.contains('feld-abgewiesen');
+      if (gelesen.unfertig) { wrap.classList.remove('feld-abgewiesen'); return; }
+
+      const untenDrunter = gelesen.zahl !== null && o.min !== undefined && gelesen.zahl < o.min;
+      const obenDrueber  = gelesen.zahl !== null && o.max !== undefined && gelesen.zahl > o.max;
+      const schlecht = gelesen.zahl === null && gelesen.text !== '' || untenDrunter || obenDrueber;
       wrap.classList.toggle('feld-abgewiesen', schlecht);
       if (schlecht) {
         if (!vorher) {
-          hinweis(o.min !== undefined && ein.validity.rangeUnderflow
-            ? `Keine Menge unter ${o.min} – der bisherige Wert bleibt stehen.`
+          hinweis(untenDrunter ? `Keine Menge unter ${o.min} – der bisherige Wert bleibt stehen.`
+            : obenDrueber ? `Keine Menge über ${o.max} – der bisherige Wert bleibt stehen.`
             : 'Das ist keine Zahl – der bisherige Wert bleibt stehen.', 'warnung');
         }
         return;
       }
+      angenommen = gelesen.text;
+      beiAenderung(gelesen.text === '' ? '' : gelesen.zahl);
+      return;
     }
-    const v = ein.type === 'number' ? (ein.value === '' ? '' : Number(ein.value)) : ein.value;
-    beiAenderung(v);
+    beiAenderung(ein.value);
   });
   wrap.appendChild(ein);
   if (o.einheit) wrap.appendChild(el('span', 'feld-einheit', o.einheit));
