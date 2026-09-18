@@ -536,6 +536,19 @@ body.seite-zu .seite { display: none; }
 .augen svg { display: block; }
 .augen:hover { color: var(--thw); }
 
+/* Dass eine aufgeklappte Zeile mit demselben Tipp wieder zugeht, war an
+   nichts zu sehen – gemeldet wurde es aus dem Bilder-Reiter: „es bleibt immer
+   das letzte Bild groß, es gibt keine Möglichkeit, wieder einzuklappen.“ Der
+   Winkel am rechten Rand sagt es nun: nach unten, solange die Zeile zu ist,
+   nach oben, sobald sie offen ist. Er sitzt am Kopf und nicht am Namensknopf,
+   weil der den Namen abschneidet und ein Zeichen darin mit abgeschnitten würde. */
+.eintrag-kopf::after {
+  content: ''; flex-shrink: 0; width: 7px; height: 7px; margin: 0 3px 3px 1px;
+  border-right: 2px solid var(--text-schwach); border-bottom: 2px solid var(--text-schwach);
+  transform: rotate(45deg); transition: transform .12s;
+}
+.eintrag.offen .eintrag-kopf::after { transform: rotate(-135deg); margin: 3px 3px 0 1px; }
+
 /* Ausgeblendet heißt: auf der Karte nicht vorhanden. Das steht nicht nur im
    Symbol des Schalters, sondern an der Zeile selbst – Farbe und Name treten
    zurück, wie das Element auf der Karte. */
