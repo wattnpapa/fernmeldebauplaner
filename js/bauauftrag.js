@@ -20,8 +20,9 @@ import {
   bauBegonnen, baukennzahlen, istPunkte, bauabschnitte, bauabschnittById, sollZuIst,
   punktartText, istKurz,
   materialzeilen, materialSumme, materialSoll, meldungenNachZeit, pruefzeilen,
-  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE
+  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE, bilderAnStrecke, BILD_KORRIDOR
 } from './baudoku.js';
+import { bildUrl } from './bildspeicher.js';
 import { MATERIALKATALOG, MATERIALGRUPPEN, pruefartById, dtg } from './vorschrift.js';
 import { HOEHEN_QUELLE } from './hoehe.js';
 import { OBERFLAECHEN_QUELLE } from './oberflaeche.js';
@@ -146,7 +147,7 @@ const STANDARD_BAUDOKU = {
   flaechen: false, relais: false, andereStrecken: false,
   zwischenpunkte: false, teillaengen: false, punktnamen: true,
   istpunkte: true, materialbogen: true, meldungen: true, pruefung: true,
-  abweichungen: true, unterschrift: true,
+  abweichungen: true, lichtbilder: true, unterschrift: true,
   zoomVersatz: 0, strichstaerke: 1
 };
 
@@ -485,6 +486,7 @@ function oeffneDruckansicht(auftrag) {
         haken('Baumeldungen', 'meldungen', opt, neuAufbau),
         haken('Prüfung und Übergabe', 'pruefung', opt, neuAufbau),
         haken('Abweichungen', 'abweichungen', opt, neuAufbau),
+        haken('Lichtbilder', 'lichtbilder', opt, neuAufbau),
         haken('Unterschriften', 'unterschrift', opt, neuAufbau)
       ])
     );
@@ -1087,6 +1089,7 @@ function aufbauen(ziel, auftrag, opt, karten, druckKnopf) {
     for (const s of auftrag.strecken) {
       baudokublaetter(ziel, s, opt, mass, sw, karten, kartenbau);
     }
+    if (opt.lichtbilder) kartenbau.push(() => lichtbilderLaden(ziel));
   }
   if (auftrag.modus === 'einzel' || (sammel && opt.einzelblaetter)) {
     for (const s of auftrag.strecken) {
@@ -1687,7 +1690,20 @@ function tabelleFliessen(fluss, rahmen, zeilenHTML) {
 
   zeilen.forEach(zeile => {
     koerper.appendChild(zeile);
-    if (fluss.passt() || koerper.children.length === 1) return;
+    if (fluss.passt()) return;
+    /* Schon die erste Zeile passt nicht mehr unter den Kopf. Steht davor noch
+       etwas auf dem Blatt, zieht der ganze Abschnitt aufs nächste um – sonst
+       stünde die Überschrift allein am Blattende, und eine hohe Zeile wie eine
+       Reihe Lichtbilder liefe über den Rand, wo `.bl-inhalt` sie abschneidet.
+       Allein auf dem Blatt bleibt sie stehen: mehr Platz gibt es nirgends. */
+    if (koerper.children.length === 1) {
+      if (abschnitt.previousElementSibling) {
+        abschnitt.remove();
+        fluss.neuBlatt();
+        fluss.anhaengen(abschnitt);
+      }
+      return;
+    }
     zeile.remove();
     const davor = koerper.lastElementChild;
     const mitnehmen = davor && davor.classList.contains('gruppenzeile') ? davor : null;
@@ -2921,6 +2937,13 @@ function baudokuLegendeHTML(s, sw, opt) {
     zeilen.push(`<span class="lg-eintrag"><i class="lg-linie lg-abw"></i>` +
       `Abweichung ab ${ABWEICHUNG_SCHWELLE} m</span>`);
   }
+  /* Die Bildmarke trägt ein „B“ vor der Zahl: Nummern allein stehen auf
+     diesem Blatt schon an den geplanten Punkten, und „7“ neben „7“ schickte
+     den Trupp an die falsche Stelle. */
+  if (opt.lichtbilder && bilderAnStrecke(store.projekt, s).length) {
+    zeilen.push('<span class="lg-eintrag"><i class="lg-bildmarke">B1</i>' +
+      'Lichtbild, Nummer im Bogen „Lichtbilder“</span>');
+  }
   /* Die Nummern auf der Karte sind die des PLANS – die Ist-Marken tragen
      keine. Das stand hier eine Fassung lang falsch herum. */
   if (s.punkte.length && opt.punktnamen !== false) {
@@ -2991,7 +3014,21 @@ function baueBaudokuKarte(buehne, strecke, opt, mass, sw, karten) {
   /* Der Ausschnitt umfasst BEIDE Trassen. Nur auf die geplante zu passen
      schnitte genau das ab, worum es auf diesem Blatt geht: die Stelle, an der
      der Trupp ausgewichen ist. */
-  const ecken = strecke.punkte.concat(istPunkte(strecke)).map(x => [x.lat, x.lng]);
+  /* Die Bilder ziehen den Ausschnitt mit auf: sie liegen bis zu
+     `BILD_KORRIDOR` neben der Trasse, und eine Nummer im Bogen, deren Marke
+     knapp hinter dem Kartenrand liegt, lässt sich nicht mehr verorten. */
+  const bilder = opt.lichtbilder ? bilderAnStrecke(p, strecke).map(e => e.bild) : [];
+  bilder.forEach((b, i) => {
+    L.marker([b.lat, b.lng], {
+      interactive: false, keyboard: false,
+      icon: L.divIcon({
+        className: 'bd-bildmarke', html: `<span>B${i + 1}</span>`,
+        iconSize: null
+      })
+    }).addTo(karte);
+  });
+
+  const ecken = strecke.punkte.concat(istPunkte(strecke), bilder).map(x => [x.lat, x.lng]);
   if (ecken.length) {
     const grenzen = L.latLngBounds(ecken);
     const rand = kartenrand(mass);
@@ -3026,7 +3063,7 @@ function baueBaudokuKarte(buehne, strecke, opt, mass, sw, karten) {
 
 function baudokuNachweiseNoetig(opt) {
   return !!(opt.istpunkte || opt.materialbogen || opt.meldungen || opt.pruefung ||
-    opt.abweichungen || opt.unterschrift);
+    opt.abweichungen || opt.lichtbilder || opt.unterschrift);
 }
 
 function baudokuNachweise(ziel, p, strecke, k, opt) {
@@ -3063,7 +3100,94 @@ function baudokuNachweise(ziel, p, strecke, k, opt) {
     fluss.setze(elementAus(uebergabeHTML(k)));
   }
   if (opt.abweichungen) fluss.setze(elementAus(baudokuAbweichungHTML(strecke, k)));
+  /* Die Bilder vor den Unterschriften: bestätigt wird der ganze Nachweis, und
+     die Aufnahmen gehören zu dem, was bestätigt wird. */
+  if (opt.lichtbilder) {
+    tabelleFliessen(fluss, lichtbildRahmenHTML,
+      lichtbildZeilenHTML(p, strecke, opt) ||
+      leerzeile(1, 'Kein Lichtbild an dieser Trasse aufgenommen.'));
+  }
   if (opt.unterschrift) fluss.setze(elementAus(baudokuUnterschriftHTML(p)));
+}
+
+/* Die Lichtbilder als Bogen: je Reihe zwei auf A4 hoch, drei auf A4 quer, auf
+   A3 je eines mehr – kleiner wären sie auf dem Papier nicht mehr zu lesen,
+   größer stünde eine Handvoll Aufnahmen auf drei Blättern. Sie fließen als Tabellenzeilen, damit
+   sie denselben Blattumbruch samt „Fortsetzung“ bekommen wie jeder andere
+   Nachweis.
+
+   Jedes Bild steht in einem Rahmen mit festem Seitenverhältnis. Der Blattfluss
+   misst beim Aufbau, und da sind die Bilddaten noch nicht da – ein Bild, das
+   seine Höhe erst beim Eintreffen bekäme, schöbe danach die Zeilen über den
+   Blattrand, und `.bl-inhalt` schnitte sie ab. Hochkant stehende Aufnahmen
+   bekommen im Rahmen Rand statt eines eigenen Maßes. */
+function lichtbildRahmenHTML(fortsetzung) {
+  return `<section class="bl-abschnitt">
+    <h2>Lichtbilder${fortsetzung ? ' (Fortsetzung)' : ''}</h2>
+    <table class="tab-bilder"><tbody></tbody></table>
+    <p class="tab-fussnote">Aufgeführt sind die Lichtbilder mit Aufnahmeort bis
+      ${escapeHtml(meter(BILD_KORRIDOR))} neben der geplanten oder der gebauten Trasse. Die
+      Nummer steht auch an der Marke auf dem Kartenblatt, der Ort bezieht sich auf den
+      nächsten geplanten Punkt.</p>
+  </section>`;
+}
+
+function lichtbildZeilenHTML(p, s, opt) {
+  const bilder = bilderAnStrecke(p, s);
+  const spalten = (opt.ausrichtung === 'quer' ? 3 : 2) + (opt.format === 'a3' ? 1 : 0);
+  let html = '';
+  for (let i = 0; i < bilder.length; i += spalten) {
+    const reihe = bilder.slice(i, i + spalten)
+      .map((eintrag, j) => lichtbildHTML(eintrag, i + j + 1)).join('');
+    html += `<tr><td><div class="bd-bildreihe" style="--spalten:${spalten}">${reihe}</div></td></tr>`;
+  }
+  return html;
+}
+
+function lichtbildHTML({ bild: b, ort }, nr) {
+  const zeit = b.aufgenommen ? zeitpunktText(b.aufgenommen) : '';
+  const blick = b.richtung !== null && b.richtung !== undefined
+    ? `Blick ${himmelsrichtung(b.richtung)} (${Math.round(b.richtung)}°)` : '';
+  const zeilen = [
+    [zeit, toMGRS(b.lat, b.lng, 5)].filter(Boolean).join(' · '),
+    [ort, blick].filter(Boolean).join(' · '),
+    b.bemerkung || ''
+  ].filter(Boolean);
+  return `<figure class="bd-bild">
+    <div class="bd-bild-rahmen"><img data-bild="${escapeHtml(b.id)}" alt=""></div>
+    <figcaption>
+      <b><span class="bd-bild-nr">B${nr}</span> ${escapeHtml(b.name || 'Lichtbild')}</b>
+      ${zeilen.map(z => `<span>${escapeHtml(z)}</span>`).join('')}
+    </figcaption>
+  </figure>`;
+}
+
+/* Datum und Uhrzeit zusammen: ein Bau zieht sich über Tage, und zwei Aufnahmen
+   derselben Stelle unterscheidet oft erst der Tag. */
+function zeitpunktText(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? ''
+    : d.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+/* Die Bilddaten liegen im Bildspeicher des Geräts und kommen erst nach dem
+   Aufbau. Der Druckknopf wartet auf sie wie auf die Kacheln – ein Ausdruck,
+   auf dem an der Stelle des Bildes ein leerer Rahmen steht, wäre als Nachweis
+   wertlos und fiele erst am Bauplatz auf. */
+function lichtbilderLaden(ziel) {
+  const bilder = [...ziel.querySelectorAll('img[data-bild]')];
+  return Promise.all(bilder.map(img => bildUrl(img.dataset.bild).then(url => {
+    if (!url) return markiereFehlend(img);
+    img.src = url;
+    return img.decode().catch(() => markiereFehlend(img));
+  }).catch(() => markiereFehlend(img))));
+}
+
+/* Fehlt ein Bild im Speicher – etwa nach dem Öffnen eines geteilten Links, der
+   die Aufnahmen nicht trägt –, sagt der Rahmen das, statt leer zu bleiben. */
+function markiereFehlend(img) {
+  const rahmen = img.closest('.bd-bild-rahmen');
+  if (rahmen) rahmen.innerHTML = '<span class="bd-bild-fehlt">Aufnahme nicht auf diesem Gerät</span>';
 }
 
 /* Wer welchen Teil gebaut hat. Steht nur da, wo mehrere Trupps an einer

@@ -234,7 +234,13 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Darunter: die aufgenommenen Punkte mit MGRS, Herkunft der Koordinate, Uhrzeit und
   Abweichung; der Materialnachweis verbraucht gegen Bedarf; die Baumeldungen mit
   Uhrzeit; Messungen und Sprechproben je Leitungsstamm samt Übergabe; die Abweichungen
-  im Klartext mit Schreiblinien; die Bestätigungen
+  im Klartext mit Schreiblinien; die Lichtbilder; die Bestätigungen
+- **Lichtbilder:** jedes Bild, das bis 100 m neben der geplanten oder der gebauten
+  Trasse aufgenommen wurde, mit Beschriftung, Aufnahmezeit, MGRS, Ort zum nächsten
+  Punkt („40 m NO von Punkt 7“), Blickrichtung und Bemerkung. Auf der Karte steht an
+  seinem Aufnahmeort dieselbe Nummer (B1, B2 …). Bilder ohne Ort oder mit
+  geschlossenem Auge bleiben weg; der Haken „Lichtbilder“ nimmt den ganzen Bogen vom
+  Blatt
 - **A4 und A3, hoch und quer, Farbe und Schwarz-Weiß.** Im Schwarz-Weiß-Druck
   unterscheiden Strichmuster die beiden Trassen, nicht Farben
 - Das Papier wird getrennt vom Bauauftrag gemerkt: die Baudokumentation wird am Bauort

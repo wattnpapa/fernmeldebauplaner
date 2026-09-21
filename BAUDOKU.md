@@ -712,7 +712,12 @@ den Rest nicht aufhalten soll.
    über denselben Blattfluss wie die Datenblätter des Bauauftrags. Geprüft mit
    `node scripts/baumodus-pruefen.mjs`; die vier Formate im Browser gegengemessen,
    Firefox auf macOS steht aus.
-6. Lichtbilder: Aufnahme am Punkt, Speicher, Rückweg.
+6. Lichtbilder: Aufnahme am Punkt, Speicher, Rückweg. **Teilweise gebaut:**
+   die Baudokumentation druckt die Bilder, die bis `BILD_KORRIDOR` (100 m)
+   neben der geplanten oder gebauten Trasse aufgenommen wurden, als eigenen
+   Nachweis samt Nummer an der Kartenmarke (`bilderAnStrecke()` in
+   `js/baudoku.js`). Die Zuordnung läuft über den Ort, nicht über eine
+   Verknüpfung – die Aufnahme am Punkt und der Rückweg stehen weiter aus.
 
 Die Stufen 1 bis 3 sind am Schreibtisch prüfbar, Stufe 4 nur am Gerät.
 

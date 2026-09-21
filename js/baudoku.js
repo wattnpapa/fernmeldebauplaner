@@ -17,9 +17,9 @@
 import {
   store, neuerBau, neuerBauabschnitt, neuerIstPunkt, baustandById, istquelleById, punktartById,
   neueMaterialzeile, neueBaumeldung, neuePruefzeile, neuePruefung,
-  materialZusammenfassen, bauBegonnen, pruefungGehaltvoll
+  materialZusammenfassen, bauBegonnen, pruefungGehaltvoll, bildAufKarte
 } from './state.js';
-import { distanz, streckenlaenge } from './geo.js';
+import { distanz, streckenlaenge, peilung, himmelsrichtung, meter } from './geo.js';
 import { MATERIALKATALOG, PRUEFART_JE_KABEL, bauweiseById } from './vorschrift.js';
 /* Der Abdruck kommt aus dem Codec und wird nicht hier gebildet: er muss über
    genau das laufen, was hinausgeht, und das weiß `teilen.js`. Kein Ring –
@@ -608,6 +608,84 @@ export function absetzstandGesamt(strecken) {
   const veraltet = staende.some(x => x.stand === 'veraltet') ||
     strecken.some(s => bauBegonnen(s) && absetzstand(s).stand === 'nie');
   return { ...juengster, stand: veraltet ? 'veraltet' : 'aktuell' };
+}
+
+// ---------------------------------------------------------------- Lichtbilder
+
+/* Wie weit ein Lichtbild neben der Trasse aufgenommen sein darf, um noch zu
+   ihr zu gehören. Ein Bild hängt an keiner Strecke, sondern nur an seinem
+   Aufnahmeort – die Zuordnung ergibt sich deshalb aus dem Abstand. Die Ortung
+   des Telefons streut um 5 bis 30 m, und wer eine Querung oder einen Mast
+   fotografiert, tritt dafür einige Schritte zurück. Bei 25 m wie für die
+   Abweichung fehlte ausgerechnet die Übersichtsaufnahme; bei mehreren hundert
+   Metern stünden die Bilder der Nachbarstrecke mit auf dem Nachweis. */
+export const BILD_KORRIDOR = 100;
+
+/* Lotabstand auf ein Trassenstück in Metern, in einer ebenen Näherung um den
+   Bildort. Auf die hier gefragten hundert Meter ist das genauer als die
+   Ortung, von der das Bild kommt. */
+function lotMeter(b, a, c) {
+  const kx = 111320 * Math.cos(b.lat * Math.PI / 180), ky = 110540;
+  const ax = (a.lng - b.lng) * kx, ay = (a.lat - b.lat) * ky;
+  const cx = (c.lng - b.lng) * kx, cy = (c.lat - b.lat) * ky;
+  const dx = cx - ax, dy = cy - ay;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
+  return Math.hypot(ax + t * dx, ay + t * dy);
+}
+
+function abstandZurLinie(b, punkte) {
+  if (!punkte.length) return Infinity;
+  if (punkte.length === 1) return distanz(punkte[0], b);
+  let min = Infinity;
+  for (let i = 1; i < punkte.length; i++) min = Math.min(min, lotMeter(b, punkte[i - 1], punkte[i]));
+  return min;
+}
+
+/**
+ * Die Lichtbilder, die zu einer Strecke gehören: aufgenommen innerhalb von
+ * `BILD_KORRIDOR` um die geplante ODER die gebaute Trasse. Beide zählen, denn
+ * gerade an der Stelle, an der der Trupp ausgewichen ist, entsteht das Bild,
+ * das die Abweichung begründet – und sie liegt fern der Planung.
+ *
+ * Ein Bild ohne Ort lässt sich keiner Strecke zuordnen, ein verborgenes hat
+ * jemand bewusst von der Karte genommen; beide bleiben weg.
+ *
+ * Geordnet nach dem nächsten geplanten Punkt und darin nach der Aufnahmezeit –
+ * so, wie das Blatt die Trasse abläuft.
+ *
+ * @returns {{bild:object, nah:number, ort:string}[]} `nah` ist der Index des
+ *   nächsten geplanten Punktes, `ort` die Angabe „40 m NO von Punkt 7“
+ */
+export function bilderAnStrecke(p, s) {
+  const soll = s.punkte || [];
+  const ist = istPunkte(s);
+  const treffer = [];
+  for (const b of (p && p.bilder) || []) {
+    if (!bildAufKarte(b)) continue;
+    const abstand = Math.min(abstandZurLinie(b, soll), abstandZurLinie(b, ist));
+    if (abstand > BILD_KORRIDOR) continue;
+    treffer.push({ bild: b, ...ortZurTrasse(b, soll.length ? soll : ist, !soll.length) });
+  }
+  return treffer.sort((a, c) =>
+    a.nah - c.nah || (a.bild.aufgenommen || '').localeCompare(c.bild.aufgenommen || ''));
+}
+
+/* Der Ort im Sprachgebrauch der Baumeldung, bezogen auf den nächsten Punkt.
+   Unter 20 m ist die Richtungsangabe im Gelände nicht mehr auffindbar – wie
+   bei `standortText()` in `js/geo.js`. */
+function ortZurTrasse(b, punkte, nurIst) {
+  if (!punkte.length) return { nah: 0, ort: '' };
+  let nah = 0, abstand = Infinity;
+  punkte.forEach((pt, i) => {
+    const d = distanz(pt, b);
+    if (d < abstand) { abstand = d; nah = i; }
+  });
+  const pt = punkte[nah];
+  const name = pt.name || `${nurIst ? 'aufgenommenem Punkt' : 'Punkt'} ${nah + 1}`;
+  const ort = abstand < 20 ? `an ${name}`
+    : `${meter(abstand)} ${himmelsrichtung(peilung(pt, b))} von ${name}`;
+  return { nah, ort };
 }
 
 // ---------------------------------------------------------------- Kennzahlen
