@@ -3,6 +3,7 @@
 import { store, neueRelaisstelle, relaisstelleSichtbar, abschnittGewaehlt } from './state.js';
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
+import { signatur } from './signatur.js';
 import { zeichneAusbreitung } from './map.js';
 import { ausbreitung, ueberdeckung, noetigeMasthoehe } from './ausbreitung.js';
 import { bosBandById, gegenstellenhoehe, gegenstelleById } from './bosfunk.js';
@@ -130,6 +131,7 @@ export class RelaisLayer {
        Marke. */
     this.gruppe = L.layerGroup().addTo(karte);
     this.flaechen = L.layerGroup().addTo(karte);
+    this._stand = null;      // Signatur der stehenden Marken (signatur.js)
     this.auswahl = null;
     this.setzModus = false;
     this.setzZuteilung = null;
@@ -353,6 +355,11 @@ export class RelaisLayer {
   zeichne(optionen) {
     const p = store.projekt;
     const o = optionen || p.optionen;
+    // Unverändert bleibt stehen (signatur.js); die Flächen führt flaechenNachfuehren
+    const stand = signatur(
+      [p.relaisstellen, p.einsatzabschnitte, o, this.auswahl], p.relaisstellen || []);
+    if (stand === this._stand) return;
+    this._stand = stand;
     this.gruppe.clearLayers();
     const skala = o.symbolgroesse || 1;
 

@@ -36,6 +36,14 @@ Wird das Datenschema erweitert, gehört die Umsetzung älterer Stände in
 `migrieren()` und `SCHEMA` wird hochgezählt — im `localStorage` der Nutzer
 liegen echte Planungen, die weiter zu öffnen sein müssen.
 
+**Die Karte zeichnet nur, was sich geändert hat.** Jede Kartenebene
+vergleicht vor dem Neuaufbau eine Signatur aus allem, was in ihre Zeichnung
+eingeht (`js/signatur.js`), und bleibt sonst stehen; die Seitenleiste baut nur
+den aufgeschlagenen Reiter und holt die anderen beim Aufschlagen nach. Wer
+einer Ebene eine neue Eingabe gibt – eine Option, ein Feld der Planung, einen
+Zustand der Ebene –, nimmt sie in deren Signatur auf, sonst bleibt die Karte
+bei genau dieser Änderung alt.
+
 **Soll und Ist sind zweierlei.** Seit Schema 13 trägt jede Strecke neben der
 Planung einen `bau`-Block: was der Trupp am Bauort wirklich gebaut hat. Der
 geplante Verlauf in `strecke.punkte` wird davon nie angefasst — die Abweichung

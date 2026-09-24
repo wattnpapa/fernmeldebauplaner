@@ -6,6 +6,7 @@ import { exifLesen, istHeif } from './exif.js';
 import { heicEntschluesseln } from './heic.js';
 import { escapeHtml } from './strecken.js';
 import { himmelsrichtung } from './geo.js';
+import { signatur } from './signatur.js';
 
 /* Ein Lichtbild vom Telefon bringt 12 Megapixel und mehrere Megabyte mit. Für
    den Zweck – „so sah die Stelle aus“ – genügt die lange Kante bei 1600 px;
@@ -246,6 +247,7 @@ export class BilderLayer {
   constructor(karte, opt = {}) {
     this.karte = karte;
     this.gruppe = L.layerGroup().addTo(karte);
+    this._stand = null;             // Signatur der stehenden Marken (signatur.js)
     this.auswahl = null;
     this.setzModus = null;          // Kennung des Bildes, dessen Ort gesetzt wird
     this.aufAuswahl = opt.aufAuswahl || (() => {});
@@ -295,9 +297,20 @@ export class BilderLayer {
   }
 
   zeichne() {
+    const p = store.projekt;
+    const bilder = p.bilder || [];
+    /* Unverändert bleibt stehen (signatur.js). Hinein geht nur, was die
+       Marke zeigt oder nennt – die Bemerkung nicht: wer sie im Eintrag
+       schreibt, soll dabei keine sechzig Marken neu bekommen. */
+    const stand = signatur(
+      [bildmarkenAn(p), this.auswahl, bilder.map(b =>
+        [b.id, b.lat, b.lng, b.richtung, b.name, b.sichtbar, b.ortAusKamera, b.breite, b.hoehe])],
+      bilder);
+    if (stand === this._stand) return;
+    this._stand = stand;
     this.gruppe.clearLayers();
-    if (!bildmarkenAn(store.projekt)) return;
-    for (const b of store.projekt.bilder || []) {
+    if (!bildmarkenAn(p)) return;
+    for (const b of bilder) {
       if (!bildAufKarte(b)) continue;
       this._punkt(b);
     }

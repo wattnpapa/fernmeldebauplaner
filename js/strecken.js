@@ -10,6 +10,7 @@ import { auslegung, querschnittText } from './strom.js';
 import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf,
          kabelreserve } from './vorschrift.js';
 import { symbolSVG, GRUNDBREITE } from './symbols.js';
+import { signatur } from './signatur.js';
 
 /* Eine rechnerische Trommelstelle so dicht an einer geplanten Muffe ist
    dieselbe Verbindung und wird nicht zusätzlich aufgeführt. */
@@ -548,6 +549,12 @@ export class StreckenLayer {
        Bildschirm gemessen und muss nach jedem Zoom neu gesetzt werden, ohne
        dass dafür die ganze Karte neu entsteht. */
     this.zeichenGruppe = L.layerGroup().addTo(karte);
+    /* Je gezeichneter Strecke ihre Gruppe, ihre Signatur und ihr Anteil an
+       den Sammlungen darunter – siehe `zeichne`. `_ziel` ist während des
+       Zeichnens die Strecke, die gerade entsteht. */
+    this._strecken = new Map();
+    this._ziel = null;
+    this._stand = null;          // Signatur der stehenden Zeichnung (signatur.js)
     this._zeichenAuftraege = [];
     /* Was die Platzsuche der Streckenschilder braucht: die Schilder selbst und
        alles, was sie nicht verdecken dürfen. Gefüllt wird beim Zeichnen. */
@@ -787,15 +794,25 @@ export class StreckenLayer {
   zeichne(optionen) {
     const p = store.projekt;
     const o = optionen || p.optionen;
-    this.gruppe.clearLayers();
-    this._vorschau = null; this._vorschauLabel = null;
-    this._zeichenAuftraege = [];
-    this._schilder = [];
-    this._linienzuege = [];
-    this._punktmarken = [];
-    this._schilderZoom = null;
-    this._schilderVersuche = 0;
+    /* Hat sich nichts geändert, bleibt die Zeichnung stehen (signatur.js).
+       Die Kabelzeichen und Schilder hängen außerdem am Maßstab – das führt
+       der Zoomwächter nach, nicht dieser Lauf. Die Horcher halten die
+       Strecken und ihre Punkte, geplante wie gebaute; die gehen mit ihrer
+       Identität ein. */
+    const stand = signatur(
+      [p.strecken, p.einsatzabschnitte, o, this.auswahl, this.aktiverPunkt,
+       this.zeichenModus, this.baumodus, this.istSetzModus],
+      p.strecken.flatMap(s => [s, ...s.punkte, ...istPunkte(s)]));
+    if (stand === this._stand) return;
+    this._stand = stand;
 
+    /* Jede Strecke hat ihre eigene Gruppe und ihre eigene Signatur: neu
+       entsteht nur, was sich geändert hat. Wer einen Punkt zieht, zieht ihn
+       an einer Strecke – die neunzehn anderen mit ihren achthundert Marken
+       wieder aufzubauen war der Posten, an dem eine große Planung stockte.
+       Die Platzsuche der Schilder läuft danach über den ganzen Bestand, denn
+       ein Schild weicht auch den Trassen aus, die stehen geblieben sind. */
+    const bleiben = new Set();
     for (const s of p.strecken) {
       if (this.nurStrecke && s.id !== this.nurStrecke) continue;
       if (this.nurStrecken && !this.nurStrecken.has(s.id)) continue;
@@ -804,8 +821,56 @@ export class StreckenLayer {
       const angefordert = s.id === this.nurStrecke || s.id === this.hervorheben ||
         (this.nurStrecken && this.nurStrecken.has(s.id));
       if (!angefordert && !streckeSichtbar(p, s)) continue;
+      bleiben.add(s.id);
+      const gewaehlt = s.id === this.auswahl;
+      /* Der aktive Punkt zählt nur an der gewählten Strecke – an jeder anderen
+         zeichnete er sonst bei jedem Wechsel alles neu. Vom Zeichenmodus geht
+         nur ein, OB gezeichnet wird: die Griffe hängen daran. */
+      const eigen = signatur(
+        [s, o, gewaehlt, gewaehlt ? this.aktiverPunkt : null, !!this.zeichenModus, this.baumodus],
+        [s, ...s.punkte, ...istPunkte(s)]);
+      let r = this._strecken.get(s.id);
+      if (r && r.stand === eigen) continue;
+      if (!r) {
+        r = { gruppe: L.layerGroup().addTo(this.gruppe) };
+        this._strecken.set(s.id, r);
+      }
+      r.gruppe.clearLayers();
+      r.stand = eigen;
+      r.zeichenAuftraege = []; r.schilder = []; r.linienzuege = []; r.punktmarken = [];
+      this._ziel = r;
       this._zeichneStrecke(s, o);
     }
+    this._ziel = null;
+    for (const [sid, r] of this._strecken) {
+      if (bleiben.has(sid)) continue;
+      this.gruppe.removeLayer(r.gruppe);
+      this._strecken.delete(sid);
+    }
+
+    /* Was die Platzsuche und die Kabelzeichen brauchen, in Zeichenreihenfolge
+       zusammengesetzt – auch aus den Strecken, die stehen geblieben sind. Die
+       Reihenfolge ist die der Planung, nicht die des Neuzeichnens: die
+       Schilder weichen einander in ihr aus, und ein Schild, das nach jedem
+       Griff woanders stünde, wäre nicht auszuhalten. */
+    this._zeichenAuftraege = []; this._schilder = [];
+    this._linienzuege = []; this._punktmarken = [];
+    for (const s of p.strecken) {
+      const r = this._strecken.get(s.id);
+      if (!r) continue;
+      this._zeichenAuftraege.push(...r.zeichenAuftraege);
+      this._schilder.push(...r.schilder);
+      this._linienzuege.push(...r.linienzuege);
+      this._punktmarken.push(...r.punktmarken);
+      /* Die Linien in die Reihenfolge der Planung heben: eine neu gezeichnete
+         Strecke läge sonst über allen anderen, weil ihre Pfade zuletzt in die
+         Zeichenfläche kamen – und nach dem nächsten Griff an einer anderen
+         wieder darunter. Die Marken brauchen das nicht, sie stapeln sich nach
+         ihrer Lage auf der Karte. */
+      r.gruppe.eachLayer(l => { if (l.bringToFront) l.bringToFront(); });
+    }
+    this._schilderZoom = null;
+    this._schilderVersuche = 0;
     this._kabelzeichenSetzen();
     this._schilderSetzen();
   }
@@ -881,13 +946,13 @@ export class StreckenLayer {
     if (pfad.length >= 2) {
       /* Für die Platzsuche der Schilder: jede gezeichnete Trasse zählt, auch
          die blasse Nebenstrecke – verdeckt ist verdeckt. */
-      this._linienzuege.push(s.punkte);
+      this._ziel.linienzuege.push(s.punkte);
       // weiße Kontrastfassung darunter
       if (sollSt.fassung) {
         L.polyline(pfad, {
           pane: 'fbp-strecken', color: '#ffffff', weight: sollSt.fassung,
           opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false
-        }).addTo(this.gruppe);
+        }).addTo(this._ziel.gruppe);
       }
 
       const linie = L.polyline(pfad, {
@@ -895,7 +960,7 @@ export class StreckenLayer {
         opacity: sollSt.deckkraft, lineCap: sollSt.kappe || 'round', lineJoin: 'round',
         dashArray: sollSt.strich,
         interactive: this.interaktiv, bubblingMouseEvents: false
-      }).addTo(this.gruppe);
+      }).addTo(this._ziel.gruppe);
       if (this.interaktiv) {
         linie.on('click', e => { L.DomEvent.stop(e); if (!this.zeichenModus) this.waehle(s.id); });
         linie.bindTooltip(() => this._tooltipText(s), { sticky: true, direction: 'top', className: 'fbp-tooltip' });
@@ -905,7 +970,7 @@ export class StreckenLayer {
          käme es nur zur Unruhe, gefragt ist dort der Verlauf. */
       const zeichen = kabelzeichen(s.kabeltyp);
       if (zeichen && !nebensache) {
-        this._zeichenAuftraege.push({ punkte: s.punkte, zeichen, farbe: st.farbe });
+        this._ziel.zeichenAuftraege.push({ punkte: s.punkte, zeichen, farbe: st.farbe });
       }
     }
 
@@ -924,7 +989,7 @@ export class StreckenLayer {
           html: `<span class="seg-mass" style="--farbe:${st.farbe}">${meter(distanz(a, b))}</span>`,
           iconSize: null
         })
-      }).addTo(this.gruppe);
+      }).addTo(this._ziel.gruppe);
     } else if (o.teillaengen && pfad.length >= 2 && !nebensache) {
       const laengen = segmentLaengen(s);
       for (let i = 1; i < s.punkte.length; i++) {
@@ -936,7 +1001,7 @@ export class StreckenLayer {
             html: `<span class="seg-mass" style="--farbe:${st.farbe}">${meter(laengen[i - 1])}</span>`,
             iconSize: null
           })
-        }).addTo(this.gruppe);
+        }).addTo(this._ziel.gruppe);
       }
     }
 
@@ -959,7 +1024,7 @@ export class StreckenLayer {
            Bei ausgewählter Strecke greift der Haken nicht – was man ziehen
            können soll, muss man auch sehen. */
         if (o.zwischenpunkte === false && pt.art === 'punkt' && !gewaehlt) return;
-        this._punktmarken.push(pt);
+        this._ziel.punktmarken.push(pt);
         this._zeichnePunkt(s, pt, i, gewaehlt, o, st);
       });
     }
@@ -975,7 +1040,7 @@ export class StreckenLayer {
         const griff = L.marker(m, {
           pane: 'fbp-griffe', draggable: true, title: 'Ziehen: Zwischenpunkt einfügen',
           icon: L.divIcon({ className: 'fbp-einfuegen', html: '<i></i>', iconSize: [14, 14], iconAnchor: [7, 7] })
-        }).addTo(this.gruppe);
+        }).addTo(this._ziel.gruppe);
         const idx = i;
         griff.on('dragend', ev => {
           const ll = ev.target.getLatLng();
@@ -1013,12 +1078,12 @@ export class StreckenLayer {
                  </span>`,
           iconSize: null
         })
-      }).addTo(this.gruppe);
+      }).addTo(this._ziel.gruppe);
       /* Wohin das abgerückte Schild rückt, steht erst fest, wenn alle Strecken
          gezeichnet sind und die Karte einen Maßstab hat – die Platzsuche läuft
          deshalb hinterher über den ganzen Bestand. Bis dahin und ohne Abstand
          bleibt es über seinem Ankerpunkt stehen. */
-      if (abstand) this._schilder.push({ marke, punkte: s.punkte, abstand });
+      if (abstand) this._ziel.schilder.push({ marke, punkte: s.punkte, abstand });
     }
   }
 
@@ -1046,7 +1111,7 @@ export class StreckenLayer {
          Das hält die Rechnung klein – gebaut ist immer nur ein Teil der
          Planung – und deckt trotzdem den Fall ab, für den sie da ist: ein
          Schild, das quer über der Linie liegt, die der Trupp aufgenommen hat. */
-      this._linienzuege.push(ist);
+      this._ziel.linienzuege.push(ist);
       /* Die Zuschläge wachsen mit dem Strichfaktor wie alles andere. Fest
          gesetzt wäre die gebaute Trasse auf einem A3-Blatt kaum noch kräftiger
          als die geplante – und genau der Unterschied ist die Aussage des
@@ -1055,12 +1120,12 @@ export class StreckenLayer {
       L.polyline(pfad, {
         pane: 'fbp-strecken', color: '#ffffff', weight: (st.fassung || 8 * zu) + 1 * zu,
         opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false
-      }).addTo(this.gruppe);
+      }).addTo(this._ziel.gruppe);
       L.polyline(pfad, {
         pane: 'fbp-strecken', color: st.farbe, weight: st.breite + 1.5 * zu,
         opacity: 1, lineCap: 'round', lineJoin: 'round',
         interactive: false, className: 'fbp-ist-linie'
-      }).addTo(this.gruppe);
+      }).addTo(this._ziel.gruppe);
     }
 
     for (const pt of ist) {
@@ -1081,7 +1146,7 @@ export class StreckenLayer {
           pane: 'fbp-strecken', color: this.sw ? '#444444' : '#b45309',
           weight: 2 * f, opacity: 0.9,
           dashArray: [3 * f, 4 * f].join(' '), interactive: false
-        }).addTo(this.gruppe);
+        }).addTo(this._ziel.gruppe);
       }
       /* Die Art steht als Buchstabe in der Marke, wie an der geplanten – nur
          weiß auf der Streckenfarbe statt dunkel auf Weiß. Der gewöhnliche
@@ -1096,7 +1161,7 @@ export class StreckenLayer {
                 `${escapeHtml(kurz)}</span>`,
           iconSize: [18, 18], iconAnchor: [9, 9]
         })
-      }).addTo(this.gruppe)
+      }).addTo(this._ziel.gruppe)
         .bindTooltip(() => this._istTooltip(s, pt),
           { direction: 'top', className: 'fbp-tooltip', offset: [0, -8] });
       if (this.interaktiv) {
@@ -1384,7 +1449,7 @@ export class StreckenLayer {
            Koordinatenpunkt wächst und nicht daneben. */
         iconSize: [24, 24], iconAnchor: [12, 12]
       })
-    }).addTo(this.gruppe);
+    }).addTo(this._ziel.gruppe);
 
     /* Die Bezeichnung steht unter der Marke – über ihr sitzt das taktische
        Zeichen, und die Nummer trägt die Marke selbst. Stünde der Name nur in
@@ -1400,7 +1465,7 @@ export class StreckenLayer {
           html: `<span class="punkt-name" style="--farbe:${st.farbe}">${escapeHtml(pt.name)}</span>`,
           iconSize: null
         })
-      }).addTo(this.gruppe);
+      }).addTo(this._ziel.gruppe);
     }
 
     if (!this.interaktiv) return;
@@ -1467,7 +1532,7 @@ export class StreckenLayer {
         iconSize: [breite, breite],
         iconAnchor: [breite / 2, aufMarke ? breite : breite / 2]
       })
-    }).addTo(this.gruppe);
+    }).addTo(this._ziel.gruppe);
   }
 
   _tooltipText(s) {

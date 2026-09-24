@@ -1307,6 +1307,7 @@ function reiterWechseln(name) {
   });
   document.querySelectorAll('.reiter-inhalt').forEach(s =>
     s.classList.toggle('aktiv', s.dataset.inhalt === name));
+  if (reiterHinterher.has(name)) reiterAufbauen(name);
   setzeVorrang(karte, name);
   ansichtSetzen(false);
 }
@@ -1488,14 +1489,31 @@ function zeichneAlles() {
   zeichneSeite();
 }
 
+/* Aufgebaut wird nur der Reiter, der aufgeschlagen ist. Die anderen merken
+   sich, dass sie hinterher sind, und holen den Aufbau nach, sobald sie
+   aufgeschlagen werden – sonst kostete jeder Tastendruck bei sechzig Bildern
+   und zwanzig Strecken den Aufbau von sieben Listen, von denen sechs niemand
+   sieht. Wer einen Reiter von anderswo neu baut (die Seitenleiste ruft
+   `zeichneRelaisListe()` selbst, wenn eine Masthöhe eintrifft), schadet damit
+   nicht: nachgeholt wird dann höchstens einmal zu viel. */
+const REITER_AUFBAU = {
+  strecken: zeichneStreckenListe, zeichen: zeichneZeichenListe, flaechen: zeichneFlaechenListe,
+  relais: zeichneRelaisListe, bilder: zeichneBilderListe, projekt: zeichneProjektReiter,
+  bau: zeichneBauListe
+};
+const reiterHinterher = new Set();
+
 function zeichneSeite() {
-  zeichneStreckenListe();
-  zeichneZeichenListe();
-  zeichneFlaechenListe();
-  zeichneRelaisListe();
-  zeichneBilderListe();
-  zeichneBauListe();
-  zeichneProjektReiter();
+  const offen = document.querySelector('.reiter button.aktiv')?.dataset.reiter;
+  for (const name of Object.keys(REITER_AUFBAU)) {
+    if (name === offen) reiterAufbauen(name);
+    else reiterHinterher.add(name);
+  }
+}
+
+function reiterAufbauen(name) {
+  reiterHinterher.delete(name);
+  REITER_AUFBAU[name]();
 }
 
 function aktualisiereKennzahlen() { /* Kennzahlen aktualisiert die Seitenleiste selbst */ }

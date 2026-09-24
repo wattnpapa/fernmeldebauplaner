@@ -82,7 +82,18 @@ export function kumuliert(punkte) {
   return out;
 }
 
-const nf = (n, d = 0) => n.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+/* Die Formatierer werden einmal angelegt: `toLocaleString` mit Optionen baut
+   bei jedem Aufruf einen neuen, und die Karte ruft das je Teillänge und
+   Schild – im Profil des Neuzeichnens war das ein sichtbarer Posten. */
+const formatierer = new Map();
+const nf = (n, d = 0) => {
+  let f = formatierer.get(d);
+  if (!f) {
+    f = new Intl.NumberFormat('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+    formatierer.set(d, f);
+  }
+  return f.format(n);
+};
 
 /** Länge menschenlesbar: < 1000 m in Metern, darüber in km */
 export function formatLaenge(m, kurz = false) {

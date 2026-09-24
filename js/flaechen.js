@@ -2,6 +2,7 @@
 
 import { store, neueFlaeche, flaecheSichtbar, abschnittGewaehlt } from './state.js';
 import { escapeHtml } from './strecken.js';
+import { signatur } from './signatur.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
 
 export { FLAECHENARTEN, AUFSTELLUNGEN, flaechenartById } from './flaechen-vorlagen.js';
@@ -145,6 +146,7 @@ export class FlaechenLayer {
     this.karte = karte;
     this.interaktiv = opt.interaktiv !== false;
     this.gruppe = L.layerGroup().addTo(karte);
+    this._stand = null;           // Signatur der stehenden Zeichnung (signatur.js)
     this.auswahl = null;
     this.setzModus = null;        // Vorlage, die beim nächsten Klick gesetzt wird
     this.setzZuteilung = null;
@@ -242,9 +244,15 @@ export class FlaechenLayer {
   }
 
   zeichne() {
+    const p = store.projekt;
+    const zoom = this.karte.getZoom();
+    /* Unverändert bleibt stehen (signatur.js). Der Zoom gehört hinein: die
+       Figuren werden je Stufe neu gerechnet, nicht nur verschoben. */
+    const stand = signatur([p.flaechen, p.einsatzabschnitte, zoom, this.auswahl], p.flaechen || []);
+    if (stand === this._stand) return;
+    this._stand = stand;
     this.gruppe.clearLayers();
     this._marker.clear();
-    const zoom = this.karte.getZoom();
     for (const f of this.gezeichnete()) this._flaeche(f, 1 / meterJePixel(f.lat, zoom));
     if (this.interaktiv && this.auswahl) {
       const f = store.projekt.flaechen.find(x => x.id === this.auswahl);
@@ -306,6 +314,10 @@ export class FlaechenLayer {
       store.schnappschuss();
       start = this.karte.latLngToLayerPoint(m.getLatLng());
       this.gruppe.eachLayer(l => { if (l._fbpGriff) this.gruppe.removeLayer(l); });
+      /* Der Griff ist weg, die Planung noch dieselbe: wer an derselben Stelle
+         wieder loslässt, änderte nichts, und die Ebene bliebe ohne den Griff
+         stehen. Der nächste Lauf muss zeichnen. */
+      this._stand = null;
     });
     m.on('drag', () => {
       if (!f.verbund) return;

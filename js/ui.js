@@ -3742,9 +3742,13 @@ const bildTitel = b => b.name || (b.aufgenommen ? zeitpunkt(b.aufgenommen) : 'Li
    der Liste, untereinander in der Reihenfolge des Auslösens. */
 const bildSchluessel = b => b.name || b.aufgenommen || 'Lichtbild';
 
+/* Einmal angelegt: `toLocaleString` mit Optionen baut je Aufruf einen neuen
+   Formatierer, und die Liste ruft das je Bild – bei sechzig Bildern war das
+   ein Zwanzigstel des ganzen Neuzeichnens. */
+const zeitFormat = new Intl.DateTimeFormat('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 function zeitpunkt(iso) {
   const d = new Date(iso);
-  return isNaN(d) ? '' : d.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+  return isNaN(d) ? '' : zeitFormat.format(d);
 }
 
 /* Die Bilddaten kommen aus dem Bildspeicher und damit erst nach dem Aufbau der

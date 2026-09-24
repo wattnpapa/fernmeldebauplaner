@@ -3,6 +3,7 @@
 import { store, neuesZeichen, zeichenSichtbar, zeichengruppeZeigt, abschnittGewaehlt } from './state.js';
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
+import { signatur } from './signatur.js';
 
 /**
  * Welche Zeichen eine Ebene mit diesen Einstellungen zeichnen würde.
@@ -34,6 +35,7 @@ export class ZeichenLayer {
     this.karte = karte;
     this.interaktiv = opt.interaktiv !== false;
     this.gruppe = L.layerGroup().addTo(karte);
+    this._stand = null;         // Signatur der stehenden Zeichnung (signatur.js)
     this.auswahl = null;
     this.setzModus = null;      // Symbol-ID, das beim nächsten Klick gesetzt wird
     this.setzZuteilung = null;  // {abschnitt, gruppe} für das neue Zeichen
@@ -108,6 +110,12 @@ export class ZeichenLayer {
   zeichne(optionen) {
     const p = store.projekt;
     const o = optionen || p.optionen;
+    /* Unverändert bleibt stehen (signatur.js). Abschnitte und Gruppen gehören
+       dazu: ihr Auge blendet Zeichen aus, ohne ein Zeichen anzufassen. */
+    const stand = signatur(
+      [p.zeichen, p.zeichengruppen, p.einsatzabschnitte, o, this.auswahl], p.zeichen);
+    if (stand === this._stand) return;
+    this._stand = stand;
     this.gruppe.clearLayers();
     const skala = o.symbolgroesse || 1;
 
