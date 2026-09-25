@@ -10,6 +10,7 @@ import {
   BAUSTAENDE, baustandById, mengeOderNichts, PLANPUNKTARTEN
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
+import { signatur } from './signatur.js';
 import {
   formatLaenge, meter, toMGRS, toDDM, alleFormate, parseKoordinate, himmelsrichtung, distanz
 } from './geo.js';
@@ -527,13 +528,60 @@ function kabelSummeHTML(ges) {
   return `<div class="summe-kabel">${zeilen}</div>`;
 }
 
+/* Woraus die Streckenliste zuletzt gebaut wurde – ihre Gliederung, siehe
+   `zeichneStreckenListe`. */
+let streckenListeStand = null;
+
 export function zeichneStreckenListe() {
   const p = store.projekt;
   const liste = document.getElementById('strecken-liste');
-  const summe = document.getElementById('strecken-summe');
   const abschnitte = alphabetisch(p.einsatzabschnitte || [], nachName);
+  streckenSummeZeichnen(p, abschnitte);
+
+  /* Die Liste wird nachgeführt, nicht neu gebaut, solange ihre Gliederung
+     steht: welche Klammern in welcher Reihenfolge, welche Karten darin, welche
+     offen, welche zugeklappt. Beim Zeichnen einer Trasse kommt jeder Punkt als
+     Änderung an, und die Liste mit einer offenen Strecke von hundert Punkten
+     jedes Mal neu aufzubauen kostete das Dreifache des Punktes selbst – nicht
+     im Skript, sondern im Layout der hundert Zeilen mit ihren Feldern. Erst
+     eine andere Gliederung räumt ab und baut neu. */
+  const gliederung = signatur([
+    abschnitte.map(a => [a.id, a.sichtbar !== false]),
+    abschnitte.length
+      ? [...abschnitte.map(a => a.id), null]
+          .map(aid => alphabetisch(streckenIm(p, aid), nachName).map(s => s.id))
+      : alphabetisch(p.strecken, nachName).map(s => s.id),
+    [...zugeklappt], ctx.sl.auswahl, p.strecken.length > 0
+  ]);
+  if (gliederung === streckenListeStand && liste.children.length) {
+    streckenListeNachfuehren(liste);
+    return;
+  }
+  streckenListeStand = gliederung;
   liste.innerHTML = '';
 
+  if (!p.strecken.length) {
+    liste.appendChild(el('div', 'leer',
+      `<p><b>Noch keine Strecke geplant.</b></p>
+       <p>„Neue Strecke zeichnen“ wählen und die Trasse auf der Karte anklicken –
+       Punkt für Punkt vom Anfangs- zum Endpunkt. Mit Doppelklick oder <kbd>Enter</kbd> abschließen.</p>`));
+    if (!abschnitte.length) return;
+  }
+
+  /* Ohne Einsatzabschnitte bleibt die Liste, was sie war: eine Reihe Strecken.
+     Erst wenn welche gebildet sind, tritt die Gliederung dazwischen. */
+  if (!abschnitte.length) {
+    for (const s of alphabetisch(p.strecken, nachName)) liste.appendChild(streckenKarte(s));
+    return;
+  }
+
+  for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea, 'strecken'));
+  if (streckenIm(p, null).length) liste.appendChild(abschnittGruppe(null, 'strecken'));
+}
+
+/** Die Summenzeile über der Liste und der Sammeldruck-Knopf. */
+function streckenSummeZeichnen(p, abschnitte) {
+  const summe = document.getElementById('strecken-summe');
   const ges = gesamtKennzahlen(p.strecken);
   /* Trasse und Bedarf sind Kabellängen; die Funkstrecke steht in beiden nicht.
      Der Hinweis hängt am Wert, weil sonst nur die Aufstellung darunter verrät,
@@ -567,24 +615,50 @@ export function zeichneStreckenListe() {
           'Trassenpunkten gebraucht.';
     }
   }
+}
 
-  if (!p.strecken.length) {
-    liste.appendChild(el('div', 'leer',
-      `<p><b>Noch keine Strecke geplant.</b></p>
-       <p>„Neue Strecke zeichnen“ wählen und die Trasse auf der Karte anklicken –
-       Punkt für Punkt vom Anfangs- zum Endpunkt. Mit Doppelklick oder <kbd>Enter</kbd> abschließen.</p>`));
-    if (!abschnitte.length) return;
+/**
+ * Die stehende Liste an die Planung angleichen: Zähler der Klammern, dann
+ * jede Karte – eine geschlossene wird ersetzt, wenn sich ihre Strecke geändert
+ * hat, die offene führt sich selbst nach (`offeneKarteNachfuehren`).
+ */
+function streckenListeNachfuehren(liste) {
+  const p = store.projekt;
+  const art = LISTENARTEN.strecken;
+  for (const box of liste.querySelectorAll('.ea-gruppe')) {
+    const wert = box.querySelector('.ea-wert');
+    if (wert) wert.textContent = art.wert(art.eintraege(p, box.dataset.aid || null));
   }
-
-  /* Ohne Einsatzabschnitte bleibt die Liste, was sie war: eine Reihe Strecken.
-     Erst wenn welche gebildet sind, tritt die Gliederung dazwischen. */
-  if (!abschnitte.length) {
-    for (const s of alphabetisch(p.strecken, nachName)) liste.appendChild(streckenKarte(s));
-    return;
+  for (const karte of liste.querySelectorAll('article.eintrag[data-sid]')) {
+    const s = store.strecke(karte.dataset.sid);
+    if (!s) continue;
+    if (karte._fbpOffen) offeneKarteNachfuehren(karte, s);
+    else if (karte._fbpStand !== geschlosseneKarteStand(s)) karte.replaceWith(streckenKarte(s));
   }
+}
 
-  for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea, 'strecken'));
-  if (streckenIm(p, null).length) liste.appendChild(abschnittGruppe(null, 'strecken'));
+/* Die geschlossene Karte zeigt nur die Strecke selbst und ob ihr Abschnitt sie
+   zeigt. Die offene zeigt dazu Formular und Punkttabelle; die Punkte führt sie
+   zeilenweise nach, alles andere geht in diese Signatur. */
+const geschlosseneKarteStand = s => signatur([s, streckeSichtbar(store.projekt, s)], [s]);
+const offeneKarteStand = s => signatur(
+  [{ ...s, punkte: undefined }, streckeSichtbar(store.projekt, s), store.projekt.einsatzabschnitte],
+  [s]);
+
+function offeneKarteNachfuehren(karte, s) {
+  const o = karte._fbpOffen;
+  if (o.stand !== offeneKarteStand(s)) { karte.replaceWith(streckenKarte(s)); return; }
+  const punkteStand = signatur(
+    [s.punkte, ctx.sl.aktiverPunkt, store.projekt.optionen.koordformat], s.punkte);
+  if (punkteStand === o.punkteStand) return;
+  o.punkteStand = punkteStand;
+  o.frisch();
+  if (!punktTabelleNachfuehren(o.tabelle, s)) { karte.replaceWith(streckenKarte(s)); return; }
+  /* Die Querungsprüfung hängt an der Trasse und entsteht mit jedem Punkt neu –
+     so war es auch, als die ganze Karte neu entstand. */
+  if (o.querung) o.querung.remove();
+  o.querung = !kabelById(s.kabeltyp).funk && s.punkte.length >= 2 ? querungsGruppe(s) : null;
+  if (o.querung) o.tabelle.after(o.querung);
 }
 
 /* Zugeklappte Abschnitte sind Ansichtssache und keine Planungsdaten: sie
@@ -852,6 +926,7 @@ function streckenKarte(s) {
           ? ' ' + escapeHtml(querschnittText(k.strom.querschnitt)) : ''}</span>
        <span>${k.punkte} ${k.punkte === 1 ? 'Punkt' : 'Punkte'}</span>
        <span>${k.kabel.funk ? 'Funkstrecke' : `Bedarf ${formatLaenge(k.bedarf)}`}</span>`));
+    karte._fbpStand = geschlosseneKarteStand(s);
     return karte;
   }
 
@@ -1009,12 +1084,24 @@ function streckenKarte(s) {
   }
 
   // -- Punkte
-  koerper.appendChild(punktTabelle(s, frisch));
+  const tabelle = punktTabelle(s);
+  koerper.appendChild(tabelle);
 
   /* -- Was die Trasse kreuzt. Nur bei einer verlegten Leitung: eine Funkstrecke
      kreuzt nichts, sie fliegt darüber – für sie steht die Freileitung als
      Hindernis in der Richtfunkprüfung. */
-  if (!k.kabel.funk && s.punkte.length >= 2) koerper.appendChild(querungsGruppe(s));
+  const querung = !k.kabel.funk && s.punkte.length >= 2 ? querungsGruppe(s) : null;
+  if (querung) koerper.appendChild(querung);
+
+  /* Was die stehende Karte zum Nachführen braucht (`offeneKarteNachfuehren`):
+     die Signatur, die Auffrischung der Kennzahlen und die beiden Blöcke, die
+     an den Punkten hängen. */
+  karte._fbpOffen = {
+    stand: offeneKarteStand(s),
+    punkteStand: signatur(
+      [s.punkte, ctx.sl.aktiverPunkt, store.projekt.optionen.koordformat], s.punkte),
+    frisch, tabelle, querung
+  };
 
   /* -- Aktionen, gestaffelt statt gleich laut:
      bearbeiten (gleichrangig) · Rohdaten (leise) · Löschen (leise, selten)
@@ -2167,10 +2254,11 @@ function querungsGruppe(s) {
   return gruppe;
 }
 
-function punktTabelle(s, frisch) {
+function punktTabelle(s) {
   const wrap = el('div', 'feldgruppe punkte');
   const kopf = el('div', 'gruppen-kopf');
-  kopf.appendChild(el('h3', 'gruppen-titel', `Trassenpunkte (${s.punkte.length})`));
+  const titel = el('h3', 'gruppen-titel', `Trassenpunkte (${s.punkte.length})`);
+  kopf.appendChild(titel);
   const format = el('select', 'mini-select');
   [['mgrs', 'MGRS'], ['ddm', 'GPS Grad/Min.'], ['dez', 'Dezimalgrad']].forEach(([w, t]) => {
     const o = document.createElement('option');
@@ -2190,90 +2278,123 @@ function punktTabelle(s, frisch) {
     return wrap;
   }
 
-  const seg = segmentLaengen(s);
-  const kum = kumuliert(s.punkte);
   const liste = el('div', 'punktliste');
-
-  s.punkte.forEach((pt, i) => {
-    const zeile = el('div', 'punktzeile' + (ctx.sl.aktiverPunkt === pt.id ? ' aktiv' : ''));
-
-    const kopf = el('div', 'pz-kopf');
-    kopf.appendChild(el('span', 'pz-nr', String(i + 1)));
-
-    const sel = el('select', 'mini-select pz-art');
-    /* Die PLANpunktarten: „Art noch offen“ gibt es nur am Bauort (Schema 16).
-       Ein geplanter Punkt ohne Art stünde im Bauauftrag, und den kann niemand
-       ansteuern. */
-    PLANPUNKTARTEN.forEach(a => {
-      const o = document.createElement('option');
-      o.value = a.id; o.textContent = a.name; o.selected = pt.art === a.id;
-      sel.appendChild(o);
-    });
-    /* Der Grund „strecke“ baut die Streckenliste neu auf (siehe app.js) – nur
-       deshalb kommt und geht die Querungsauswahl darunter beim Umschalten. */
-    sel.onchange = () => store.aendern(() => { pt.art = sel.value; pt._manuell = true; }, 'strecke');
-    kopf.appendChild(sel);
-
-    const zeigen = el('button', 'mini-knopf', '⌖');
-    zeigen.title = 'Punkt auf der Karte zeigen';
-    zeigen.onclick = () => {
-      ctx.karte.setView([pt.lat, pt.lng], Math.max(ctx.karte.getZoom(), 16));
-      ctx.sl.waehle(s.id, pt.id);
-      ctx.zurKarte?.();
-    };
-    kopf.appendChild(zeigen);
-    zeile.appendChild(kopf);
-
-    if (pt.art === 'querung') {
-      const art = querungsartById(pt.querungsart);
-      zeile.appendChild(feld('Art der Querung', art.id,
-        v => store.aendern(() => { pt.querungsart = v; }, 'strecke'),
-        { typ: 'select', werte: QUERUNGSARTEN.map(a => [a.id, a.name]), klasse: 'pz-querung' }));
-      zeile.appendChild(auflagenZeile(art));
-      zeile.appendChild(bauweiseZeile(pt));
-    }
-    if (pt.art === 'reserve') zeile.appendChild(reserveZeile(pt));
-
-    const name = document.createElement('input');
-    name.type = 'text'; name.className = 'mini-input pz-name';
-    name.value = pt.name || ''; name.placeholder = 'Bezeichnung des Punktes';
-    name.oninput = () => schreib(() => { pt.name = name.value; });
-    zeile.appendChild(name);
-
-    const fuss = el('div', 'pz-fuss');
-    const kb = el('button', 'koord-knopf', escapeHtml(koordText(pt)));
-    kb.title = 'Alle Koordinatenformate anzeigen oder Position ändern';
-    kb.onclick = () => koordinatenDialog(s, pt, i);
-    fuss.appendChild(kb);
-    fuss.appendChild(el('span', 'pz-mass',
-      (i === 0 ? '<span class="pz-start">Anfang</span>' : meter(seg[i - 1])) +
-      ` <span class="pz-summe">Σ ${meter(kum[i])}</span>`));
-
-    /* Löschen sitzt am rechten Rand hinter der Koordinatenzeile, nicht neben
-       „auf Karte zeigen“ – mit Handschuhen waren die beiden nicht zu trennen. */
-    const weg = el('button', 'mini-knopf gefahr pz-weg', '✕');
-    weg.title = `Punkt ${i + 1} löschen`;
-    weg.setAttribute('aria-label', `Punkt ${i + 1} löschen`);
-    weg.onclick = () => {
-      store.aendern(() => {
-        s.punkte = s.punkte.filter(x => x.id !== pt.id);
-        sollPunktGeloescht(s, pt.id);
-        s.punkte.forEach((q, j) => {
-          if (q._manuell) return;
-          if (j === 0) q.art = 'start';
-          else if (j === s.punkte.length - 1) q.art = 'ziel';
-        });
-      }, 'strecke');
-      hinweis(`Punkt ${i + 1} gelöscht – Strg+Z macht es rückgängig`);
-    };
-    fuss.appendChild(weg);
-    zeile.appendChild(fuss);
-
-    liste.appendChild(zeile);
-  });
-
+  /* Die Zeilen bleiben mit ihrer Signatur an der Tabelle hängen: beim
+     nächsten Punkt werden nur die ersetzt, deren Punkt, Nummer oder Maß sich
+     geändert hat (`punktTabelleNachfuehren`). */
+  wrap._fbpPunkte = { titel, liste, zeilen: new Map() };
+  punktTabelleNachfuehren(wrap, s);
   wrap.appendChild(liste);
   return wrap;
+}
+
+/**
+ * Die Zeilen der Punkttabelle an die Strecke angleichen. `false`, wenn die
+ * Tabelle dafür nicht steht – ohne Punkte gebaut oder ohne Punkte gefragt –,
+ * dann muss die Karte neu entstehen.
+ */
+function punktTabelleNachfuehren(wrap, s) {
+  const t = wrap._fbpPunkte;
+  if (!t || !s.punkte.length) return false;
+  t.titel.textContent = `Trassenpunkte (${s.punkte.length})`;
+  const seg = segmentLaengen(s);
+  const kum = kumuliert(s.punkte);
+  const format = store.projekt.optionen.koordformat;
+  const bleiben = new Set();
+  s.punkte.forEach((pt, i) => {
+    bleiben.add(pt.id);
+    const aktiv = ctx.sl.aktiverPunkt === pt.id;
+    /* Die Summe hängt an allen Punkten davor, die Nummer an der Stellung:
+       ein eingefügter Punkt ersetzt deshalb auch die Zeilen hinter sich. */
+    const stand = signatur([pt, i, aktiv, seg[i - 1], kum[i], format], [pt, s]);
+    let z = t.zeilen.get(pt.id);
+    if (!z || z.stand !== stand) {
+      z = { zeile: punktZeile(s, pt, i, aktiv, seg, kum), stand };
+      t.zeilen.set(pt.id, z);
+    }
+    if (t.liste.children[i] !== z.zeile) t.liste.insertBefore(z.zeile, t.liste.children[i] || null);
+  });
+  while (t.liste.children.length > s.punkte.length) t.liste.lastChild.remove();
+  for (const id of [...t.zeilen.keys()]) if (!bleiben.has(id)) t.zeilen.delete(id);
+  return true;
+}
+
+function punktZeile(s, pt, i, aktiv, seg, kum) {
+  const zeile = el('div', 'punktzeile' + (aktiv ? ' aktiv' : ''));
+
+  const kopf = el('div', 'pz-kopf');
+  kopf.appendChild(el('span', 'pz-nr', String(i + 1)));
+
+  const sel = el('select', 'mini-select pz-art');
+  /* Die PLANpunktarten: „Art noch offen“ gibt es nur am Bauort (Schema 16).
+     Ein geplanter Punkt ohne Art stünde im Bauauftrag, und den kann niemand
+     ansteuern. */
+  PLANPUNKTARTEN.forEach(a => {
+    const o = document.createElement('option');
+    o.value = a.id; o.textContent = a.name; o.selected = pt.art === a.id;
+    sel.appendChild(o);
+  });
+  /* Der Grund „strecke“ baut die Streckenliste neu auf (siehe app.js) – nur
+     deshalb kommt und geht die Querungsauswahl darunter beim Umschalten. */
+  sel.onchange = () => store.aendern(() => { pt.art = sel.value; pt._manuell = true; }, 'strecke');
+  kopf.appendChild(sel);
+
+  const zeigen = el('button', 'mini-knopf', '⌖');
+  zeigen.title = 'Punkt auf der Karte zeigen';
+  zeigen.onclick = () => {
+    ctx.karte.setView([pt.lat, pt.lng], Math.max(ctx.karte.getZoom(), 16));
+    ctx.sl.waehle(s.id, pt.id);
+    ctx.zurKarte?.();
+  };
+  kopf.appendChild(zeigen);
+  zeile.appendChild(kopf);
+
+  if (pt.art === 'querung') {
+    const art = querungsartById(pt.querungsart);
+    zeile.appendChild(feld('Art der Querung', art.id,
+      v => store.aendern(() => { pt.querungsart = v; }, 'strecke'),
+      { typ: 'select', werte: QUERUNGSARTEN.map(a => [a.id, a.name]), klasse: 'pz-querung' }));
+    zeile.appendChild(auflagenZeile(art));
+    zeile.appendChild(bauweiseZeile(pt));
+  }
+  if (pt.art === 'reserve') zeile.appendChild(reserveZeile(pt));
+
+  const name = document.createElement('input');
+  name.type = 'text'; name.className = 'mini-input pz-name';
+  name.value = pt.name || ''; name.placeholder = 'Bezeichnung des Punktes';
+  name.oninput = () => schreib(() => { pt.name = name.value; });
+  zeile.appendChild(name);
+
+  const fuss = el('div', 'pz-fuss');
+  const kb = el('button', 'koord-knopf', escapeHtml(koordText(pt)));
+  kb.title = 'Alle Koordinatenformate anzeigen oder Position ändern';
+  kb.onclick = () => koordinatenDialog(s, pt, i);
+  fuss.appendChild(kb);
+  fuss.appendChild(el('span', 'pz-mass',
+    (i === 0 ? '<span class="pz-start">Anfang</span>' : meter(seg[i - 1])) +
+    ` <span class="pz-summe">Σ ${meter(kum[i])}</span>`));
+
+  /* Löschen sitzt am rechten Rand hinter der Koordinatenzeile, nicht neben
+     „auf Karte zeigen“ – mit Handschuhen waren die beiden nicht zu trennen. */
+  const weg = el('button', 'mini-knopf gefahr pz-weg', '✕');
+  weg.title = `Punkt ${i + 1} löschen`;
+  weg.setAttribute('aria-label', `Punkt ${i + 1} löschen`);
+  weg.onclick = () => {
+    store.aendern(() => {
+      s.punkte = s.punkte.filter(x => x.id !== pt.id);
+      sollPunktGeloescht(s, pt.id);
+      s.punkte.forEach((q, j) => {
+        if (q._manuell) return;
+        if (j === 0) q.art = 'start';
+        else if (j === s.punkte.length - 1) q.art = 'ziel';
+      });
+    }, 'strecke');
+    hinweis(`Punkt ${i + 1} gelöscht – Strg+Z macht es rückgängig`);
+  };
+  fuss.appendChild(weg);
+  zeile.appendChild(fuss);
+
+  return zeile;
 }
 
 /* Am Bauort wird nach dem Maß gefragt, nicht nach dem Namen der Querungsart:

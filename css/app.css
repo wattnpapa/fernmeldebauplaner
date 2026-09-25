@@ -1257,6 +1257,18 @@ body.modus-aktiv .kartenoptionen { display: none; }
 /* ---------------------------------------------------------------- Leaflet-Anpassungen */
 
 .leaflet-container { font-family: var(--schrift); }
+
+/* Leaflet legt auf jede Kachel `mix-blend-mode: plus-lighter` – ein Notbehelf
+   gegen Kachelfugen, die es nur in Chromium gibt. Firefox zahlt dafür beim
+   Ziehen der Karte: jede Kachel mit Mischmodus wird dort je Bild einzeln neu
+   gerastert statt vom Grafikprozessor verschoben, und mit vierzig Kacheln im
+   Fenster ruckelt die Karte. Die Fugen, gegen die der Modus hilft, hat Firefox
+   nicht – also dort der gewöhnliche Modus. Dieselbe Umschaltung trägt der
+   Ausdruck für alle Browser (`css/print.css`), weil Firefox die Ebene sonst
+   gar nicht druckt. Die Weiche `-moz-appearance` versteht nur Firefox. */
+@supports (-moz-appearance: none) {
+  .leaflet-container img.leaflet-tile { mix-blend-mode: normal; }
+}
 /* Der Maßstab wird abgelesen, nicht bedient. Er steht unten rechts unter der
    Quellenzeile, und seit die Zoomsteuerung ihre 44 px trägt, reicht sie quer
    bis in ihn hinein: gemessen bei 667×375 kamen von den 44 px des
