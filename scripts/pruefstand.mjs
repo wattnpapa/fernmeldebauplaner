@@ -235,6 +235,7 @@ async function neueSeite(befehl, horcher) {
     an('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
   });
 
+  let sichtSkript = null;
   const seite = {
     meldungen,
     /** Rückfragen des Browsers, die der Prüfstand bestätigt hat */
@@ -242,7 +243,23 @@ async function neueSeite(befehl, horcher) {
     /** Fehler und Warnungen, die der Browser gemeldet hat */
     fehlermeldungen: () => meldungen.filter(m => m.art === 'error' || m.art === 'assert'),
 
-    async oeffne(adresse) {
+    /* Die Prüfungen laufen in der erweiterten Ansicht: sie messen Zeichen,
+       Flächen, Relais und die Bauansatzfelder, und die stehen in der
+       einfachen nicht da (`js/sicht.js`). Ein frisches Profil begänne aber
+       einfach – und mit dem Einstiegsdialog davor. Die Wahl wird deshalb vor
+       dem ersten Skript der Seite in den Speicher gelegt; `sicht: null`
+       räumt sie, `frisch: true` leert den ganzen Speicher – im Skript vor
+       dem Dokument, denn `beforeunload` sichert die Planung noch einmal,
+       und ein `localStorage.clear()` aus der alten Seite wäre schon wieder
+       überschrieben, wenn die neue liest. Das Skript gilt für jedes
+       weitere Dokument dieser Seite, auch nach `neuLaden` – und wird beim
+       nächsten `oeffne` durch das neue ersetzt, sonst liefen beide. */
+    async oeffne(adresse, { sicht = 'erweitert', frisch = false } = {}) {
+      if (sichtSkript) await an('Page.removeScriptToEvaluateOnNewDocument', { identifier: sichtSkript });
+      const quelle = (frisch ? 'try { localStorage.clear(); } catch (e) {} ' : '') + (sicht
+        ? `try { localStorage.setItem('fbp.sicht.v1', ${JSON.stringify(sicht)}); } catch (e) {}`
+        : `try { localStorage.removeItem('fbp.sicht.v1'); } catch (e) {}`);
+      sichtSkript = (await an('Page.addScriptToEvaluateOnNewDocument', { source: quelle })).identifier;
       await an('Page.navigate', { url: adresse });
       await seite.warteAufLaden();
     },

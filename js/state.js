@@ -746,6 +746,12 @@ class Store {
        noch. Er wird beim nächsten Start still weggeräumt. */
     try { localStorage.removeItem('fbp.begruessung'); } catch (e) { /* ohne Belang */ }
     const alle = ladeAlle();
+    /* Ob dieses Gerät die Anwendung zum ersten Mal öffnet, entscheidet über
+       die Ansicht (`js/sicht.js`) und den Begrüßungsdialog. Gemessen an den
+       abgelegten Planungen und nicht an einem eigenen Schalter: der wäre bei
+       allen, die schon planen, nicht gesetzt, und sie bekämen den Einstieg
+       eines Neulings. */
+    this.erststart = Object.keys(alle).length === 0;
     const aktiv = localStorage.getItem(KEY_AKTIV);
     if (aktiv && alle[aktiv]) this.projekt = migrieren(alle[aktiv]);
     else {

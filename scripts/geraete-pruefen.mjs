@@ -1638,6 +1638,131 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     b.pruefe(ueber <= 0, `${breite}×${hoehe}: kein waagerechter Überlauf (${ueber} px)`);
   }
 
+  // ------------------------------------------------------------ Einfache Ansicht
+
+  /* Drei Helfer aus drei Ortsverbänden: am Telefon nicht an einer Funktion
+     gescheitert, sondern an der Menge der Menüs. Die einfache Ansicht
+     (`js/sicht.js`) muss deshalb genau das halten, was sie verspricht – zwei
+     Reiter, drei Werkzeuge, die Leitungsart als Kacheln auf Handschuhmaß,
+     ein kurzes Dateimenü – und der Weg zurück muss aus ihr heraus zu finden
+     sein. Gemessen wird die eigene Anzeige (`display`), nicht das Rechteck:
+     schmal liegt die Karte hinter der Liste, und ihre Werkzeuge hätten kein
+     Rechteck, obwohl sie da sind. */
+  b.abschnitt('Die einfache Ansicht: zwei Reiter, drei Werkzeuge, Leitung als Kacheln');
+  await seite.oeffne(adresse, { sicht: 'einfach' });
+  await seite.warteAuf('!!window.fbp');
+  /* Die Probe läuft die Vorfahren hoch: ein Feld in einer weggenommenen
+     Gruppe trägt selbst `display: block`, es ist nur seine Gruppe, die fehlt. */
+  const SICHTBAR = `const zeigt = e => {
+    for (let k = e; k && k !== document.body; k = k.parentElement) {
+      if (k.hidden || getComputedStyle(k).display === 'none') return false;
+    }
+    return true;
+  };`;
+  for (const [breite, hoehe] of [[390, 690], [360, 740], [820, 1180]]) {
+    await stelleEin(breite, hoehe);
+    const m = await seite.auswerten(`${SICHTBAR}
+      return {
+        einfach: document.body.classList.contains('sicht-einfach'),
+        reiter: [...document.querySelectorAll('.reiter button')].filter(zeigt).map(b => b.textContent.trim()),
+        wz: [...document.querySelectorAll('.wz')].filter(zeigt).map(b => b.id),
+        kopfzeile: [...document.querySelectorAll('#inhalt-strecken .seite-kopf-zeile .knopf')].filter(zeigt).length,
+        wahl: [...document.querySelectorAll('.sichtwahl button')].filter(zeigt)
+          .map(b => Math.min(...Object.values(window._g.treffer(b))))
+      };`);
+    await kartenoptionenZu(false);
+    const optionen = await seite.auswerten(`${SICHTBAR}
+      return [...document.querySelectorAll('.ko-zeile')].filter(zeigt).length;`);
+    await kartenoptionenZu(true);
+    const wo = `${breite}×${hoehe}`;
+    b.pruefe(m.einfach, `${wo}: die einfache Ansicht ist an`);
+    b.gleich(m.reiter.join(', '), 'Strecken, Planung', `${wo}: Reiter „${m.reiter.join(', ')}“`);
+    b.gleich(m.wz.join(', '), 'wz-strecke, wz-suche, wz-standort', `${wo}: Werkzeuge ${m.wz.join(', ')}`);
+    b.gleich(m.kopfzeile, 0, `${wo}: kein Abschnitt-, Sammel- oder Lagekartenknopf über der Liste`);
+    b.gleich(optionen, 4, `${wo}: vier Zeilen in den Kartenoptionen (${optionen})`);
+    b.pruefe(m.wahl.length === 2 && m.wahl.every(g => g >= GRIFF - TASTFEHLER),
+      `${wo}: der Umschalter steht in der Leiste, beide Griffe treffbar (${m.wahl.join(', ')} px)`);
+  }
+
+  await stelleEin(390, 690);
+  await seite.klick('#inhalt-strecken .eintrag-name');
+  await seite.ruhe();
+  const kacheln = await seite.auswerten(`${SICHTBAR}
+    const liste = document.querySelector('#inhalt-strecken');
+    const k = [...document.querySelectorAll('.lw-kachel')].filter(zeigt);
+    const masse = [];
+    for (const e of k) {
+      e.scrollIntoView({ block: 'center' });
+      const t = window._g.treffer(e);
+      masse.push({ text: e.firstChild.textContent.trim(), gedrueckt: e.getAttribute('aria-pressed'),
+                   kleinste: Math.min(t.breite, t.hoehe) });
+    }
+    const felder = [...liste.querySelectorAll('.feld')].filter(zeigt).length;
+    const volleListe = liste.querySelector('.feld.nur-erweitert select');
+    const tasten = [...liste.querySelectorAll('.tastenreihe .knopf')].filter(zeigt).map(b => b.textContent.trim());
+    return { masse, felder, listeWeg: !!volleListe && !zeigt(volleListe), tasten };`);
+  b.gleich(kacheln.masse.length, 4, 'Vier Leitungskacheln: ' + kacheln.masse.map(k => k.text).join(', '));
+  b.pruefe(kacheln.masse.every(k => k.kleinste >= GRIFF - TASTFEHLER),
+    'Jede Kachel auf Handschuhmaß – ' + kacheln.masse.map(k => `${k.text} ${k.kleinste} px`).join(', '));
+  b.gleich(kacheln.masse.filter(k => k.gedrueckt === 'true').length, 1, 'Genau eine Kachel ist gedrückt');
+  b.pruefe(kacheln.listeWeg, 'Die volle Leitungsliste steht in der einfachen Ansicht nicht da');
+  b.pruefe(kacheln.felder <= 5, `Höchstens fünf Felder in der Streckenkarte (${kacheln.felder})`);
+  b.pruefe(!kacheln.tasten.some(t => /Duplizieren|umkehren|CSV|GPX/.test(t)),
+    'Duplizieren, Umkehren und Rohdaten fehlen: ' + kacheln.tasten.join(', '));
+
+  await seite.klick('#btn-datei');
+  await seite.warteAuf('!document.querySelector(".menu").hidden');
+  const einfachMenue = await seite.auswerten(`${SICHTBAR}
+    return [...document.querySelectorAll('#menu-datei button, #menu-datei a')].filter(zeigt).map(e => e.textContent.trim());`);
+  b.pruefe(!einfachMenue.some(e => /Lagekarte|Sammel-Bauauftrag|GeoJSON|GPX|Alles als KML|Eigener Speicher/.test(e)),
+    'Dateimenü ohne Lagekarte, Sammeldruck, Rohdaten und Speicher: ' + einfachMenue.join(' · '));
+  await seite.klick('#btn-datei');
+  await seite.klick('.sichtwahl [data-sicht="erweitert"]');
+  await seite.ruhe();
+  const zurueck = await seite.auswerten(`${SICHTBAR}
+    return { einfach: document.body.classList.contains('sicht-einfach'),
+             reiter: [...document.querySelectorAll('.reiter button')].filter(zeigt).length,
+             gedrueckt: document.querySelector('.sichtwahl [aria-pressed="true"]').dataset.sicht };`);
+  b.pruefe(!zurueck.einfach && zurueck.reiter === 6, `Umgeschaltet: erweiterte Ansicht mit ${zurueck.reiter} Reitern`);
+  b.gleich(zurueck.gedrueckt, 'erweitert', 'Der Umschalter zeigt die erweiterte Ansicht gedrückt');
+  b.gleich(await seite.auswerten('localStorage.getItem("fbp.sicht.v1")'), 'erweitert', 'Die Wahl liegt im Gerät');
+
+  // ------------------------------------------------------------ Erster Start
+
+  /* Ohne Planung im Gerät und ohne gemerkte Sicht: der Einstieg mit den
+     Wegen statt der leeren Karte. Ein zweiter Start darf ihn nicht wieder
+     bringen, und „Strecke planen“ muss unmittelbar ins Zeichnen führen. */
+  b.abschnitt('Der erste Start auf einem Telefon führt über den Einstieg');
+  await seite.oeffne(adresse, { sicht: null, frisch: true });
+  await seite.warteAuf('!!window.fbp');
+  await stelleEin(390, 690);
+  const einstieg = await seite.auswerten(`
+    const d = document.getElementById('dialog');
+    const offen = !!d && !d.hidden;
+    const wege = [...document.querySelectorAll('.einstieg-wege .knopf')].map(k => {
+      const t = window._g.treffer(k);
+      return { text: k.firstChild.textContent.trim(), kleinste: Math.min(t.breite, t.hoehe) };
+    });
+    return { offen, titel: (document.getElementById('dialog-titel') || {}).textContent, wege,
+             einfach: document.body.classList.contains('sicht-einfach') };`);
+  b.pruefe(einstieg.offen && /Willkommen/.test(einstieg.titel || ''), `Der Einstieg steht: „${einstieg.titel}“`);
+  b.pruefe(einstieg.einfach, 'Ein frisches Gerät beginnt in der einfachen Ansicht');
+  b.gleich(einstieg.wege.length, 2, 'Zwei Wege im Einstieg: ' + einstieg.wege.map(w => w.text).join(', '));
+  b.pruefe(einstieg.wege.every(w => w.kleinste >= GRIFF - TASTFEHLER),
+    'Beide Wege auf Handschuhmaß – ' + einstieg.wege.map(w => `${w.text} ${w.kleinste} px`).join(', '));
+  await seite.klick('[data-weg="strecke"]');
+  await seite.ruhe();
+  const zeichnet = await seite.auswerten(
+    'return { zu: document.getElementById("dialog").hidden, modus: !!window.fbp.sl.zeichenModus };');
+  b.pruefe(zeichnet.zu && zeichnet.modus, '„Strecke planen“ schließt den Einstieg und beginnt das Zeichnen');
+  /* Nicht `neuLaden`: das Skript vor dem Dokument leerte den Speicher noch
+     einmal, und der zweite Start wäre wieder ein erster. `oeffne` ohne
+     `frisch` ersetzt es durch eines, das nur die Sicht in Ruhe lässt. */
+  await seite.oeffne(adresse, { sicht: null });
+  await seite.warteAuf('!!window.fbp');
+  b.pruefe(await seite.auswerten('document.getElementById("dialog").hidden'),
+    'Beim zweiten Start kommt der Einstieg nicht wieder');
+
   b.abschnitt('Keine Fehler in der Konsole');
   const fehler = seite.fehlermeldungen();
   b.gleich(fehler.length, 0, 'Konsole still' + (fehler.length ? ': ' + fehler[0].text : ''));

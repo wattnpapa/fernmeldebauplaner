@@ -2103,6 +2103,78 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
 body.baumodus #btn-neue-strecke,
 body.baumodus #btn-neuer-abschnitt { display: none; }
 
+/* ------------------------------------------------- Einfache Ansicht
+
+   Drei Helfer aus drei Ortsverbänden sind am Telefon nicht an einer Funktion
+   gescheitert, sondern an der Menge der Menüs. Die einfache Ansicht nimmt
+   vom Schirm, was ein Trupp nie anfasst – Zeichen, Flächen, Relais, die
+   Bauansatzfelder, die Rohdaten –, und lässt die Planung selbst unangetastet
+   (`js/sicht.js`). Umgeschaltet wird über `body.sicht-einfach`, wie beim
+   Baumodus; die Elemente tragen `.nur-erweitert` oder `.nur-einfach`.
+
+   Kein `!important`: die Regel steht mit Rumpf- und Klassenwähler über
+   jeder einzelnen Anzeigeregel (`.wz`, `.ko-zeile`, `.feld`), und wo das
+   einmal nicht reicht, ist der Wähler dort zu schärfen, nicht hier zu
+   erzwingen. Die Reiter regelt app.js über `hidden`, weil dort auch der
+   Baumodus daran dreht und zwei Stellen sich sonst überstimmten. */
+body.sicht-einfach .nur-erweitert { display: none; }
+body:not(.sicht-einfach) .nur-einfach { display: none; }
+
+/* Die Leitungsart als Kacheln statt als Liste mit zehn Einträgen: der
+   Richtfunk stand dort als zehnter Eintrag einer Kabelliste und wurde nicht
+   gefunden. Vier Kacheln auf Handschuhmaß; trägt die Strecke eine andere
+   Art – in der erweiterten Ansicht gesetzt –, steht diese als fünfte dabei,
+   gedrückt, damit die Kacheln nie etwas anderes behaupten als die Planung. */
+.leitungswahl { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.leitungswahl .lw-kachel {
+  min-height: 44px; padding: 8px 10px; text-align: left;
+  border: 1px solid var(--linie-stark); border-radius: var(--radius-klein);
+  background: var(--flaeche); color: var(--text); cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; line-height: 1.25;
+}
+.leitungswahl .lw-kachel small {
+  display: block; font-size: 11px; font-weight: 500; color: var(--text-schwach); margin-top: 2px;
+}
+.leitungswahl .lw-kachel:hover { background: var(--flaeche-2); }
+.leitungswahl .lw-kachel[aria-pressed="true"] {
+  background: var(--thw); border-color: var(--thw); color: #fff;
+}
+.leitungswahl .lw-kachel[aria-pressed="true"] small { color: rgba(255,255,255,.8); }
+
+/* Der Einstieg beim ersten Start: zwei Wege, nichts anderes. Die Knöpfe
+   sind so groß wie die Kacheln, denn der erste Start findet oft am Telefon
+   statt – dort kam das Feedback her. `.knopf` bricht nicht um (nowrap) –
+   hier trägt jeder Knopf zwei Zeilen Text, also als Block und umbrechend. */
+.einstieg p { margin: 0 0 12px; }
+.einstieg-wege { display: grid; gap: 8px; margin: 0 0 14px; }
+.einstieg-wege .knopf {
+  display: block; width: 100%; min-height: 52px; text-align: left;
+  padding: 10px 14px; line-height: 1.3; white-space: normal;
+}
+.einstieg-wege .knopf small { display: block; font-weight: 400; opacity: .85; margin-top: 2px; }
+
+/* Der Umschalter der Ansicht, oben in der Leiste über den Reitern. Im
+   Dateimenü war er versteckt – und wer die Anwendung kennt und nach der
+   Aktualisierung vier Reiter vermisst, muss den Rückweg sehen, nicht suchen.
+   Im Baumodus geht er vom Schirm: dort ist die Auswahl schon gekürzt, und
+   die Leiste gehört der Bauliste. */
+.sichtwahl {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 10px 6px;
+  background: var(--flaeche-2);
+}
+.sichtwahl button {
+  min-height: 34px; padding: 5px 6px; border: 1px solid var(--linie);
+  border-radius: var(--radius-klein); background: var(--flaeche);
+  color: var(--text-schwach); font: inherit; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.sichtwahl button:hover { color: var(--text); border-color: var(--linie-stark); }
+.sichtwahl button[aria-pressed="true"] {
+  background: var(--thw); border-color: var(--thw); color: #fff;
+}
+body.baumodus .sichtwahl { display: none; }
+@media (pointer: coarse) { .sichtwahl button { min-height: 44px; } }
+
 /* Die gebaute Trasse auf der Karte: gefüllt, wo der geplante Punkt hohl ist.
    Kein Schlagschatten – Firefox gibt Seitenbereiche mit CSS-`filter` beim
    Drucken nicht aus, und was auf der Arbeitskarte anders aussähe als auf dem

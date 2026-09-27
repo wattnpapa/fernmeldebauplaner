@@ -885,6 +885,34 @@ function neuKnopf(ea, art) {
   }, 'klein ea-neu');
 }
 
+/* Die vier Arten, die am Bauort vorkommen, als Kacheln auf Handschuhmaß.
+   Der Richtfunk stand in der Liste als zehnter Eintrag hinter neun Kabeln und
+   wurde nicht gefunden – das war das Feedback. Trägt die Strecke eine andere
+   Art, in der erweiterten Ansicht gewählt, steht sie als fünfte Kachel
+   gedrückt dabei: die Kacheln dürfen nie etwas anderes zeigen als die
+   Planung. */
+const KACHEL_ARTEN = [
+  ['fk2',       'Feldkabel',       'FK 1×2 – Trommel 800 m'],
+  ['ffk',       'Feldfernkabel',   'FFK – Trommel 400 m'],
+  ['richtfunk', 'WLAN-Richtfunk',  'Funkstrecke, keine Leitung'],
+  ['sonst',     'Sonstige Leitung', 'weitere Arten in der erweiterten Ansicht']
+];
+function leitungswahl(s, setzen) {
+  const wahl = el('div', 'leitungswahl nur-einfach');
+  wahl.setAttribute('role', 'group');
+  wahl.setAttribute('aria-label', 'Leitungsart');
+  const arten = KACHEL_ARTEN.some(([id]) => id === s.kabeltyp) ? KACHEL_ARTEN
+    : [...KACHEL_ARTEN, [s.kabeltyp, kabelById(s.kabeltyp).name, 'in der erweiterten Ansicht gewählt']];
+  for (const [id, name, hinweis] of arten) {
+    const b = el('button', 'lw-kachel', `${escapeHtml(name)}<small>${escapeHtml(hinweis)}</small>`);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(id === s.kabeltyp));
+    b.onclick = () => setzen(id);
+    wahl.appendChild(b);
+  }
+  return wahl;
+}
+
 function streckenKarte(s) {
   const gewaehlt = ctx.sl.auswahl === s.id;
   const k = kennzahlen(s);
@@ -991,7 +1019,7 @@ function streckenKarte(s) {
     g1.appendChild(feld('Einsatzabschnitt', s.abschnitt || '', v => {
       store.aendern(() => { s.abschnitt = v || null; }, 'strecke');
     }, {
-      typ: 'select',
+      typ: 'select', klasse: 'nur-erweitert',
       werte: [['', '— keinem zugeteilt —'],
         ...alphabetisch(store.projekt.einsatzabschnitte, nachName).map(a => [a.id, a.name])]
     }));
@@ -1006,7 +1034,8 @@ function streckenKarte(s) {
      entscheidet, welche Felder das Formular überhaupt zeigt (Bauansatz,
      Stromversorgung). Ein verzögertes Schreiben baute die Liste noch mit der
      alten Art auf. */
-  g2.appendChild(feld('Leitungsart', s.kabeltyp, v => {
+  const leitungSetzen = v => {
+    if (v === s.kabeltyp) return;
     store.aendern(() => {
       const alt = kabelById(s.kabeltyp), neu = kabelById(v);
       s.kabeltyp = v;
@@ -1015,7 +1044,14 @@ function streckenKarte(s) {
       if (s.zuschlag === alt.zuschlag) s.zuschlag = neu.zuschlag;
       if (s.verlegeleistung === alt.leistung) s.verlegeleistung = neu.leistung;
     }, 'strecke');
-  }, { typ: 'select', werte: KABELTYPEN.map(k => [k.id, k.name]) }));
+  };
+  /* Zwei Eingaben für dasselbe Feld, je Sicht eine (`js/sicht.js`): die
+     Kacheln in der einfachen Ansicht, die volle Liste in der erweiterten.
+     Beide schreiben über denselben Weg, und beide stehen im Blatt – so
+     braucht ein Wechsel der Sicht keinen Neuaufbau der Karte. */
+  g2.appendChild(leitungswahl(s, leitungSetzen));
+  g2.appendChild(feld('Leitungsart', s.kabeltyp, leitungSetzen,
+    { typ: 'select', klasse: 'nur-erweitert', werte: KABELTYPEN.map(k => [k.id, k.name]) }));
   /* Eine Funkstrecke wird nicht verlegt – Verlegeart und Bauansatz hätten
      dort nichts zu sagen und blieben doch als Zahlen im Weg. */
   if (!k.kabel.funk) {
@@ -1023,9 +1059,9 @@ function streckenKarte(s) {
       schreib(() => { s.verlegeart = v; });
       frisch();          // Hoch- oder Tiefbau entscheidet über die Sprechreichweite
       ctx.aufAenderung();
-    }, { typ: 'select', werte: VERLEGEARTEN.map(v => [v.id, v.name]) }));
+    }, { typ: 'select', klasse: 'nur-erweitert', werte: VERLEGEARTEN.map(v => [v.id, v.name]) }));
 
-    const zahlen = el('div', 'feld-dreier');
+    const zahlen = el('div', 'feld-dreier nur-erweitert');
     zahlen.append(
       feld('Bauzuschlag', s.zuschlag, v => { schreib(() => { s.zuschlag = v; }); frisch(); ctx.aufAenderung(); },
         { typ: 'number', min: 0, max: 100, step: 1, einheit: '%' }),
@@ -1048,8 +1084,8 @@ function streckenKarte(s) {
       schreib(() => {
         s.trommelnVorgabe = v === '' ? null : Math.max(0, Math.round(Number(v) || 0));
       }, frisch);
-    }, { typ: 'number', min: 0, step: 1 });
-    const trommelHinweis = el('p', 'klein');
+    }, { typ: 'number', min: 0, step: 1, klasse: 'nur-erweitert' });
+    const trommelHinweis = el('p', 'klein nur-erweitert');
     g2.append(trommelFeld, trommelHinweis);
     const trommelEingabe = trommelFeld.querySelector('input');
     trommelFrisch = kz2 => {
@@ -1062,9 +1098,9 @@ function streckenKarte(s) {
     trommelFrisch(k);
   }
   g2.appendChild(feld('Auftrag an (Trupp)', s.trupp, v => schreib(() => { s.trupp = v; }),
-    { platzhalter: 'z. B. FmBauTr 1' }));
+    { platzhalter: 'z. B. FmBauTr 1', klasse: 'nur-erweitert' }));
   g2.appendChild(feld('Bemerkung zum Auftrag', s.bemerkung, v => schreib(() => { s.bemerkung = v; }),
-    { typ: 'textarea', zeilen: 2 }));
+    { typ: 'textarea', zeilen: 2, klasse: 'nur-erweitert' }));
   koerper.appendChild(g2);
 
   reichweiteFrisch(k);
@@ -1074,6 +1110,9 @@ function streckenKarte(s) {
   if (s.kabeltyp === 'strom') {
     const g3 = stromGruppe(s);
     stromFrisch = g3.aktualisieren;
+    /* Leistungsfaktor, Netzform und Spannungsfall sind Rechnung für den
+       Planer; in der einfachen Ansicht bleibt die Stromleitung eine Leitung. */
+    g3.gruppe.classList.add('nur-erweitert');
     koerper.appendChild(g3.gruppe);
   }
 
@@ -1130,7 +1169,7 @@ function streckenKarte(s) {
         });
         const h = s.von; s.von = s.nach; s.nach = h;
       }, 'strecke');
-    }),
+    }, 'nur-erweitert'),
     knopf('Duplizieren', () => {
       store.aendern(p => {
         const kopie = JSON.parse(JSON.stringify(s));
@@ -1146,11 +1185,11 @@ function streckenKarte(s) {
         kopie.farbe = FARBEN[p.strecken.length % FARBEN.length];
         p.strecken.push(kopie);
       }, 'strecke');
-    })
+    }, 'nur-erweitert')
   );
   koerper.appendChild(tasten);
 
-  const daten = el('div', 'feldgruppe rohdaten');
+  const daten = el('div', 'feldgruppe rohdaten nur-erweitert');
   daten.appendChild(el('h3', 'gruppen-titel', 'Daten für andere Programme'));
   const datenTasten = el('div', 'tastenreihe');
   datenTasten.append(
@@ -6166,6 +6205,13 @@ export function hilfeDialog() {
     titel: 'Kurzanleitung', breit: true,
     inhalt: `
       <div class="hilfe">
+        <h3>Einfache und erweiterte Ansicht</h3>
+        <p>Die <b>einfache Ansicht</b> zeigt, was ein Trupp braucht: Strecken zeichnen,
+           Leitungsart wählen, Bauauftrag mitnehmen, Baumodus. Die <b>erweiterte Ansicht</b>
+           bringt das Lagebild dazu – taktische Zeichen, Flächen, Relaisstellen, Bilder – und
+           alle Bauansatzwerte, die Lagekarte, den Sammeldruck und den eigenen Speicher.
+           Umgeschaltet wird oben in der linken Leiste; die Planung bleibt in beiden Ansichten
+           dieselbe.</p>
         <h3>Strecke planen</h3>
         <ol>
           <li><b>Neue Strecke zeichnen</b> wählen und die Trasse auf der Karte anklicken –

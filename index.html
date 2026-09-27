@@ -111,16 +111,16 @@
                   title="Eigene Planung (.json), GeoJSON sowie KML und KMZ aus Google Earth">Planung oder KML laden …</button>
           <button data-akt="teilen"
                   title="Erzeugt einen Link, der die Planung selbst enthält – ohne Server und ohne Konto">Planung als Link teilen …</button>
-          <button data-akt="speicher"
+          <button data-akt="speicher" class="nur-erweitert"
                   title="Planungen zusätzlich in einem Ordner, in Dropbox, OneDrive, Nextcloud, S3 oder Google Drive ablegen">Eigener Speicher …</button>
-          <hr>
-          <button data-akt="sammel-pdf">Sammel-Bauauftrag aller Strecken (PDF) …</button>
-          <button data-akt="lagekarte"
+          <hr class="nur-erweitert">
+          <button data-akt="sammel-pdf" class="nur-erweitert">Sammel-Bauauftrag aller Strecken (PDF) …</button>
+          <button data-akt="lagekarte" class="nur-erweitert"
                   title="Ein einzelnes großes Blatt bis A0 für die Führungsstelle">Lagekarte der ganzen Planung (PDF) …</button>
-          <hr>
-          <button data-akt="export-geojson">Alles als GeoJSON</button>
-          <button data-akt="export-gpx">Alles als GPX (Hand-GPS)</button>
-          <button data-akt="export-kml">Alles als KML (Google Earth)</button>
+          <hr class="nur-erweitert">
+          <button data-akt="export-geojson" class="nur-erweitert">Alles als GeoJSON</button>
+          <button data-akt="export-gpx" class="nur-erweitert">Alles als GPX (Hand-GPS)</button>
+          <button data-akt="export-kml" class="nur-erweitert">Alles als KML (Google Earth)</button>
           <hr>
           <!-- Echte Links statt Menüknöpfe: Diese Seiten müssen als Adresse
                erreichbar und von außen auffindbar sein. -->
@@ -155,6 +155,16 @@
            Sprechfunks, der volle Begriff bleibt im aria-label. Sie stehen
            hinter den Flächen, weil sie wie diese ein Ort mit Ausdehnung sind –
            nur ist ihre Ausdehnung die Funkfläche und nicht der Grundriss. -->
+      <!-- Der Umschalter zwischen einfacher und erweiterter Ansicht steht
+           oben in der Leiste und nicht im Dateimenü: dort war er versteckt,
+           und wer die Anwendung schon kennt, muss sehen, wohin seine Reiter
+           gegangen sind. Ein Zustandsknopf je Stufe (`aria-pressed`), keine
+           Umschaltbeschriftung – zwei Wörter nebeneinander sagen beides:
+           wo man ist und was es noch gibt (`js/sicht.js`). -->
+      <div class="sichtwahl" role="group" aria-label="Ansicht">
+        <button type="button" data-sicht="einfach" aria-pressed="false">Einfache Ansicht</button>
+        <button type="button" data-sicht="erweitert" aria-pressed="false">Erweiterte Ansicht</button>
+      </div>
       <nav class="reiter" role="tablist">
         <button role="tab" id="reiter-strecken" class="aktiv" aria-selected="true"
                 aria-controls="inhalt-strecken" data-reiter="strecken">Strecken</button>
@@ -185,7 +195,7 @@
                aria-labelledby="reiter-strecken" data-inhalt="strecken">
         <div class="seite-kopf">
           <button class="knopf primaer breit" id="btn-neue-strecke">+ Neue Strecke zeichnen</button>
-          <div class="seite-kopf-zeile">
+          <div class="seite-kopf-zeile nur-erweitert">
             <button class="knopf klein" id="btn-neuer-abschnitt"
                     title="Strecken in Zuständigkeiten gliedern">+ Einsatzabschnitt</button>
             <button class="knopf klein" id="btn-sammel-pdf">▤ Sammel-PDF (alle Strecken)</button>
@@ -281,9 +291,9 @@
              title: den zeigt kein Touchgerät, und wer am Schreibtisch plant,
              lernt es nur, wenn es dasteht. -->
         <button class="wz" id="wz-strecke" title="Strecke zeichnen (S)"><span class="wz-icon">╱</span><span>Strecke<i class="wz-taste">S</i></span></button>
-        <button class="wz" id="wz-zeichen" title="Taktisches Zeichen setzen (T)"><span class="wz-icon">◈</span><span>Zeichen<i class="wz-taste">T</i></span></button>
-        <button class="wz" id="wz-flaeche" title="Fläche einzeichnen – Fahrzeug, Anhänger, Zelt, Aufbauplatz (F)"><span class="wz-icon">▭</span><span>Fläche<i class="wz-taste">F</i></span></button>
-        <button class="wz" id="wz-relais" title="Relaisstelle des Sprechfunks setzen (R)"><span class="wz-icon">◍</span><span>Relais<i class="wz-taste">R</i></span></button>
+        <button class="wz nur-erweitert" id="wz-zeichen" title="Taktisches Zeichen setzen (T)"><span class="wz-icon">◈</span><span>Zeichen<i class="wz-taste">T</i></span></button>
+        <button class="wz nur-erweitert" id="wz-flaeche" title="Fläche einzeichnen – Fahrzeug, Anhänger, Zelt, Aufbauplatz (F)"><span class="wz-icon">▭</span><span>Fläche<i class="wz-taste">F</i></span></button>
+        <button class="wz nur-erweitert" id="wz-relais" title="Relaisstelle des Sprechfunks setzen (R)"><span class="wz-icon">◍</span><span>Relais<i class="wz-taste">R</i></span></button>
         <!-- Die zwei Griffe des Baumodus stehen hier und nicht nur im Reiter:
              schmal liegt die Liste vor der Karte, und wer am Bauort einen Punkt
              aufnehmen will, hätte sonst erst umzuschalten, dann zu rollen. Sie
@@ -324,20 +334,20 @@
           <label class="ko-zeile"><span>Karte</span>
             <select id="basiskarte"></select>
           </label>
-          <label class="ko-zeile ko-haken" title="UTM-Kilometergitter zum Ablesen von MGRS-Koordinaten"><input type="checkbox" id="opt-gitter"><span>Koordinatengitter (MGRS)</span></label>
+          <label class="ko-zeile ko-haken nur-erweitert" title="UTM-Kilometergitter zum Ablesen von MGRS-Koordinaten"><input type="checkbox" id="opt-gitter"><span>Koordinatengitter (MGRS)</span></label>
           <label class="ko-zeile nur-planung ko-haken"><input type="checkbox" id="opt-teillaengen"><span>Teillängen</span></label>
           <label class="ko-zeile nur-planung ko-haken"><input type="checkbox" id="opt-gesamtlaenge"><span>Streckenname &amp; Summe</span></label>
-          <label class="ko-zeile nur-planung" title="Rückt das Schild mit Streckenname und Länge senkrecht von der Trasse ab und zieht einen Pfeil dorthin zurück – auf eng geführten Trassen deckt es sonst den Verlauf zu"><span>Schild abgerückt</span>
+          <label class="ko-zeile nur-planung nur-erweitert" title="Rückt das Schild mit Streckenname und Länge senkrecht von der Trasse ab und zieht einen Pfeil dorthin zurück – auf eng geführten Trassen deckt es sonst den Verlauf zu"><span>Schild abgerückt</span>
             <select id="opt-beschriftungsabstand">
               <option value="0">an der Strecke</option>
               <option value="1">abgerückt</option>
               <option value="2">weit abgerückt</option>
             </select>
           </label>
-          <label class="ko-zeile ko-haken"><input type="checkbox" id="opt-punktnummern"><span>Punktnummern</span></label>
+          <label class="ko-zeile ko-haken nur-erweitert"><input type="checkbox" id="opt-punktnummern"><span>Punktnummern</span></label>
           <label class="ko-zeile ko-haken" title="Die Bezeichnungen der Trassenpunkte auf der Karte – auf einer eng geführten Trasse legen sie sich übereinander"><input type="checkbox" id="opt-punktnamen"><span>Punktbezeichnungen</span></label>
-          <label class="ko-zeile nur-planung ko-haken" title="Alle Bildmarken auf einmal ein- und ausblenden – die Augen der einzelnen Bilder bleiben, wie sie sind"><input type="checkbox" id="opt-bilder"><span>Bildmarken</span></label>
-          <label class="ko-zeile nur-planung" title="Maßstab der taktischen Zeichen – der frei gesetzten wie der an den Trassenpunkten und der Relaisstrecken. Punktmarken, Nummern, Bezeichnungen, Bildmarken und Schilder bleiben davon unberührt."><span>Zeichengröße</span>
+          <label class="ko-zeile nur-planung ko-haken nur-erweitert" title="Alle Bildmarken auf einmal ein- und ausblenden – die Augen der einzelnen Bilder bleiben, wie sie sind"><input type="checkbox" id="opt-bilder"><span>Bildmarken</span></label>
+          <label class="ko-zeile nur-planung nur-erweitert" title="Maßstab der taktischen Zeichen – der frei gesetzten wie der an den Trassenpunkten und der Relaisstrecken. Punktmarken, Nummern, Bezeichnungen, Bildmarken und Schilder bleiben davon unberührt."><span>Zeichengröße</span>
             <input type="range" id="opt-symbolgroesse" min="0.6" max="1.8" step="0.1">
           </label>
         </div>

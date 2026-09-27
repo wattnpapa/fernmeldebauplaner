@@ -5,6 +5,7 @@ import {
   dateisicherung, istGehaltvoll, ladeAlle
 } from './state.js';
 import { erstelleKarte, setzeBasiskarte, setzeVorrang, BASISKARTEN } from './map.js';
+import { sichtStarten, sichtSetzen, istEinfach, gemerkteSicht } from './sicht.js';
 import { bestand as kachelBestand } from './kacheln.js';
 import { StreckenLayer, escapeHtml } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
@@ -39,6 +40,12 @@ import { VERSION } from './version.js';
 const $ = s => document.querySelector(s);
 
 store.starten();
+
+/* Ob der Einstiegsdialog kommt, steht fest, BEVOR die Sicht gewählt wird:
+   `sichtStarten` merkt die Wahl sofort, und danach sähe jedes Gerät wie eines
+   aus, das schon entschieden hat. */
+const einstiegZeigen = store.erststart && !gemerkteSicht();
+sichtStarten(store.erststart);
 
 /* Die Grenze zwischen Schmal- und Breitansicht, an einer Stelle. Schmal lösen
    sich Liste und Karte über einen Umschalter ab, breit stehen sie nebeneinander.
@@ -1206,6 +1213,80 @@ function zurKarte() {
    Querungsauflagen und Fundstellen, und genau danach wird am Bauplatz
    gesucht. */
 const REITER_BAU = new Set(['bau', 'strecken', 'projekt']);
+/* In der einfachen Ansicht bleiben zwei Reiter: die Strecken und die Planung
+   mit Name, Speicherstand und Sicherung. Zeichen, Flächen, Relais und Bilder
+   sind das Lagebild – Planerarbeit, die ein Trupp nicht braucht und die am
+   Telefon die Reiterreihe füllte (`js/sicht.js`). Der Baumodus geht vor: er
+   zeigt seine drei Reiter in jeder Sicht, denn dort ist die Auswahl schon
+   auf das Nötige gekürzt. */
+const REITER_EINFACH = new Set(['strecken', 'projekt']);
+
+/** Welche Reiter da sind, entscheiden Modus und Sicht gemeinsam – an einer
+ *  Stelle, damit sich die beiden nicht gegenseitig überschreiben. */
+function reiterSichtbarkeit() {
+  document.querySelectorAll('.reiter button').forEach(b => {
+    const r = b.dataset.reiter;
+    b.hidden = baumodus ? !REITER_BAU.has(r)
+      : r === 'bau' || (istEinfach() && !REITER_EINFACH.has(r));
+  });
+}
+
+/** Der Umschalter in der Leiste zeigt, welche Stufe gilt. */
+function sichtBeschriften() {
+  document.querySelectorAll('.sichtwahl button').forEach(b =>
+    b.setAttribute('aria-pressed', String((b.dataset.sicht === 'einfach') === istEinfach())));
+}
+
+document.querySelectorAll('.sichtwahl button').forEach(b => {
+  b.onclick = () => sichtUmschalten(b.dataset.sicht);
+});
+
+function sichtUmschalten(ziel) {
+  if (bauauftragOffen()) return;
+  if (!sichtSetzen(ziel)) return;
+  /* Was in der einfachen Ansicht keinen Griff mehr hat, darf auch nicht
+     weiterlaufen: ein offenes Zeichensetzen ohne Werkzeugknopf wäre auf der
+     Karte nicht zu beenden. */
+  if (istEinfach()) { zl.beendeSetzen(); fl.beendeSetzen(); rl.beendeSetzen(); }
+  reiterSichtbarkeit();
+  const offen = document.querySelector('.reiter button.aktiv');
+  if (!offen || offen.hidden) reiterWechseln(baumodus ? 'bau' : 'strecken');
+  sichtBeschriften();
+  modusAnzeigen();
+  hinweis(istEinfach()
+    ? 'Einfache Ansicht: Strecken und Bauauftrag.'
+    : 'Erweiterte Ansicht: Zeichen, Flächen, Relais, Bilder und alle Bauansatzwerte.');
+}
+
+/* Der Einstieg beim ersten Start auf diesem Gerät: zwei Wege, ein Satz zum
+   Link, kein Menü. „Bauen nach Auftrag“ ist kein dritter Knopf: der Auftrag
+   kommt als Link, und der öffnet die Anwendung von selbst – ein Knopf, der in
+   einen Baumodus ohne Strecke führte, wäre eine Sackgasse.
+   Ohne ihn stand ein Neuling vor einer leeren Karte mit fünfzehn Knöpfen –
+   so kam das Feedback aus drei Ortsverbänden. Er kommt nicht, wenn die
+   Adresse eine geteilte Planung oder Meldung trägt: dann hat der Empfang
+   den Vortritt und erklärt sich selbst. */
+function einstiegDialog() {
+  const box = document.createElement('div');
+  box.className = 'einstieg';
+  box.innerHTML = `
+    <p>Trassen auf der Karte planen und den Bauauftrag für den Trupp mitnehmen.
+       Alles bleibt auf diesem Gerät – kein Konto, kein Server.</p>
+    <div class="einstieg-wege">
+      <button type="button" class="knopf primaer" data-weg="strecke">Strecke planen
+        <small>Trasse auf der Karte antippen, Leitungsart wählen, Bauauftrag als PDF</small></button>
+      <button type="button" class="knopf" data-weg="laden">Gesicherte Planung öffnen
+        <small>Eine .json-Datei aus dem FMBauplaner oder eine KML aus Google Earth laden</small></button>
+    </div>
+    <p>Hast du vom Planer einen <b>Link</b> bekommen? Antippen genügt – die Planung öffnet
+       sich hier, und im <b>Baumodus</b> hältst du fest, was gebaut wurde.</p>
+    <p class="klein">Das ist die einfache Ansicht. Taktische Zeichen, Flächen, Relaisstellen
+       und die Bauansatzwerte stehen in der erweiterten Ansicht – der Umschalter steht oben
+       in der linken Leiste.</p>`;
+  box.querySelector('[data-weg="strecke"]').onclick = () => { schliesseDialog(); neueStreckeStarten(); };
+  box.querySelector('[data-weg="laden"]').onclick = () => { schliesseDialog(); $('#datei-import').click(); };
+  dialog({ titel: 'Willkommen im FMBauplaner', inhalt: box, fuss: [{ text: 'Erst einmal umsehen' }] });
+}
 const KEY_MODUS = 'fbp.modus.v1';
 
 /* Der Modus überlebt das Neuladen. Das ist kein Beiwerk: am Bauort wird die
@@ -1251,9 +1332,7 @@ function modusAnwenden() {
      ist die Karte die Bedienfläche – also klappt die Tafel beim Umschalten zu.
      Die gemerkte Wahl bleibt unberührt: wer sie danach öffnet, behält sie. */
   if (baumodus && schmalAbfrage.matches) kartenoptionenSetzen(true);
-  document.querySelectorAll('.reiter button').forEach(b => {
-    b.hidden = baumodus ? !REITER_BAU.has(b.dataset.reiter) : b.dataset.reiter === 'bau';
-  });
+  reiterSichtbarkeit();
   /* Steht der offene Reiter im neuen Modus nicht mehr da, wäre die
      Seitenleiste leer und der wandernde tabindex zeigte auf einen Knopf, den
      es nicht gibt. Beim Start im Baumodus gilt dasselbe für „Strecken“: der
@@ -1663,6 +1742,7 @@ window.fbp = { store, karte, sl, zl, fl, bl, gl };
 
 zeichneAlles();
 modusAnwenden();
+sichtBeschriften();
 modusAnzeigen();
 speicherstatusZeigen('ruhe');
 $('#btn-undo').disabled = true;
@@ -1759,6 +1839,7 @@ function waechterEinrichten() {
 if (document.readyState === 'complete') waechterEinrichten();
 else window.addEventListener('load', waechterEinrichten);
 
+if (einstiegZeigen && !teilen.artDesFragments()) einstiegDialog();
 geteiltenLinkPruefen();
 
 /* Wer den Link in ein Fenster einfügt, in dem die Anwendung schon läuft, ändert

@@ -388,6 +388,20 @@ Orthophotos der Landesvermessungen (DOP 20 cm, alle 16 Länder).
 
 ## Bedienung
 
+**Einfache und erweiterte Ansicht.** Beim ersten Start auf einem Gerät zeigt
+die Anwendung die einfache Ansicht: Strecken zeichnen, die Leitungsart aus
+vier Kacheln wählen (Feldkabel, Feldfernkabel, WLAN-Richtfunk, Sonstiges),
+Bauauftrag mitnehmen, Baumodus. Zwei Reiter, drei Werkzeuge, ein kurzes
+Dateimenü – das ist, was ein Trupp unterwegs braucht, auch am Telefon. Die
+erweiterte Ansicht bringt das Lagebild dazu (taktische Zeichen, Flächen,
+Relaisstellen, Bilder), alle Bauansatzwerte je Strecke (Verlegeart,
+Bauzuschlag, Trommellänge, Verlegeleistung), Einsatzabschnitte, Lagekarte und
+Sammeldruck, die Rohdatenausgabe und den eigenen Speicher. Umgeschaltet wird
+oben in der linken Leiste; die Wahl bleibt auf dem Gerät. Die Planung ist in beiden
+Ansichten dieselbe: was in der einfachen angelegt wird, trägt dieselben
+Vorgabewerte und ergibt denselben Bauauftrag. Wer die Anwendung schon benutzt
+hat, behält nach der Aktualisierung die erweiterte Ansicht.
+
 | Taste | Wirkung |
 |---|---|
 | `S` | Neue Strecke zeichnen |

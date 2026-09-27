@@ -46,6 +46,17 @@ einer Ebene eine neue Eingabe gibt – eine Option, ein Feld der Planung, einen
 Zustand der Ebene –, nimmt sie in deren Signatur auf, sonst bleibt die Karte
 bei genau dieser Änderung alt.
 
+**Zwei Ansichten, eine Oberfläche.** Seit dem Feedback aus drei Ortsverbänden
+gibt es die einfache und die erweiterte Ansicht (`js/sicht.js`, umgeschaltet
+über `body.sicht-einfach`). Sie ist reine Anzeige und ändert nichts an der
+Planung. Wer ein Bedienelement ergänzt – einen Knopf in der Werkzeugleiste,
+einen Eintrag im Dateimenü, eine Zeile in den Kartenoptionen, ein Feld in der
+Streckenkarte –, entscheidet, ob es `nur-erweitert` trägt. Die Vorgabe ist:
+alles, was ein Trupp am Bauort nicht braucht, trägt es. Die Reiter regelt
+`reiterSichtbarkeit()` in `js/app.js`, weil dort auch der Baumodus daran dreht.
+Die Geräteprüfung misst die einfache Ansicht gegen ihr Versprechen (zwei
+Reiter, drei Werkzeuge, vier Kacheln auf Handschuhmaß) und den ersten Start.
+
 **Soll und Ist sind zweierlei.** Seit Schema 13 trägt jede Strecke neben der
 Planung einen `bau`-Block: was der Trupp am Bauort wirklich gebaut hat. Der
 geplante Verlauf in `strecke.punkte` wird davon nie angefasst — die Abweichung
