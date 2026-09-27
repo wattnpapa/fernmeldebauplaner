@@ -39,7 +39,8 @@
 import { raster, profil, eckenFuer } from './hoehe.js';
 import { oberflaechenraster } from './oberflaeche.js';
 import {
-  ERDRADIUS_WIRKSAM, LUECKEN_GRENZE, HOECHSTER_MAST, FAHRZEUGMAST, mastFuer
+  ERDRADIUS_WIRKSAM, LUECKEN_GRENZE, HOECHSTER_MAST, FAHRZEUGMAST, mastFuer,
+  FREIRAUM_ANTEIL, fresnelradius
 } from './funkrechnung.js';
 import { wellenlaenge } from './bosfunk.js';
 import { formatLaenge } from './geo.js';
@@ -355,7 +356,14 @@ export function ueberdeckung(befunde) {
  * @returns {Promise<object|null>} `urteil` ist 'reicht', 'hoeher' oder
  *          'unbeurteilbar'.
  */
-export async function noetigeMasthoehe(standort, ziel, mhz, antennenhoehe, zielhoehe = 1.5) {
+export async function noetigeMasthoehe(standort, ziel, mhz, antennenhoehe, zielhoehe = 1.5,
+  o = {}) {
+  /* Der Richtfunk fragt dieselbe Frage mit seinem eigenen Maß: dort gilt die
+     Strecke erst als frei, wenn 60 % der ersten Fresnelzone über der Kante
+     liegen – und bei 5 GHz sind das über 10 km fünf, sechs Meter, die ein
+     Mast tatsächlich hergeben muss. Die Forderung kommt deshalb als Zuschlag
+     auf die Kante, nicht als anderes Verfahren. */
+  const mitFreiraum = !!o.freiraum;
   const punkte = await profil(standort, ziel, 25);
   if (!punkte || punkte.length < 2) return null;
   const D = punkte[punkte.length - 1].d;
@@ -381,7 +389,8 @@ export async function noetigeMasthoehe(standort, ziel, mhz, antennenhoehe, zielh
     /* Hier ist die Strecke bekannt, deshalb steht hier die genaue Form des
        Erdstichs d1·d2/(2R) gegen die Sehne zwischen beiden Enden und nicht die
        Tangentialebene, mit der die Flächenrechnung oben arbeiten muss. */
-    const kante = p.h + p.d * (D - p.d) / (2 * ERDRADIUS_WIRKSAM);
+    const kante = p.h + p.d * (D - p.d) / (2 * ERDRADIUS_WIRKSAM) +
+      (mitFreiraum ? FREIRAUM_ANTEIL * fresnelradius(mhz, p.d, D - p.d) : 0);
     /* Höhe der Antennenmitte über NN, ab der die Sichtlinie diese Kante
        streift: A·(1−t) + zZiel·t ≥ kante. */
     const noetig = (kante - zZiel * t) / (1 - t);
@@ -403,6 +412,7 @@ export async function noetigeMasthoehe(standort, ziel, mhz, antennenhoehe, zielh
     standorthoehe: hStandort,
     zielhoehe: Number(zielhoehe) || 0,
     zielgrund: hZiel,
+    freiraum: mitFreiraum,
     luecken, stuetzpunkte: punkte.length
   };
 }
@@ -441,8 +451,8 @@ export function masthoeheText(m, ziel = 'dieser Ort') {
     return `${gross(ziel)} liegt ${weit} entfernt hinter einer Kante ${wo}. ` +
       `Rechnerisch wären ${meterText(m.noetig)} Antennenhöhe nötig – mehr als der ` +
       `höchste Mast des Fernmeldedienstes hergibt, der ${HOECHSTER_MAST.name} mit ` +
-      `${meterText(HOECHSTER_MAST.hoehe)}. Hier hilft nur ein anderer Standort oder eine ` +
-      'zweite Relaisstelle.';
+      `${meterText(HOECHSTER_MAST.hoehe)}. Hier hilft nur ein anderer Standort oder ` +
+      (m.freiraum ? 'ein Zwischenstandort.' : 'eine zweite Relaisstelle.');
   }
   /* Der Fahrzeugname gehört erst in den Satz, wenn die Höhe ihn verlangt:
      unter der Höhe eines gewöhnlichen Fahrzeugmastes ist „dafür braucht es den
@@ -451,7 +461,9 @@ export function masthoeheText(m, ziel = 'dieser Ort') {
   return `${gross(ziel)} liegt ${weit} entfernt im Schatten einer Kante ${wo}. Frei ` +
     `wird die Richtung ab ${meterText(m.noetig)} Antennenhöhe – das sind ` +
     `${meterText(m.fehlt)} mehr als die aufgebauten ${meterText(m.jetzt)}.${womit} ` +
-    'Gemeint ist die streifende Sichtlinie, kein Freiraum darüber hinaus.';
+    (m.freiraum
+      ? 'Gerechnet mit 60 % der ersten Fresnelzone über der Kante – dem Maß der Richtfunkplanung.'
+      : 'Gemeint ist die streifende Sichtlinie, kein Freiraum darüber hinaus.');
 }
 
 const gross = s => s.charAt(0).toUpperCase() + s.slice(1);

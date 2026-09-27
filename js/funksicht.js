@@ -55,13 +55,21 @@ const STRAHLDICHTE = 2;
    größer, als sie ist. */
 const BAENDER = 8;
 
-/* Arbeitswerte im Rasterfeld. 0 heißt „noch kein Strahl darüber“ – das trifft
-   Zellen jenseits des Umkreises und solche ohne Höhendaten. Nach außen bleibt
-   nur die Sicht stehen; die Unterscheidung dient der Frage, welche Zellen
-   überhaupt beurteilt wurden, und damit der ehrlichen Bezugsgröße für den
-   Flächenanteil. */
-const VERDECKT = 1;
-const SICHT = 2;
+/* Stufen im Rasterfeld. 0 heißt „noch kein Strahl darüber“ – das trifft
+   Zellen jenseits des Umkreises und solche ohne Höhendaten; sie zählen nicht
+   zur Bezugsgröße des Flächenanteils.
+
+   Dazwischen liegt seit der dritten Stufe die EINGESCHRÄNKTE Zelle: die
+   geometrische Sichtlinie kommt über das Gelände, die Freiraumforderung der
+   Fresnelzone nicht. Zwei Stufen waren vorher zu wenig, weil die Frage am
+   Kartentisch nicht nur „frei oder verdeckt“ lautet, sondern „wie knapp“ –
+   und knapp heißt hier: mit ein paar Metern mehr Mast frei. Genau das trennt
+   ein Hindernis, das die Strecke unmöglich macht, von einem, das den
+   Teleskopmast erzwingt. Die Ordnung der Werte ist die der Aussage: eine
+   Zelle, die zwei Strahlen verschieden beurteilen, behält die schlechtere. */
+export const VERDECKT = 1;
+export const EINGESCHRAENKT = 2;
+export const SICHT = 3;
 
 /**
  * Fläche mit freier Funksicht um einen Standort.
@@ -71,8 +79,10 @@ const SICHT = 2;
  * @param {number} mhz            Mittenfrequenz des Bandes
  * @param {number} umkreis        Umkreis in Metern
  * @param {number} zielhoehe      angenommene Antennenhöhe am Gegenende
- * @returns {Promise<object|null>} `sicht[i] === 1` heißt: freie Funksicht über
- *          das Gelände. `null`, wenn keine Höhen zu bekommen waren.
+ * @returns {Promise<object|null>} `stufen[i]` ist SICHT, EINGESCHRAENKT,
+ *          VERDECKT oder 0 (nicht beurteilt); `sicht[i] === 1` heißt
+ *          weiterhin: freie Funksicht über das Gelände. `null`, wenn keine
+ *          Höhen zu bekommen waren.
  */
 export async function funksicht(standort, antennenhoehe, mhz, umkreis, zielhoehe = 3) {
   const r = Math.min(Math.max(200, umkreis || UMKREIS_STANDARD), UMKREIS_HOECHSTENS);
@@ -116,12 +126,15 @@ export async function funksicht(standort, antennenhoehe, mhz, umkreis, zielhoehe
   const feld = new Uint8Array(spalten * zeilen);
   const maxima = new Float32Array(BAENDER);
   const strahlen = Math.max(8, Math.round(2 * Math.PI * rZellen * STRAHLDICHTE));
-  let verdeckt = 0;
 
   for (let k = 0; k < strahlen; k++) {
     const w = 2 * Math.PI * k / strahlen;
     const dx = Math.cos(w), dy = Math.sin(w);
     maxima.fill(-Infinity);
+    /* Das Laufmaximum der nackten Sichtlinie braucht kein Zielband: ohne
+       Freiraumforderung hängt der Winkel zur Kante nicht davon ab, wie weit
+       das Ziel dahinter liegt. */
+    let maxSicht = -Infinity;
     let x = mitteX + 0.5, y = mitteY + 0.5;
 
     for (let i = 1; i <= rZellen; i++) {
@@ -137,38 +150,46 @@ export async function funksicht(standort, antennenhoehe, mhz, umkreis, zielhoehe
       /* Der Gegenstandort steht auf einem Mast, nicht auf dem Boden – geprüft
          wird die Antennenmitte, nicht die Geländeoberfläche. */
       const winkelZiel = (h + zielhoehe - standorthoehe - erdstich[i]) * kehrwert[i];
-      /* Eine Zelle, die schon einmal verdeckt war, bleibt es: zwei Strahlen
-         streifen dieselbe Zelle aus leicht verschiedenen Richtungen, und die
+      const stufe = winkelZiel < maxSicht ? VERDECKT
+        : winkelZiel < maxima[bandVon(abstand[i])] ? EINGESCHRAENKT : SICHT;
+      /* Eine Zelle behält die schlechtere Stufe: zwei Strahlen streifen
+         dieselbe Zelle aus leicht verschiedenen Richtungen, und die
          ungünstigere Aussage ist die belastbare. */
-      if (winkelZiel < maxima[bandVon(abstand[i])]) {
-        if (feld[idx] !== VERDECKT) { feld[idx] = VERDECKT; verdeckt++; }
-      } else if (feld[idx] !== VERDECKT) {
-        feld[idx] = SICHT;
-      }
+      if (feld[idx] === 0 || stufe < feld[idx]) feld[idx] = stufe;
       /* Fortgeschrieben wird mit der Freiraumforderung: ein Hindernis wirft
-         seinen Schatten schon, bevor es die geometrische Sichtlinie berührt. */
+         seinen Schatten schon, bevor es die geometrische Sichtlinie berührt.
+         Daneben läuft die nackte Kante mit – sie trennt „eingeschränkt“ von
+         „verdeckt“. */
+      const a0 = (h - standorthoehe - erdstich[i]) * kehrwert[i];
+      if (a0 > maxSicht) maxSicht = a0;
       for (let j = 0; j < BAENDER; j++) {
-        const a = (h + freiraum[j][i] - standorthoehe - erdstich[i]) * kehrwert[i];
+        const a = a0 + freiraum[j][i] * kehrwert[i];
         if (a > maxima[j]) maxima[j] = a;
       }
     }
   }
 
-  /* Nach außen bleibt genau ein Bit stehen: 1 für freie Funksicht. Verdeckte
-     Zellen und solche ohne Höhen fallen beide auf 0 – das ist die vorsichtige
-     Seite und der Grund, warum die Karte diese Richtung einfärbt. */
+  /* `sicht` bleibt als ein Bit je Zelle stehen: 1 für freie Funksicht.
+     Eingeschränkte und verdeckte Zellen und solche ohne Höhen fallen dort
+     zusammen auf 0 – das ist die vorsichtige Seite, und wer nur die eine Frage
+     stellt, bekommt weiter nur die eine Antwort. Die Stufen daneben tragen die
+     feinere Aussage. */
   const sicht = new Uint8Array(feld.length);
-  let zellen = 0, mitSicht = 0;
+  let zellen = 0, mitSicht = 0, eingeschraenkt = 0, verdeckt = 0;
   for (let i = 0; i < feld.length; i++) {
     if (feld[i] === SICHT) { sicht[i] = 1; zellen++; mitSicht++; }
-    else if (feld[i] === VERDECKT) zellen++;
+    else if (feld[i] === EINGESCHRAENKT) { zellen++; eingeschraenkt++; }
+    else if (feld[i] === VERDECKT) { zellen++; verdeckt++; }
   }
 
   return {
-    sicht, spalten, zeilen,
+    sicht, stufen: feld, spalten, zeilen,
     ecken: bild.ecken,
+    /* Ursprung im Weltpixelgitter, damit zwei Flächen übereinanderzulegen sind
+       (siehe zwischenstandorte in richtfunkrelais.js). */
+    x0: bild.x0, y0: bild.y0,
     fehlend: bild.fehlend,
-    zellen, mitSicht, verdeckt, umkreis: r,
+    zellen, mitSicht, eingeschraenkt, verdeckt, umkreis: r,
     meterJeZelle
   };
 }
@@ -190,8 +211,14 @@ export function sichtText(e, aufbauplatz) {
      von welchem – sonst steht dieselbe Aussage für zwei verschiedene Standorte
      und wird auf dem Blatt nicht mehr zuzuordnen sein. */
   const wohin = aufbauplatz ? `zu ${aufbauplatz}` : 'zum Aufbauplatz';
+  /* Die eingeschränkte Fläche steht als eigene Zahl da, weil sie eine eigene
+     Handlung verlangt: dort fehlt kein anderer Standort, sondern Masthöhe. */
+  const knapp = e.zellen && e.eingeschraenkt
+    ? ` Weitere ${Math.round(e.eingeschraenkt / e.zellen * 100)} % (blass) haben nur die ` +
+      'Sichtlinie frei, nicht die Fresnelzone – dort hilft ein höherer Mast.'
+    : '';
   return `Funksicht im Umkreis von ${km} km: ${anteil} % der Fläche haben über das ` +
-    `Gelände freie Sicht ${wohin}. Bewuchs, Bebauung und Freileitungen stehen ` +
+    `Gelände freie Sicht ${wohin}.${knapp} Bewuchs, Bebauung und Freileitungen stehen ` +
     'in diesen Höhen nicht – die eingefärbte Fläche ist die günstigste Annahme, kein ' +
     'Empfangsnachweis.' + luecke;
 }

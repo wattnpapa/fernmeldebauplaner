@@ -64,6 +64,19 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   gezeichnet werden beide Verläufe getrennt. Was angenommen und nicht gemessen ist,
   steht im Urteil dabei; Freileitungen, Masten und einzelne Bäume stehen in keiner
   dieser Quellen und bleiben Sache der Erkundung
+- **Funksicht** von jedem Aufbauplatz aus als Fläche auf der Karte, in drei Stufen:
+  frei (Sichtlinie und 60 % der ersten Fresnelzone über dem Gelände), eingeschränkt
+  (nur die Sichtlinie frei – dort hilft ein höherer Mast) und verdeckt. Dazu
+  **Masthöhe bis hierhin**: einen Ort antippen und ablesen, ab welcher Antennenhöhe
+  er mit dem Freiraum der Richtfunkplanung frei wird – oder dass kein Mast reicht
+- **Zwischenstandort suchen**, wenn das Gelände die direkte Strecke verdeckt: die
+  Funksicht wird von beiden Aufbauplätzen gerechnet, die Schnittmenge liegt als
+  Fläche auf der Karte, und je zusammenhängendem Bereich steht ein nummerierter
+  Kandidat mit den Längen beider Teilstrecken. Ein gewählter Kandidat lässt sich
+  als zwei Funkstrecken A–R und R–B anlegen; die Angaben der Enden wandern mit,
+  der Zwischenstandort bekommt die angenommene Masthöhe. Gerechnet wird über
+  nacktem Gelände – der Kandidat ist ein technischer Vorschlag, keine Standortwahl;
+  erst der Geländeschnitt der Teilstrecken prüft gegen Bewuchs und Bebauung
 
 **Relaisstellen des Sprechfunks planen**
 - Standorte des BOS-Sprechfunks als eigene Planungsobjekte: 4-m-Band und 2-m-Band
@@ -579,6 +592,7 @@ js/oberflaeche.js     Oberflächenhöhen: Bewuchs und Bebauung über dem Geländ
 js/cog.js             Einzelne Kacheln aus einem Cloud-Optimized GeoTIFF lesen
 js/funkrechnung.js    Geometrie der Funkstrecke: Fresnelzone, Erdstich, Masthöhe
 js/funksicht.js       Fläche mit freier Funksicht für die WLAN-Richtfunkstrecke
+js/richtfunkrelais.js Zwischenstandort: Schnittmenge zweier Funksichtflächen, Kandidaten
 js/relais.js          Relaisstellen des Sprechfunks auf der Karte, Flächen und Befunde
 js/bosfunk.js         Bänder des BOS-Sprechfunks, λ/4-Rundstrahler, Funkhorizont
 js/ausbreitung.js     Ausbreitung und Funkschatten: Sichtlinie und Beugung, drei Zonen

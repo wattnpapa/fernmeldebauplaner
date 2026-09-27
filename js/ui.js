@@ -29,8 +29,10 @@ import {
 } from './flaechen.js';
 import {
   FREQUENZBAENDER, MIMO_ARTEN, POLARISATIONEN, MODULATIONEN,
-  bandById, mimoById, gueltigeBandbreite, datenrateText, funkstrecke, azimutText
+  bandById, mimoById, gueltigeBandbreite, datenrateText, funkstrecke, azimutText,
+  neuerFunkstandort
 } from './richtfunk.js';
+import { zwischenstandorte, zwischenText, kandidatText } from './richtfunkrelais.js';
 import { hoeheAn, profil, kachelbedarf, kachelfehlerVergessen } from './hoehe.js';
 import { oberflaechenprofil, QUELLTEXT, ARTTEXT } from './oberflaeche.js';
 import {
@@ -53,7 +55,7 @@ import {
   pruefeQuerungen, schonEingetragen, QUERUNGS_QUELLE,
   befundLesen as querungsbefund, befundText as querungsbefundText
 } from './querungspruefung.js';
-import { zeichneFunksicht, basiskarteById } from './map.js';
+import { zeichneFunksicht, zeichneZwischenraum, basiskarteById } from './map.js';
 import {
   umfang as kachelUmfang, vorladen as kachelVorladen, bestand as kachelBestand,
   leeren as kachelVorratLeeren, HOECHSTENS as KACHEL_HOECHSTENS, PUFFER, ZOOM_VON, ZOOM_BIS
@@ -64,7 +66,7 @@ import {
 } from './bosfunk.js';
 import {
   ausbreitungText, masthoeheText, flaecheText, bestandText, ZONEN_ERKLAERUNG,
-  UMKREIS_MINDESTENS as UMKREIS_MIN, UMKREIS_HOECHSTENS as UMKREIS_MAX
+  UMKREIS_MINDESTENS as UMKREIS_MIN, UMKREIS_HOECHSTENS as UMKREIS_MAX, noetigeMasthoehe
 } from './ausbreitung.js';
 import { relaisTitel, relaisKurz, befundLesen, masthoeheFuer, rechenwerte } from './relais.js';
 import {
@@ -1368,6 +1370,126 @@ function schattenHTML() {
   return `<p class="rf-gelaende">${escapeHtml(sichtText(schattenBefund, schattenName))}</p>`;
 }
 
+/* Der Zwischenstandort folgt denselben Regeln wie die Funksicht darüber: eine
+   Fläche zur Zeit, nichts wird gespeichert, und ein verschobener Aufbauplatz
+   räumt sie ab. Die Kandidaten stehen in der Gruppe als Liste, auf der Karte
+   als Nummern – wer eine wählt, bekommt die Vorschau der beiden Teilstrecken
+   und den Knopf, der sie anlegt. */
+let zwischenEbene = null, zwischenBefund = null, zwischenStrecke = null, zwischenOrt = '';
+let zwischenWahl = null, zwischenVorschau = null, zwischenLaeuft = false;
+
+function zwischenWeg() {
+  if (ctx && ctx.karte) {
+    if (zwischenEbene) ctx.karte.removeLayer(zwischenEbene);
+    if (zwischenVorschau) ctx.karte.removeLayer(zwischenVorschau);
+  }
+  zwischenEbene = null; zwischenBefund = null; zwischenStrecke = null; zwischenOrt = '';
+  zwischenWahl = null; zwischenVorschau = null;
+}
+
+/* Die Rückwärtsfrage der Richtfunkstrecke: welche Antennenhöhe braucht das
+   Ende, damit ein angetippter Ort frei wird. Sie hängt am nächsten Kartenklick
+   und wird als eigener Horcher davorgelegt – der allgemeine Klickhorcher der
+   Karte käme sonst zuerst an die Reihe und nähme der Strecke die Auswahl. Ein
+   Tipp auf die Kartenbedienung (Zoom, Ebenen) ist keine Zielwahl. */
+let rfMast = null;   // { strecke, platz, name, ziel, ergebnis }
+let rfZielwahlAus = null;
+
+function rfZielwahl(tun) {
+  if (rfZielwahlAus) rfZielwahlAus();
+  const c = ctx.karte.getContainer();
+  L.DomUtil.addClass(c, 'modus-relais');
+  const weg = () => {
+    c.removeEventListener('click', h, true);
+    L.DomUtil.removeClass(c, 'modus-relais');
+    rfZielwahlAus = null;
+  };
+  const h = ev => {
+    if (ev.target.closest('.leaflet-control')) return;
+    weg();
+    ev._fbpVerbraucht = true;
+    tun(ctx.karte.mouseEventToLatLng(ev));
+  };
+  c.addEventListener('click', h, true);
+  rfZielwahlAus = weg;
+}
+
+function rfMastHTML(s) {
+  if (!rfMast || rfMast.strecke !== s.id) return '';
+  const von = `Von ${rfMast.name} aus: `;
+  if (rfMast.ergebnis === null) {
+    return `<p class="rf-gelaende rf-laeuft">${escapeHtml(von)}Höhen werden geholt …</p>`;
+  }
+  const m = rfMast.ergebnis;
+  const klasse = m && m.urteil === 'hoeher' ? ' rf-verdeckt'
+    : m && m.urteil === 'unbeurteilbar' ? ' rf-unbeurteilbar' : '';
+  return `<p class="rf-gelaende${klasse}">${escapeHtml(von + masthoeheText(m, 'der angetippte Ort'))}</p>`;
+}
+
+function zwischenHTML(s) {
+  if (zwischenStrecke !== s.id) return '';
+  if (zwischenLaeuft) {
+    return '<p class="rf-gelaende rf-laeuft">Funksicht von beiden Aufbauplätzen wird gerechnet …</p>';
+  }
+  if (!zwischenBefund) return '';
+  return `<p class="rf-gelaende">${escapeHtml(zwischenText(zwischenBefund))}</p>`;
+}
+
+/* Die Wahl zeichnet die beiden Teilstrecken als Vorschau in der Farbe der
+   Strecke, gestrichelt wie jede Funkstrecke – so sieht man, worüber sie
+   laufen, bevor sie etwas in der Planung sind. */
+function zwischenWaehlen(k, i, aktualisieren) {
+  const s = store.strecke(zwischenStrecke);
+  const f = s && funkstrecke(s);
+  if (!f) return;
+  if (zwischenVorschau) ctx.karte.removeLayer(zwischenVorschau);
+  zwischenWahl = i;
+  zwischenVorschau = L.polyline([[f.a.lat, f.a.lng], [k.lat, k.lng], [f.b.lat, f.b.lng]], {
+    pane: 'fbp-strecken', color: s.farbe, weight: 3, dashArray: '6 6', opacity: 0.9,
+    interactive: false
+  }).addTo(ctx.karte);
+  aktualisieren();
+}
+
+/**
+ * Aus der Strecke und dem gewählten Zwischenstandort zwei Funkstrecken machen.
+ * Die direkte Strecke bleibt stehen: sie zu löschen wäre eine Entscheidung
+ * über fremde Planung, und Undo deckt das Anlegen ohnehin ab. Die Angaben der
+ * Enden wandern mit – Einheit, Rufname, Antenne –, der Zwischenstandort
+ * bekommt die angenommene Masthöhe und sonst leere Felder: wer dort steht,
+ * ist noch nicht entschieden.
+ */
+function teilstreckenAnlegen(s, k, mast) {
+  const f = funkstrecke(s);
+  if (!f) return;
+  let erste = null;
+  store.aendern(p => {
+    const orig = p.strecken.find(x => x.id === s.id);
+    if (!orig) return;
+    const idx = p.strecken.indexOf(orig);
+    const kopie = o => JSON.parse(JSON.stringify(o));
+    const zwischen = () => ({ ...neuerFunkstandort(), platz: 'Zwischenstandort', antennenhoehe: mast });
+    const teil = (nr, von, nach, pA, pB, standA, standB) => {
+      const t = neueStrecke(p);
+      Object.assign(t, {
+        name: `${orig.name} – Teil ${nr}`, von, nach, farbe: orig.farbe,
+        kabeltyp: 'richtfunk', abschnitt: orig.abschnitt, trupp: orig.trupp,
+        punkte: [neuerPunkt(pA.lat, pA.lng), neuerPunkt(pB.lat, pB.lng)],
+        richtfunk: { ...kopie(orig.richtfunk), standorte: [standA, standB] }
+      });
+      return t;
+    };
+    const st = orig.richtfunk.standorte;
+    const t1 = teil(1, orig.von, 'Zwischenstandort', f.a, k, kopie(st[0]), zwischen());
+    const t2 = teil(2, 'Zwischenstandort', orig.nach, k, f.b, zwischen(), kopie(st[1]));
+    p.strecken.splice(idx + 1, 0, t1, t2);
+    erste = t1.id;
+  }, 'strecke');
+  zwischenWeg();
+  if (erste) ctx.sl.waehle(erste);
+  hinweis('Zwei Teilstrecken angelegt – die direkte Strecke bleibt stehen, bis du sie löschst.');
+}
+
 /* Höhen und Geländeurteil führen sich selbst nach. Das hing vorher an zwei
    Knöpfen, und das war die falsche Frage an den Nutzer: er hat die
    Aufbauplätze gesetzt, damit er weiß, ob die Strecke trägt – nicht, damit er
@@ -1536,6 +1658,8 @@ function richtfunkGruppe(s, frisch) {
   const gruppe = el('div', 'feldgruppe');
   const jetzt = funkstrecke(s);
   if (schattenStrecke !== s.id || (jetzt && schattenOrt !== ortSignatur(jetzt))) schattenWeg();
+  if (zwischenStrecke !== s.id || (jetzt && zwischenOrt !== ortSignatur(jetzt))) zwischenWeg();
+  if (rfMast && (rfMast.strecke !== s.id || (jetzt && rfMast.ort !== ortSignatur(jetzt)))) rfMast = null;
   gruppe.appendChild(el('h3', 'gruppen-titel', 'Richtfunkstrecke (WLAN)'));
 
   const v = s.richtfunk;
@@ -1545,6 +1669,10 @@ function richtfunkGruppe(s, frisch) {
     w => schreib(() => { v.bandbreite = Number(w); }, aktualisieren),
     { typ: 'select', werte: bandById(v.band).bandbreiten.map(b => [b, `${b} MHz`]) });
 
+  /* Die Kandidatenliste des Zwischenstandorts hängt am selben Befund wie der
+     Ergebniskasten und zieht deshalb mit ihm nach; sie wird erst weiter unten
+     gebaut und hängt sich hier ein. */
+  let nachErgebnis = () => {};
   const aktualisieren = () => {
     ergebnis.innerHTML = richtfunkErgebnisHTML(s);
     ablesungBinden(ergebnis, s);
@@ -1552,6 +1680,7 @@ function richtfunkGruppe(s, frisch) {
     spalten.querySelectorAll('.rf-abgeleitet').forEach((el2, i) => {
       el2.innerHTML = standortAbgeleitetHTML(s, i);
     });
+    nachErgebnis();
   };
 
   // -- Die beiden Aufbauplätze, in der Spaltenordnung des Formulars
@@ -1715,6 +1844,100 @@ function richtfunkGruppe(s, frisch) {
   tastenNachziehen();
   gruppe.append(umkreisZeile, umkreisFuss, tastenreihe);
 
+  /* Zwei weitere Fragen an dasselbe Höhenmodell. „Masthöhe bis hierhin“
+     beantwortet, was die Funksicht nur färbt: wie viel Mast fehlt, damit ein
+     bestimmter Ort frei wird – gerechnet auf dem Profil und mit dem Freiraum
+     der Richtfunkplanung. „Zwischenstandort suchen“ ist die Frage danach, wenn
+     kein Mast mehr reicht: von wo aus sind beide Enden frei. Beide stehen
+     immer da, nicht erst nach einem verdeckten Urteil – auch eine knappe
+     Strecke will wissen, wo der Mast besser stünde. */
+  const fragen = el('div', 'tastenreihe');
+  const mastTaste = knopf('Masthöhe bis hierhin', () => {
+    const f = funkstrecke(s);
+    if (!f) return hinweis('Erst beide Aufbauplätze auf der Karte setzen.');
+    /* Gefragt wird vom Ende aus, dessen Fläche gerade liegt – sonst von A. */
+    const i = schattenPlatz === null ? 0 : schattenPlatz;
+    if (f.hoehen[i].grund === null) {
+      return hinweis('Für diesen Aufbauplatz fehlt noch die Geländehöhe.', 'warnung');
+    }
+    hinweis(`Auf der Karte antippen, wohin die Sicht von ${plaetze[i]} reichen soll.`);
+    mastTaste.classList.add('an');
+    rfZielwahl(ziel => {
+      mastTaste.classList.remove('an');
+      hinweisAus();
+      rfMast = { strecke: s.id, platz: i, name: plaetze[i], ziel, ergebnis: null, ort: ortSignatur(f) };
+      aktualisieren();
+      const hoch = Number(s.richtfunk.standorte[i].antennenhoehe) || 3;
+      const gegen = Number(s.richtfunk.standorte[1 - i].antennenhoehe) || 3;
+      noetigeMasthoehe(i === 0 ? f.a : f.b, ziel, f.mhz, hoch, gegen, { freiraum: true })
+        .then(m => { if (rfMast && rfMast.ziel === ziel) rfMast.ergebnis = m; })
+        .catch(() => { rfMast = null; hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler'); })
+        .finally(aktualisieren);
+    });
+  }, 'klein');
+  const zwischenTaste = knopf('', () => {
+    if (zwischenStrecke === s.id && (zwischenBefund || zwischenLaeuft)) {
+      zwischenWeg(); zwischenNachziehen(); aktualisieren();
+      return;
+    }
+    const f = funkstrecke(s);
+    if (!f) return hinweis('Erst beide Aufbauplätze auf der Karte setzen.');
+    const hA = Number(s.richtfunk.standorte[0].antennenhoehe) || 3;
+    const hB = Number(s.richtfunk.standorte[1].antennenhoehe) || 3;
+    /* Der dritte Mast wird so hoch angenommen wie der höhere der beiden
+       Enden: das ist das Gerät, das der Trupp ohnehin dabeihat. */
+    const mast = Math.max(hA, hB);
+    zwischenWeg();
+    zwischenStrecke = s.id; zwischenOrt = ortSignatur(f); zwischenLaeuft = true;
+    zwischenNachziehen(); aktualisieren();
+    zwischenstandorte(f.a, hA, f.b, hB, f.mhz, mast).then(e => {
+      zwischenLaeuft = false;
+      if (zwischenStrecke !== s.id) return;
+      zwischenBefund = e;
+      if (e && e.zellen) {
+        zwischenEbene = zeichneZwischenraum(ctx.karte, e,
+          (k, i) => zwischenWaehlen(k, i, aktualisieren));
+      }
+    }).catch(() => {
+      zwischenLaeuft = false;
+      zwischenWeg();
+      hinweis('Die Höhendaten waren nicht zu erreichen.', 'fehler');
+    }).finally(() => { zwischenNachziehen(); aktualisieren(); });
+  }, 'klein');
+  const zwischenNachziehen = () => {
+    const an = zwischenStrecke === s.id && (zwischenBefund || zwischenLaeuft);
+    zwischenTaste.textContent = zwischenLaeuft && an ? 'Höhen werden geholt …'
+      : an ? 'Zwischenstandort ausblenden' : 'Zwischenstandort suchen';
+    zwischenTaste.classList.toggle('an', !!an);
+    zwischenTaste.disabled = !!(zwischenLaeuft && an);
+  };
+  zwischenNachziehen();
+  fragen.append(mastTaste, zwischenTaste);
+  gruppe.appendChild(fragen);
+
+  /* Die Kandidatenliste steht unter den Tasten und nicht im Ergebniskasten:
+     sie hat Knöpfe, und der Kasten wird als HTML neu gesetzt. */
+  const kandidatenListe = el('div', 'rf-kandidaten');
+  const kandidatenNachziehen = () => {
+    kandidatenListe.innerHTML = '';
+    if (zwischenStrecke !== s.id || !zwischenBefund || !zwischenBefund.kandidaten.length) return;
+    zwischenBefund.kandidaten.forEach((k, i) => {
+      const zeile = el('button', 'rf-kandidat' + (zwischenWahl === i ? ' an' : ''));
+      zeile.type = 'button';
+      zeile.innerHTML = `<span class="rf-kandidat-nr">${i + 1}</span>` +
+        `<span>${escapeHtml(kandidatText(k))}</span>`;
+      zeile.onclick = () => zwischenWaehlen(k, i, aktualisieren);
+      kandidatenListe.appendChild(zeile);
+    });
+    if (zwischenWahl !== null && zwischenBefund.kandidaten[zwischenWahl]) {
+      const k = zwischenBefund.kandidaten[zwischenWahl];
+      kandidatenListe.appendChild(knopf(`Kandidat ${zwischenWahl + 1} als zwei Teilstrecken anlegen`,
+        () => teilstreckenAnlegen(s, k, zwischenBefund.mast), 'klein rf-anlegen'));
+    }
+  };
+  gruppe.appendChild(kandidatenListe);
+  nachErgebnis = kandidatenNachziehen;
+
   // -- Was für die Strecke als Ganzes gilt
   const betrieb = el('div', 'feld-paar');
   betrieb.append(
@@ -1836,6 +2059,8 @@ function richtfunkErgebnisHTML(s) {
     ${eirpHTML(s, f)}
     ${gelaendeHTML(s)}
     ${schattenHTML()}
+    ${rfMastHTML(s)}
+    ${zwischenHTML(s)}
     <p class="se-fuss">Bruttorate der Funkschnittstelle bei höchstem Modulationsschema –
        nicht der Durchsatz über die Strecke. Die Mindesthöhe gilt über ebenem, freiem
        Gelände; sie ist eine untere Schranke, keine Zusage.</p>`;

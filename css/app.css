@@ -850,6 +850,37 @@ body.seite-zu .seite { display: none; }
    beiden Flächen man vor sich hat. */
 .knopf.an { background: var(--thw-blass); border-color: var(--thw); color: var(--thw); }
 
+/* -- Zwischenstandort. Die Kandidaten sind eine Liste von Knöpfen, jede Zeile
+   auf Handschuhmaß: die Nummer links ist dieselbe wie die Marke auf der Karte,
+   damit Liste und Karte ohne Legende zusammenfinden. Die gewählte Zeile trägt
+   den Zustand der gedrückten Taste. */
+.rf-kandidaten { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.rf-kandidaten:empty { display: none; }
+.rf-kandidat {
+  display: flex; align-items: center; gap: 9px; min-height: 44px; width: 100%;
+  padding: 6px 9px; text-align: left; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--linie-stark); border-radius: var(--radius-klein);
+  background: var(--flaeche); color: var(--text);
+}
+.rf-kandidat:hover { border-color: var(--thw-hell); }
+.rf-kandidat.an { background: var(--thw-blass); border-color: var(--thw); color: var(--thw); }
+.rf-kandidat-nr {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #7c2e9e; color: #fff; font-weight: 700; font-size: 12px;
+}
+.rf-kandidaten .rf-anlegen { align-self: flex-start; margin-top: 4px; }
+
+/* Die Marke auf der Karte: dasselbe Violett wie die Fläche, dieselbe Nummer
+   wie die Liste. Weißer Rand, damit sie auch über der kräftig gefärbten
+   Schnittfläche eine Kante hat. */
+.zwischen-marke span {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; box-sizing: border-box;
+  background: #7c2e9e; color: #fff; border: 2px solid #fff; font-weight: 700;
+  font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,.4); cursor: pointer;
+}
+
 /* -- Sprechreichweite: ein Befund, keine Bestellmenge. Die Vorschrift nennt
    eine Erfahrungsspanne, deshalb drei Tonlagen statt einer Zahl. Aufbau wie
    beim Querschnitt darüber – Kasten mit tragender Kante links –, nur ohne

@@ -498,10 +498,16 @@ export function zeichneFunksicht(karte, e) {
   c.width = e.spalten; c.height = e.zeilen;
   const ctx = c.getContext('2d');
   const bild = ctx.createImageData(e.spalten, e.zeilen);
+  /* Zwei Deckungen, ein Farbton – wie bei den Zonen der Ausbreitung unten und
+     aus demselben Grund: frei und eingeschränkt sind ein Sachverhalt in zwei
+     Graden, keine zwei Sachverhalte. Verdeckt bleibt ungefärbt. Ältere
+     Befunde ohne Stufen (nur `sicht`) werden weiter gezeichnet. */
+  const stufen = e.stufen;
   for (let i = 0; i < e.sicht.length; i++) {
     const j = i * 4;
-    if (e.sicht[i]) {
-      bild.data[j] = 124; bild.data[j + 1] = 46; bild.data[j + 2] = 158; bild.data[j + 3] = 112;
+    const deckung = e.sicht[i] ? 112 : (stufen && stufen[i] === 2 ? 44 : 0);
+    if (deckung) {
+      bild.data[j] = 124; bild.data[j + 1] = 46; bild.data[j + 2] = 158; bild.data[j + 3] = deckung;
     }
   }
   ctx.putImageData(bild, 0, 0);
@@ -513,6 +519,62 @@ export function zeichneFunksicht(karte, e) {
   const el = ebene.getElement();
   if (el) el.style.imageRendering = 'pixelated';
   return ebene;
+}
+
+// ---------------------------------------------------------- Zwischenstandort
+
+/**
+ * Die Fläche, von der aus beide Aufbauplätze einer Richtfunkstrecke in freier
+ * Funksicht liegen, samt den nummerierten Kandidaten darin. `e` kommt aus
+ * `zwischenstandorte()` in richtfunkrelais.js. Zurück kommt eine Gruppe, die
+ * als Ganzes wieder von der Karte zu nehmen ist; `aufWahl(k)` wird gerufen,
+ * wenn jemand eine Marke antippt.
+ *
+ * Die Fläche ist kräftiger als eine einzelne Funksicht, weil sie eine
+ * schärfere Aussage trägt: nicht „von hier aus sichtbar“, sondern „von beiden
+ * Enden aus“. Die Marken liegen in der Ebene der Griffe, damit sie über der
+ * Strecke antippbar bleiben.
+ */
+export function zeichneZwischenraum(karte, e, aufWahl = () => {}) {
+  const gruppe = L.layerGroup();
+  const c = document.createElement('canvas');
+  c.width = e.spalten; c.height = e.zeilen;
+  const ctx = c.getContext('2d');
+  const bild = ctx.createImageData(e.spalten, e.zeilen);
+  for (let i = 0; i < e.beide.length; i++) {
+    if (!e.beide[i]) continue;
+    const j = i * 4;
+    bild.data[j] = 124; bild.data[j + 1] = 46; bild.data[j + 2] = 158; bild.data[j + 3] = 150;
+  }
+  ctx.putImageData(bild, 0, 0);
+  const [sw, no] = e.ecken;
+  const flaeche = L.imageOverlay(c.toDataURL('image/png'),
+    [[sw.lat, sw.lng], [no.lat, no.lng]],
+    { pane: 'fbp-schatten', interactive: false,
+      alt: 'Fläche mit freier Funksicht zu beiden Aufbauplätzen' });
+  gruppe.addLayer(flaeche);
+  e.kandidaten.forEach((k, i) => {
+    const marke = L.marker([k.lat, k.lng], {
+      pane: 'fbp-griffe',
+      icon: L.divIcon({
+        className: 'zwischen-marke',
+        html: `<span>${i + 1}</span>`,
+        iconSize: [26, 26], iconAnchor: [13, 13]
+      }),
+      title: `Zwischenstandort ${i + 1}`,
+      keyboard: false
+    });
+    marke.on('click', ev => {
+      L.DomEvent.stop(ev);
+      if (ev.originalEvent) ev.originalEvent._fbpVerbraucht = true;
+      aufWahl(k, i);
+    });
+    gruppe.addLayer(marke);
+  });
+  gruppe.addTo(karte);
+  const el = flaeche.getElement();
+  if (el) el.style.imageRendering = 'pixelated';
+  return gruppe;
 }
 
 // ---------------------------------------------------------------- Ausbreitung
