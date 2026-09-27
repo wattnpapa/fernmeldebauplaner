@@ -1979,6 +1979,20 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .hilfe ol, .hilfe ul { padding-left: 20px; margin: .3em 0; }
 .tasten-liste { list-style: none; padding: 0; }
 .tasten-liste li { margin: .35em 0; }
+/* -- Ortssuche. Die Treffer sind Knöpfe auf Handschuhmaß mit Kurzform oben
+   und der ganzen Anschrift darunter – zwei gleichnamige Straßen unterscheiden
+   sich erst am Ort, und der steht in der langen Zeile. */
+.ort-treffer { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 4px; }
+.ort-treffer-zeile {
+  display: flex; flex-direction: column; gap: 2px; min-height: 44px; width: 100%;
+  padding: 6px 9px; text-align: left; cursor: pointer;
+  border: 1px solid var(--linie-stark); border-radius: var(--radius-klein);
+  background: var(--flaeche); color: var(--text);
+}
+.ort-treffer-zeile:hover { border-color: var(--thw-hell); }
+.ort-treffer-zeile b { font-size: 13px; }
+.ort-treffer-zeile span { font-size: 11.5px; color: var(--text-schwach); }
+
 .ks-haken { flex-direction: row; align-items: center; gap: 8px; }
 .ks-haken input { width: auto; accent-color: var(--thw); }
 

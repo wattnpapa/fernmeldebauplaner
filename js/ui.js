@@ -33,6 +33,7 @@ import {
   neuerFunkstandort
 } from './richtfunk.js';
 import { zwischenstandorte, zwischenText, kandidatText } from './richtfunkrelais.js';
+import { ortSuchen, trefferKurz, ORTSSUCHE_QUELLE } from './ortssuche.js';
 import { hoeheAn, profil, kachelbedarf, kachelfehlerVergessen } from './hoehe.js';
 import { oberflaechenprofil, QUELLTEXT, ARTTEXT } from './oberflaeche.js';
 import {
@@ -1702,6 +1703,28 @@ function richtfunkGruppe(s, frisch) {
       { platzhalter: 'z. B. Heros Musterstadt 21' }));
     spalte.appendChild(feld('Aufbauplatz / Adresse', ort.platz,
       w => schreib(() => { ort.platz = w; }), { typ: 'textarea', zeilen: 2 }));
+    /* Die Adresse steht schon im Feld – von hier aus den Aufbauplatz auf die
+       Karte zu bringen ist ein Knopf, kein zweites Formular. Er geht nach
+       außen (Nominatim) und deshalb nur auf Tipp, nie beim Tippen. */
+    spalte.appendChild(knopf('Adresse suchen, Platz setzen', () => {
+      const text = (ort.platz || '').trim();
+      if (!text) return hinweis('Erst eine Adresse oder einen Ortsnamen ins Feld schreiben.');
+      ortsDialog(text, tr => {
+        store.aendern(p => {
+          const st = p.strecken.find(x => x.id === s.id);
+          if (!st) return;
+          const pt = neuerPunkt(tr.lat, tr.lng);
+          if (st.punkte.length === 0) st.punkte.push(pt);
+          else if (st.punkte.length === 1) i === 0 ? st.punkte.unshift(pt) : st.punkte.push(pt);
+          else {
+            const ziel = i === 0 ? st.punkte[0] : st.punkte[st.punkte.length - 1];
+            ziel.lat = tr.lat; ziel.lng = tr.lng;
+          }
+        }, 'strecke');
+        ctx.karte.setView([tr.lat, tr.lng], Math.max(ctx.karte.getZoom(), 15));
+        hinweis(`${titel} gesetzt: ${trefferKurz(tr)}`);
+      });
+    }, 'klein'));
 
     const masse = el('div', 'feld-paar');
     masse.append(
@@ -6020,6 +6043,51 @@ function loeschDialog(pr) {
   pruefen();
 }
 
+// ---------------------------------------------------------------- Ortssuche
+
+/* Die Trefferliste ist an zwei Stellen dieselbe: im Koordinatendialog und am
+   Aufbauplatz. Jeder Treffer ist ein Knopf auf Handschuhmaß; die Quelle steht
+   darunter, weil die Lizenz von OpenStreetMap die Nennung verlangt. */
+function trefferListe(ziel, treffer, aufWahl) {
+  ziel.innerHTML = '';
+  if (!treffer.length) {
+    ziel.innerHTML = '<p class="klein"><b class="fehlertext">Nichts gefunden.</b> Ortsname und Straße anders schreiben oder den Ort auf der Karte antippen.</p>';
+    return;
+  }
+  const liste = el('div', 'ort-treffer');
+  treffer.forEach(tr => {
+    const b = el('button', 'ort-treffer-zeile');
+    b.type = 'button';
+    b.innerHTML = `<b>${escapeHtml(trefferKurz(tr))}</b><span>${escapeHtml(tr.name)}</span>`;
+    b.onclick = () => aufWahl(tr);
+    liste.appendChild(b);
+  });
+  ziel.appendChild(liste);
+  ziel.appendChild(el('p', 'klein', escapeHtml(ORTSSUCHE_QUELLE)));
+}
+
+/* Suche anstoßen und die Treffer in `ziel` schreiben; Fehler landen dort
+   ebenfalls, nicht nur in der Pille – der Dialog steht offen, die Pille geht. */
+function ortsSucheIn(ziel, text, aufWahl) {
+  ziel.innerHTML = '<p class="klein">Wird bei Nominatim gesucht …</p>';
+  return ortSuchen(text)
+    .then(tr => trefferListe(ziel, tr, aufWahl))
+    .catch(() => {
+      ziel.innerHTML = '<p class="klein"><b class="fehlertext">Die Ortssuche war nicht zu erreichen.</b> Ohne Netz bleibt nur der Tipp auf die Karte.</p>';
+    });
+}
+
+/** Dialog mit Trefferliste zu einem Suchtext; `aufWahl(treffer)` schließt ihn. */
+function ortsDialog(text, aufWahl) {
+  const box = el('div');
+  box.innerHTML = `<p class="klein">Gesucht: <b>${escapeHtml(text)}</b> – der Suchtext geht dafür an Nominatim (OpenStreetMap).</p><div id="od-treffer"></div>`;
+  dialog({ titel: 'Ort suchen', inhalt: box, fuss: [{ text: 'Abbrechen' }] });
+  ortsSucheIn(box.querySelector('#od-treffer'), text, tr => {
+    schliesseDialog();
+    aufWahl(tr);
+  });
+}
+
 // ---------------------------------------------------------------- Koordinatensuche
 
 /* `punktAnfuegen` kommt aus app.js, solange eine Strecke gezeichnet wird: die
@@ -6033,7 +6101,8 @@ export function koordinatenSuche(punktAnfuegen = null) {
     <label class="feld"><span class="feld-titel">Koordinate</span>
       <input type="text" id="ks-eingabe" placeholder="32U LB 56560 45282  ·  50.9413, 6.9583  ·  N 50 56.478 O 006 57.498">
     </label>
-    <p class="klein" id="ks-status">MGRS, Dezimalgrad, Grad/Dezimalminuten und Grad/Min./Sek. werden erkannt.</p>
+    <p class="klein" id="ks-status">MGRS, Dezimalgrad, Grad/Dezimalminuten und Grad/Min./Sek. werden erkannt – oder eine Adresse, dann „Adresse suchen“.</p>
+    <div id="ks-treffer"></div>
     <label class="feld ks-haken"><input type="checkbox" id="ks-marke"><span class="feld-titel">Zusätzlich ein taktisches Zeichen dort setzen</span></label>`;
 
   const lesen = () => {
@@ -6045,6 +6114,22 @@ export function koordinatenSuche(punktAnfuegen = null) {
 
   const fuss = [
     { text: punktAnfuegen ? 'Schließen' : 'Abbrechen' },
+    /* Der Suchtext geht nach außen – deshalb ein eigener Knopf und keine
+       stille Suche, sobald die Eingabe keine Koordinate ist. Der Treffer wird
+       als Dezimalkoordinate ins Feld geschrieben: danach gilt derselbe Weg
+       wie für eine getippte Koordinate, Anspringen oder Anfügen. */
+    { text: 'Adresse suchen', tun: () => {
+        const eingabe = box.querySelector('#ks-eingabe');
+        const text = eingabe.value.trim();
+        if (!text) { box.querySelector('#ks-status').innerHTML = '<b class="fehlertext">Erst eine Adresse eingeben.</b>'; return false; }
+        ortsSucheIn(box.querySelector('#ks-treffer'), text, tr => {
+          eingabe.value = `${tr.lat.toFixed(6)}, ${tr.lng.toFixed(6)}`;
+          box.querySelector('#ks-treffer').innerHTML = '';
+          box.querySelector('#ks-status').innerHTML =
+            `<b>${escapeHtml(trefferKurz(tr))}</b> – ${toMGRS(tr.lat, tr.lng, 5)}. Jetzt anspringen${punktAnfuegen ? ' oder als Trassenpunkt anfügen' : ''}.`;
+        });
+        return false;
+      } },
     { text: 'Anspringen', primaer: !punktAnfuegen, tun: () => {
         const k = lesen();
         if (!k) return false;

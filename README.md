@@ -593,6 +593,7 @@ js/cog.js             Einzelne Kacheln aus einem Cloud-Optimized GeoTIFF lesen
 js/funkrechnung.js    Geometrie der Funkstrecke: Fresnelzone, Erdstich, Masthöhe
 js/funksicht.js       Fläche mit freier Funksicht für die WLAN-Richtfunkstrecke
 js/richtfunkrelais.js Zwischenstandort: Schnittmenge zweier Funksichtflächen, Kandidaten
+js/ortssuche.js       Adresse oder Ortsname in eine Koordinate wandeln (Nominatim)
 js/relais.js          Relaisstellen des Sprechfunks auf der Karte, Flächen und Befunde
 js/bosfunk.js         Bänder des BOS-Sprechfunks, λ/4-Rundstrahler, Funkhorizont
 js/ausbreitung.js     Ausbreitung und Funkschatten: Sichtlinie und Beugung, drei Zonen
@@ -761,8 +762,8 @@ eingerichtete Verbindung wird dafür weder ein Modul eines Anbieters geladen noc
 Nutzer und seinem Ortsverband; der Einrichtungsgang sagt das, bevor etwas eingerichtet
 wird.
 
-Vier Verbindungen gehen nach außen; drei davon ohne Planungsinhalte, die vierte
-mit dem Verlauf einer Funkstrecke:
+Fünf Verbindungen gehen nach außen; zwei davon ohne Planungsinhalte, die anderen
+mit dem Verlauf einer Strecke oder dem Text einer Ortssuche:
 
 - **Kartenkacheln** holt der Browser unmittelbar bei den Anbietern (BKG, OpenStreetMap,
   OpenTopoMap, Esri, Landesvermessungen). Sie sehen dabei IP-Adresse und angeforderten
@@ -787,7 +788,10 @@ mit dem Verlauf einer Funkstrecke:
   beim Kartenanbieter auf einige hundert Meter genau abzulesen. Übertragen werden dabei
   nur Kachelnummern, nicht die Planung. Mitnehmen lassen sich deshalb auch nur die
   Karten des BKG, deren Lizenz das Vervielfältigen erlaubt.
-  Diese drei Anfragen sind die einzigen, die etwas über die geplanten Orte verraten;
+- **Ortssuche** – „Adresse suchen“ im Koordinatendialog oder „Adresse suchen, Platz
+  setzen“ am Aufbauplatz einer Funkstrecke schickt den Suchtext an Nominatim
+  (OpenStreetMap Foundation). Nur auf Knopfdruck, nie beim Tippen.
+  Diese vier Anfragen sind die einzigen, die etwas über die geplanten Orte verraten;
   `datenschutz.html` sagt das ausdrücklich.
 
 - **Reichweitenmessung** mit [GoatCounter](https://www.goatcounter.com/): ein anonymer
