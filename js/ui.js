@@ -5996,10 +5996,25 @@ export function zeichneProjektReiter() {
      <a href="autor/" target="_blank" rel="noopener">Über den Autor</a>.`));
 }
 
+/* Die Liste hier ist der Browserspeicher dieses Geräts, nicht der angebundene
+   Speicher – der lädt nur hinauf und legt nichts still an (siehe den Kopf von
+   abgleich.js). Nach einem geleerten Browser sieht das wie Datenverlust aus,
+   obwohl alles noch in der Dropbox liegt. Deshalb meldet cloud-ui.js hier
+   einen Öffner für seine Liste an; ui.js selbst weiß weiter nichts von der
+   Anbindung und lädt sie auch nicht mit. */
+let speicherlisteOeffner = null;
+export function speicherlisteAnmelden(fn) { speicherlisteOeffner = fn; }
+
 export function projektDialog() {
   const liste = projektListe();
+  const amSpeicher = speicherlisteOeffner && speicherlisteOeffner();
   const box = el('div', 'projektliste');
-  if (!liste.length) box.appendChild(el('p', 'klein', 'Noch keine gespeicherten Planungen.'));
+  if (!liste.length) {
+    box.appendChild(el('p', 'klein', amSpeicher
+      ? `In diesem Browser liegt noch keine Planung. Was am angebundenen Speicher
+         liegt, steht unter „Planungen am Speicher“ und lässt sich von dort holen.`
+      : 'Noch keine gespeicherten Planungen.'));
+  }
 
   for (const pr of liste) {
     /* Die schon offene Planung lässt sich nicht noch einmal öffnen. Ihr Knopf
@@ -6031,6 +6046,9 @@ export function projektDialog() {
     titel: 'Gespeicherte Planungen', inhalt: box, breit: true,
     fuss: [
       { text: 'Aus Datei laden', tun: () => { document.getElementById('datei-import').click(); } },
+      ...(amSpeicher
+        ? [{ text: 'Planungen am Speicher …', tun: () => { amSpeicher(); return false; } }]
+        : []),
       { text: 'Schließen', primaer: true }
     ]
   });

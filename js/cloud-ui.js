@@ -9,7 +9,7 @@
    gesichert, und es ist es nicht – das ist schlimmer als gar keine Anbindung,
    weil er sich dann auf sie verlässt. */
 
-import { dialog, schliesseDialog, hinweis } from './ui.js';
+import { dialog, schliesseDialog, hinweis, speicherlisteAnmelden } from './ui.js';
 import { escapeHtml } from './strecken.js';
 import { store } from './state.js';
 import {
@@ -116,6 +116,8 @@ export function cloudUiStarten() {
   });
   const knopfEl = $('#cloudstatus');
   if (knopfEl) knopfEl.onclick = speicherDialog;
+  // Erst mit bestehender Verbindung: ohne sie gäbe der Knopf nur eine leere Liste
+  speicherlisteAnmelden(() => verbindung() ? speicherlisteDialog : null);
   standZeigen(abgleichLage());
 }
 

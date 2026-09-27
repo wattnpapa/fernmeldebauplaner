@@ -72,7 +72,17 @@ function db() {
         antrag.result.createObjectStore(LAGER);
       }
     };
-    antrag.onsuccess = () => fertig(antrag.result);
+    antrag.onsuccess = () => {
+      /* Der Browser schließt die Verbindung von sich aus – wenn der Nutzer die
+         Website-Daten löscht oder ein anderes Fenster die Datenbank anhebt.
+         Die gemerkte Verbindung bliebe sonst stehen, und jeder Vorgang darauf
+         scheiterte mit „Can't start a transaction on a closed database“, bis
+         die Seite neu geladen wird. Vergessen heißt: der nächste Zugriff
+         öffnet neu. */
+      antrag.result.onclose = () => { lauf = null; };
+      antrag.result.onversionchange = () => { antrag.result.close(); lauf = null; };
+      fertig(antrag.result);
+    };
     antrag.onerror = () => fehler(new Error('Speicher des Browsers nicht verfügbar.'));
     antrag.onblocked = () => fehler(new Error('Speicher ist von einem anderen Fenster belegt.'));
   });
@@ -81,9 +91,18 @@ function db() {
 }
 
 async function imLager(modus, tun) {
-  const verbindung = await db();
+  let verbindung = await db();
+  let vorgang;
+  try { vorgang = verbindung.transaction(LAGER, modus); }
+  catch (e) {
+    /* Zwischen Schließen und dem `close`-Ereignis liegt ein Moment; wer da
+       zugreift, trifft noch die alte Verbindung. Einmal frisch öffnen. */
+    if (e.name !== 'InvalidStateError') throw e;
+    lauf = null;
+    verbindung = await db();
+    vorgang = verbindung.transaction(LAGER, modus);
+  }
   return new Promise((fertig, fehler) => {
-    const vorgang = verbindung.transaction(LAGER, modus);
     let ergebnis;
     try { ergebnis = tun(vorgang.objectStore(LAGER)); } catch (e) { return fehler(e); }
     vorgang.oncomplete = () => fertig(ergebnis instanceof IDBRequest ? ergebnis.result : ergebnis);
