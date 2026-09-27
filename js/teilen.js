@@ -315,8 +315,13 @@ export function verschlanken(projekt) {
 
     einsatzabschnitte: (p.einsatzabschnitte || []).map((a, i) => ({
       ...entruempeln(a,
-        { id: null, name: '', leiter: '', farbe: '', bemerkung: '', sichtbar: true }, IMMER),
-      id: abschnitte.get(a.id) || 'a' + (i + 1)
+        { id: null, name: '', leiter: '', farbe: '', bemerkung: '', sichtbar: true,
+          uebergeordnet: null }, IMMER),
+      id: abschnitte.get(a.id) || 'a' + (i + 1),
+      /* Der Elternverweis reist als dieselbe kurze Kennung, unter der der
+         Abschnitt darüber im Link steht – `migrieren()` löst ihn beim
+         Empfänger auf und legt einen Verweis ins Leere auf die oberste Ebene. */
+      ...(a.uebergeordnet ? { uebergeordnet: verweis(abschnitte, a.uebergeordnet) } : {})
     })),
     zeichengruppen: (p.zeichengruppen || []).map((g, i) => ({
       ...entruempeln(g, { id: null, name: '', farbe: '', bemerkung: '', sichtbar: true }, IMMER),

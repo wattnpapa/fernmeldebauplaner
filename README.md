@@ -108,6 +108,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 **Einsatzabschnitte** (freiwillig)
 - Strecken und taktische Zeichen zu benannten Einsatzabschnitten mit Leitung und
   eigener Farbe zusammenfassen
+- Bis zu vier Ebenen tief gliedern – Einsatzabschnitt, Unterabschnitt und so fort,
+  wie die Führungsorganisation des Einsatzes; Sammelauftrag, Lagekarte und Datei
+  eines Abschnitts nehmen seine Unterabschnitte mit
 - Nicht zugeteilte Zeichen gehören allen: sie erscheinen in jedem Abschnitt, auf
   dessen Karten und in dessen Datei – das gemeinsame Lagebild bleibt überall stehen
 - Ganze Abschnitte auf der Karte ein- und ausblenden; der Schalter jedes einzelnen
@@ -451,7 +454,9 @@ das auch. Zurück geht es über denselben Knopf, der dann „Planung“ heißt.
 Die Zuteilung steht in jeder geöffneten Strecke, in jedem geöffneten taktischen Zeichen
 und gesammelt im Abschnitt selbst (Knopf `⋯` an der Abschnittszeile); dort liegen auch
 Sammel-Bauauftrag und Teilexport. Das Auge an der Abschnittszeile blendet alle seine
-Strecken und Zeichen zusammen aus.
+Strecken und Zeichen zusammen aus. Im geöffneten Abschnitt legt „+ Unterabschnitt“
+eine Ebene darunter an, „Gehört zu“ hängt ihn um – bis zu vier Ebenen; ein aufgelöster
+Abschnitt gibt Strecken und Unterabschnitte an den Abschnitt darüber.
 
 **Zeichengruppen:** Im Reiter „Taktische Zeichen“ über „+ Zeichengruppe“ eine anlegen.
 Die Zuteilung steht in jedem geöffneten Zeichen und gesammelt in der Gruppe selbst

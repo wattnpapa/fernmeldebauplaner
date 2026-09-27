@@ -1,6 +1,8 @@
 // zeichen.js – taktische Zeichen als Kartenmarker
 
-import { store, neuesZeichen, zeichenSichtbar, zeichengruppeZeigt, abschnittGewaehlt } from './state.js';
+import {
+  store, neuesZeichen, zeichenSichtbar, zeichengruppeZeigt, abschnittGewaehlt, aufEinerLinie
+} from './state.js';
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
 import { signatur } from './signatur.js';
@@ -26,7 +28,9 @@ export function gezeichneteZeichen(p, { nurAbschnitt, nurAbschnitte, abschnittSc
        und das seiner Gruppe gelten weiter, die sind oben schon geprüft. */
     const angefordert = !abschnittSchaltet;
     if (!angefordert && !zeichenSichtbar(p, z)) return false;
-    return !(nurAbschnitt && z.abschnitt && z.abschnitt !== nurAbschnitt);
+    /* Angefordert für einen Abschnitt zählt sein ganzer Ast und alles darüber –
+       der Nachbarabschnitt nicht (`aufEinerLinie` in state.js). */
+    return !nurAbschnitt || aufEinerLinie(p, nurAbschnitt, z.abschnitt);
   });
 }
 

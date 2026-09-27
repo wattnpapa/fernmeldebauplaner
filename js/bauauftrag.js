@@ -3,7 +3,8 @@
 //                 (bis A0 und in freiem Maß) und die Baudokumentation des Trupps
 
 import {
-  store, punktartById, kabelById, VERLEGEARTEN, abschnittById, abschnittGewaehlt, streckenIm
+  store, punktartById, kabelById, VERLEGEARTEN, abschnittById, abschnittGewaehlt, streckenUnter,
+  abschnitteGeordnet, abschnittTiefe, abschnittPfad, abschnittBaum, aufEinerLinie
 } from './state.js';
 import {
   StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen
@@ -271,7 +272,7 @@ export function oeffneSammeldruck(aid) {
   const ea = ganzeplanung ? null : abschnittById(p, aid);
   if (!ganzeplanung && aid && !ea) return;
 
-  const quelle = ganzeplanung ? p.strecken : streckenIm(p, aid);
+  const quelle = ganzeplanung ? p.strecken : streckenUnter(p, aid);
   const strecken = sortiertNachAbschnitt(p, quelle.filter(s => s.punkte.length >= 2));
   if (!strecken.length) {
     hinweis(quelle.length
@@ -296,7 +297,7 @@ export function oeffneLagekarte(aid) {
   const ea = ganzeplanung ? null : abschnittById(p, aid);
   if (!ganzeplanung && aid && !ea) return;
 
-  const quelle = ganzeplanung ? p.strecken : streckenIm(p, aid);
+  const quelle = ganzeplanung ? p.strecken : streckenUnter(p, aid);
   const strecken = sortiertNachAbschnitt(p, quelle.filter(s => s.punkte.length >= 2));
   const auftrag = {
     modus: 'lage', strecken, abschnitt: ea,
@@ -341,7 +342,7 @@ function lageFlaechen(auftrag) {
   const aid = auftrag.abschnitt ? auftrag.abschnitt.id : undefined;
   return (p.flaechen || []).filter(f =>
     f.sichtbar !== false && abschnittGewaehlt(auftrag.auswahl, f) &&
-    !(aid && f.abschnitt && f.abschnitt !== aid));
+    (!aid || aufEinerLinie(p, aid, f.abschnitt)));
 }
 
 /** Und die Relaisstellen – dieselbe Auswahl, die auch die Kartenebene zeichnet. */
@@ -353,10 +354,11 @@ function lageRelais(auftrag) {
   });
 }
 
-/** Reihenfolge des Sammeldrucks: nach Einsatzabschnitten in der Reihenfolge
- *  der Planung, die nicht zugeteilten Strecken zuletzt. */
+/** Reihenfolge des Sammeldrucks: nach Einsatzabschnitten in Baumfolge – jeder
+ *  Abschnitt, dann seine Unterabschnitte –, die nicht zugeteilten Strecken
+ *  zuletzt. */
 function sortiertNachAbschnitt(p, strecken) {
-  const rang = new Map((p.einsatzabschnitte || []).map((a, i) => [a.id, i]));
+  const rang = new Map(abschnitteGeordnet(p).map((a, i) => [a.id, i]));
   return [...strecken].sort((a, b) => {
     const ra = rang.has(a.abschnitt) ? rang.get(a.abschnitt) : Number.MAX_SAFE_INTEGER;
     const rb = rang.has(b.abschnitt) ? rang.get(b.abschnitt) : Number.MAX_SAFE_INTEGER;
@@ -368,7 +370,7 @@ function sortiertNachAbschnitt(p, strecken) {
 /** Überschrift des ganzen Dokuments – sie steht im Kopf jedes Blattes. */
 function auftragTitel(auftrag) {
   if (auftrag.modus === 'einzel' || auftrag.modus === 'baudoku') return auftrag.strecken[0].name;
-  if (auftrag.umfang === 'abschnitt') return auftrag.abschnitt.name;
+  if (auftrag.umfang === 'abschnitt') return abschnittPfad(store.projekt, auftrag.abschnitt.id);
   if (auftrag.umfang === 'ohne') return 'Strecken ohne Einsatzabschnitt';
   return store.projekt.name;
 }
@@ -502,8 +504,9 @@ function oeffneDruckansicht(auftrag) {
        steht. Deshalb auch vor den Inhalten – erst die Wahl des Abschnitts
        entscheidet, welche Strecken und Relaisstellen es überhaupt gibt. */
     ...(ausschnittWaehlbar(auftrag) ? [gruppe('Einsatzabschnitte', [
-      ...(store.projekt.einsatzabschnitte || [])
-        .map(a => abschnittHaken(a.name, a.id, auftrag, opt, neuAufbau)),
+      ...abschnitteGeordnet(store.projekt)
+        .map(a => abschnittHaken(a.name, a.id, auftrag, opt, neuAufbau,
+          abschnittTiefe(store.projekt, a.id))),
       /* Das gemeinsame Lagebild – Führungsstelle, Bereitstellungsraum – ist
          keinem Abschnitt zugeteilt und deshalb eine Wahl für sich. */
       abschnittHaken('Ohne Abschnitt', OHNE_ABSCHNITT, auftrag, opt, neuAufbau),
@@ -803,6 +806,14 @@ function abschnittAuswahl(auftrag, opt) {
   if (!ausschnittWaehlbar(auftrag)) return null;
   const aus = new Set(opt.abschnitteAus || []);
   if (!aus.size) return null;
+  /* Ein abgewählter Abschnitt nimmt seinen Ast mit: wer Nord vom Blatt nimmt,
+     will dessen Unterabschnitte nicht als Reste darauf stehen sehen. Die
+     Haken der Unterabschnitte bleiben, wie sie waren – wird Nord wieder
+     angehakt, stehen sie so da wie zuvor. */
+  for (const k of [...aus]) {
+    if (k === OHNE_ABSCHNITT) continue;
+    abschnittBaum(store.projekt, k).forEach(u => aus.add(u));
+  }
   const alle = [...(store.projekt.einsatzabschnitte || []).map(a => a.id), null];
   const drauf = alle.filter(k => !aus.has(k === null ? OHNE_ABSCHNITT : k));
   return drauf.length === alle.length ? null : new Set(drauf);
@@ -810,7 +821,7 @@ function abschnittAuswahl(auftrag, opt) {
 
 /** Die Namen der gewählten Abschnitte für die Kopfdaten */
 function auswahlText(p, auswahl) {
-  const namen = (p.einsatzabschnitte || []).filter(a => auswahl && auswahl.has(a.id)).map(a => a.name);
+  const namen = abschnitteGeordnet(p).filter(a => auswahl && auswahl.has(a.id)).map(a => a.name);
   if (auswahl && auswahl.has(null)) namen.push('ohne Abschnitt');
   return namen.join(', ');
 }
@@ -851,9 +862,12 @@ function steuerTitelHTML(auftrag) {
 /* Ein Abschnitt auf dem Blatt oder nicht. Gespeichert wird die Abwahl (siehe
    `abschnitteAus`), angezeigt der gewohnte Haken: abgehakt heißt „steht
    darauf“. */
-function abschnittHaken(titel, kennung, auftrag, opt, aendern) {
+function abschnittHaken(titel, kennung, auftrag, opt, aendern, tiefe = 1) {
   const el = document.createElement('label');
   el.className = 'ds-feld ds-haken';
+  /* Unterabschnitte rücken ein wie in der Seitenleiste – flach untereinander
+     wäre nicht zu sehen, dass der Haken an „Nord“ auch sie vom Blatt nimmt. */
+  if (tiefe > 1) el.style.paddingLeft = `${(tiefe - 1) * 14}px`;
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.onchange = () => {
@@ -867,7 +881,15 @@ function abschnittHaken(titel, kennung, auftrag, opt, aendern) {
     aendern();
   };
   el.append(cb, Object.assign(document.createElement('span'), { textContent: titel }));
-  el.aktualisieren = () => { cb.checked = !(opt.abschnitteAus || []).includes(kennung); };
+  el.aktualisieren = () => {
+    cb.checked = !(opt.abschnitteAus || []).includes(kennung);
+    /* Hängt ein Abschnitt darüber am abgewählten Haken, ist dieser hier ohne
+       Wirkung – er zeigt es, statt einen Haken vorzutäuschen, der zieht. */
+    const auswahl = abschnittAuswahl(auftrag, opt);
+    const entzogen = kennung !== OHNE_ABSCHNITT && cb.checked && auswahl && !auswahl.has(kennung);
+    cb.disabled = !!entzogen;
+    el.classList.toggle('gesperrt', !!entzogen);
+  };
   el.aktualisieren();
   return el;
 }
@@ -880,7 +902,8 @@ function ausschnittFeld(auftrag, opt, aendern) {
   el.innerHTML = '<span>Eingemittet auf</span>';
   const sel = document.createElement('select');
   const werte = [['', 'ganze Auswahl'],
-    ...(store.projekt.einsatzabschnitte || []).map(a => [a.id, a.name])];
+    ...abschnitteGeordnet(store.projekt)
+      .map(a => [a.id, '\u2003'.repeat(abschnittTiefe(store.projekt, a.id) - 1) + a.name])];
   werte.forEach(([w, t]) => {
     const o = document.createElement('option');
     o.value = w; o.textContent = t; o.selected = (opt.ausschnittAbschnitt || '') === w;
@@ -1556,7 +1579,9 @@ function eigeneEcken(auftrag, opt, aid, teile = null) {
     zeichen: lageZeichen(auftrag), flaechen: lageFlaechen(auftrag),
     relaisstellen: lageRelais(auftrag)
   };
-  const dabei = x => !aid || x.abschnitt === aid;
+  /* Eingemittet auf einen Abschnitt heißt: auf seinen ganzen Ast. */
+  const ast = aid ? abschnittBaum(store.projekt, aid) : null;
+  const dabei = x => !ast || ast.has(x.abschnitt);
   const relaisstellen = t.relaisstellen.filter(dabei);
   return [
     ...auftrag.strecken.filter(dabei).flatMap(s => s.punkte.map(x => [x.lat, x.lng])),
@@ -1840,7 +1865,8 @@ function stammHTML(p, s, k) {
   return stammFelderHTML([
     ['Einsatz / Übung', p.kopf.einsatz],
     ['Ort / Abschnitt', p.kopf.ort],
-    ...(ea ? [['Einsatzabschnitt', ea.leiter ? `${ea.name} (${ea.leiter})` : ea.name]] : []),
+    ...(ea ? [['Einsatzabschnitt', ea.leiter
+      ? `${abschnittPfad(p, ea.id)} (${ea.leiter})` : abschnittPfad(p, ea.id)]] : []),
     ['Auftrag an', s.trupp || 'Fernmeldebautrupp'],
     ['Erstellt von', p.kopf.ersteller],
     ['Leitungsart', k.kabel.name],
@@ -1860,7 +1886,7 @@ function sammelStammHTML(p, auftrag, opt = null) {
     ['Ort / Abschnitt', p.kopf.ort],
     ['Planung', p.name],
     ...(ea
-      ? [['Einsatzabschnitt', ea.name], ['Leitung Einsatzabschnitt', ea.leiter]]
+      ? [['Einsatzabschnitt', abschnittPfad(p, ea.id)], ['Leitung Einsatzabschnitt', ea.leiter]]
       /* Steht nur ein Teil der Abschnitte auf dem Blatt, gehören ihre Namen in
          die Kopfdaten: „alle Strecken der Planung“ wäre dort schlicht
          falsch, und der Leser hat nichts, woran er es merkt. */
@@ -1868,7 +1894,7 @@ function sammelStammHTML(p, auftrag, opt = null) {
         ? [['Einsatzabschnitte', auswahlText(p, auftrag.auswahl)]]
         : [['Umfang', auftrag.umfang === 'ohne'
             ? 'Strecken ohne Einsatzabschnitt' : 'alle Strecken der Planung']]),
-    ...(mitte ? [['Eingemittet auf', mitte.name]] : []),
+    ...(mitte ? [['Eingemittet auf', abschnittPfad(p, mitte.id)]] : []),
     ['Erstellt von', p.kopf.ersteller]
   ]);
 }
@@ -2050,7 +2076,7 @@ function verzeichnisZeilenHTML(auftrag, ges) {
       const ea = abschnittById(p, aid);
       const teil = gesamtKennzahlen(auftrag.strecken.filter(x => (x.abschnitt || null) === aid));
       zeilen.push(`<tr class="vz-gruppe gruppenzeile"><td colspan="9">
-        <b>${escapeHtml(ea ? ea.name : 'Ohne Einsatzabschnitt')}</b>${
+        <b>${escapeHtml(ea ? abschnittPfad(p, ea.id) : 'Ohne Einsatzabschnitt')}</b>${
           ea && ea.leiter ? ' · ' + escapeHtml(ea.leiter) : ''}
         <span class="vz-teilsumme">${streckenzahl(teil.anzahl)} ·
           Trasse ${formatLaenge(teil.trasse)} · Bedarf ${formatLaenge(teil.bedarf)} ·

@@ -6,6 +6,9 @@ import {
   neueZeichengruppe, zeichengruppeById, zeichenInGruppe,
   streckenIm, zeichenIm, zeichenSichtbar, streckeSichtbar, bilderBelegung, bildmarkenAn,
   flaechenIm, flaecheSichtbar, relaisstellenIm, relaisstelleSichtbar,
+  streckenUnter, zeichenUnter, flaechenUnter, relaisstellenUnter,
+  unterabschnitte, abschnitteGeordnet, abschnittTiefe, abschnittEltern, abschnittBaum,
+  astHoehe, ABSCHNITT_EBENEN,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id, neuerPunkt,
   BAUSTAENDE, baustandById, mengeOderNichts, PLANPUNKTARTEN
 } from './state.js';
@@ -538,7 +541,7 @@ let streckenListeStand = null;
 export function zeichneStreckenListe() {
   const p = store.projekt;
   const liste = document.getElementById('strecken-liste');
-  const abschnitte = alphabetisch(p.einsatzabschnitte || [], nachName);
+  const abschnitte = abschnitteGeordnet(p);
   streckenSummeZeichnen(p, abschnitte);
 
   /* Die Liste wird nachgeführt, nicht neu gebaut, solange ihre Gliederung
@@ -549,7 +552,7 @@ export function zeichneStreckenListe() {
      im Skript, sondern im Layout der hundert Zeilen mit ihren Feldern. Erst
      eine andere Gliederung räumt ab und baut neu. */
   const gliederung = signatur([
-    abschnitte.map(a => [a.id, a.sichtbar !== false]),
+    abschnitte.map(a => [a.id, a.sichtbar !== false, a.uebergeordnet || null]),
     abschnitte.length
       ? [...abschnitte.map(a => a.id), null]
           .map(aid => alphabetisch(streckenIm(p, aid), nachName).map(s => s.id))
@@ -578,9 +581,13 @@ export function zeichneStreckenListe() {
     return;
   }
 
-  for (const ea of abschnitte) liste.appendChild(abschnittGruppe(ea, 'strecken'));
+  for (const ea of obersteAbschnitte(p)) liste.appendChild(abschnittGruppe(ea, 'strecken'));
   if (streckenIm(p, null).length) liste.appendChild(abschnittGruppe(null, 'strecken'));
 }
+
+/** Die Abschnitte der obersten Ebene, alphabetisch – die Liste beginnt mit
+ *  ihnen, alles Tiefere hängt als Klammer in der Klammer darunter. */
+const obersteAbschnitte = p => alphabetisch(unterabschnitte(p, null), nachName);
 
 /** Die Summenzeile über der Liste und der Sammeldruck-Knopf. */
 function streckenSummeZeichnen(p, abschnitte) {
@@ -630,7 +637,7 @@ function streckenListeNachfuehren(liste) {
   const art = LISTENARTEN.strecken;
   for (const box of liste.querySelectorAll('.ea-gruppe')) {
     const wert = box.querySelector('.ea-wert');
-    if (wert) wert.textContent = art.wert(art.eintraege(p, box.dataset.aid || null));
+    if (wert) wert.textContent = art.wert(art.unter(p, box.dataset.aid || null));
   }
   for (const karte of liste.querySelectorAll('article.eintrag[data-sid]')) {
     const s = store.strecke(karte.dataset.sid);
@@ -726,6 +733,8 @@ const klappSchluessel = (aid, art) => art + ':' + (aid || '\u0000ohne');
  * @param o.grund        Änderungsgrund des Augenschalters
  * @param o.neu          baut die Liste nach dem Auf- und Zuklappen neu auf
  * @param o.eintraege    Strecken bzw. Zeichen dieser Klammer
+ * @param o.unter        Klammern der Unterabschnitte, fertig gebaut; sie
+ *                       stehen hinter den eigenen Einträgen
  * @param o.leer         Satz, wenn nichts zugeteilt ist
  * @param o.karte        baut den einzelnen Eintrag
  * @param o.neuKnopf     liefert den Knopf zum Anlegen darin; ohne Zuteilung `null`
@@ -763,8 +772,12 @@ function klammerBox(o) {
 
   if (!zu) {
     const inhalt = el('div', 'ea-strecken');
-    if (!o.eintraege.length) inhalt.appendChild(el('p', 'klein ea-leer', o.leer));
+    const unter = o.unter || [];
+    /* Ein Abschnitt, der nur aus Unterabschnitten besteht, ist nicht leer –
+       der Satz stünde sonst über einer Liste voller Klammern. */
+    if (!o.eintraege.length && !unter.length) inhalt.appendChild(el('p', 'klein ea-leer', o.leer));
     for (const x of o.eintraege) inhalt.appendChild(o.karte(x));
+    for (const box of unter) inhalt.appendChild(box);
     /* Anlegen und Zuteilen in einem Griff: sonst müsste jeder neue Eintrag
        erst gesetzt, dann gesucht und dann von Hand zugeteilt werden. */
     if (hat && o.neuKnopf) inhalt.appendChild(o.neuKnopf());
@@ -781,6 +794,7 @@ function klammerBox(o) {
 const LISTENARTEN = {
   strecken: {
     eintraege: (p, aid) => alphabetisch(streckenIm(p, aid), nachName),
+    unter: streckenUnter,
     wert: e => `${e.length} · ${formatLaenge(gesamtKennzahlen(e).trasse)}`,
     neu: () => zeichneStreckenListe(),
     karte: x => streckenKarte(x),
@@ -788,6 +802,7 @@ const LISTENARTEN = {
   },
   zeichen: {
     eintraege: (p, aid) => alphabetisch(zeichenIm(p, aid), zeichenTitel),
+    unter: zeichenUnter,
     wert: e => `${e.length} Zeichen`,
     neu: () => zeichneZeichenListe(),
     karte: x => zeichenKarte(x),
@@ -795,6 +810,7 @@ const LISTENARTEN = {
   },
   flaechen: {
     eintraege: (p, aid) => alphabetisch(flaechenIm(p, aid), flaechenTitel),
+    unter: flaechenUnter,
     wert: e => `${e.length} ${e.length === 1 ? 'Fläche' : 'Flächen'}`,
     neu: () => zeichneFlaechenListe(),
     karte: x => flaecheKarte(x),
@@ -802,6 +818,7 @@ const LISTENARTEN = {
   },
   relais: {
     eintraege: (p, aid) => alphabetisch(relaisstellenIm(p, aid), relaisTitel),
+    unter: relaisstellenUnter,
     wert: e => `${e.length} ${e.length === 1 ? 'Relaisstelle' : 'Relaisstellen'}`,
     neu: () => zeichneRelaisListe(),
     karte: x => relaisKarte(x),
@@ -812,27 +829,40 @@ const LISTENARTEN = {
 /**
  * Ein Einsatzabschnitt als Klammer über seine Einträge – dieselbe Zeile über
  * den Strecken wie über den taktischen Zeichen. `art` bestimmt, was darin
- * steht und was der Kopf zählt.
+ * steht und was der Kopf zählt. Die Unterabschnitte hängen als Klammern in
+ * der Klammer; der Kopf zählt den ganzen Ast, denn das ist auch, was „⋯“
+ * darunter druckt und sichert.
  */
 function abschnittGruppe(ea, art) {
   const l = LISTENARTEN[art] || LISTENARTEN.strecken;
   const aid = ea ? ea.id : null;
   const eintraege = l.eintraege(store.projekt, aid);
+  const unter = ea ? alphabetisch(unterabschnitte(store.projekt, aid), nachName)
+    .map(u => abschnittGruppe(u, art)) : [];
 
   const box = klammerBox({
     hat: ea, art, ohneName: 'Ohne Einsatzabschnitt',
-    wert: l.wert(eintraege),
+    wert: l.wert(l.unter(store.projekt, aid)),
     oeffnenTitel: 'Einsatzabschnitt öffnen',
     oeffnen: () => einsatzabschnittDialog(aid),
     grund: 'strecke',
     neu: l.neu,
     eintraege,
+    unter,
     leer: l.leer,
     karte: l.karte,
     neuKnopf: ea ? () => neuKnopf(ea, art) : null
   });
   if (ea) box.dataset.aid = ea.id;
   return box;
+}
+
+/** Die Auswahlwerte eines Abschnittsfeldes: alle Abschnitte in Baumfolge, die
+ *  tieferen eingerückt – ein Auswahlfeld kennt keine Klammern, die Einrückung
+ *  ist alles, was von der Gliederung darin zu sehen ist. */
+function abschnittWerte(p, ohne = '— keinem zugeteilt —') {
+  return [['', ohne], ...abschnitteGeordnet(p)
+    .map(a => [a.id, '\u2003'.repeat(abschnittTiefe(p, a.id) - 1) + a.name])];
 }
 
 /** Dieselbe Klammer über einer Zeichengruppe. Sie zählt und schaltet nur
@@ -1020,8 +1050,7 @@ function streckenKarte(s) {
       store.aendern(() => { s.abschnitt = v || null; }, 'strecke');
     }, {
       typ: 'select', klasse: 'nur-erweitert',
-      werte: [['', '— keinem zugeteilt —'],
-        ...alphabetisch(store.projekt.einsatzabschnitte, nachName).map(a => [a.id, a.name])]
+      werte: abschnittWerte(store.projekt)
     }));
   }
   g1.appendChild(farbwahl(s, karte));
@@ -2812,11 +2841,12 @@ function benenneAuswahlNach(kennung, name) {
     .forEach(o => { o.textContent = name; });
 }
 
-/** Neuen Einsatzabschnitt bilden und gleich zur Bearbeitung öffnen */
-export function abschnittAnlegen() {
+/** Neuen Einsatzabschnitt bilden und gleich zur Bearbeitung öffnen –
+ *  `uebergeordnet` legt ihn als Unterabschnitt darunter an. */
+export function abschnittAnlegen(uebergeordnet = null) {
   let aid;
   store.aendern(p => {
-    const ea = neuerEinsatzabschnitt(p);
+    const ea = neuerEinsatzabschnitt(p, uebergeordnet);
     aid = ea.id;
     p.einsatzabschnitte.push(ea);
   }, 'strecke');
@@ -2855,6 +2885,7 @@ export function einsatzabschnittDialog(aid) {
     g.appendChild(feld('Bemerkung', ea.bemerkung, v => schreib(() => { ea.bemerkung = v; }),
       { typ: 'textarea', zeilen: 2 }));
     box.appendChild(g);
+    box.appendChild(gliederungsFeldgruppe(ea));
   } else {
     box.appendChild(el('p', 'klein',
       `Diese Strecken und Zeichen gehören zu keinem Einsatzabschnitt. Sie bleiben auf
@@ -2876,9 +2907,10 @@ export function einsatzabschnittDialog(aid) {
   /* Ausgeben lässt sich nur, was da ist – die Knöpfe folgen der Zuteilung,
      die im selben Dialog gerade geändert wird. */
   const ausgabeAuffrischen = () => {
-    const strecken = streckenIm(store.projekt, aid);
-    const zeichen = zeichenIm(store.projekt, aid);
-    const flaechen = flaechenIm(store.projekt, aid);
+    /* Gedruckt und gesichert wird der ganze Ast – die Knöpfe zählen ihn mit. */
+    const strecken = streckenUnter(store.projekt, aid);
+    const zeichen = zeichenUnter(store.projekt, aid);
+    const flaechen = flaechenUnter(store.projekt, aid);
     pdf.disabled = !strecken.filter(s => s.punkte.length >= 2).length;
     // Ein Abschnitt darf auch aus Zeichen oder Flächen allein bestehen – etwa
     // als Lagebild eines Abschnitts, dessen Strecken erst noch geplant werden.
@@ -2918,7 +2950,9 @@ export function einsatzabschnittDialog(aid) {
   tasten.append(pdf, lage, datei);
   aus.appendChild(tasten);
   aus.appendChild(el('p', 'klein',
-    `Der Sammelauftrag fasst alle Strecken dieses Abschnitts in einem Dokument
+    `Der Sammelauftrag fasst alle Strecken dieses Abschnitts${
+       ea && unterabschnitte(p, ea.id).length ? ' samt seinen Unterabschnitten' : ''
+     } in einem Dokument
      zusammen – Deckblatt mit Übersichtskarte, Streckenverzeichnis und je Strecke
      das gewohnte Kartenblatt. Die Lagekarte ist dagegen ein einzelnes Blatt,
      auf dem die Karte alles ist – bis A0 und in freiem Maß, zum Aushängen in
@@ -2952,8 +2986,9 @@ function zuteilungsliste(art, ziel, stand, danach = () => {}) {
   const alle = alphabetisch(
     zeichenliste ? p.zeichen : flaechenliste ? (p.flaechen || []) : p.strecken, titel);
   const feldname = nachGruppe ? 'gruppe' : 'abschnitt';
-  const klammern = alphabetisch(
-    nachGruppe ? (p.zeichengruppen || []) : (p.einsatzabschnitte || []), nachName);
+  const klammern = nachGruppe
+    ? alphabetisch(p.zeichengruppen || [], nachName).map(k => [k.id, k.name])
+    : abschnittWerte(p).slice(1);
   const bezeichner = nachGruppe ? 'Zeichengruppe' : 'Einsatzabschnitt';
   const box = el('div', 'ea-zuteilung');
 
@@ -3014,7 +3049,7 @@ function zuteilungsliste(art, ziel, stand, danach = () => {}) {
     const wahl = document.createElement('select');
     wahl.className = 'mini-select';
     wahl.setAttribute('aria-label', `${bezeichner} für ${bezeichnung}`);
-    for (const [wert, text] of [['', '— ohne —'], ...klammern.map(k => [k.id, k.name])]) {
+    for (const [wert, text] of [['', '— ohne —'], ...klammern]) {
       const o = document.createElement('option');
       o.value = wert; o.textContent = text; o.selected = (x[feldname] || '') === wert;
       wahl.appendChild(o);
@@ -3061,39 +3096,114 @@ function klammerFarbwahl(hat, titel, merkmal) {
   return wrap;
 }
 
-/* Auflösen, nicht löschen: die Strecken bleiben, sie sind danach nur keinem
-   Abschnitt mehr zugeteilt. Deshalb reicht eine Rückfrage ohne Namenseingabe –
-   rückgängig machen lässt es sich ohnehin. */
+/* Auflösen, nicht löschen: die Strecken bleiben, sie gehören danach dem
+   Abschnitt darüber – auf der obersten Ebene heißt das: keinem mehr. Ebenso
+   rücken die Unterabschnitte eine Ebene hinauf; ihr Inhalt bleibt ihnen.
+   Deshalb reicht eine Rückfrage ohne Namenseingabe – rückgängig machen lässt
+   es sich ohnehin. */
 function abschnittAufloesen(ea) {
-  const strecken = streckenIm(store.projekt, ea.id).length;
-  const zeichen = zeichenIm(store.projekt, ea.id).length;
-  const flaechen = flaechenIm(store.projekt, ea.id).length;
-  const anzahl = strecken + zeichen + flaechen;
+  const p = store.projekt;
+  const oben = abschnittById(p, ea.uebergeordnet);
+  const strecken = streckenIm(p, ea.id).length;
+  const zeichen = zeichenIm(p, ea.id).length;
+  const flaechen = flaechenIm(p, ea.id).length;
+  const relais = relaisstellenIm(p, ea.id).length;
+  const unter = unterabschnitte(p, ea.id).length;
+  const anzahl = strecken + zeichen + flaechen + relais;
   const teile = [];
   if (strecken) teile.push(`${strecken} ${strecken === 1 ? 'Strecke' : 'Strecken'}`);
   if (zeichen) teile.push(`${zeichen} Zeichen`);
   if (flaechen) teile.push(`${flaechen} ${flaechen === 1 ? 'Fläche' : 'Flächen'}`);
+  if (relais) teile.push(`${relais} ${relais === 1 ? 'Relaisstelle' : 'Relaisstellen'}`);
+  const wohin = oben ? `zu <b>${escapeHtml(oben.name)}</b>` : 'als nicht zugeteilt';
   dialog({
     titel: 'Einsatzabschnitt auflösen',
     inhalt: `<p>Soll <b>${escapeHtml(ea.name)}</b> aufgelöst werden?</p>
       <p class="klein">${anzahl
         ? `${teile.join(', ')} ${anzahl === 1 ? 'bleibt' : 'bleiben'} erhalten und
-           ${anzahl === 1 ? 'gilt' : 'gelten'} danach als nicht zugeteilt.`
+           ${anzahl === 1 ? 'gehört' : 'gehören'} danach ${wohin}.`
         : 'Diesem Abschnitt ist nichts zugeteilt.'}
+        ${unter ? `${unter} ${unter === 1 ? 'Unterabschnitt rückt' : 'Unterabschnitte rücken'}
+           ${oben ? `unter <b>${escapeHtml(oben.name)}</b>` : 'auf die oberste Ebene'}.` : ''}
         Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
     fuss: [
       { text: 'Abbrechen', tun: () => { einsatzabschnittDialog(ea.id); return false; } },
       { text: 'Auflösen', gefahr: true, tun: () => {
           store.aendern(p => {
-            p.strecken.forEach(s => { if (s.abschnitt === ea.id) s.abschnitt = null; });
-            p.zeichen.forEach(z => { if (z.abschnitt === ea.id) z.abschnitt = null; });
-            (p.flaechen || []).forEach(f => { if (f.abschnitt === ea.id) f.abschnitt = null; });
+            const ziel = ea.uebergeordnet || null;
+            const um = x => { if (x.abschnitt === ea.id) x.abschnitt = ziel; };
+            p.strecken.forEach(um);
+            p.zeichen.forEach(um);
+            (p.flaechen || []).forEach(um);
+            (p.relaisstellen || []).forEach(um);
+            p.einsatzabschnitte.forEach(a => {
+              if (a.uebergeordnet === ea.id) a.uebergeordnet = ziel;
+            });
             p.einsatzabschnitte = p.einsatzabschnitte.filter(a => a.id !== ea.id);
           }, 'strecke');
           hinweis('Einsatzabschnitt aufgelöst');
         } }
     ]
   });
+}
+
+/**
+ * Wo der Abschnitt in der Führungsorganisation steht: der Abschnitt darüber,
+ * die Unterabschnitte darunter, und ein Knopf für einen neuen. Vier Ebenen
+ * sind die Grenze – als Elternabschnitt steht nur zur Wahl, worunter der
+ * ganze Ast noch Platz hat; der eigene Ast selbst nie, das wäre ein Kreis.
+ */
+function gliederungsFeldgruppe(ea) {
+  const p = store.projekt;
+  const g = el('div', 'feldgruppe');
+  g.appendChild(el('h3', 'gruppen-titel', 'Gliederung'));
+
+  const eigener = abschnittBaum(p, ea.id);
+  const hoehe = astHoehe(p, ea.id);
+  const waehlbar = abschnitteGeordnet(p).filter(a =>
+    !eigener.has(a.id) && abschnittTiefe(p, a.id) + hoehe <= ABSCHNITT_EBENEN);
+  g.appendChild(feld('Gehört zu', ea.uebergeordnet || '', v => {
+    store.aendern(() => { ea.uebergeordnet = v || null; }, 'strecke');
+    /* Der Dialog zeigt Ebene und Unterabschnitte – nach dem Umhängen stimmt
+       beides nicht mehr, deshalb wird er neu aufgeschlagen. */
+    einsatzabschnittDialog(ea.id);
+  }, {
+    typ: 'select',
+    werte: [['', '— oberste Ebene —'],
+      ...waehlbar.map(a => [a.id, '\u2003'.repeat(abschnittTiefe(p, a.id) - 1) + a.name])]
+  }));
+
+  const tiefe = abschnittTiefe(p, ea.id);
+  const unter = alphabetisch(unterabschnitte(p, ea.id), nachName);
+  const stand = el('p', 'klein');
+  stand.innerHTML = `Ebene <b>${tiefe}</b> von ${ABSCHNITT_EBENEN}` + (unter.length
+    ? ` · <b>${unter.length}</b> ${unter.length === 1 ? 'Unterabschnitt' : 'Unterabschnitte'}`
+    : '');
+  g.appendChild(stand);
+
+  if (unter.length) {
+    const liste = el('div', 'ea-unterliste');
+    for (const u of unter) {
+      const zeile = el('button', 'ea-unter',
+        `<span class="farbpunkt" style="--farbe:${u.farbe}"></span>
+         <span class="ez-name">${escapeHtml(u.name)}</span>
+         <span class="ez-wert">${streckenUnter(p, u.id).length} · ${
+           formatLaenge(gesamtKennzahlen(streckenUnter(p, u.id)).trasse)}</span>`);
+      zeile.type = 'button';
+      zeile.title = 'Unterabschnitt öffnen';
+      zeile.onclick = () => einsatzabschnittDialog(u.id);
+      liste.appendChild(zeile);
+    }
+    g.appendChild(liste);
+  }
+
+  if (tiefe < ABSCHNITT_EBENEN) {
+    g.appendChild(knopf('+ Unterabschnitt', () => abschnittAnlegen(ea.id), 'klein ea-neu'));
+  } else {
+    g.appendChild(el('p', 'klein',
+      `Die vierte Ebene ist die unterste – tiefer lässt sich nicht gliedern.`));
+  }
+  return g;
 }
 
 // ---------------------------------------------------------------- Zeichengruppen
@@ -3209,7 +3319,7 @@ export function zeichneZeichenListe() {
   const p = store.projekt;
   const liste = document.getElementById('zeichen-liste');
   const wahlbox = document.getElementById('zeichen-gliederung');
-  const abschnitte = alphabetisch(p.einsatzabschnitte || [], nachName);
+  const abschnitte = obersteAbschnitte(p);
   const gruppen = alphabetisch(p.zeichengruppen || [], nachName);
   liste.innerHTML = '';
 
@@ -3314,8 +3424,7 @@ function zeichenFormular(z, basis) {
       store.aendern(() => { z.abschnitt = v || null; }, 'zeichen');
     }, {
       typ: 'select',
-      werte: [['', '— keinem zugeteilt (gilt für alle) —'],
-        ...alphabetisch(store.projekt.einsatzabschnitte, nachName).map(a => [a.id, a.name])]
+      werte: abschnittWerte(store.projekt, '— keinem zugeteilt (gilt für alle) —')
     }));
   }
 
@@ -3463,7 +3572,7 @@ export function zeichneFlaechenListe() {
   if (!liste) return;
   liste.innerHTML = '';
   const flaechen = p.flaechen || [];
-  const abschnitte = alphabetisch(p.einsatzabschnitte || [], nachName);
+  const abschnitte = obersteAbschnitte(p);
 
   const qm = flaechen.reduce((n, f) => n + f.breite * f.laenge, 0);
   summe.innerHTML = flaechen.length
@@ -3571,8 +3680,7 @@ function flaecheFormular(f) {
       store.aendern(() => { f.abschnitt = v || null; }, 'flaeche');
     }, {
       typ: 'select',
-      werte: [['', '— keinem zugeteilt (gilt für alle) —'],
-        ...alphabetisch(store.projekt.einsatzabschnitte, nachName).map(a => [a.id, a.name])]
+      werte: abschnittWerte(store.projekt, '— keinem zugeteilt (gilt für alle) —')
     }));
   }
 
@@ -3707,7 +3815,7 @@ export function zeichneRelaisListe() {
   if (!liste) return;
   liste.innerHTML = '';
   const stellen = p.relaisstellen || [];
-  const abschnitte = alphabetisch(p.einsatzabschnitte || [], nachName);
+  const abschnitte = obersteAbschnitte(p);
 
   /* Vor allem anderen: die liegenden Flächen an den Stand angleichen. Wer die
      Masthöhe ändert, ändert den Befund – und die Fläche zur alten Höhe darf
@@ -3874,8 +3982,7 @@ function relaisFormular(r) {
       store.aendern(() => { r.abschnitt = v || null; }, 'relais');
     }, {
       typ: 'select',
-      werte: [['', '— keinem zugeteilt (gilt für alle) —'],
-        ...alphabetisch(store.projekt.einsatzabschnitte, nachName).map(a => [a.id, a.name])]
+      werte: abschnittWerte(store.projekt, '— keinem zugeteilt (gilt für alle) —')
     }));
   }
 
@@ -6276,18 +6383,28 @@ export function hilfeDialog() {
            in jedem geöffneten taktischen Zeichen und gesammelt im Abschnitt selbst
            (Knopf <b>⋯</b> an der Abschnittszeile).</p>
         <ul class="tasten-liste">
+          <li><b>Bis zu vier Ebenen:</b> im geöffneten Abschnitt legt <b>+ Unterabschnitt</b>
+              einen Abschnitt darunter an, <b>Gehört zu</b> hängt ihn um. Vier Ebenen sind
+              die Führungsorganisation eines Einsatzes – tiefer geht es nicht. In der Liste
+              hängen die Unterabschnitte als Klammer in der Klammer; der Kopf zählt den
+              ganzen Ast, und Sammelauftrag, Lagekarte und Datei eines Abschnitts nehmen
+              seine Unterabschnitte mit.</li>
+          <li><b>Zeichen gelten nach unten und nach oben:</b> ein Zeichen des Abschnitts
+              Nord erscheint auf jedem Blatt seiner Unterabschnitte, und deren Zeichen auf
+              dem Blatt von Nord. Nur der Nachbarabschnitt sieht sie nicht.</li>
           <li><b>Nicht zugeteilte Zeichen gehören allen:</b> sie erscheinen in jedem
               Abschnitt, auf dessen Karten und in dessen Datei. Ein zugeteiltes Zeichen
               nur in seinem eigenen. So bleibt das gemeinsame Lagebild – Führungsstelle,
               Bereitstellungsraum – überall stehen.</li>
           <li>Das <b>Auge</b> an der Abschnittszeile blendet alle seine Strecken und
-              Zeichen zusammen aus der Karte aus – der eigene Schalter jedes Elements
-              bleibt dabei erhalten.</li>
+              Zeichen zusammen aus der Karte aus, die Unterabschnitte mit – der eigene
+              Schalter jedes Elements bleibt dabei erhalten.</li>
           <li><b>Als Datei sichern (.json)</b> gibt nur diesen Abschnitt heraus. Wer sie
               erhält, lädt sie über <b>Datei → Planung oder KML laden</b> und arbeitet an
               seinem Ausschnitt weiter, ohne die übrige Planung zu sehen.</li>
           <li><b>Abschnitt auflösen</b> entfernt nur die Gliederung; Strecken und Zeichen
-              bleiben und gelten danach als nicht zugeteilt.</li>
+              bleiben und gehören danach dem Abschnitt darüber – auf der obersten Ebene
+              keinem mehr. Unterabschnitte rücken eine Ebene hinauf.</li>
         </ul>
         <h3>Zeichengruppen</h3>
         <p>Zeichengruppen fassen taktische Zeichen zu einem Lagebild zusammen –

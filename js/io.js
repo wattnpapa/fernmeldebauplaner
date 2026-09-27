@@ -3,7 +3,8 @@
 import {
   store, migrieren, neueStrecke, neuerPunkt, neuesZeichen, id, ladeAlle, dateisicherungVermerken,
   abschnittById, zeichengruppeById, streckenIm, zeichenIm, zeichenFuer, flaechenIm, flaechenFuer,
-  relaisstellenIm, relaisstellenFuer,
+  relaisstellenIm, relaisstellenFuer, streckenUnter, zeichenUnter, flaechenUnter,
+  relaisstellenUnter, abschnittBaum, abschnittEltern, abschnittPfad, unterabschnitte,
   punktartById, VERLEGEARTEN, KABELTYPEN
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
@@ -159,12 +160,18 @@ async function bilderEinpacken(liste = []) {
 export function abschnittAlsProjekt(aid) {
   const p = store.projekt;
   const ea = abschnittById(p, aid);
-  const strecken = streckenIm(p, aid);
-  if (!strecken.length && !zeichenIm(p, aid).length && !flaechenIm(p, aid).length &&
-      !relaisstellenIm(p, aid).length) return false;
-  const bezeichnung = ea ? ea.name : 'Ohne Einsatzabschnitt';
+  /* Der ganze Ast geht mit: ein Abschnitt ohne seine Unterabschnitte wäre
+     beim Empfänger ein Torso. Der Abschnitt selbst wird dort oberste Ebene –
+     was über ihm lag, kennt die Datei nicht, und ein Verweis ins Leere
+     landete ohnehin dort. */
+  const strecken = streckenUnter(p, aid);
+  if (!strecken.length && !zeichenUnter(p, aid).length && !flaechenUnter(p, aid).length &&
+      !relaisstellenUnter(p, aid).length) return false;
+  const bezeichnung = ea ? abschnittPfad(p, aid) : 'Ohne Einsatzabschnitt';
   const jetzt = new Date().toISOString();
   const zeichen = aid ? zeichenFuer(p, aid) : zeichenIm(p, aid);
+  const ast = ea ? [...abschnittBaum(p, aid)].map(k => abschnittById(p, k))
+    .map(a => a.id === aid ? { ...a, uebergeordnet: null } : a) : [];
   /* Nur die Gruppen, die in diesem Ausschnitt vorkommen: eine leere Gruppe
      träfe beim Empfänger auf nichts, ihr Auge schaltete ins Leere. */
   const benutzt = new Set(zeichen.map(z => z.gruppe).filter(Boolean));
@@ -175,7 +182,7 @@ export function abschnittAlsProjekt(aid) {
     name: `${p.name} – ${bezeichnung}`,
     erstellt: jetzt,
     geaendert: jetzt,
-    einsatzabschnitte: ea ? [ea] : [],
+    einsatzabschnitte: ast,
     zeichengruppen: (p.zeichengruppen || []).filter(g => benutzt.has(g.id)),
     strecken,
     zeichen,
@@ -225,6 +232,9 @@ export function streckeAlsProjekt(sid) {
   const s = (p.strecken || []).find(x => x.id === sid);
   if (!s) return false;
   const ea = abschnittById(p, s.abschnitt);
+  /* Mit der Kette darüber: auf dem Bauauftrag des Trupps steht sonst nur
+     „Unterabschnitt 2“, und der sagt nicht, zu welchem Abschnitt er gehört. */
+  const kette = ea ? [...abschnittEltern(p, ea.id), ea] : [];
   const jetzt = new Date().toISOString();
   const zeichen = zeichenIm(p, null);
   const benutzt = new Set(zeichen.map(z => z.gruppe).filter(Boolean));
@@ -235,7 +245,7 @@ export function streckeAlsProjekt(sid) {
     name: `${p.name} – ${s.name}`,
     erstellt: jetzt,
     geaendert: jetzt,
-    einsatzabschnitte: ea ? [ea] : [],
+    einsatzabschnitte: kette,
     zeichengruppen: (p.zeichengruppen || []).filter(g => benutzt.has(g.id)),
     strecken: [s],
     zeichen,
@@ -244,7 +254,7 @@ export function streckeAlsProjekt(sid) {
     herkunft: {
       projekt: p.name,
       projektId: p.id,
-      einsatzabschnitt: ea ? ea.name : '',
+      einsatzabschnitt: ea ? abschnittPfad(p, ea.id) : '',
       strecke: s.name,
       erzeugt: jetzt
     }
@@ -532,7 +542,7 @@ function streckenAngaben(s) {
       `${k.trommeln} ${k.trommeln === 1 ? 'Trommel' : 'Trommeln'} à ${k.trommellaenge} m`
     ]),
     k.strom && `${k.strom.netz.name} · ${Math.round(k.strom.strom * 10) / 10} A · ${k.strom.querschnitt} mm²`,
-    ea && `Einsatzabschnitt: ${ea.name}`,
+    ea && `Einsatzabschnitt: ${abschnittPfad(store.projekt, ea.id)}`,
     s.trupp && `Trupp: ${s.trupp}`,
     s.bemerkung
   ];
@@ -662,20 +672,24 @@ function planungsAngaben(p) {
   ];
 }
 
-/** Ordnerbaum der ganzen Planung – mit Einsatzabschnitten als oberste Ebene. */
+/** Ordnerbaum der ganzen Planung – mit Einsatzabschnitten als oberste Ebene,
+ *  Unterabschnitte als Ordner darin: Google Earth zeigt dieselbe Gliederung
+ *  wie die Seitenleiste. */
 function planungsOrdner(p) {
   const abschnitte = p.einsatzabschnitte || [];
   if (!abschnitte.length)
     return [...p.strecken.map(streckenOrdner), zeichenOrdner(p.zeichen),
       flaechenOrdner(p.flaechen || []), relaisOrdner(p.relaisstellen || [])];
 
-  const ordner = abschnitte.map(ea => ({
+  const abschnittOrdner = ea => ({
     name: ea.name,
     sichtbar: ea.sichtbar,
     beschreibung: [ea.leiter && `Abschnittsleiter: ${ea.leiter}`, ea.bemerkung],
     ordner: [...streckenIm(p, ea.id).map(streckenOrdner), zeichenOrdner(zeichenIm(p, ea.id), ea.farbe),
-      flaechenOrdner(flaechenIm(p, ea.id)), relaisOrdner(relaisstellenIm(p, ea.id))]
-  }));
+      flaechenOrdner(flaechenIm(p, ea.id)), relaisOrdner(relaisstellenIm(p, ea.id)),
+      ...unterabschnitte(p, ea.id).map(abschnittOrdner)]
+  });
+  const ordner = unterabschnitte(p, null).map(abschnittOrdner);
   /* Was keinem Abschnitt zugeteilt ist, gehört allen – und darf deshalb nicht
      unter den Tisch fallen, wenn die Planung gegliedert ist. */
   ordner.push({

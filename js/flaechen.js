@@ -1,6 +1,6 @@
 // flaechen.js – Flächen mit festen Maßen auf der Karte: Fahrzeuge, Zelte, Aufbauplätze
 
-import { store, neueFlaeche, flaecheSichtbar, abschnittGewaehlt } from './state.js';
+import { store, neueFlaeche, flaecheSichtbar, abschnittGewaehlt, aufEinerLinie } from './state.js';
 import { escapeHtml } from './strecken.js';
 import { signatur } from './signatur.js';
 import { flaechenartById } from './flaechen-vorlagen.js';
@@ -239,7 +239,7 @@ export class FlaechenLayer {
          den Zeichen; das eigene Auge der Fläche ist oben schon geprüft. */
       const angefordert = !this.abschnittSchaltet;
       if (!angefordert && !flaecheSichtbar(p, f)) return false;
-      return !(this.nurAbschnitt && f.abschnitt && f.abschnitt !== this.nurAbschnitt);
+      return !this.nurAbschnitt || aufEinerLinie(p, this.nurAbschnitt, f.abschnitt);
     });
   }
 

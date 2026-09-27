@@ -12,7 +12,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 16;
+export const SCHEMA = 17;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
@@ -176,21 +176,125 @@ export function neuesProjekt(name = 'Neue Planung') {
 
 /* Einsatzabschnitte gliedern eine große Planung in Zuständigkeiten. Sie sind
    freiwillig: eine Planung ohne Abschnitte verhält sich wie bisher, jede
-   Strecke steht dann für sich. */
-export function neuerEinsatzabschnitt(projekt) {
-  const n = (projekt.einsatzabschnitte || []).length;
+   Strecke steht dann für sich.
+
+   Seit Schema 17 können sie ineinander liegen: `uebergeordnet` zeigt auf den
+   Abschnitt darüber, `null` auf die oberste Ebene. Ein Elternverweis statt
+   einer geschachtelten Liste, weil alles andere – Strecken, Zeichen, Flächen,
+   Relaisstellen, der Link-Codec, die Migration – weiter nur EINE flache Liste
+   von Abschnitten kennt und eine Kennung darin. Die Tiefe ist auf vier Ebenen
+   begrenzt: das ist die Führungsorganisation eines Einsatzes (Einsatzleitung,
+   Einsatzabschnitt, Unterabschnitt, Einsatzstelle), und eine Seitenleiste
+   von 300 px trägt auch nicht mehr Einrückung. */
+export const ABSCHNITT_EBENEN = 4;
+
+export function neuerEinsatzabschnitt(projekt, uebergeordnet = null) {
+  const alle = projekt.einsatzabschnitte || [];
+  const geschwister = alle.filter(a => (a.uebergeordnet || null) === (uebergeordnet || null));
   return {
     id: id(),
-    name: `Einsatzabschnitt ${n + 1}`,
+    name: uebergeordnet
+      ? `Unterabschnitt ${geschwister.length + 1}`
+      : `Einsatzabschnitt ${geschwister.length + 1}`,
     leiter: '',
-    farbe: FARBEN[n % FARBEN.length],
+    farbe: FARBEN[alle.length % FARBEN.length],
     bemerkung: '',
-    sichtbar: true
+    sichtbar: true,
+    uebergeordnet: uebergeordnet || null
   };
 }
 
 export const abschnittById = (p, aid) =>
   (p && aid ? (p.einsatzabschnitte || []).find(a => a.id === aid) : null) || null;
+
+/** Die Abschnitte unmittelbar unter `aid`; `null` liefert die oberste Ebene. */
+export function unterabschnitte(p, aid) {
+  return (p.einsatzabschnitte || []).filter(a => (a.uebergeordnet || null) === (aid || null));
+}
+
+/** Die Kette über einem Abschnitt, von der obersten Ebene bis zum Abschnitt
+ *  unmittelbar darüber – ohne ihn selbst. Bricht bei einem Kreis ab, statt
+ *  sich darin zu drehen: die Migration löst Kreise auf, aber ein Rückgängig
+ *  kann einen Zwischenstand zurückholen, der nie durch sie gegangen ist. */
+export function abschnittEltern(p, aid) {
+  const kette = [];
+  const gesehen = new Set([aid]);
+  let ea = abschnittById(p, aid);
+  while (ea && ea.uebergeordnet && !gesehen.has(ea.uebergeordnet)) {
+    gesehen.add(ea.uebergeordnet);
+    ea = abschnittById(p, ea.uebergeordnet);
+    if (ea) kette.unshift(ea);
+  }
+  return kette;
+}
+
+/** Ebene eines Abschnitts: 1 ist die oberste. */
+export const abschnittTiefe = (p, aid) => abschnittEltern(p, aid).length + 1;
+
+/** Die Kennungen des Abschnitts und aller darunter – der ganze Ast. */
+export function abschnittBaum(p, aid) {
+  const baum = new Set();
+  const stapel = [aid];
+  while (stapel.length) {
+    const k = stapel.pop();
+    if (baum.has(k)) continue;
+    baum.add(k);
+    unterabschnitte(p, k).forEach(a => stapel.push(a.id));
+  }
+  return baum;
+}
+
+/** Wie tief der Ast unter `aid` reicht, den Abschnitt selbst mitgezählt. */
+export function astHoehe(p, aid) {
+  const unter = unterabschnitte(p, aid);
+  return 1 + (unter.length ? Math.max(...unter.map(a => astHoehe(p, a.id))) : 0);
+}
+
+const nachNameDe = (a, b) =>
+  (a.name || '').localeCompare(b.name || '', 'de', { numeric: true, sensitivity: 'base' });
+
+/** Alle Abschnitte in Baumfolge: jeder gefolgt von seinem Ast, Geschwister
+ *  alphabetisch. Das ist die Reihenfolge jeder Auswahlliste und jedes
+ *  Ausdrucks – sonst stünde ein Unterabschnitt irgendwo zwischen fremden. */
+export function abschnitteGeordnet(p, aid = null) {
+  return unterabschnitte(p, aid).sort(nachNameDe)
+    .flatMap(a => [a, ...abschnitteGeordnet(p, a.id)]);
+}
+
+/** Der volle Name mit allem darüber: „Nord › Unterabschnitt 2“. Am Bauauftrag
+ *  und in der Datei sagt „Unterabschnitt 2“ allein nicht, wo er liegt. */
+export function abschnittPfad(p, aid, trenner = ' › ') {
+  const ea = abschnittById(p, aid);
+  return ea ? [...abschnittEltern(p, aid), ea].map(a => a.name).join(trenner) : '';
+}
+
+/* Liegen zwei Abschnitte auf einer Linie – ist der eine der andere oder über
+   ihm? `null` steht für das gemeinsame Lagebild und liegt auf jeder Linie.
+   Das ist die Regel, nach der ein Zeichen zu einem Abschnitt gehört: was der
+   Abschnitt darüber gesetzt hat, gilt für alle darunter, und was darunter
+   steht, gehört mit zum Abschnitt darüber – nur der Nachbar bleibt draußen. */
+export function aufEinerLinie(p, a, b) {
+  if (!a || !b || a === b) return true;
+  return abschnittEltern(p, a).some(x => x.id === b) ||
+         abschnittEltern(p, b).some(x => x.id === a);
+}
+
+/* Elternverweise geraderücken: unbekannt, im Kreis oder tiefer als die
+   erlaubten Ebenen wird zur obersten Ebene. Ein Kreis wäre eine Klammer, die
+   nirgends in der Liste erscheint – ihre Strecken wären unsichtbar. */
+export function abschnitteBereinigen(liste) {
+  const bekannt = new Set(liste.map(a => a.id));
+  for (const a of liste) if (!bekannt.has(a.uebergeordnet)) a.uebergeordnet = null;
+  const p = { einsatzabschnitte: liste };
+  for (const a of liste) {
+    const gesehen = new Set([a.id]);
+    let k = a.uebergeordnet;
+    while (k && !gesehen.has(k)) { gesehen.add(k); k = (abschnittById(p, k) || {}).uebergeordnet; }
+    if (k) a.uebergeordnet = null;
+  }
+  for (const a of liste) if (abschnittTiefe(p, a.id) > ABSCHNITT_EBENEN) a.uebergeordnet = null;
+  return liste;
+}
 
 /* Zeichengruppen liegen quer zum Einsatzabschnitt: der sagt, wer zuständig ist,
    die Gruppe, was im Lagebild zusammengehört – „Kräfte“, „Gefahrenstellen“,
@@ -229,24 +333,43 @@ export function zeichenIm(p, aid) { return p.zeichen.filter(z => gehoertZu(z, ai
 /** Und für die Flächen */
 export function flaechenIm(p, aid) { return (p.flaechen || []).filter(f => gehoertZu(f, aid)); }
 
+/* Der ganze Ast: was dem Abschnitt selbst und allem darunter zugeteilt ist.
+   Das ist der Umfang eines Sammelauftrags, einer Datei und einer Lagekarte –
+   wer den Abschnitt Nord druckt, will dessen Unterabschnitte mit auf dem
+   Blatt. `null` bleibt, was es war: die nicht zugeteilten. */
+function imAst(p, liste, aid) {
+  if (!aid) return liste.filter(x => gehoertZu(x, null));
+  const baum = abschnittBaum(p, aid);
+  return liste.filter(x => baum.has(x.abschnitt));
+}
+export function streckenUnter(p, aid) { return imAst(p, p.strecken, aid); }
+export function zeichenUnter(p, aid) { return imAst(p, p.zeichen, aid); }
+export function flaechenUnter(p, aid) { return imAst(p, p.flaechen || [], aid); }
+export function relaisstellenUnter(p, aid) { return imAst(p, p.relaisstellen || [], aid); }
+
 /** Nicht zugeteilt heißt: gehört allen. Ein Abschnitt bekommt seine eigenen
- *  Zeichen und dazu die des gemeinsamen Lagebildes – ohne Abschnitt alle. */
+ *  Zeichen, die seines Astes, die der Abschnitte über ihm und dazu die des
+ *  gemeinsamen Lagebildes – ohne Abschnitt alle. */
 export function zeichenFuer(p, aid) {
-  return aid ? p.zeichen.filter(z => !z.abschnitt || z.abschnitt === aid) : p.zeichen;
+  return aid ? p.zeichen.filter(z => aufEinerLinie(p, aid, z.abschnitt)) : p.zeichen;
 }
 
 /** Dieselbe Regel für die Flächen: nicht zugeteilt heißt, sie gehören allen. */
 export function flaechenFuer(p, aid) {
   const alle = p.flaechen || [];
-  return aid ? alle.filter(f => !f.abschnitt || f.abschnitt === aid) : alle;
+  return aid ? alle.filter(f => aufEinerLinie(p, aid, f.abschnitt)) : alle;
 }
 
 /* Der Abschnitt schaltet seine Strecken und Zeichen gemeinsam ab, ohne ihren
    eigenen Schalter zu überschreiben – wird er wieder eingeblendet, steht jedes
-   Element so da, wie es der Nutzer verlassen hat. */
+   Element so da, wie es der Nutzer verlassen hat. Das Auge eines Abschnitts
+   nimmt seinen ganzen Ast mit: sonst blieben die Unterabschnitte auf der
+   Karte stehen, während ihre Klammer in der Liste zugeklappt und verborgen
+   darüber liegt. */
 const abschnittZeigt = (p, x) => {
   const ea = abschnittById(p, x.abschnitt);
-  return !ea || ea.sichtbar !== false;
+  return !ea || (ea.sichtbar !== false &&
+    abschnittEltern(p, ea.id).every(a => a.sichtbar !== false));
 };
 
 export function streckeSichtbar(p, s) {
@@ -565,7 +688,7 @@ export function relaisstellenIm(p, aid) {
 /** Nicht zugeteilt heißt: gehört allen – dieselbe Regel wie bei Zeichen und Flächen. */
 export function relaisstellenFuer(p, aid) {
   const alle = p.relaisstellen || [];
-  return aid ? alle.filter(r => !r.abschnitt || r.abschnitt === aid) : alle;
+  return aid ? alle.filter(r => aufEinerLinie(p, aid, r.abschnitt)) : alle;
 }
 
 /* Ein Lichtbild vom Bauort. Hier steht nur, was das Bild zeigt und wo es
@@ -1023,14 +1146,18 @@ export function migrieren(p) {
     kopf: { ...v.kopf, ...(p.kopf || {}) },
     ansicht,
     optionen: { ...v.optionen, ...(p.optionen || {}) },
-    einsatzabschnitte: (p.einsatzabschnitte || []).map((a, i) => ({
+    /* Schema 17 hat den Elternverweis eingeführt. Ältere Stände bringen ihn
+       nicht mit und öffnen mit allen Abschnitten auf der obersten Ebene –
+       genau so, wie sie angelegt waren. */
+    einsatzabschnitte: abschnitteBereinigen((p.einsatzabschnitte || []).map((a, i) => ({
       id: a.id || id(),
       name: a.name || `Einsatzabschnitt ${i + 1}`,
       leiter: a.leiter || '',
       farbe: farbeOderVorgabe(a.farbe, FARBEN[i % FARBEN.length]),
       bemerkung: a.bemerkung || '',
-      sichtbar: a.sichtbar !== false
-    })),
+      sichtbar: a.sichtbar !== false,
+      uebergeordnet: typeof a.uebergeordnet === 'string' && a.uebergeordnet ? a.uebergeordnet : null
+    }))),
     /* Schema 2 hat die Zeichengruppen eingeführt. Ältere Stände bringen das
        Feld nicht mit – sie öffnen dann ungegliedert, so wie sie zuletzt
        aussahen. */

@@ -1,6 +1,8 @@
 // relais.js – Relaisstellen des BOS-Sprechfunks als Kartenmarke und Fläche
 
-import { store, neueRelaisstelle, relaisstelleSichtbar, abschnittGewaehlt } from './state.js';
+import {
+  store, neueRelaisstelle, relaisstelleSichtbar, abschnittGewaehlt, aufEinerLinie
+} from './state.js';
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
 import { signatur } from './signatur.js';
@@ -22,7 +24,7 @@ export function gezeichneteRelaisstellen(p,
        Zeichen und Flächen; das eigene Auge der Stelle ist oben schon geprüft. */
     const angefordert = !abschnittSchaltet;
     if (!angefordert && !relaisstelleSichtbar(p, r)) return false;
-    return !(nurAbschnitt && r.abschnitt && r.abschnitt !== nurAbschnitt);
+    return !nurAbschnitt || aufEinerLinie(p, nurAbschnitt, r.abschnitt);
   });
 }
 

@@ -476,6 +476,23 @@ body.seite-zu .seite { display: none; }
 .ea-neu:hover:not(:disabled) { color: var(--thw); }
 .liste > .ea-gruppe + .ea-gruppe { margin-top: 6px; }
 
+/* Klammer in der Klammer: ein Unterabschnitt hängt an der Kante seines
+   Abschnitts und rückt mit ihr ein – dieselbe Kopfzeile, nur weiter rechts.
+   Mehr Einrückung als die 16 px je Ebene trägt die Seitenleiste bei vier
+   Ebenen nicht; der Name in der Kopfzeile kürzt sich sonst auf ein Wort. */
+.ea-strecken > .ea-gruppe { margin-top: 2px; }
+
+/* Die Unterabschnitte im Abschnittsdialog: eine Zeile je Abschnitt darunter,
+   anklickbar, damit man von einem Abschnitt in den nächsten kommt, ohne den
+   Dialog zu schließen und in der Liste zu suchen. */
+.ea-unterliste { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.ea-unter {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px;
+  border: 1px solid var(--linie); border-radius: var(--radius-klein);
+  background: var(--flaeche); cursor: pointer; font: inherit; color: inherit; text-align: left;
+}
+.ea-unter:hover { border-color: var(--thw); background: var(--thw-blass); }
+
 /* Zuteilung im Abschnittsdialog: eine Zeile je Strecke der ganzen Planung,
    damit auch zu sehen ist, was anderswo liegt. */
 .ea-zuteilung {
@@ -3037,6 +3054,7 @@ body.baumodus .sichtwahl { display: none; }
      die Zeile. Beide auf Handschuhmaß. */
   .ea-mehr { min-width: 44px; min-height: 44px; padding: 2px 6px; }
   .ea-name { min-height: 44px; }
+  .ea-unter { min-height: 44px; }
   .bp-auf, .fg-griff { min-height: 44px; }
 
   /* Die Knöpfe des Koordinaten-Popups maßen 23 px bei 11,5 px Schrift und

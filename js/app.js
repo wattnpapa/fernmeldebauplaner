@@ -1,7 +1,7 @@
 // app.js – Zusammenbau: Karte, Layer, Bedienung, Tastatur
 
 import {
-  store, neueStrecke, neuerPunkt, neuesZeichen, abschnittById,
+  store, neueStrecke, neuerPunkt, neuesZeichen, abschnittById, abschnitteGeordnet, abschnittPfad,
   dateisicherung, istGehaltvoll, ladeAlle
 } from './state.js';
 import { erstelleKarte, setzeBasiskarte, setzeVorrang, BASISKARTEN } from './map.js';
@@ -868,7 +868,7 @@ function teilenDialog(vorwahl) {
   }
 
   const p = store.projekt;
-  const abschnitte = p.einsatzabschnitte || [];
+  const abschnitte = abschnitteGeordnet(p);
   const strecken = p.strecken || [];
   const box = document.createElement('div');
   /* Die einzelne Strecke steht in einer eigenen Gruppe und ganz oben unter den
@@ -882,11 +882,12 @@ function teilenDialog(vorwahl) {
           ${strecken.map(s => {
             const ea = abschnittById(p, s.abschnitt);
             return `<option value="st:${escapeHtml(s.id)}">Nur die Strecke „${escapeHtml(s.name)}“` +
-              `${ea ? ` (${escapeHtml(ea.name)})` : ''}</option>`;
+              `${ea ? ` (${escapeHtml(abschnittPfad(p, ea.id))})` : ''}</option>`;
           }).join('')}
         </optgroup>` : ''}
         ${abschnitte.map(a =>
-          `<option value="ea:${escapeHtml(a.id)}">Nur den Einsatzabschnitt „${escapeHtml(a.name)}“</option>`).join('')}
+          `<option value="ea:${escapeHtml(a.id)}">Nur den Einsatzabschnitt „${
+            escapeHtml(abschnittPfad(p, a.id))}“</option>`).join('')}
         <option value="ausschnitt">Nur den Kartenausschnitt – ohne Planungsdaten</option>
       </select></label>
     <p class="teilen-umfang" id="tl-umfang"></p>
