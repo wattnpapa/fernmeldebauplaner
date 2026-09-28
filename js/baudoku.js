@@ -35,6 +35,16 @@ export { bauBegonnen, pruefungGehaltvoll };
    und eine Meldung, die immer kommt, liest niemand mehr. */
 export const ABWEICHUNG_SCHWELLE = 25;
 
+/* Ab welchem Abstand zur geplanten Trasse ein ZUSÄTZLICHER Punkt fraglich ist.
+   Die 25 m oben taugen hier nicht: ein zusätzlicher Punkt ist gerade der, den
+   der Plan nicht kennt – die Umgehung um eine Baugrube, der Mast hinter der
+   Scheune. Das sind Dutzende, selten ein paar hundert Meter. Was darüber
+   liegt, ist fast immer eine Ortung am falschen Platz: im Audit stand ein
+   Zusatzpunkt 82 km neben der Trasse, die gebaute Länge sprang von 2,7 auf
+   143 km – und darunter stand „Kein Punkt weicht mehr als 25 m ab“, weil
+   Zusatzpunkte gar nicht geprüft wurden. */
+export const ABSEITS_SCHWELLE = 300;
+
 // ---------------------------------------------------------------- Zugriff
 
 /** Den Bau-Block einer Strecke anlegen, falls er noch fehlt. Nur innerhalb
@@ -725,6 +735,22 @@ export function baukennzahlen(strecke) {
   }
   abweichungen.sort((a, b) => b.meter - a.meter);
 
+  const abseits = [];
+  if (soll.length) {
+    for (const pt of ist) {
+      if (pt.sollPunkt) continue;
+      const meter = abstandZurLinie(pt, soll);
+      if (meter >= ABSEITS_SCHWELLE) abseits.push({ ist: pt, meter });
+    }
+    abseits.sort((a, b) => b.meter - a.meter);
+  }
+
+  /* Eine gebaute Trasse, die mehr als doppelt so lang ist wie die geplante,
+     ist keine Umgehung mehr, sondern ein Punkt am falschen Ort. Der Sockel
+     von einem Kilometer hält kurze Strecken heraus, bei denen zwei Umwege
+     die Länge ehrlich verdoppeln. */
+  const laengeFraglich = !!(laenge && sollLaenge && laenge > 2 * sollLaenge + 1000);
+
   return {
     bau: strecke.bau || null,
     stand: baustandById(strecke.bau ? strecke.bau.stand : 'offen'),
@@ -743,6 +769,11 @@ export function baukennzahlen(strecke) {
     laengenUnterschied: (laenge && sollLaenge) ? laenge - sollLaenge : 0,
     abweichungen,
     groessteAbweichung: abweichungen.length ? abweichungen[0].meter : 0,
+    abseits,
+    laengeFraglich,
+    /* Ob der beruhigende Satz stehen darf. Er stand vorher schon, wenn nur die
+       bestätigten Punkte passten – neben einer um 140 km zu langen Trasse. */
+    stimmig: !abweichungen.length && !abseits.length && !laengeFraglich,
     ohneArt,
     querungOhneBauweise,
     /* Eine Zahl für beides: der Trupp fragt vor dem Absetzen „fehlt noch was?“
@@ -805,16 +836,43 @@ function zuletztGebaut(projekt) {
   return beste || (projekt.strecken || []).find(bauBegonnen) || null;
 }
 
-/** Kurzfassung für die Streckenzeile im Planungsmodus */
-export function baustandKurz(strecke) {
-  if (!bauBegonnen(strecke)) return '';
+/** Der jüngste Eintrag vom Bauort – Meldung oder aufgenommener Punkt */
+export function zuletztVomBau(strecke) {
+  let zeit = '';
+  for (const pt of istPunkte(strecke)) if (pt.zeit > zeit) zeit = pt.zeit;
+  for (const m of baumeldungen(strecke)) if (m.zeit > zeit) zeit = m.zeit;
+  return zeit;
+}
+
+/**
+ * Was die Streckenzeile im Planungsmodus über den Bau sagt – oder `null`,
+ * solange an der Strecke nichts gebaut wird.
+ *
+ * Die Marke IST der Baustand. Vorher trug jede Strecke mit einem einzigen
+ * bestätigten Punkt dasselbe grüne „gebaut“ wie eine übergebene, und die
+ * Führungsstelle zählte beim Überfliegen sechs fertige Leitungen, wo eine
+ * übergeben war. Trupp, letzter Eintrag und die Meldung an den S 6 stehen
+ * mit darin, weil sie die Fragen der Lagebesprechung sind: wer baut, wann
+ * kam zuletzt etwas, und gibt es etwas, das ich wissen muss.
+ */
+export function bauzeile(strecke) {
+  if (!bauBegonnen(strecke)) return null;
   const k = baukennzahlen(strecke);
-  const teile = [k.stand.kurz];
+  const teile = [];
   if (k.sollPunkte) teile.push(`${k.bestaetigt}/${k.sollPunkte} Punkte`);
+  const trupps = [...new Set(bauabschnitte(strecke).map(a => a.trupp).filter(Boolean))];
+  if (trupps.length) teile.push(trupps.join(', '));
+  const zuletzt = zuletztVomBau(strecke);
+  if (zuletzt) teile.push(`zuletzt ${uhrzeit(zuletzt)}`);
+  const warnungen = [];
   if (k.abweichungen.length) {
-    teile.push(`${k.abweichungen.length} ${k.abweichungen.length === 1 ? 'Abweichung' : 'Abweichungen'}`);
+    warnungen.push(`${k.abweichungen.length} ${k.abweichungen.length === 1 ? 'Abweichung' : 'Abweichungen'}`);
   }
-  return teile.join(' · ');
+  if (k.abseits.length) {
+    warnungen.push(`${k.abseits.length} ${k.abseits.length === 1 ? 'Punkt' : 'Punkte'} abseits`);
+  }
+  const meldung = ((strecke.bau && strecke.bau.abweichung) || '').trim();
+  return { stand: k.stand, text: teile.join(' · '), warnungen, meldung };
 }
 
 /** Die Strecke, die im Baumodus gerade bearbeitet wird – merkt sich die Wahl */

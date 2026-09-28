@@ -431,6 +431,11 @@ body.seite-zu .seite { display: none; }
 .ea-pfeil { color: var(--text-schwach); font-size: 10px; transition: transform .12s; }
 .ea-gruppe.zu .ea-pfeil { transform: rotate(-90deg); }
 .ea-wert { font-size: 12px; color: var(--text-schwach); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ea-kopf:has(.ea-bau:not([hidden])) { flex-wrap: wrap; row-gap: 2px; }
+.ea-bau {
+  flex-basis: 100%; padding-left: 24px; font-size: 12px; font-weight: 600;
+  color: var(--text-blau);
+}
 .ea-mehr {
   flex-shrink: 0; border: 0; background: none; cursor: pointer; color: var(--text-schwach);
   padding: 2px 6px; border-radius: var(--radius-klein); line-height: 1;
@@ -2407,10 +2412,26 @@ body.baumodus .sichtwahl { display: none; }
 
 /* Der Baustand in der Streckenliste des Planungsmodus – die Antwort auf
    „woran wird draußen gerade gearbeitet“ */
-.eintrag-zeile.bau-zeile { color: var(--text-blau); }
+.eintrag-zeile.bau-zeile { color: var(--text-blau); flex-wrap: wrap; }
+/* Jeder Baustand trägt eine eigene Form und nicht nur eine eigene Farbe: in
+   Graustufen, bei Rot-Grün-Schwäche und bei Sonne auf dem Schirm muss
+   „im Bau“ von „übergeben“ zu unterscheiden sein. Offen ist nur umrandet,
+   im Bau gestrichelt, gebaut gefüllt, übergeben gefüllt mit Haken. */
 .bz-marke {
-  padding: 2px 7px; border-radius: 999px; background: var(--gut); color: #fff;
-  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+  padding: 1px 7px; border-radius: 999px; border: 1.5px solid var(--gut);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+}
+.bz-marke.bz-offen { border-color: var(--linie-stark); color: var(--text-schwach); }
+.bz-marke.bz-laeuft { border-style: dashed; border-color: var(--warnung-linie-stark);
+  color: var(--warnung-tief); background: var(--warnung-flaeche); }
+.bz-marke.bz-gebaut { background: var(--gut); color: #fff; }
+.bz-marke.bz-uebergeben { background: var(--gut); color: #fff; }
+.bz-marke.bz-uebergeben::before { content: '✓ '; }
+.bz-warnung { color: var(--warnung-tief); font-weight: 600; }
+.eintrag-zeile.bz-meldung {
+  display: block; margin: 0 10px 9px 32px; padding: 4px 8px; border-left: 3px solid var(--warnung);
+  background: var(--warnung-flaeche); color: var(--warnung-tief); font-size: 12.5px;
+  overflow-wrap: anywhere;
 }
 
 /* Der Sprungstreifen unter der Summe des Bau-Reiters. Die Liste ist rund

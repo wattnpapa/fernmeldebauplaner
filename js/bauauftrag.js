@@ -3426,12 +3426,20 @@ function baudokuAbweichungHTML(s, k) {
   const liste = k.abweichungen.map(a => {
     const nr = s.punkte.indexOf(a.soll) + 1;
     return `<li>Punkt ${nr}: <b>${escapeHtml(formatLaenge(a.meter))}</b> vom geplanten Ort</li>`;
-  }).join('');
+  }).join('') + k.abseits.map(a =>
+    `<li>Zusätzlicher Punkt (${escapeHtml(punktartText(a.ist))}): ` +
+    `<b>${escapeHtml(formatLaenge(a.meter))}</b> neben der Trasse</li>`).join('');
+  /* Der Satz „kein Punkt weicht ab“ steht nur, wenn er stimmt: vorher stand er
+     auch neben einer gebauten Trasse, die um das Fünfzigfache zu lang war,
+     weil zusätzliche Punkte nicht geprüft wurden. */
   return `<section class="bl-abschnitt">
     <h2>Abweichungen vom Auftrag</h2>
     ${liste ? `<ul class="bau-abwliste">${liste}</ul>`
-      : `<p class="tab-fussnote">Kein aufgenommener Punkt liegt mehr als
-         ${ABWEICHUNG_SCHWELLE} m vom geplanten entfernt.</p>`}
+      : k.laengeFraglich
+        ? `<p class="tab-fussnote">Die gebaute Trasse ist weit länger als die geplante –
+           Aufnahme prüfen.</p>`
+        : `<p class="tab-fussnote">Kein aufgenommener Punkt liegt mehr als
+           ${ABWEICHUNG_SCHWELLE} m vom geplanten entfernt.</p>`}
     <div class="bl-freitext">
       <div class="bl-linien" aria-hidden="true">${'<i></i>'.repeat(12)}</div>
       <div class="bl-text">${text ? escapeHtml(text).replace(/\n/g, '<br>') : ''}</div>

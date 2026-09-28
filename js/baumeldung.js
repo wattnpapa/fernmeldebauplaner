@@ -390,10 +390,13 @@ export function berichtText(bericht) {
   /* Der Bestand und nicht der Zuwachs: eine Meldung, die vorhandene Punkte
      ERSETZT, bringt netto null neue – „0 Punkte“ danebenzuschreiben wäre
      irreführend, „12 Punkte stehen jetzt an dieser Strecke“ ist die Aussage,
-     die der Planer prüfen kann. */
+     die der Planer prüfen kann. „In der Baudokumentation“ und nicht „in der
+     Planung“: der Empfangsdialog hatte zwei Schritte vorher versichert, die
+     geplante Trasse bleibe unangetastet, und der Satz danach klang, als sei
+     sie es nicht. */
   const satz = teile.join(', ') + ' eingespielt';
   return bericht.bestand
     ? `${satz} – ${bericht.bestand} ${bericht.bestand === 1
-        ? 'aufgenommener Punkt steht' : 'aufgenommene Punkte stehen'} jetzt in der Planung`
+        ? 'aufgenommener Punkt steht' : 'aufgenommene Punkte stehen'} jetzt in der Baudokumentation`
     : satz;
 }

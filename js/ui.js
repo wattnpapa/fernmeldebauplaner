@@ -76,13 +76,13 @@ import { relaisTitel, relaisKurz, befundLesen, masthoeheFuer, rechenwerte } from
 import {
   baukennzahlen, istPunkte, bauabschnitte, bauabschnittById, istZuSoll,
   istPunktSetzen, istArtSetzen, bauabschnittAnlegen, bauabschnittLoeschen, bauSichern,
-  sollPunktGeloescht, bauUmkehren, bauBegonnen, baustandKurz, baustrecke, baustreckeSetzen,
+  sollPunktGeloescht, bauUmkehren, bauBegonnen, bauzeile, baustrecke, baustreckeSetzen,
   aktiverBauabschnitt, bauabschnittAktivId, bauabschnittAktivSetzen, punktartText,
   quelleText, uhrzeit, ABWEICHUNG_SCHWELLE, istSollZuordnen, offeneSollPunkte,
   materialzeilen, materialzeile, materialSetzen, materialFreiAnlegen, materialZeileLoeschen,
   materialSumme, materialSoll, baumeldungen,
   baumeldungAnlegen, baumeldungLoeschen, meldungenNachZeit,
-  pruefungSichern, pruefzeilen, pruefzeileAnlegen, pruefzeileLoeschen,
+  pruefungSichern, pruefzeilen, pruefzeileAnlegen, pruefzeileLoeschen, uebergabestand,
   absetzenVermerken, absetzstandGesamt, absenderText, truppAmGeraet, truppAmGeraetSetzen
 } from './baudoku.js';
 import {
@@ -589,6 +589,25 @@ export function zeichneStreckenListe() {
  *  ihnen, alles Tiefere hängt als Klammer in der Klammer darunter. */
 const obersteAbschnitte = p => alphabetisch(unterabschnitte(p, null), nachName);
 
+/**
+ * Wie viele Strecken auf welchem Baustand stehen, als eine Zeile – oder leer,
+ * solange an keiner gebaut wird. Eine Planung, die nie in den Baumodus kommt,
+ * soll kein „9 offen“ vor sich hertragen.
+ *
+ * Die Frage der Lagebesprechung ist „wie viele stehen?“, und die ließ sich
+ * vorher nur durch Aufklappen jeder Strecke beantworten.
+ */
+function baustandZaehlung(strecken) {
+  if (!strecken.some(bauBegonnen)) return '';
+  const zahl = {};
+  for (const s of strecken) {
+    const id = bauBegonnen(s) && s.bau ? s.bau.stand : 'offen';
+    zahl[id] = (zahl[id] || 0) + 1;
+  }
+  return [...BAUSTAENDE].reverse().filter(b => zahl[b.id])
+    .map(b => `${zahl[b.id]} ${b.kurz}`).join(', ');
+}
+
 /** Die Summenzeile über der Liste und der Sammeldruck-Knopf. */
 function streckenSummeZeichnen(p, abschnitte) {
   const summe = document.getElementById('strecken-summe');
@@ -597,13 +616,15 @@ function streckenSummeZeichnen(p, abschnitte) {
      Der Hinweis hängt am Wert, weil sonst nur die Aufstellung darunter verrät,
      warum die Zeilen sich nicht zur Gesamtzahl addieren. */
   const ohneFunk = ges.funkStrecken ? ' title="ohne Funkstrecken – dort liegt kein Kabel"' : '';
+  const bauSumme = baustandZaehlung(p.strecken);
   summe.innerHTML = p.strecken.length
     ? `<span><b>${p.strecken.length}</b> ${p.strecken.length === 1 ? 'Strecke' : 'Strecken'}</span>
        ${abschnitte.length ? `<span><b>${abschnitte.length}</b> ${abschnitte.length === 1 ? 'Abschnitt' : 'Abschnitte'}</span>` : ''}
        <span${ohneFunk}>Trasse <b>${formatLaenge(ges.trasse)}</b></span>
        <span${ohneFunk}>Bedarf <b>${formatLaenge(ges.bedarf)}</b></span>
        <span><b>${ges.trommeln}</b> ${ges.trommeln === 1 ? 'Trommel' : 'Trommeln'}</span>
-       ${kabelSummeHTML(ges)}`
+       ${kabelSummeHTML(ges)}
+       ${bauSumme ? `<span class="summe-bau">Bau: <b>${escapeHtml(bauSumme)}</b></span>` : ''}`
     : '';
 
   const sammelKnopf = document.getElementById('btn-sammel-pdf');
@@ -637,7 +658,10 @@ function streckenListeNachfuehren(liste) {
   const art = LISTENARTEN.strecken;
   for (const box of liste.querySelectorAll('.ea-gruppe')) {
     const wert = box.querySelector('.ea-wert');
-    if (wert) wert.textContent = art.wert(art.unter(p, box.dataset.aid || null));
+    const e = art.unter(p, box.dataset.aid || null);
+    if (wert) wert.textContent = art.wert(e);
+    const bau = box.querySelector('.ea-bau');
+    if (bau) { bau.textContent = art.bau(e); bau.hidden = !bau.textContent; }
   }
   for (const karte of liste.querySelectorAll('article.eintrag[data-sid]')) {
     const s = store.strecke(karte.dataset.sid);
@@ -756,7 +780,8 @@ function klammerBox(o) {
      <span class="ea-wert">${o.wert}</span>
      ${hat ? augenKnopf(hat.sichtbar !== false) : ''}
      <button type="button" class="ea-mehr" data-akt="mehr"
-             title="${o.oeffnenTitel}" aria-label="${o.oeffnenTitel}">⋯</button>`;
+             title="${o.oeffnenTitel}" aria-label="${o.oeffnenTitel}">⋯</button>
+     <span class="ea-bau"${o.bau ? '' : ' hidden'}>${escapeHtml(o.bau || '')}</span>`;
 
   kopf.querySelector('.ea-name').onclick = () => {
     zugeklappt.has(schluessel) ? zugeklappt.delete(schluessel) : zugeklappt.add(schluessel);
@@ -796,6 +821,10 @@ const LISTENARTEN = {
     eintraege: (p, aid) => alphabetisch(streckenIm(p, aid), nachName),
     unter: streckenUnter,
     wert: e => `${e.length} · ${formatLaenge(gesamtKennzahlen(e).trasse)}`,
+    /* Der Baustand steht in einer eigenen Zeile unter dem Namen: neben dem
+       Zähler drückte er am Tablet den Abschnittsnamen auf zwei Buchstaben
+       zusammen, und genau der ist in der Klammer das, wonach gesucht wird. */
+    bau: e => baustandZaehlung(e),
     neu: () => zeichneStreckenListe(),
     karte: x => streckenKarte(x),
     leer: 'Keine Strecke zugeteilt. Die Zuteilung steht in der geöffneten Strecke oder unter „⋯“.'
@@ -843,6 +872,7 @@ function abschnittGruppe(ea, art) {
   const box = klammerBox({
     hat: ea, art, ohneName: 'Ohne Einsatzabschnitt',
     wert: l.wert(l.unter(store.projekt, aid)),
+    bau: l.bau ? l.bau(l.unter(store.projekt, aid)) : '',
     oeffnenTitel: 'Einsatzabschnitt öffnen',
     oeffnen: () => einsatzabschnittDialog(aid),
     grund: 'strecke',
@@ -975,10 +1005,21 @@ function streckenKarte(s) {
      über die Liste geht, muss sehen können, an welcher Strecke draußen schon
      gearbeitet wird – sonst plant er auf einer Trasse weiter, die ein Trupp
      gerade anders baut. */
-  const bauzeile = baustandKurz(s);
-  if (bauzeile) {
+  const bz = bauzeile(s);
+  if (bz) {
     karte.appendChild(el('div', 'eintrag-zeile bau-zeile',
-      `<span class="bz-marke">gebaut</span><span>${escapeHtml(bauzeile)}</span>`));
+      `<span class="bz-marke bz-${bz.stand.id}">${escapeHtml(bz.stand.kurz)}</span>` +
+      (bz.text ? `<span>${escapeHtml(bz.text)}</span>` : '') +
+      bz.warnungen.map(w => `<span class="bz-warnung">⚠ ${escapeHtml(w)}</span>`).join('')));
+    /* Die Meldung an den S 6 steht im Wortlaut da und nicht als Zahl: sie ist
+       die eine Auskunft, die der Trupp ausdrücklich an die Führung richtet –
+       „Deich überflutet, Trasse nach Osten verlegt“. Bisher stand sie nur im
+       Baumodus, also überall dort nicht, wo die Führungsstelle hinsieht. */
+    if (bz.meldung) {
+      const m = el('div', 'eintrag-zeile bz-meldung');
+      m.textContent = '✉ ' + bz.meldung;
+      karte.appendChild(m);
+    }
   }
 
   if (!gewaehlt) {
@@ -4518,6 +4559,9 @@ export function zeichneBauListe() {
     (k.abweichungen.length
       ? `<span class="bau-abw"><b>${k.abweichungen.length}</b> ${k.abweichungen.length === 1 ? 'Abweichung' : 'Abweichungen'}</span>`
       : '') +
+    (k.abseits.length
+      ? `<span class="bau-abw"><b>${k.abseits.length}</b> ${k.abseits.length === 1 ? 'Punkt' : 'Punkte'} abseits der Trasse</span>`
+      : '') +
     /* Was aufgenommen, aber nicht ausgesagt ist, steht neben den Abweichungen
        und nicht darunter: beides ist eine Nachfrage an den Trupp, und diese
        hier lässt sich am Bauort noch beantworten. */
@@ -4593,9 +4637,14 @@ function sprungstreifen(bloecke, s) {
      Karte steht schmal gleichzeitig im Bild und heißt ebenso. Ein Tipp auf den
      falschen der beiden führte in den Kachelvorrat statt auf die Karte – und
      der Rückweg kostete am Bauort zwei weitere Griffe. */
+  /* „Zurückmelden“ statt „Absetzen“: neben „Meldungen“ las sich „Absetzen“ wie
+     ein zweiter Weg zu denselben Funkmeldungen, und das Wort versprach, dass
+     etwas beim Empfänger ankommt. Der Chip führt zum Rückweg an den Planer.
+     „Karte mitnehmen“ steht vorn: sie ist der erste Handgriff, solange noch
+     Netz da ist, und nicht der letzte. */
   const ziele = [
-    ['punkte', 'Punkte'], ['meldungen', 'Meldungen'], ['material', 'Material'],
-    ['uebergabe', 'Übergabe'], ['rueckweg', 'Absetzen'], ['vorrat', 'Karte mitnehmen']
+    ['vorrat', 'Karte mitnehmen'], ['punkte', 'Punkte'], ['meldungen', 'Meldungen'],
+    ['material', 'Material'], ['uebergabe', 'Übergabe'], ['rueckweg', 'Zurückmelden']
   ];
   for (const [schluessel, text] of ziele) {
     streifen.appendChild(knopf(text, () => {
@@ -4846,10 +4895,63 @@ function kartenvorratBlock(s) {
    „gebaut“ (Hdb Feldfernkabelbau, 3.5). */
 function baukopfBlock(s, k) {
   const box = el('div', 'feldgruppe bau-kopf');
-  box.appendChild(merkeFeld(feld('Stand des Baus', k.stand.id, wert => {
-    store.aendern(() => { bauSichern(s).stand = wert; }, 'bau');
-  }, { typ: 'select', werte: BAUSTAENDE.map(b => [b.id, b.name]), klasse: 'bau-stand' }),
-    'stand'));
+
+  /* Die Warnung steht über allem, nicht bei den Zahlen: sie ist das, was der
+     Truppführer vor dem Absetzen sehen muss, und wer unter Zeitdruck auf den
+     Schirm sieht, liest die erste Zeile und nicht die vierte. Im Audit stand
+     „gebaut 143,49 km“ bei 2,71 km Plan in derselben Schrift wie jede andere
+     Zahl – ein Zusatzpunkt war 82 km neben der Trasse geortet worden. */
+  if (k.abseits.length || k.laengeFraglich) {
+    const w = el('div', 'bau-warnung bau-kopf-warnung');
+    const a = k.abseits[0];
+    w.innerHTML = a
+      ? `<b>Prüfen:</b> ein zusätzlicher Punkt liegt ${escapeHtml(formatLaenge(a.meter))} ` +
+        'neben der geplanten Trasse. Stimmt der Standort?'
+      : `<b>Prüfen:</b> die gebaute Trasse ist mit ${escapeHtml(formatLaenge(k.laenge))} ` +
+        `weit länger als die geplante (${escapeHtml(formatLaenge(k.sollLaenge))}).`;
+    if (a) {
+      w.appendChild(knopf('Auf der Karte zeigen', () => {
+        ctx.karte.setView([a.ist.lat, a.ist.lng], Math.max(ctx.karte.getZoom(), 16));
+        ctx.zurKarte?.();
+      }, 'klein'));
+    }
+    box.appendChild(w);
+  }
+
+  const standFeld = feld('Stand des Baus', k.stand.id, wert => {
+    /* „Übergeben“ ist ein Abschluss mit Unterschrift, kein Zwischenstand. Er
+       geht mit der Baumeldung an den Planer, und dort las er sich als geprüfte
+       Leitung. Im Audit ließ er sich wählen, ohne dass jemand, irgendwann oder
+       irgendetwas gemessen war. Gesperrt wird nicht – die Übergabe kann auf
+       Papier geschehen sein –, aber gefragt, mit dem, was fehlt. */
+    const ue = uebergabestand(s);
+    const fehlt = [];
+    if (wert === 'uebergeben') {
+      if (!ue.an) fehlt.push('an wen übergeben wurde');
+      if (!ue.zeit) fehlt.push('wann übergeben wurde');
+      if (!ue.zeilen) fehlt.push('eine Messung oder Sprechprobe');
+      else if (ue.offen) fehlt.push(`${ue.offen} ungeprüfte ${ue.offen === 1 ? 'Leitung' : 'Leitungen'}`);
+      if (ue.durchgefallen) fehlt.push(`${ue.durchgefallen} durchgefallene Prüfung`);
+    }
+    const setzen = () => store.aendern(() => { bauSichern(s).stand = wert; }, 'bau');
+    if (!fehlt.length) { setzen(); return; }
+    /* Das Feld springt sofort zurück: geht der Dialog über Esc oder den
+       Schleier zu, stünde sonst „übergeben“ im Feld und etwas anderes in der
+       Planung. */
+    standFeld.querySelector('select').value = k.stand.id;
+    dialog({
+      titel: 'Als übergeben melden?',
+      inhalt: `<p>Für eine Übergabe fehlt noch:</p>
+               <ul>${fehlt.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul>
+               <p class="klein">Der Stand geht mit der nächsten Baumeldung an den Planer
+               und steht dort als fertige Leitung.</p>`,
+      fuss: [
+        { text: 'Abbrechen' },
+        { text: 'Trotzdem übergeben', primaer: true, tun: setzen }
+      ]
+    });
+  }, { typ: 'select', werte: BAUSTAENDE.map(b => [b.id, b.name]), klasse: 'bau-stand' });
+  box.appendChild(merkeFeld(standFeld, 'stand'));
 
   const zahlen = el('div', 'bau-zahlen');
   const zeile = (titel, wert, klasse = '') =>
@@ -5253,14 +5355,22 @@ function bauSchlussBlock(s, k) {
   const box = el('div', 'feldgruppe bau-schluss');
   box.appendChild(el('h3', 'gruppen-titel', 'Abweichungen vom Auftrag'));
 
-  if (k.abweichungen.length) {
+  if (k.abweichungen.length || k.abseits.length) {
     const auf = el('ul', 'bau-abwliste');
     for (const a of k.abweichungen.slice(0, 8)) {
       const nr = s.punkte.indexOf(a.soll) + 1;
       auf.appendChild(el('li', '',
         `Punkt ${nr}: <b>${escapeHtml(formatLaenge(a.meter))}</b> vom geplanten Ort`));
     }
+    for (const a of k.abseits.slice(0, 8)) {
+      const name = a.ist.name || `${punktartText(a.ist)} ${uhrzeit(a.ist.zeit)}`.trim();
+      auf.appendChild(el('li', '',
+        `Zusätzlich (${escapeHtml(name)}): <b>${escapeHtml(formatLaenge(a.meter))}</b> neben der Trasse`));
+    }
     box.appendChild(auf);
+  } else if (k.laengeFraglich) {
+    box.appendChild(el('p', 'bau-warnung',
+      `Die gebaute Trasse ist mit ${escapeHtml(formatLaenge(k.laenge))} weit länger als die geplante.`));
   } else if (k.istPunkte) {
     box.appendChild(el('p', 'klein',
       `Kein aufgenommener Punkt liegt mehr als ${ABWEICHUNG_SCHWELLE} m vom geplanten entfernt.`));
@@ -5629,7 +5739,7 @@ function bauRueckwegBlock(s) {
   const absender = absenderText(alle);
   if (absender) {
     box.appendChild(el('p', 'klein bau-absender',
-      `Abgesetzt wird als <b>${escapeHtml(absender)}</b>.`));
+      `Die Meldung nennt als Absender <b>${escapeHtml(absender)}</b>.`));
   } else {
     box.appendChild(el('p', 'klein',
       'Diese Meldung nennt bisher keinen Trupp – meldet ein zweiter an ' +
@@ -5667,8 +5777,8 @@ function bauRueckwegBlock(s) {
      dem überhaupt zurückgemeldet wird. Vor dem Absetzen steht deshalb hier,
      was er lesen wird – und wenn nichts abweicht, steht auch das da. */
   const abweichend = alle
-    .map(x => ({ name: x.name, punkte: baukennzahlen(x).abweichungen }))
-    .filter(x => x.punkte.length);
+    .map(x => ({ name: x.name, k: baukennzahlen(x) }))
+    .filter(x => !x.k.stimmig);
   const vorschau = el('ul', 'bau-vorschau');
   if (!abweichend.length) {
     vorschau.appendChild(el('li', 'bau-vorschau-gleich',
@@ -5676,11 +5786,21 @@ function bauRueckwegBlock(s) {
       ' vom Plan ab.'));
   } else {
     for (const x of abweichend) {
-      const weiteste = x.punkte[0];
-      vorschau.appendChild(el('li',
-        '', `<b>${escapeHtml(x.name)}</b>: ${x.punkte.length} ` +
-        `${x.punkte.length === 1 ? 'Punkt weicht' : 'Punkte weichen'} ab, ` +
-        `am weitesten ${escapeHtml(formatLaenge(weiteste.meter))}.`));
+      const teile = [];
+      if (x.k.abweichungen.length) {
+        teile.push(`${x.k.abweichungen.length} ` +
+          `${x.k.abweichungen.length === 1 ? 'Punkt weicht' : 'Punkte weichen'} ab, ` +
+          `am weitesten ${formatLaenge(x.k.abweichungen[0].meter)}`);
+      }
+      if (x.k.abseits.length) {
+        teile.push(`${x.k.abseits.length} ${x.k.abseits.length === 1 ? 'zusätzlicher Punkt liegt'
+          : 'zusätzliche Punkte liegen'} bis ${formatLaenge(x.k.abseits[0].meter)} neben der Trasse`);
+      }
+      if (x.k.laengeFraglich && !x.k.abseits.length) {
+        teile.push(`gebaute Trasse ${formatLaenge(x.k.laenge)} statt ${formatLaenge(x.k.sollLaenge)}`);
+      }
+      vorschau.appendChild(el('li', x.k.abseits.length || x.k.laengeFraglich ? 'bau-warnung' : '',
+        `<b>${escapeHtml(x.name)}</b>: ${escapeHtml(teile.join('; '))}.`));
     }
   }
   box.appendChild(vorschau);
@@ -5691,15 +5811,22 @@ function bauRueckwegBlock(s) {
      doppelt gemeldet, und beim Planer ersetzt die zweite Meldung Eintragungen,
      oder gar nicht. „Veraltet“ ist dabei kein Zustand des Absetzens, sondern
      einer der Aufnahme: seit der Meldung ist etwas dazugekommen. */
+  /* „Abgesetzt“ stand hier nach dem bloßen Kopieren – auch im Funkloch, in
+     dem der Link noch in der Zwischenablage lag. Das Wort ist Funksprache und
+     heißt „beim Empfänger“; das Gerät weiß davon nichts. Gesagt wird deshalb,
+     was das Gerät weiß: wann der Link kopiert oder die Datei gesichert wurde,
+     und dass der Versand beim Trupp liegt. */
   const ab = absetzstandGesamt(alle);
   if (ab.stand !== 'nie') {
-    const wann = `${zeitpunkt(ab.zeit)} ${ab.weg === 'datei' ? 'als Datei' : 'als Link'}`;
+    const was = ab.weg === 'datei' ? 'Als Datei gesichert' : 'Link erzeugt';
+    const wann = zeitpunkt(ab.zeit);
     box.appendChild(ab.stand === 'veraltet'
       ? el('p', 'bau-warnung',
-          `Zuletzt abgesetzt ${escapeHtml(wann)} – seither ist etwas dazugekommen. ` +
-          'Noch einmal absetzen, sonst fehlt es beim Planer.')
+          `${was} ${escapeHtml(wann)} – seither ist etwas dazugekommen. ` +
+          'Noch einmal zurückmelden, sonst fehlt es beim Planer.')
       : el('p', 'klein bau-abgesetzt',
-          `Abgesetzt ${escapeHtml(wann)}. Seither unverändert.`));
+          `${was} ${escapeHtml(wann)}, seither unverändert. Ob die Meldung beim Planer ` +
+          'angekommen ist, weiß dieses Gerät nicht – verschicken und im Zweifel nachfragen.'));
   }
 
   /* Was der Trupp beim Absetzen tut, wird festgehalten: Zeit, Weg und ein
@@ -5715,7 +5842,7 @@ function bauRueckwegBlock(s) {
   tasten.appendChild(knopf('Als Datei', () => {
     if (io.baumeldungExportieren(alle, absender)) {
       vermerken('datei');
-      hinweis('Baumeldung als Datei gesichert und als abgesetzt vermerkt');
+      hinweis('Baumeldung als Datei gesichert – jetzt dem Planer schicken');
     }
   }, 'klein bau-taste'));
   box.appendChild(tasten);
@@ -6579,10 +6706,11 @@ export function hilfeDialog() {
           <li>Im Reiter <b>Bau</b> steht dasselbe als Liste, dazu Bauabschnitte,
               Baumeldungen, Materialnachweis, Meldung an den S 6, Übergabe und ganz unten
               die Karte zum Mitnehmen. Der Sprungstreifen oben führt hin.</li>
-          <li>Unter <b>Absetzen</b> geht die Baumeldung an den Planer – als Link, zum
-              Teilen oder als Datei. Dort stehen auch <b>Trupp</b> und <b>Truppführer</b>:
-              ohne sie nennt die Meldung niemanden. Nach dem Absetzen steht dort, wann
-              zuletzt etwas hinausging und ob seither etwas dazugekommen ist.</li>
+          <li>Unter <b>Zurückmelden</b> entsteht die Baumeldung an den Planer – als Link,
+              zum Teilen oder als Datei. Verschicken muss sie der Trupp selbst: das Gerät
+              weiß nicht, ob sie ankommt. Dort stehen auch <b>Trupp</b> und
+              <b>Truppführer</b>: ohne sie nennt die Meldung niemanden. Danach steht dort,
+              wann der Link erzeugt wurde und ob seither etwas dazugekommen ist.</li>
         </ul>
         <h3>Koordinaten</h3>
         <p>Unten steht die Koordinate der Stelle, über der die Maus steht oder die zuletzt
