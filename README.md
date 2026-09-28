@@ -342,6 +342,15 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - **Die Planung bleibt unangetastet.** Das Ist liegt daneben, nicht an seiner Stelle –
   nur so bleibt die Abweichung nachweisbar. Die drei Auftragsblätter zeigen
   weiterhin den Auftrag
+- **Baunachweis zum Ausfüllen:** ein eigenes, abschaltbares Blatt im Bauauftrag mit
+  denselben Feldern wie der Baumodus – Punkte abhaken, Baumeldungen mit Uhrzeit,
+  Kabelverbrauch. Fällt das Telefon aus, wird dort mitgeschrieben und später
+  nachgetragen; die Uhrzeit einer Baumeldung lässt sich dabei vom Blatt übernehmen
+- **Bau beginnen aus dem Link:** ein Link mit einer einzelnen Strecke öffnet den
+  Baumodus auf dieser Strecke, fragt einmal nach Trupp und Truppführer und erinnert
+  daran, die Karte mitzunehmen
+- **Nachtdarstellung:** dunkle Oberfläche und abgedunkelte Arbeitskarte, nach der
+  Einstellung des Geräts oder über „Datei → Nachtdarstellung“; der Druck bleibt hell
 
 **Ohne Netz**
 - Die Anwendung startet ohne Verbindung. Nach dem ersten Aufruf mit Netz liegt sie im

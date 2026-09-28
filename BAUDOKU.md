@@ -575,7 +575,7 @@ noch ihren Befund (Nummer, Art, Herkunft der Koordinate, Abweichung) und ihr
 Formular erst auf Tipp: 92 px statt 298 bis 427. Materialnachweis, Prüfung und
 Übergabe und der Kachelvorrat stehen eingeklappt – sie werden einmal am Ende
 gefüllt oder im Depot geholt, nicht laufend; zusammen maßen sie 2.370 px. Und
-der Sprungstreifen trägt zwei Chips mehr: „Absetzen“ für den Rückmeldeblock,
+der Sprungstreifen trägt zwei Chips mehr: „Zurückmelden“ (anfangs „Absetzen“) für den Rückmeldeblock,
 der als Abschluss jedes Bauabschnitts am häufigsten gebraucht wird und
 ausgerechnet fehlte, und „▤ Doku“, das die Baudokumentation aufschlägt, deren
 einziger Aufruf am Ende der Liste stand. Ein Sprungchip klappt den Block, zu
@@ -592,15 +592,17 @@ Rückweg über „Rückgängig“. Ohne Strecke zeigt der Reiter kein leeres
 Auswahlfeld mehr, sondern den Weg in den Planungsmodus, und im Baumodus bietet
 der Strecken-Reiter kein Zeichnen an – dort wird der Bauauftrag nachgeschlagen.
 
-**Der Bau-Reiter** hat einen Sprungstreifen (Punkte, Meldungen, Material,
-Übergabe, Absetzen, Karte mitnehmen, ▤ Doku), und der Kachelvorrat steht am
-Ende statt am Anfang: das Mitnehmen geschieht im Depot und nie am Bauort.
+**Der Bau-Reiter** hat einen Sprungstreifen (Karte mitnehmen, Punkte,
+Meldungen, Material, Übergabe, Zurückmelden, ▤ Doku). Der Kachelvorrat steht als
+Block am Ende, sein Chip aber vorn: das Mitnehmen geschieht im Depot, solange
+Netz da ist, und ist dort der erste Handgriff – im Audit merkte der Trupp erst
+am Bauort an der leeren Karte, dass er es versäumt hatte.
 
 **Der Streifen steht VOR den Kennzahlen.** Dahinter lag seine zweite Reihe bei
 390×690 in der Grundstellung des Reiters halb unter dem festliegenden
 Umschalter Liste/Karte: sichtbar genug, um danach zu greifen, und ein Tipp
 darauf traf den Umschalter und warf den Trupp auf die Karte – betroffen war
-ausgerechnet „Absetzen“. Die Reihenfolge stimmt auch sachlich: erst wohin, dann
+ausgerechnet der Chip zum Rückmeldeblock. Die Reihenfolge stimmt auch sachlich: erst wohin, dann
 die Zahlen. Aus demselben Grund trägt der Rollbereich jedes Reiters schmal eine
 Polsterung in Höhe des Umschalters – sonst klebt die letzte Zeile unter ihm.
 
@@ -632,6 +634,58 @@ das Kreuz nie unter der Zoomsteuerung, und 16 px um die Gefahrtaste. Ebenso
 die Modusleiste nach „Auf Karte“ – nur der Abbruch sichtbar, höchstens 64 px
 hoch – und die Meldungspille, die keinen Tipp abfangen und nach einer Aufnahme
 keine Leiste zudecken darf.
+
+## Nach dem Audit der THW-Reviewer
+
+Elf Prüfungen aus Sicht von Helfern – Erstnutzer, Trupp unter Stress, mit
+Handschuhen, nachts, im Funkloch, Führungsstelle, Papier zuerst – haben den
+Baumodus im September 2026 durchgespielt. Was sich daraus hier geändert hat:
+
+**Ein Stand, eine Marke.** Die Streckenliste der Planung trug an jeder Strecke
+mit einem einzigen bestätigten Punkt dasselbe grüne „gebaut“ wie an einer
+übergebenen; die Führungsstelle zählte beim Überfliegen sechs fertige Leitungen,
+wo eine übergeben war. Die Marke ist jetzt der Baustand selbst, jeder mit eigener
+Form (offen umrandet, im Bau gestrichelt, gebaut gefüllt, übergeben mit Haken),
+daneben Trupp und Zeit des letzten Eintrags, darunter die Meldung an den S 6 im
+Wortlaut. Summenband, Einsatzabschnitte und die Lagekarte zählen die Strecken je
+Stand.
+
+**„Übergeben“ fragt.** Der Stand ließ sich ohne Empfänger, Zeitpunkt und Messung
+setzen und kam beim Planer als fertige Leitung an. Er ist weiter wählbar – die
+Übergabe kann auf Papier geschehen sein –, aber nur nach einer Rückfrage, die
+nennt, was fehlt.
+
+**„Abgesetzt“ heißt nicht mehr „kopiert“.** Nach dem Kopieren des Links stand
+„Abgesetzt … seither unverändert“, auch im Funkloch. Der Vermerk heißt jetzt
+„Link erzeugt“ und sagt, dass das Gerät den Empfang nicht kennt; der Chip
+„Absetzen“ heißt „Zurückmelden“, der Knopf „Meldung jetzt“ heißt „Meldung
+mitschreiben“ – beide versprachen eine Übertragung, die es nicht gibt.
+
+**Zusätzliche Punkte werden geprüft.** Die Abweichung maß nur bestätigte Punkte.
+Ein Zusatzpunkt, 82 km neben der Trasse geortet, machte aus 2,7 km gebauter
+Trasse 143 km – und darunter stand „Kein Punkt weicht mehr als 25 m ab“. Liegt
+ein Zusatzpunkt mehr als `ABSEITS_SCHWELLE` (300 m) neben der Trasse oder ist die
+gebaute Trasse mehr als doppelt so lang wie die geplante, warnt der Kopf des
+Reiters, und der beruhigende Satz steht nur noch, wenn er stimmt. Eine Ortung,
+die so weit vom gewählten geplanten Punkt liegt, wird als zusätzlicher Punkt
+aufgenommen und bestätigt ihn nicht; die Zuordnung in der Punktkarte verlangt
+dann einen zweiten Tipp.
+
+**Der Link an den Bautrupp führt in den Baumodus.** Nach „Übernehmen“ stand der
+Trupp in der Planung vor „+ Neue Strecke zeichnen“. Ein Link mit einer
+einzelnen Strecke bietet jetzt „Bau beginnen“ an: Baumodus auf dieser Strecke,
+einmal „Wer baut?“ (Trupp und Truppführer, am Gerät gemerkt) und der Hinweis,
+die Karte mitzunehmen, solange Netz da ist.
+
+**Doppelte und ältere Meldungen werden benannt.** Der Empfangsdialog vergleicht
+den jüngsten Eintrag der Meldung mit dem Stand an der Zielstrecke und sagt, wenn
+sie schon eingespielt oder älter ist.
+
+**Nachtragen vom Meldeblock.** Die Uhrzeit einer Baumeldung ist ein Feld; wer
+abends vom Papier nachträgt, bekommt die Zeit vom Blatt statt der des Eintippens.
+Der Bauauftrag trägt dafür ein eigenes Blatt „Baunachweis zum Ausfüllen“ mit
+denselben Feldern wie der Baumodus. Offen bleibt, dass die Zeit eines
+aufgenommenen Punktes nicht änderbar ist.
 
 ## Verworfene Wege
 
