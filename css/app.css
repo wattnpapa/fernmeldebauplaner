@@ -4,6 +4,10 @@
   --thw: #003399;
   --thw-hell: #0a4fbf;
   --thw-blass: #e8eefb;
+  /* THW-Blau als SCHRIFT. Bei Tag ist es dasselbe Blau; in der Nacht-
+     darstellung wäre #003399 auf dunklem Grund nicht zu lesen, dort wird die
+     Schrift heller, während Flächen und Kopfzeile dunkel bleiben. */
+  --thw-text: var(--thw);
   --grund: #eef1f6;
   --flaeche: #ffffff;
   --flaeche-2: #f7f9fc;
@@ -170,7 +174,7 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
   width: 24px; height: 24px; line-height: 1; cursor: pointer; color: var(--text-schwach);
   display: inline-flex; align-items: center; justify-content: center;
 }
-.mini-knopf:hover { border-color: var(--thw-hell); color: var(--thw); }
+.mini-knopf:hover { border-color: var(--thw-hell); color: var(--thw-text); }
 .mini-knopf.gefahr:hover { border-color: var(--gefahr); color: var(--gefahr); background: var(--gefahr-flaeche); }
 
 /* ---------------------------------------------------------------- Kopfleiste */
@@ -295,7 +299,7 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
   background: none; border-radius: var(--radius-klein); cursor: pointer; font-size: 13px;
   color: var(--text); text-decoration: none;
 }
-.menu button:hover, .menu a:hover { background: var(--thw-blass); color: var(--thw); }
+.menu button:hover, .menu a:hover { background: var(--thw-blass); color: var(--thw-text); }
 .menu hr { border: 0; border-top: 1px solid var(--linie); margin: 5px 2px; }
 
 /* ---------------------------------------------------------------- Layout */
@@ -331,7 +335,7 @@ body.seite-zu .seite { display: none; }
   display: flex; align-items: center; justify-content: center; gap: 6px;
   border-top: 3px solid transparent;
 }
-.ansicht-wechsel .aw.aktiv { color: var(--thw); border-top-color: var(--thw); background: var(--thw-blass); }
+.ansicht-wechsel .aw.aktiv { color: var(--thw-text); border-top-color: var(--thw); background: var(--thw-blass); }
 
 /* Gleich breite Reiter, solange sechs Wörter nebeneinander tragen – darunter
    rollt die Reihe, statt die ganze Seite aufzuschieben. Unter etwa 360 px
@@ -360,7 +364,7 @@ body.seite-zu .seite { display: none; }
   border-bottom: 2px solid transparent; scroll-snap-align: end;
 }
 .reiter button:hover { color: var(--text); }
-.reiter button.aktiv { color: var(--thw); border-bottom-color: var(--thw); background: var(--flaeche); }
+.reiter button.aktiv { color: var(--thw-text); border-bottom-color: var(--thw); background: var(--flaeche); }
 .reiter-inhalt {
   display: none; flex: 1; overflow-y: auto; overscroll-behavior: contain;
   padding: 12px; min-height: 0;
@@ -384,7 +388,7 @@ body.seite-zu .seite { display: none; }
 /* Ohne Strecken steht in der Summenzeile nichts – dann ist auch kein blaues
    Band zu zeigen, das über der leeren Liste nichts zusammenfasst. */
 .summe:empty { display: none; }
-.summe b { color: var(--thw); }
+.summe b { color: var(--thw-text); }
 
 /* Aufschlüsselung nach Kabelart: eigenes Raster statt weiterer Flexglieder,
    sonst rutschten Längen und Trommelzahlen je nach Namenslänge gegeneinander
@@ -440,7 +444,7 @@ body.seite-zu .seite { display: none; }
   flex-shrink: 0; border: 0; background: none; cursor: pointer; color: var(--text-schwach);
   padding: 2px 6px; border-radius: var(--radius-klein); line-height: 1;
 }
-.ea-mehr:hover { background: var(--thw-blass); color: var(--thw); }
+.ea-mehr:hover { background: var(--thw-blass); color: var(--thw-text); }
 
 /* Ein hohler Punkt für „keinem Abschnitt zugeteilt“ – dieselbe Stelle,
    dieselbe Größe, nur ohne Farbe, die es dort nicht zu vergeben gibt. */
@@ -467,7 +471,7 @@ body.seite-zu .seite { display: none; }
 }
 .gl-knopf:hover { color: var(--text); }
 .gl-knopf.aktiv {
-  color: var(--thw); border-color: var(--thw); background: var(--thw-blass); font-weight: 600;
+  color: var(--thw-text); border-color: var(--thw); background: var(--thw-blass); font-weight: 600;
 }
 
 /* Die zugeteilten Strecken hängen sichtbar unter ihrem Abschnitt. */
@@ -478,7 +482,7 @@ body.seite-zu .seite { display: none; }
 .ea-gruppe:not(.ea-ohne) .ea-strecken { border-left-color: var(--thw-blass); }
 .ea-leer { margin: 2px 0 4px; }
 .ea-neu { align-self: flex-start; color: var(--text-schwach); }
-.ea-neu:hover:not(:disabled) { color: var(--thw); }
+.ea-neu:hover:not(:disabled) { color: var(--thw-text); }
 .liste > .ea-gruppe + .ea-gruppe { margin-top: 6px; }
 
 /* Klammer in der Klammer: ein Unterabschnitt hängt an der Kante seines
@@ -556,7 +560,7 @@ body.seite-zu .seite { display: none; }
   border: 0; background: none; cursor: pointer; color: var(--text-schwach); padding: 3px 4px;
 }
 .augen svg { display: block; }
-.augen:hover { color: var(--thw); }
+.augen:hover { color: var(--thw-text); }
 
 /* Dass eine aufgeklappte Zeile mit demselben Tipp wieder zugeht, war an
    nichts zu sehen – gemeldet wurde es aus dem Bilder-Reiter: „es bleibt immer
@@ -668,7 +672,7 @@ body.seite-zu .seite { display: none; }
 }
 .se-kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .se-titel { font-size: 11.5px; font-weight: 600; color: var(--text-schwach); }
-.se-wert { font-size: 20px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--thw); }
+.se-wert { font-size: 20px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--thw-text); }
 .se-zeilen {
   display: grid; grid-template-columns: 1fr; gap: 2px 10px;
   margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--linie);
@@ -870,7 +874,7 @@ body.seite-zu .seite { display: none; }
 /* Die Taste des Endes, dessen Fläche gerade liegt, bleibt sichtbar gedrückt –
    sonst sagt bei zwei gleich aussehenden Tasten nur der Text, welche der
    beiden Flächen man vor sich hat. */
-.knopf.an { background: var(--thw-blass); border-color: var(--thw); color: var(--thw); }
+.knopf.an { background: var(--thw-blass); border-color: var(--thw); color: var(--thw-text); }
 
 /* -- Zwischenstandort. Die Kandidaten sind eine Liste von Knöpfen, jede Zeile
    auf Handschuhmaß: die Nummer links ist dieselbe wie die Marke auf der Karte,
@@ -885,7 +889,7 @@ body.seite-zu .seite { display: none; }
   background: var(--flaeche); color: var(--text);
 }
 .rf-kandidat:hover { border-color: var(--thw-hell); }
-.rf-kandidat.an { background: var(--thw-blass); border-color: var(--thw); color: var(--thw); }
+.rf-kandidat.an { background: var(--thw-blass); border-color: var(--thw); color: var(--thw-text); }
 .rf-kandidat-nr {
   flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1123,7 +1127,7 @@ body.seite-zu .seite { display: none; }
   border-radius: 3px; font-family: var(--mono); font-size: 12px; color: var(--text);
   text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
 }
-.koord-knopf:hover { background: var(--flaeche); border-color: var(--thw-hell); color: var(--thw); }
+.koord-knopf:hover { background: var(--flaeche); border-color: var(--thw-hell); color: var(--thw-text); }
 
 /* ---------------------------------------------------------------- Kartenbereich */
 
@@ -1243,7 +1247,7 @@ body.ist-setzen .zeichen-hinweis .knopf { flex: 0 1 auto; white-space: nowrap; }
   border: 0; background: none; padding: 0; cursor: pointer; text-align: left;
   font: inherit; font-size: 12px; font-weight: 650; color: var(--text-schwach);
 }
-.ko-kopf:hover { color: var(--thw); }
+.ko-kopf:hover { color: var(--thw-text); }
 .ko-pfeil { font-size: 10px; transition: transform .12s; }
 .kartenoptionen.zu .ko-pfeil { transform: rotate(-90deg); }
 /* `min-height: 0` ist die Bedingung dafür, dass ein Flex-Kind unter seinen
@@ -1305,7 +1309,7 @@ body.modus-aktiv .kartenoptionen { display: none; }
   background: none; padding: 3px 7px; cursor: pointer; text-align: left;
 }
 .sl-kopie:hover { background: var(--flaeche); border-color: var(--thw-hell); }
-.sl-kopie:hover .sl-wert { color: var(--thw); }
+.sl-kopie:hover .sl-wert { color: var(--thw-text); }
 
 /* ---------------------------------------------------------------- Leaflet-Anpassungen */
 
@@ -1673,7 +1677,7 @@ body.modus-aktiv .fbp-bild { pointer-events: none; }
 .abwurf[hidden] { display: none; }
 .abwurf-text {
   padding: 18px 26px; border: 2px dashed var(--thw); border-radius: var(--radius);
-  background: var(--flaeche); color: var(--thw); font-size: 15px; font-weight: 650;
+  background: var(--flaeche); color: var(--thw-text); font-size: 15px; font-weight: 650;
   text-align: center; box-shadow: var(--schatten-stark);
 }
 
@@ -1701,7 +1705,7 @@ body.modus-aktiv .fbp-bild { pointer-events: none; }
   border: 1px solid var(--linie-stark); background: var(--flaeche); border-radius: 4px;
   padding: 3px 8px; font-size: 11.5px; cursor: pointer;
 }
-.koord-popup .kp-tasten button:hover { border-color: var(--thw); color: var(--thw); }
+.koord-popup .kp-tasten button:hover { border-color: var(--thw); color: var(--thw-text); }
 /* Im Baumodus ist „Punkt hier aufnehmen“ der Griff, um den es geht */
 .koord-popup .kp-tasten .kp-primaer { background: var(--thw); border-color: var(--thw); color: #fff; }
 .koord-popup .kp-tasten .kp-primaer:hover { background: var(--thw-hell); color: #fff; }
@@ -1831,7 +1835,7 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .pl-text .klein { margin: 0; }
 /* Der Grund, warum „Öffnen“ hier gesperrt ist – in der Bedienfarbe, weil er
    dasselbe sagt wie der blaue Grund der Zeile, nur in Worten. */
-.pl-offen { color: var(--thw); }
+.pl-offen { color: var(--thw-text); }
 .pl-tasten { display: flex; gap: 6px; flex-shrink: 0; }
 
 /* ---------------------------------------------------------------- Eigener Speicher */
@@ -1888,7 +1892,7 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   border: 1px solid var(--linie); border-radius: var(--radius); background: var(--flaeche-2);
 }
 .speicher-mehr > summary {
-  padding: 12px 13px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--thw);
+  padding: 12px 13px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--thw-text);
 }
 .speicher-mehr p { margin: 0 13px .6em; font-size: 13px; line-height: 1.45; }
 .speicher-mehr p:last-child { margin-bottom: 13px; }
@@ -1986,7 +1990,7 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   hyphens: auto; overflow-wrap: anywhere;
 }
 
-.hilfe h3 { font-size: 13.5px; margin: 14px 0 5px; color: var(--thw); }
+.hilfe h3 { font-size: 13.5px; margin: 14px 0 5px; color: var(--thw-text); }
 .hilfe h3:first-child { margin-top: 0; }
 /* Fünfzehn Abschnitte auf 6.662 px: ohne diese Liste war „Baumodus“ zwölf
    Schirme tief zu erwischen. Die Chips brechen um wie im Bau-Reiter – eine
@@ -1996,7 +2000,7 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 /* Die beiden Einstiege stehen in eigener Zeile über der Abschnittsliste – die
    Anwendung hat genau zwei Zustände, und am Bauort wird der zweite gesucht. */
 .hs-einstieg { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; }
-.hs-einstieg .knopf.klein { border-color: var(--thw); color: var(--thw); font-weight: 650; }
+.hs-einstieg .knopf.klein { border-color: var(--thw); color: var(--thw-text); font-weight: 650; }
 .hilfe p, .hilfe li { font-size: 13px; margin: .3em 0; }
 .hilfe ol, .hilfe ul { padding-left: 20px; margin: .3em 0; }
 .tasten-liste { list-style: none; padding: 0; }
@@ -2472,7 +2476,7 @@ body.baumodus .sichtwahl { display: none; }
 .bau-sprung .knopf.klein { flex: 0 0 auto; border-radius: 999px; margin: 0; }
 /* Der Chip, der nicht springt, sondern aufschlägt: das Sinnbild unterscheidet
    ihn von den Sprungzielen daneben – dasselbe ▤ wie an den anderen Blättern. */
-.bau-sprung-doku { border-color: var(--thw); color: var(--thw); }
+.bau-sprung-doku { border-color: var(--thw); color: var(--thw-text); }
 
 /* Die bestätigte Punktzeile zeigt ihr Formular erst auf Tipp. Der Kopf ist
    der Griff dafür und trägt die ganze Zeile – mit dem Handschuh wird nicht auf
@@ -2644,7 +2648,7 @@ body.baumodus .sichtwahl { display: none; }
   border-radius: 999px; background: var(--flaeche); color: var(--text); cursor: pointer;
   font: inherit; font-size: 12.5px; font-weight: 550; white-space: nowrap;
 }
-.pk-chip:hover { border-color: var(--thw-hell); color: var(--thw); }
+.pk-chip:hover { border-color: var(--thw-hell); color: var(--thw-text); }
 .pk-chip[aria-pressed="true"] { background: var(--thw); border-color: var(--thw); color: #fff; }
 /* Die Zuordnung zum Plan steht als einzige Frage in einer Zeile mit ihren
    Chips. Sie ist der Ausweg aus „0 von 3 Punkten“ und muss deshalb da sein –
@@ -3387,3 +3391,70 @@ body.baumodus .sichtwahl { display: none; }
 .rl-werte > span { display: flex; flex-direction: column; gap: 1px; }
 .rl-werte i { font-style: normal; font-size: 11px; color: var(--text-schwach); }
 .rl-werte b { font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- Nachtdarstellung
+
+   Nachts am Kabelwagen blendete die weiße Oberfläche: nach jedem Blick aufs
+   Telefon brauchte das Auge Minuten, bis es Trasse und Stolperstellen wieder
+   sah, und wer deshalb die Helligkeit ganz herunterdrehte, verlor die grauen
+   Hinweistexte. Die Nachtdarstellung legt dieselben Variablen dunkel aus; was
+   die Oberfläche trägt, läuft ohnehin über sie.
+
+   Die Kontraste sind wie bei Tag gerechnet: Text 12:1 auf der Fläche, der
+   schwache Text 6,5:1, Ränder der Bedienelemente über 3:1, die Mahnschrift
+   8:1 auf der Mahnfläche. Das THW-Blau der Kopfzeile bleibt dunkel, als
+   Schrift wird es hell (`--thw-text`).
+
+   Die Karte wird nur abgedunkelt, nicht umgefärbt: umgekehrte Farben machten
+   aus Wald Magenta und aus Wasser Orange, und am Bauort wird nach der Farbe
+   gesucht. Der Filter sitzt NUR an der Arbeitskarte (`#karte`) und nur am
+   Schirm – Firefox lässt gefilterte Bereiche beim Drucken ganz weg (siehe
+   `CLAUDE.md`), und die Druckkarten des Bauauftrags sind eigene Karten. */
+body.nacht {
+  --thw: #0b2e7a;
+  --thw-hell: #3a6ad6;
+  --thw-blass: #1b2a47;
+  --thw-text: #9cb8ff;
+  --grund: #0d1218;
+  --flaeche: #151c25;
+  --flaeche-2: #1a222d;
+  --linie: #28323f;
+  --linie-stark: #6c7b90;
+  --text: #dde4ee;
+  --text-schwach: #9aa7b8;
+  --text-blau: #c6d3ee;
+  --gefahr: #ff7b7b;
+  --gefahr-linie: #b86a6a;
+  --gefahr-flaeche: #2c1717;
+  --gefahr-matt: #e09a9a;
+  --warnung: #e0a23a;
+  --warnung-flaeche: #2b2210;
+  --warnung-linie: #5e4a1f;
+  --warnung-tief: #f3c872;
+  --warnung-linie-stark: #b88a3a;
+  --gut: #2f8d58;
+  --schatten: 0 1px 2px rgba(0,0,0,.5), 0 4px 9px rgba(0,0,0,.45);
+  --schatten-stark: 0 2px 4px rgba(0,0,0,.55), 0 8px 14px rgba(0,0,0,.5);
+  --schatten-oben: 0 -1px 2px rgba(0,0,0,.5), 0 -4px 9px rgba(0,0,0,.45);
+  color-scheme: dark;
+  background: var(--grund);
+  color: var(--text);
+}
+@media screen {
+  body.nacht #karte { background: #1a2028; }
+  body.nacht #karte .leaflet-tile-pane { filter: brightness(.62) contrast(1.08); }
+  /* Die Kartenaufsätze sind von Leaflet weiß vorgegeben. */
+  body.nacht .leaflet-bar a,
+  body.nacht .leaflet-control-scale-line,
+  body.nacht .leaflet-control-attribution {
+    background: var(--flaeche) !important; color: var(--text-schwach) !important;
+    border-color: var(--linie-stark) !important;
+  }
+  body.nacht .leaflet-control-attribution a { color: var(--thw-text); }
+}
+/* Zwei Flächen stehen bei Tag fest auf Weiß und brauchen nachts eigene Werte:
+   die Statusleiste unter der Karte – sonst bliebe ein heller Streifen, genau
+   dort, wo am Bauort die Gitterangabe abgelesen wird – und die Hinweispille,
+   die dunkel ist und auf dunklem Grund eine Kontur braucht. */
+body.nacht .statusleiste { background: rgba(21,28,37,.94); }
+body.nacht .hinweisbox { box-shadow: 0 0 0 1px var(--linie-stark), var(--schatten-stark); }

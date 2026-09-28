@@ -881,9 +881,41 @@ dateiMenu.addEventListener('click', e => {
     'export-geojson': () => io.geoJSONExportieren(),
     'export-gpx': () => io.gpxExportieren(),
     'export-kml': () => io.kmlExportieren(),
-    hilfe: hilfeDialog
+    hilfe: hilfeDialog,
+    nacht: () => nachtUmschalten()
   })[akt]?.();
 });
+
+// ---------------------------------------------------------------- Nachtdarstellung
+
+/* Folgt der Einstellung des Geräts, bis jemand selbst umschaltet – dann gilt
+   seine Wahl, auch nach dem Neuladen. Die Einstellung des Telefons allein
+   reichte nicht: viele stellen sie nicht um, und am Bauort ist es nachts
+   dunkel, gleich was im Menü steht. Gespeichert im Gerät und nicht in der
+   Planung: sie sagt, wo und wann gearbeitet wird, nicht was. */
+const KEY_NACHT = 'fbp.nacht.v1';
+const dunkelAbfrage = window.matchMedia('(prefers-color-scheme: dark)');
+function nachtGewaehlt() {
+  let wahl = '';
+  try { wahl = localStorage.getItem(KEY_NACHT) || ''; } catch (e) { /* ohne Wahl gilt das Gerät */ }
+  return wahl === 'an' ? true : wahl === 'aus' ? false : dunkelAbfrage.matches;
+}
+function nachtAnwenden() {
+  const an = nachtGewaehlt();
+  document.body.classList.toggle('nacht', an);
+  $('#menu-nacht').textContent = an ? 'Nachtdarstellung ausschalten' : 'Nachtdarstellung einschalten';
+}
+function nachtUmschalten() {
+  const an = !document.body.classList.contains('nacht');
+  try { localStorage.setItem(KEY_NACHT, an ? 'an' : 'aus'); } catch (e) { /* gilt dann nur jetzt */ }
+  nachtAnwenden();
+  /* Ohne Speicher gilt die Wahl wenigstens bis zum Neuladen. */
+  document.body.classList.toggle('nacht', an);
+  $('#menu-nacht').textContent = an ? 'Nachtdarstellung ausschalten' : 'Nachtdarstellung einschalten';
+  hinweis(an ? 'Nachtdarstellung an' : 'Nachtdarstellung aus');
+}
+dunkelAbfrage.addEventListener?.('change', nachtAnwenden);
+nachtAnwenden();
 
 function neuesProjektDialog() {
   const box = document.createElement('div');
