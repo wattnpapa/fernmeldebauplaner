@@ -116,6 +116,11 @@ const STANDARD_AUFTRAG = {
      nicht und der Haken bleibt ohne Wirkung. */
   profil: true,
   material: true, hinweise: true, bemerkungen: true,
+  /* Der Baunachweis zum Ausfüllen ist die Rückfallebene: fällt das Telefon
+     aus, schreibt der Trupp auf diesem Blatt mit – in denselben Feldern, die
+     der Baumodus später hat, damit das Nachtragen eine Abschrift ist und keine
+     Zuordnungsarbeit. */
+  baunachweis: true,
   /* Beides gehört auf den Bauauftrag und ist deshalb an. Abschalten lohnt
      erst, wenn die Trasse eng geführt ist: dann liegen Zahl an Zahl und
      verdecken den Verlauf, den der Trupp auf dem Blatt sucht. */
@@ -602,6 +607,7 @@ function oeffneDruckansicht(auftrag) {
           haken('Längenverbindungen', 'laengenverbindungen', opt, neuAufbau),
           haken('Materialbedarf', 'material', opt, neuAufbau),
           haken('Hinweise', 'hinweise', opt, neuAufbau),
+          haken('Baunachweis zum Ausfüllen', 'baunachweis', opt, neuAufbau),
           haken('Bemerkungen', 'bemerkungen', opt, neuAufbau),
           haken('Unterschriften', 'unterschrift', opt, neuAufbau)
         ])
@@ -1701,7 +1707,8 @@ function blattfluss(ziel, opt, kopf, fuss) {
   };
 
   neuBlatt();
-  return { setze, neuBlatt, passt, anhaengen: el => (inhalt.appendChild(el), el) };
+  return { setze, neuBlatt, passt, anhaengen: el => (inhalt.appendChild(el), el),
+           leer: () => !inhalt.children.length };
 }
 
 /**
@@ -1749,7 +1756,8 @@ function tabelleFliessen(fluss, rahmen, zeilenHTML) {
 function datenblattNoetig(opt, funk = false) {
   return !!((funk && opt.richtfunk) || (funk && opt.pruefanweisung) || (funk && opt.profil)
     || opt.punkttabelle || opt.querungen || opt.laengenverbindungen
-    || opt.material || opt.hinweise || opt.bemerkungen || opt.unterschrift);
+    || opt.material || opt.hinweise || opt.bemerkungen || opt.unterschrift
+    || (!funk && opt.baunachweis));
 }
 
 function datenblaetter(ziel, p, strecke, k, opt) {
@@ -1782,6 +1790,15 @@ function datenblaetter(ziel, p, strecke, k, opt) {
   if (opt.material) fluss.setze(elementAus(materialHTML(strecke, k)));
   if (opt.hinweise) fluss.setze(elementAus(regelnHTML(k)));
   if (opt.pruefanweisung && k.kabel.funk) fluss.setze(elementAus(pruefanweisungHTML()));
+  /* Der Baunachweis beginnt auf einem eigenen Blatt: es wird abgetrennt und
+     auf dem Klemmbrett mitgeführt, während der Rest des Auftrags im Fahrzeug
+     bleibt. Bei der Funkstrecke nicht – dort gibt es keine Trasse abzuhaken,
+     und die Prüfanweisung ist ihr Nachweis. */
+  if (opt.baunachweis && !k.kabel.funk && strecke.punkte.length) {
+    if (!fluss.leer()) fluss.neuBlatt();
+    tabelleFliessen(fluss, baunachweisRahmenHTML, baunachweisZeilenHTML(strecke));
+    fluss.setze(elementAus(baunachweisMeldungenHTML(k)));
+  }
   if (opt.bemerkungen) fluss.setze(elementAus(bemerkungHTML(p, strecke)));
   if (opt.unterschrift) fluss.setze(elementAus(unterschriftHTML(p)));
 }
@@ -2630,6 +2647,69 @@ function regelnHTML(k) {
     <ul class="rg-liste">${regeln.map(r =>
       `<li>${escapeHtml(r.text)}<span class="rg-fundstelle">${escapeHtml(fundstelleText(r))}</span></li>`
     ).join('')}</ul>
+  </section>`;
+}
+
+// ---------------------------------------------------------------- Baunachweis
+
+/* Das Blatt, auf dem gebaut wird, wenn kein Gerät mitgeht. Seine Felder sind
+   die des Baumodus in derselben Reihenfolge – Punkt bestätigt oder abweichend,
+   Baumeldungen mit Uhrzeit, Kabelverbrauch –, damit das Nachtragen am Abend
+   eine Abschrift ist. Im Audit schrieb der Trupp ohne Vordruck auf die
+   Rückseite, und beim Übertragen musste jemand freie Notizen den Feldern
+   zuordnen; genau dort entstehen die Fehler. */
+function baunachweisRahmenHTML(fortsetzung) {
+  return `<section class="bl-abschnitt bl-baunachweis">
+    <h2>Baunachweis zum Ausfüllen${fortsetzung ? ' (Fortsetzung)' : ''}</h2>
+    <table class="tab-punkte tab-ausfuellen">
+      <thead><tr>
+        <th>Nr.</th><th>Art</th><th>MGRS geplant</th><th>wie geplant</th>
+        <th>abweichend: MGRS oder Beschreibung</th><th>Uhrzeit</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="tab-fussnote">Je Punkt ankreuzen oder die gebaute Lage eintragen. Im Baumodus
+      danach „wie geplant“ bzw. die Koordinate unter „Koordinate“ übernehmen; zusätzliche
+      Punkte (Mast, Muffe, Umgehung) in die freien Zeilen.</p>
+  </section>`;
+}
+
+function baunachweisZeilenHTML(s) {
+  const leer = '<td class="ausfuellen"></td>';
+  const zeilen = s.punkte.map((pt, i) => `<tr>
+      <td class="nr">${i + 1}</td>
+      <td>${escapeHtml(punktartById(pt.art).name)}</td>
+      <td class="mono">${escapeHtml(toMGRS(pt.lat, pt.lng, 5))}</td>
+      <td class="ankreuzen"><span class="kasten" aria-hidden="true"></span></td>
+      ${leer}${leer}
+    </tr>`);
+  /* Drei freie Zeilen für das, was der Plan nicht kennt. Mehr nicht: eine
+     halbe Seite leerer Zeilen liest sich wie eine Aufforderung, sie zu füllen. */
+  for (let i = 0; i < 3; i++) {
+    zeilen.push(`<tr><td class="nr">+</td>${leer}${leer}<td></td>${leer}${leer}</tr>`);
+  }
+  return zeilen.join('');
+}
+
+function baunachweisMeldungenHTML(k) {
+  const regel = BAUREGELN.find(r => /^Baumeldung/.test(r.text));
+  const zeile = '<tr><td class="ausfuellen"></td><td class="ausfuellen"></td><td class="ausfuellen"></td></tr>';
+  return `<section class="bl-abschnitt bl-baunachweis">
+    <h2>Baumeldungen und Kabelverbrauch</h2>
+    <table class="tab-punkte tab-ausfuellen">
+      <thead><tr><th>Uhrzeit</th><th>Stand (Kabellänge, Punkt)</th><th>gemeldet an</th></tr></thead>
+      <tbody>${zeile.repeat(8)}</tbody>
+    </table>
+    <table class="tab-punkte tab-ausfuellen">
+      <thead><tr><th>Kabel</th><th>Bedarf laut Planung</th><th>verbraucht</th><th>Trommeln verbaut</th></tr></thead>
+      <tbody><tr>
+        <td>${escapeHtml(k.kabel.name)}</td>
+        <td class="zahl">${escapeHtml(meter(k.bedarf))}</td>
+        <td class="ausfuellen"></td><td class="ausfuellen"></td>
+      </tr></tbody>
+    </table>
+    <p class="tab-fussnote">${regel ? `${escapeHtml(regel.text)} (${escapeHtml(fundstelleText(regel))}). ` : ''}Die
+      Uhrzeiten lassen sich im Baumodus unter „Meldungen“ so nachtragen, wie sie hier stehen.</p>
   </section>`;
 }
 

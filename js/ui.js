@@ -5634,7 +5634,25 @@ function bauMeldungBlock(s) {
     const zeile = el('div', 'bm-zeile');
     const a = bauabschnittById(s, m.abschnitt);
     if (a) zeile.style.setProperty('--farbe', a.farbe);
-    zeile.appendChild(el('span', 'bm-zeit', escapeHtml(uhrzeit(m.zeit) || '—')));
+    /* Die Uhrzeit ist vorbelegt, aber nicht fest. Wer am Bauort ohne Gerät
+       gebaut und auf dem Meldeblock mitgeschrieben hat, trägt abends nach –
+       und bekam bisher die Uhrzeit des Eintippens statt der Bauzeit, alle
+       Meldungen mit derselben Abendzeit. Geändert wird beim Verlassen des
+       Feldes (`change`), nicht bei jedem Tastendruck: die Liste sortiert nach
+       der Zeit und zöge die Zeile sonst unter dem Finger weg. */
+    const zeit = document.createElement('input');
+    zeit.type = 'time';
+    zeit.className = 'bm-zeit';
+    zeit.value = uhrzeit(m.zeit) || '';
+    zeit.setAttribute('aria-label', 'Uhrzeit der Meldung');
+    zeit.addEventListener('change', () => {
+      const [h, min] = zeit.value.split(':').map(Number);
+      if (!Number.isFinite(h) || !Number.isFinite(min)) { zeit.value = uhrzeit(m.zeit) || ''; return; }
+      const d = new Date(m.zeit || Date.now());
+      d.setHours(h, min, 0, 0);
+      store.aendern(() => { m.zeit = d.toISOString(); }, 'bau');
+    });
+    zeile.appendChild(zeit);
     zeile.appendChild(feld('', m.text, w => schreib(() => { m.text = w; }),
       { platzhalter: 'Was gemeldet wurde' }));
     const weg = el('button', 'mini-knopf gefahr', '✕');

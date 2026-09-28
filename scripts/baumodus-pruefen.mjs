@@ -380,7 +380,7 @@ try {
     'Die Uhrzeit trägt sich selbst ein – nachträglich geschätzt wäre sie keine Bauzeit');
   b.pruefe(await bau('!!bau.meldungen[0].abschnitt'),
     'Die Meldung hängt am aktiven Bauabschnitt');
-  await seite.schreibe('.bm-zeile input', 'Erste Länge verbaut, Trasse frei');
+  await seite.schreibe('.bm-zeile .feld input', 'Erste Länge verbaut, Trasse frei');
   await seite.warteAuf(
     "window.fbp.store.projekt.strecken[0].bau.meldungen[0].text.startsWith('Erste Länge')", 3000);
   b.pruefe(true, 'Der Text wird nachgetragen');

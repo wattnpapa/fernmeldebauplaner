@@ -2379,10 +2379,17 @@ body.baumodus .sichtwahl { display: none; }
 /* Die Baumeldungen als Zeitschiene: die Uhrzeit steht vorn und in fester
    Breite, damit die Spalte beim Überfliegen eine Kante hat. */
 .bm-zeile {
-  display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: center;
+  display: grid; grid-template-columns: 5.6em 1fr auto; gap: 8px; align-items: center;
   border-left: 3px solid var(--farbe, var(--linie)); padding-left: 8px; margin-bottom: 6px;
 }
-.bm-zeit { font-variant-numeric: tabular-nums; font-weight: 650; }
+/* Die Uhrzeit ist ein Feld und darf wie eines aussehen, aber leiser als der
+   Text daneben: sie steht fast immer richtig und wird nur beim Nachtragen
+   angefasst. 16 px, weil iOS sonst beim Antippen hineinzoomt. */
+.bm-zeile input.bm-zeit {
+  font: inherit; font-size: 16px; font-variant-numeric: tabular-nums; font-weight: 650;
+  width: 100%; padding: 4px 2px; border: 1px solid var(--linie); border-radius: var(--radius-klein);
+  background: var(--flaeche); color: var(--text);
+}
 .bm-zeile .feld { margin: 0; min-width: 0; }
 /* Die Meldezeile hat ihre Beschriftung schon in der Überschrift des Blocks;
    der leere Titel des Feldes risse sonst eine Zeile Luft auf. */

@@ -559,6 +559,25 @@ body.druckansicht { overflow: hidden; }
 .tab-punkte .mono { font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: .92em; white-space: nowrap; }
 .tab-fussnote { font-size: .76em; color: #555; margin: 1.2mm 0 0; font-style: italic; }
 
+/* -- Baunachweis zum Ausfüllen
+
+   Geschrieben wird mit Kugelschreiber auf dem Klemmbrett, oft im Stehen und mit
+   kalten Fingern: die Zeilen sind deshalb 7 mm hoch – ein Zeilenabstand, in den
+   eine ungeübte Handschrift passt – und ohne Streifen, auf grauem Grund liest
+   sich Bleistift schlecht. Die Linie zum Schreiben ist dunkler als die
+   Trennlinie der übrigen Tabellen; sie muss im Schwarz-Weiß-Druck und auf dem
+   Kopierer stehen bleiben. Das Kästchen ist ein Rahmen und kein Zeichen: ein ☐
+   fehlt manchem Druckerfont. */
+.tab-ausfuellen td { height: 7mm; vertical-align: middle; }
+.tab-ausfuellen tbody tr:nth-child(even) { background: none; }
+.tab-ausfuellen td.ausfuellen { border-bottom: .6pt solid #444; }
+.tab-ausfuellen th:nth-child(5) { width: 40%; }
+.tab-ausfuellen .ankreuzen { text-align: center; }
+.tab-ausfuellen .kasten {
+  display: inline-block; width: 4mm; height: 4mm; border: .8pt solid #111; vertical-align: middle;
+}
+.tab-ausfuellen + .tab-ausfuellen { margin-top: 3mm; }
+
 /* -- Querungen
 
    Neun Spalten, von denen eine den vollen Wortlaut der Auflage trägt. Die
