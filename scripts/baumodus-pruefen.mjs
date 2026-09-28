@@ -374,7 +374,7 @@ try {
 
   b.abschnitt('Baumeldungen als Zeitschiene');
   b.gleich(await bau('bau.meldungen.length'), 0, 'Noch keine Meldung');
-  await taste('.bau-meldungen', 'Meldung jetzt');
+  await taste('.bau-meldungen', 'Meldung mitschreiben');
   b.gleich(await bau('bau.meldungen.length'), 1, 'Eine Meldung mit einem Griff');
   b.pruefe(await bau('!!bau.meldungen[0].zeit'),
     'Die Uhrzeit trägt sich selbst ein – nachträglich geschätzt wäre sie keine Bauzeit');

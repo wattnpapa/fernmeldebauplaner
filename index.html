@@ -179,8 +179,13 @@
                 aria-label="Relaisstellen des Sprechfunks">Relais</button>
         <button role="tab" id="reiter-bilder" aria-selected="false" tabindex="-1"
                 aria-controls="inhalt-bilder" data-reiter="bilder">Bilder</button>
+        <!-- „Auftrag“ und nicht „Planung“: daneben heißt der Modusschalter
+             „Planung“, und im Baumodus führte ein Tipp auf den gleichnamigen
+             Reiter nicht zurück in die Planung, sondern zu den Kopfdaten des
+             Bauauftrags. Der Reiter heißt nach dem, was darin steht. -->
         <button role="tab" id="reiter-projekt" aria-selected="false" tabindex="-1"
-                aria-controls="inhalt-projekt" data-reiter="projekt">Planung</button>
+                aria-controls="inhalt-projekt" data-reiter="projekt"
+                aria-label="Auftragsdaten der Planung">Auftrag</button>
         <!-- Der siebte Reiter steht nur im Baumodus da, und dort stehen die
              Planungsreiter nicht: zu siebt wurde die Reiterreihe auf einem
              320-px-Fenster breiter als das Fenster, und der letzte Reiter war
@@ -301,7 +306,10 @@
              sie danach im Kopf. -->
         <button class="wz nur-bau primaer" id="wz-punkt-hier" title="Gebauten Punkt aus dem Standort des Geräts aufnehmen"><span class="wz-icon">◉</span><span>Punkt hier</span></button>
         <button class="wz nur-bau" id="wz-punkt-karte" title="Gebauten Punkt auf der Karte antippen"><span class="wz-icon">✛</span><span>Auf Karte</span></button>
-        <button class="wz" id="wz-suche" title="Koordinate anspringen (K)"><span class="wz-icon">⊞</span><span>Koordinate<i class="wz-taste">K</i></span></button>
+        <!-- „Ort suchen“ und nicht „Koordinate“: der Dialog nimmt beides, aber
+             wer einen Ortsnamen hat, sucht nach einer Lupe und nicht nach dem
+             Wort Koordinate – im Audit fand ein Erstnutzer die Ortssuche nicht. -->
+        <button class="wz" id="wz-suche" title="Ort oder Koordinate anspringen (K)"><span class="wz-icon">⊞</span><span>Ort suchen<i class="wz-taste">K</i></span></button>
         <button class="wz" id="wz-standort" title="Eigenen Standort anzeigen"><span class="wz-icon">◎</span><span>Standort</span></button>
       </div>
 

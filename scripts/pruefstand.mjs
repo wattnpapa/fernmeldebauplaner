@@ -256,8 +256,14 @@ async function neueSeite(befehl, horcher) {
        nächsten `oeffne` durch das neue ersetzt, sonst liefen beide. */
     async oeffne(adresse, { sicht = 'erweitert', frisch = false } = {}) {
       if (sichtSkript) await an('Page.removeScriptToEvaluateOnNewDocument', { identifier: sichtSkript });
+      /* Der Einstiegsdialog hat seit dem Audit einen eigenen Vermerk
+         (`fbp.einstieg.v1`): die gemerkte Sicht allein hält ihn nicht mehr
+         fern. Wer eine Sicht vorgibt, will ihn nicht sehen. Wer sie räumt,
+         lässt den Vermerk stehen – geleert wird er nur mit `frisch`, sonst
+         wäre der zweite Start wieder ein erster. */
       const quelle = (frisch ? 'try { localStorage.clear(); } catch (e) {} ' : '') + (sicht
-        ? `try { localStorage.setItem('fbp.sicht.v1', ${JSON.stringify(sicht)}); } catch (e) {}`
+        ? `try { localStorage.setItem('fbp.sicht.v1', ${JSON.stringify(sicht)}); ` +
+          `localStorage.setItem('fbp.einstieg.v1', '1'); } catch (e) {}`
         : `try { localStorage.removeItem('fbp.sicht.v1'); } catch (e) {}`);
       sichtSkript = (await an('Page.addScriptToEvaluateOnNewDocument', { source: quelle })).identifier;
       await an('Page.navigate', { url: adresse });

@@ -7,7 +7,7 @@ import {
 import { erstelleKarte, setzeBasiskarte, setzeVorrang, BASISKARTEN } from './map.js';
 import { sichtStarten, sichtSetzen, istEinfach, gemerkteSicht } from './sicht.js';
 import { bestand as kachelBestand } from './kacheln.js';
-import { StreckenLayer, escapeHtml } from './strecken.js';
+import { StreckenLayer, escapeHtml, ZEICHNEN_AB_ZOOM } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
 import { FlaechenLayer } from './flaechen.js';
 import { RelaisLayer } from './relais.js';
@@ -46,7 +46,16 @@ store.starten();
 /* Ob der Einstiegsdialog kommt, steht fest, BEVOR die Sicht gewählt wird:
    `sichtStarten` merkt die Wahl sofort, und danach sähe jedes Gerät wie eines
    aus, das schon entschieden hat. */
-const einstiegZeigen = store.erststart && !gemerkteSicht();
+/* Beantwortet ist er erst, wenn jemand einen seiner Knöpfe gedrückt hat – nicht
+   schon, wenn er einmal auf dem Schirm stand. Vorher hing er an der gemerkten
+   Sicht, und die wird beim ersten Öffnen gesetzt: wer dabei gestört wurde und
+   den Reiter schloss, sah ihn nie wieder, und mit ihm den Satz zum Link vom
+   Planer. */
+const KEY_EINSTIEG = 'fbp.einstieg.v1';
+const einstiegErledigt = () => {
+  try { return localStorage.getItem(KEY_EINSTIEG) === '1'; } catch (e) { return false; }
+};
+const einstiegZeigen = store.erststart && !einstiegErledigt();
 sichtStarten(store.erststart);
 
 /* Die Grenze zwischen Schmal- und Breitansicht, an einer Stelle. Schmal lösen
@@ -66,6 +75,11 @@ sichtStarten(store.erststart);
    Bauauftrags nicht mehr zu lesen. Der Grund steht dort. */
 const SCHMAL_BIS = 760;
 const schmalAbfrage = window.matchMedia(`(max-width: ${SCHMAL_BIS}px)`);
+
+/* Ein Gerät ohne jeden feinen Zeiger – Telefon, Tablet ohne Maus. Dort heißt es
+   „antippen“ statt „anklicken“, und der Doppelklick schließt nichts ab. */
+const NUR_TOUCH = window.matchMedia('(pointer: coarse)').matches &&
+  !window.matchMedia('(any-pointer: fine)').matches;
 
 // ---------------------------------------------------------------- Karte & Layer
 
@@ -386,9 +400,15 @@ function modusAnzeigen() {
   if (zeichnet) {
     const s = store.strecke(sl.zeichenModus);
     const n = s ? s.punkte.length : 0;
+    /* Die Anleitung spricht die Sprache des Geräts: „anklicken“ und
+       „Doppelklick“ stimmten am Telefon nicht, und im Übersichtsmaßstab setzt
+       ein Tipp gar keinen Punkt, sondern holt heran (`ZEICHNEN_AB_ZOOM`). */
+    const anleitung = karte.getZoom() < ZEICHNEN_AB_ZOOM
+      ? 'Karte antippen, um heranzuholen.'
+      : NUR_TOUCH ? 'Trasse Punkt für Punkt antippen.' : 'Trasse anklicken, Doppelklick schließt ab.';
     box.querySelector('.zh-text').innerHTML =
       `<b>${escapeHtml(s ? s.name : '')}</b> – ${n} ${n === 1 ? 'Punkt' : 'Punkte'} gesetzt.
-       Trasse auf der Karte anklicken.`;
+       ${anleitung}`;
     /* Solange kein Punkt steht, gibt es nichts fertigzustellen und nichts
        zurückzunehmen; gesperrt statt wirkungslos, damit der Fehlgriff auf den
        großen Knopf im Daumenbereich gar nicht erst passiert. */
@@ -580,7 +600,12 @@ function netzstandZeigen(aus) {
   slNetz.hidden = false;
   slNetz.textContent = 'kein Netz';
   kachelBestand().then(b => {
-    slNetz.textContent = `kein Netz, Vorrat: ${b.anzahl.toLocaleString('de-DE')} Kacheln`;
+    /* „Vorrat: 0 Kacheln“ las sich wie eine Zählerangabe. „Vorrat leer“ sagt,
+       dass keine Karte an Bord ist; mehr trägt die einzeilige Leiste bei
+       320 px nicht. */
+    slNetz.textContent = b.anzahl
+      ? `kein Netz · Vorrat: ${b.anzahl.toLocaleString('de-DE')} Kacheln`
+      : 'kein Netz · Vorrat leer';
   }).catch(() => { /* ohne Bestand bleibt die kurze Form stehen – sie ist die Aussage */ });
 }
 karte.on('fbp:kachelnot', e => netzstandZeigen(e.aus));
@@ -1393,9 +1418,11 @@ function einstiegDialog() {
     <p class="klein">Das ist die einfache Ansicht. Taktische Zeichen, Flächen, Relaisstellen
        und die Bauansatzwerte stehen in der erweiterten Ansicht – der Umschalter steht oben
        in der linken Leiste.</p>`;
-  box.querySelector('[data-weg="strecke"]').onclick = () => { schliesseDialog(); neueStreckeStarten(); };
-  box.querySelector('[data-weg="laden"]').onclick = () => { schliesseDialog(); $('#datei-import').click(); };
-  dialog({ titel: 'Willkommen im FMBauplaner', inhalt: box, fuss: [{ text: 'Erst einmal umsehen' }] });
+  const erledigt = () => { try { localStorage.setItem(KEY_EINSTIEG, '1'); } catch (e) { /* dann eben nochmal */ } };
+  box.querySelector('[data-weg="strecke"]').onclick = () => { erledigt(); schliesseDialog(); neueStreckeStarten(); };
+  box.querySelector('[data-weg="laden"]').onclick = () => { erledigt(); schliesseDialog(); $('#datei-import').click(); };
+  dialog({ titel: 'Willkommen im FMBauplaner', inhalt: box,
+           fuss: [{ text: 'Erst einmal umsehen', tun: erledigt }] });
 }
 const KEY_MODUS = 'fbp.modus.v1';
 const KEY_BAU_ERKLAERT = 'fbp.bauerklaert.v1';
@@ -1612,11 +1639,11 @@ karte.on('dblclick', e => {
   const perTouch = oe && (oe.pointerType === 'touch' || oe.sourceCapabilities?.firesTouchEvents);
   /* Safari nennt den Zeiger am Klick nicht immer; ein Gerät ohne jeden feinen
      Zeiger hat dann ohnehin keine Maus. */
-  const nurTouch = window.matchMedia('(pointer: coarse)').matches &&
-    !window.matchMedia('(any-pointer: fine)').matches;
-  if (perTouch || nurTouch) return;
+  if (perTouch || NUR_TOUCH) return;
   zeichnenBeenden(false);
 });
+/* Die Anleitung der Zeichenleiste hängt am Maßstab (heranholen oder zeichnen). */
+karte.on('zoomend', () => { if (sl.zeichenModus) modusAnzeigen(); });
 
 // ---------------------------------------------------------------- Drucken
 
@@ -1773,8 +1800,11 @@ function bandNachfuehren() {
   band.classList.toggle('mahnung', mahnen);
   /* Immer ein ganzer Satz: schmal ist dieses Band die einzige Auskunft über
      den Verbleib der Arbeit, und eine leere Stelle liest sich wie „gesichert“. */
-  stand.textContent = zeit ? 'Als Datei gesichert: ' + zeitpunktKurz(zeit)
-    : 'Noch nie als Datei gesichert.';
+  /* „Noch nie als Datei gesichert“ las sich im Audit wie „nicht gespeichert“ –
+     dabei liegt jede Eingabe längst im Gerät. Der Satz sagt deshalb beides:
+     was sicher ist und was fehlt. */
+  stand.textContent = zeit ? 'Im Gerät gespeichert · Datei vom ' + zeitpunktKurz(zeit)
+    : 'Im Gerät gespeichert · noch keine Sicherungsdatei';
 }
 
 function zeitpunktKurz(iso) {

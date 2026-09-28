@@ -1681,7 +1681,7 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     await kartenoptionenZu(true);
     const wo = `${breite}×${hoehe}`;
     b.pruefe(m.einfach, `${wo}: die einfache Ansicht ist an`);
-    b.gleich(m.reiter.join(', '), 'Strecken, Planung', `${wo}: Reiter „${m.reiter.join(', ')}“`);
+    b.gleich(m.reiter.join(', '), 'Strecken, Auftrag', `${wo}: Reiter „${m.reiter.join(', ')}“`);
     b.gleich(m.wz.join(', '), 'wz-strecke, wz-suche, wz-standort', `${wo}: Werkzeuge ${m.wz.join(', ')}`);
     b.gleich(m.kopfzeile, 0, `${wo}: kein Abschnitt-, Sammel- oder Lagekartenknopf über der Liste`);
     b.gleich(optionen, 4, `${wo}: vier Zeilen in den Kartenoptionen (${optionen})`);

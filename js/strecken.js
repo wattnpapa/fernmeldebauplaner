@@ -25,7 +25,7 @@ const MAX_STOESSE = 500;
    ein Tipp darunter heranholt. Bei Stufe 12 sind es in Mitteleuropa gut 20 m
    je Bildpunkt, ein Fingerbreit also einige hundert Meter – für eine Trasse
    gerade noch zu grob. Stufe 15 legt denselben Finger auf wenige Meter. */
-const ZEICHNEN_AB_ZOOM = 12;
+export const ZEICHNEN_AB_ZOOM = 12;
 const ZEICHNEN_ZIELZOOM = 15;
 
 /* Kartografische Zeichen der Kabelarten (KatS-Dv 861): das Kabel wird nicht als

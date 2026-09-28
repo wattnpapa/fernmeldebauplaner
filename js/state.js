@@ -873,8 +873,14 @@ class Store {
        die Ansicht (`js/sicht.js`) und den Begrüßungsdialog. Gemessen an den
        abgelegten Planungen und nicht an einem eigenen Schalter: der wäre bei
        allen, die schon planen, nicht gesetzt, und sie bekämen den Einstieg
-       eines Neulings. */
-    this.erststart = Object.keys(alle).length === 0;
+       eines Neulings.
+
+       Gezählt werden nur Planungen mit Inhalt. Die leere „Neue Planung“ wird
+       gleich unten gespeichert; zählte sie mit, sah den Begrüßungsdialog nur,
+       wer ihn beim allerersten Öffnen auch las. Im Audit war er nach einem
+       unterbrochenen ersten Aufruf fort, samt dem Hinweis auf den Link vom
+       Planer. */
+    this.erststart = !Object.values(alle).some(p => { try { return istGehaltvoll(p); } catch (e) { return true; } });
     const aktiv = localStorage.getItem(KEY_AKTIV);
     if (aktiv && alle[aktiv]) this.projekt = migrieren(alle[aktiv]);
     else {

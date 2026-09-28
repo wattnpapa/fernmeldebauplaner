@@ -411,7 +411,7 @@ hat, behält nach der Aktualisierung die erweiterte Ansicht.
 | `T` | Taktisches Zeichen setzen |
 | `F` | Fläche einzeichnen |
 | `R` | Relaisstelle setzen |
-| `K` | Koordinate anspringen |
+| `K` | Ort oder Koordinate anspringen |
 | `Enter` | Zeichnen abschließen |
 | `Rücktaste` | Letzten Punkt zurücknehmen |
 | `Esc` | Abbrechen / Dialog schließen |

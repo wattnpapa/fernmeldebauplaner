@@ -584,9 +584,14 @@ export function zeichneStreckenListe() {
 
   if (!p.strecken.length) {
     liste.appendChild(el('div', 'leer',
-      `<p><b>Noch keine Strecke geplant.</b></p>
-       <p>„Neue Strecke zeichnen“ wählen und die Trasse auf der Karte anklicken –
-       Punkt für Punkt vom Anfangs- zum Endpunkt. Mit Doppelklick oder <kbd>Enter</kbd> abschließen.</p>`));
+      NUR_TOUCH
+        ? `<p><b>Noch keine Strecke geplant.</b></p>
+           <p>Erst den Ort suchen oder heranzoomen, dann „Neue Strecke zeichnen“ wählen und
+           die Trasse Punkt für Punkt antippen – vom Anfangs- zum Endpunkt. „Fertig“ schließt ab.</p>`
+        : `<p><b>Noch keine Strecke geplant.</b></p>
+           <p>Erst den Ort suchen oder heranzoomen, dann „Neue Strecke zeichnen“ wählen und
+           die Trasse auf der Karte anklicken – Punkt für Punkt vom Anfangs- zum Endpunkt.
+           Mit Doppelklick oder <kbd>Enter</kbd> abschließen.</p>`));
     if (!abschnitte.length) return;
   }
 
@@ -4629,7 +4634,7 @@ export function zeichneBauListe() {
   /* Die Baumeldungen stehen VOR dem Materialnachweis, obwohl der Ablauf
      andersherum liest. Der Grund ist der Daumen: gemeldet wird laufend, nach
      jeder Kabellänge, der Bogen wird einmal am Ende gefüllt. Hinter dem
-     Materialnachweis läge der Griff „Meldung jetzt“ rund tausend Bildpunkte
+     Materialnachweis läge der Griff „Meldung mitschreiben“ rund tausend Bildpunkte
      tief im Blatt – genau der Griff, der am häufigsten gebraucht wird. */
   liste.appendChild(bloecke.meldungen);
   liste.appendChild(bloecke.material);
@@ -5644,9 +5649,12 @@ function bauMeldungBlock(s) {
   }
 
   const tasten = el('div', 'tastenreihe bau-tasten');
-  tasten.appendChild(knopf('Meldung jetzt', () => {
+  /* „Meldung jetzt“ las sich wie ein Funkspruch, der hinausgeht – im Audit
+     glaubte der Trupp, die Anfangsstelle habe die Meldung. Der Knopf schreibt
+     aber nur die Uhrzeit auf diesem Gerät mit. Das sagen Knopf und Pille. */
+  tasten.appendChild(knopf('Meldung mitschreiben', () => {
     store.aendern(() => baumeldungAnlegen(s, '', aktiv ? aktiv.id : null), 'bau');
-    hinweis('Baumeldung mit der aktuellen Uhrzeit angelegt – Text nachtragen.');
+    hinweis('Uhrzeit vermerkt – nur auf diesem Gerät. Die Meldung selbst per Funk durchgeben.');
   }, 'klein primaer bau-taste'));
   box.appendChild(tasten);
   return box;
@@ -6421,7 +6429,10 @@ function ortsSucheIn(ziel, text, aufWahl) {
   return ortSuchen(text)
     .then(tr => trefferListe(ziel, tr, aufWahl))
     .catch(() => {
-      ziel.innerHTML = '<p class="klein"><b class="fehlertext">Die Ortssuche war nicht zu erreichen.</b> Ohne Netz bleibt nur der Tipp auf die Karte.</p>';
+      /* Ohne Netz bleibt mehr als der Tipp auf die Karte: die Koordinate im
+         selben Feld geht ohne jede Verbindung – und bei leerem Kartenvorrat ist
+         sie der einzige Weg, der etwas trifft. */
+      ziel.innerHTML = '<p class="klein"><b class="fehlertext">Die Ortssuche war nicht zu erreichen.</b> Ohne Netz: eine Koordinate eingeben (MGRS oder Grad) oder auf die Karte tippen.</p>';
     });
 }
 
@@ -6438,6 +6449,31 @@ function ortsDialog(text, aufWahl) {
 
 // ---------------------------------------------------------------- Koordinatensuche
 
+/* Was an einer nicht erkannten Eingabe falsch ist, so genau wie möglich. Über
+   Funk kommt die Koordinate diktiert, und die häufigsten Fehler sind eine
+   vergessene Ziffer und ein Buchstabe zu viel – „Koordinate nicht erkannt“
+   ließ den Helfer raten, welcher Teil nicht passt. */
+function koordinateFehlerText(roh) {
+  const text = String(roh || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  const mgrs = text.match(/^(\d{1,2}[C-X])\s?([A-Z]{2})\s?(\d+)\s?(\d*)$/);
+  if (mgrs) {
+    const [, zone, feld, a, b] = mgrs;
+    if (b && a.length !== b.length) {
+      return `Ostwert und Nordwert brauchen gleich viele Ziffern – hier ${a.length} und ` +
+        `${b.length}. Beispiel: ${zone} ${feld} 56560 45282.`;
+    }
+    if (!b && a.length % 2) {
+      return `Ostwert und Nordwert brauchen gleich viele Ziffern – ${a.length} Ziffern ` +
+        'lassen sich nicht teilen.';
+    }
+    if (a.length + (b || '').length > 10) return 'Höchstens fünf Ziffern je Wert (auf den Meter genau).';
+  }
+  if (/[A-ZÄÖÜ]{3,}/.test(text) && !/^[NSOEW]\s?\d/.test(text)) {
+    return 'Keine Koordinate erkannt. Ist es ein Ort oder eine Adresse, dann „Ort suchen“.';
+  }
+  return 'Koordinate nicht erkannt. Beispiel MGRS: 32U LB 56560 45282, Grad: 50.9413, 6.9583.';
+}
+
 /* `punktAnfuegen` kommt aus app.js, solange eine Strecke gezeichnet wird: die
    Koordinate wird dann Trassenpunkt statt Sprungziel. Das ist der einzige Weg,
    eine Strecke ganz ohne Zeigegerät zu erfassen – und der genaueste für eine
@@ -6446,16 +6482,20 @@ function ortsDialog(text, aufWahl) {
 export function koordinatenSuche(punktAnfuegen = null) {
   const box = el('div');
   box.innerHTML = `
-    <label class="feld"><span class="feld-titel">Koordinate</span>
-      <input type="text" id="ks-eingabe" placeholder="32U LB 56560 45282  ·  50.9413, 6.9583  ·  N 50 56.478 O 006 57.498">
+    <label class="feld"><span class="feld-titel">Ort oder Koordinate</span>
+      <input type="text" id="ks-eingabe" placeholder="Hildesheim Bahnhof  ·  32U LB 56560 45282  ·  50.9413, 6.9583">
     </label>
-    <p class="klein" id="ks-status">MGRS, Dezimalgrad, Grad/Dezimalminuten und Grad/Min./Sek. werden erkannt – oder eine Adresse, dann „Adresse suchen“.</p>
+    <p class="klein" id="ks-status">Ein Ort oder eine Adresse: „Ort suchen“. Eine Koordinate – MGRS, Dezimalgrad,
+      Grad/Dezimalminuten oder Grad/Min./Sek.: „Anspringen“.</p>
     <div id="ks-treffer"></div>
-    <label class="feld ks-haken"><input type="checkbox" id="ks-marke"><span class="feld-titel">Zusätzlich ein taktisches Zeichen dort setzen</span></label>`;
+    <label class="feld ks-haken nur-erweitert"><input type="checkbox" id="ks-marke"><span class="feld-titel">Zusätzlich ein taktisches Zeichen dort setzen</span></label>`;
 
   const lesen = () => {
     const k = parseKoordinate(box.querySelector('#ks-eingabe').value);
-    if (!k) box.querySelector('#ks-status').innerHTML = '<b class="fehlertext">Koordinate nicht erkannt.</b>';
+    if (!k) {
+      box.querySelector('#ks-status').innerHTML =
+        `<b class="fehlertext">${escapeHtml(koordinateFehlerText(box.querySelector('#ks-eingabe').value))}</b>`;
+    }
     return k;
   };
   let angefuegt = 0;
@@ -6466,10 +6506,10 @@ export function koordinatenSuche(punktAnfuegen = null) {
        stille Suche, sobald die Eingabe keine Koordinate ist. Der Treffer wird
        als Dezimalkoordinate ins Feld geschrieben: danach gilt derselbe Weg
        wie für eine getippte Koordinate, Anspringen oder Anfügen. */
-    { text: 'Adresse suchen', tun: () => {
+    { text: 'Ort suchen', tun: () => {
         const eingabe = box.querySelector('#ks-eingabe');
         const text = eingabe.value.trim();
-        if (!text) { box.querySelector('#ks-status').innerHTML = '<b class="fehlertext">Erst eine Adresse eingeben.</b>'; return false; }
+        if (!text) { box.querySelector('#ks-status').innerHTML = '<b class="fehlertext">Erst einen Ort oder eine Adresse eingeben.</b>'; return false; }
         ortsSucheIn(box.querySelector('#ks-treffer'), text, tr => {
           eingabe.value = `${tr.lat.toFixed(6)}, ${tr.lng.toFixed(6)}`;
           box.querySelector('#ks-treffer').innerHTML = '';
@@ -6502,7 +6542,7 @@ export function koordinatenSuche(punktAnfuegen = null) {
   } });
 
   dialog({
-    titel: punktAnfuegen ? 'Koordinate als Trassenpunkt' : 'Koordinate anspringen',
+    titel: punktAnfuegen ? 'Koordinate als Trassenpunkt' : 'Ort oder Koordinate anspringen',
     inhalt: box, fuss
   });
 }
@@ -6818,12 +6858,24 @@ export function hilfeDialog() {
      Zustände, und am Bauort wird der zweite gesucht. Sie stehen über der
      Liste und nicht in ihr – in der Reihe der fünfzehn Abschnitte wären sie
      zwei Chips unter fünfzehn. */
+  /* Die Einstiege sprechen die Lage des Lesers an und nicht den Modus: wer
+     einen Link vom Planer bekommen hat, weiß nicht, dass das, was er sucht,
+     „Baumodus“ heißt. */
   const einstieg = el('div', 'hs-einstieg');
-  for (const [text, titel] of [['▸ Planung', 'Strecke planen'], ['▸ Baumodus', 'Baumodus']]) {
+  const EINSTIEGE = [['▸ Ich plane eine Strecke', 'Strecke planen'],
+                     ['▸ Ich habe einen Link vom Planer', 'Baumodus']];
+  for (const [text, titel] of EINSTIEGE) {
     const ziel = kopfe.find(h => h.textContent.trim() === titel);
     if (ziel) einstieg.appendChild(knopf(text, springe(ziel), 'klein hs-modus'));
   }
   if (einstieg.children.length) streifen.appendChild(einstieg);
+
+  /* Was nur die erweiterte Ansicht zeigt, steht in der einfachen nicht als
+     Sprungziel da – im Audit fand ein Erstnutzer dort „Relais“ und „Tastatur“
+     und suchte sie danach vergeblich auf dem Schirm. Der Text bleibt, nur die
+     Einstiege dazu treten zurück. */
+  const NUR_ERWEITERT = new Set(['Einsatzabschnitte', 'Zeichengruppen', 'Lagekarte',
+    'Flächen und Aufbauplatz', 'Relaisstellen des Sprechfunks', 'Bilder vom Bauort', 'Tastatur']);
 
   /* Vier Überschriften tragen im Text ihren vollen Namen und im Chip das
      Wort, das am Reiter steht. Ohne diese Abkürzung stand der Streifen bei
@@ -6835,7 +6887,8 @@ export function hilfeDialog() {
   };
   for (const h of kopfe) {
     const titel = h.textContent.trim();
-    streifen.appendChild(knopf(KURZ[titel] || titel, springe(h), 'klein'));
+    streifen.appendChild(knopf(KURZ[titel] || titel, springe(h),
+      'klein' + (NUR_ERWEITERT.has(titel) ? ' nur-erweitert' : '')));
   }
   inhalt.querySelector('.hilfe').prepend(streifen);
 }
