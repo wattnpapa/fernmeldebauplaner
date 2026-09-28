@@ -83,6 +83,13 @@ try {
   // ------------------------------------------------------------ Planung anlegen
 
   b.abschnitt('Eine Strecke planen');
+  /* Im Übersichtsmaßstab holt ein Tipp beim Zeichnen nur heran (`strecken.js`,
+     ZEICHNEN_AB_ZOOM). Gezeichnet wird deshalb auf der kleinsten Stufe, die
+     Punkte setzt. */
+  await seite.auswerten('window.fbp.karte.setZoom(12, { animate: false }); return true;');
+  await seite.ruhe();
+  b.gleich(await seite.auswerten('return window.fbp.karte.getZoom()'), 12,
+    'Die Karte steht auf Zoom 12');
   await seite.klick('#btn-neue-strecke');
   await seite.klickeKarte(760, 380);
   await seite.klickeKarte(900, 460);
@@ -136,6 +143,14 @@ try {
   // ------------------------------------------------------------ Standort
 
   b.abschnitt('Punkt 2 aus dem Standort des Geräts');
+  /* Der Standort liegt rund 45 m neben dem geplanten Punkt 2: weit genug für
+     eine gemeldete Abweichung (25 m), nah genug, dass die Ortung dem Punkt
+     gutgeschrieben wird – eine, die weiter weg liegt, als eine Umgehung reicht
+     (ABSEITS_SCHWELLE, 300 m), wird bewusst als zusätzlicher Punkt aufgenommen. */
+  const p2 = await seite.auswerten('const pt = window.fbp.store.projekt.strecken[0].punkte[1]; ' +
+    'return { lat: pt.lat, lng: pt.lng };');
+  STANDORT.lat = p2.lat + 0.0004;
+  STANDORT.lng = p2.lng;
   await seite.standort(STANDORT.lat, STANDORT.lng, 7);
   await seite.auswerten(`
     const z = document.querySelectorAll('.bp-zeile')[1];

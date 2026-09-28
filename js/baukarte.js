@@ -22,7 +22,7 @@ import {
   istPunkte, istZuSoll, sollZuIst, istPunktSetzen, istArtSetzen, bauabschnittById,
   istSollZuordnen, offeneSollPunkte,
   baustrecke, baustreckeSetzen, aktiverBauabschnitt, quelleText,
-  punktartText, ABWEICHUNG_SCHWELLE
+  punktartText, ABWEICHUNG_SCHWELLE, ABSEITS_SCHWELLE
 } from './baudoku.js';
 import { toMGRS, formatLaenge, distanz } from './geo.js';
 import { escapeHtml } from './strecken.js';
@@ -64,7 +64,15 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
     const { latitude: lat, longitude: lng, accuracy } = pos.coords;
     const s = store.strecke(sid);
     if (!s) return hinweis('Die Strecke gibt es nicht mehr – nichts aufgenommen.', 'fehler');
-    const sollPunkt = sollPunktId ? s.punkte.find(pt => pt.id === sollPunktId) : null;
+    const gewuenscht = sollPunktId ? s.punkte.find(pt => pt.id === sollPunktId) : null;
+    /* „◉ hier“ an einem geplanten Punkt bestätigte ihn mit JEDER Ortung – im
+       Audit mit einer 82 km entfernten, danach stand dort ein grünes „gebaut“.
+       Liegt die Ortung weiter als eine Umgehung reichen kann, wird sie als
+       zusätzlicher Punkt aufgenommen und nicht dem geplanten gutgeschrieben:
+       die Aufnahme ist gesichert, die Zuordnung bleibt eine Entscheidung, die
+       der Trupp in der Punktkarte bewusst trifft. */
+    const zuWeit = gewuenscht && distanz(gewuenscht, { lat, lng }) >= ABSEITS_SCHWELLE;
+    const sollPunkt = zuWeit ? null : gewuenscht;
     /* Der Bauabschnitt wird noch einmal geprüft: er kann in der Wartezeit
        gelöscht worden sein, und ein Verweis ins Leere machte den Punkt
        truppenlos, ohne dass es jemand sieht. */
@@ -101,7 +109,11 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
        dreizeilig und deckte zwei Griffe der Bauleiste zu, und die Zahl steht
        in der Zeile, die gerade entstanden ist. */
     const abw = sollPunkt ? distanz(sollPunkt, { lat, lng }) : null;
-    if (!neu || !offen || offen.istId !== neu.id) {
+    if (zuWeit) {
+      hinweis(`Standort liegt ${formatLaenge(distanz(gewuenscht, { lat, lng }))} vom geplanten ` +
+        `Punkt ${s.punkte.indexOf(gewuenscht) + 1} – als zusätzlicher Punkt aufgenommen. ` +
+        'Ortung prüfen.', 'warnung');
+    } else if (!neu || !offen || offen.istId !== neu.id) {
       hinweis(abw !== null && abw >= ABWEICHUNG_SCHWELLE
         ? `Punkt aufgenommen (±${Math.round(accuracy)} m) – ${formatLaenge(abw)} vom Plan`
         : `Punkt aufgenommen (±${Math.round(accuracy)} m)`);
@@ -465,13 +477,35 @@ function istBlatt(s, ist, soll) {
     if (offeneSoll.length) {
       const reihe = el('div', 'pk-zuordnung');
       reihe.appendChild(el('span', 'pk-frage', 'Welcher Punkt?'));
-      reihe.appendChild(chips(
-        [...offeneSoll.map(e => [e.punkt.id, `Punkt ${e.nr} · ${formatLaenge(e.weg)}`]),
+      /* Ein Punkt, der weiter weg liegt, als eine Umgehung reicht, verlangt
+         einen zweiten Tipp. Im Audit stand „Punkt 1 · 82,43 km“ gleichrangig
+         neben „zusätzlich“, ein Tipp machte daraus „✓ gebaut“ – und die
+         Warnung war danach nur noch ein orangefarbenes Kärtchen. */
+      let nachgefragt = null;
+      const weit = new Map(offeneSoll.map(e => [e.punkt.id, e]));
+      const zuordnung = chips(
+        [...offeneSoll.map(e => [e.punkt.id,
+          `Punkt ${e.nr} · ${formatLaenge(e.weg)}${e.weg >= ABSEITS_SCHWELLE ? ' ⚠' : ''}`]),
          ['', 'zusätzlich']],
         '',
-        pid => store.aendern(() => istSollZuordnen(s, ist, pid || null), 'bau'),
-        'Zuordnung zum Plan'));
+        pid => {
+          const e = pid ? weit.get(pid) : null;
+          if (e && e.weg >= ABSEITS_SCHWELLE && nachgefragt !== pid) {
+            nachgefragt = pid;
+            hinweis(`Punkt ${e.nr} liegt ${formatLaenge(e.weg)} entfernt – ` +
+              'noch einmal tippen, wenn er es wirklich ist.', 'warnung');
+            return;
+          }
+          store.aendern(() => istSollZuordnen(s, ist, pid || null), 'bau');
+        },
+        'Zuordnung zum Plan');
+      reihe.appendChild(zuordnung);
       links.appendChild(reihe);
+      if (offeneSoll[0].weg >= ABSEITS_SCHWELLE) {
+        links.appendChild(el('p', 'pk-warnung',
+          `Der Standort liegt ${escapeHtml(formatLaenge(offeneSoll[0].weg))} von der ` +
+          'nächsten geplanten Stelle entfernt. Stimmt die Ortung?'));
+      }
     }
   }
 

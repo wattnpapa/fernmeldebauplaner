@@ -21,6 +21,13 @@ const MUFFEN_NAEHE = 30;
    Trommellänge ab – kennzahlen() läuft in der Seitenleiste bei jedem Tastendruck. */
 const MAX_STOESSE = 500;
 
+/* Ab welcher Zoomstufe ein Tipp beim Zeichnen einen Punkt setzt, und wohin
+   ein Tipp darunter heranholt. Bei Stufe 12 sind es in Mitteleuropa gut 20 m
+   je Bildpunkt, ein Fingerbreit also einige hundert Meter – für eine Trasse
+   gerade noch zu grob. Stufe 15 legt denselben Finger auf wenige Meter. */
+const ZEICHNEN_AB_ZOOM = 12;
+const ZEICHNEN_ZIELZOOM = 15;
+
 /* Kartografische Zeichen der Kabelarten (KatS-Dv 861): das Kabel wird nicht als
    nackte Linie geführt, sondern trägt in Abständen sein Zeichen – Querstrich,
    Doppelquerstrich oder die Aderzahl im Linienzug. */
@@ -589,6 +596,7 @@ export class StreckenLayer {
     this.aufIstPunktWahl = opt.aufIstPunktWahl || (() => {});
     this.aufAuswahl = opt.aufAuswahl || (() => {});
     this.aufAenderung = opt.aufAenderung || (() => {});
+    this.aufGrobmass = opt.aufGrobmass || (() => {});
     this.sw = !!opt.sw;                       // Schwarz-Weiß-Druck
     this.hervorheben = opt.hervorheben || null;  // diese Strecke betonen
     this.nurStrecke = opt.nurStrecke || null;    // nur diese zeichnen
@@ -735,6 +743,18 @@ export class StreckenLayer {
     }
     if (!this.zeichenModus) return;
     if (!store.strecke(this.zeichenModus)) return this.beendeZeichnen();
+    /* Im Übersichtsmaßstab wird nicht gezeichnet, sondern herangeholt. Die
+       Karte startet auf ganz Deutschland, und im Audit ergaben drei Tipps dort
+       343 km Trasse und 494 Trommeln – ein Fingerbreit ist bei diesem Maßstab
+       ein Landkreis. Der Tipp zoomt deshalb auf die angetippte Stelle; erst
+       dort, wo ein Fingerbreit einige Meter sind, setzt er Punkte. Über die
+       Koordinateneingabe (`punktAnfuegen`) bleibt jeder Maßstab erlaubt – dort
+       ist die Stelle genau. */
+    if (this.karte.getZoom() < ZEICHNEN_AB_ZOOM) {
+      this.karte.setView(e.latlng, ZEICHNEN_ZIELZOOM);
+      this.aufGrobmass();
+      return;
+    }
     this.punktAnfuegen(e.latlng.lat, e.latlng.lng);
   }
 

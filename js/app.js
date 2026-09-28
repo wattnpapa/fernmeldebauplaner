@@ -75,6 +75,7 @@ const sl = new StreckenLayer(karte, {
     fl.zeichne(); rl.zeichne(); zeichneSeite();
   },
   aufAenderung: () => aktualisiereKennzahlen(),
+  aufGrobmass: () => hinweis('Herangeholt – jetzt die Trassenpunkte antippen.'),
   /* Die gebaute Trasse gehört auf die Arbeitskarte – auch im Planungsmodus:
      der Planer soll sehen, was draußen entstanden ist, ohne erst umzuschalten.
      Die Druckkarten in `bauauftrag.js` bekommen sie nicht; sie zeigen den

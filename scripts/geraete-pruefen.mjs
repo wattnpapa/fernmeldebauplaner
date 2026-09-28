@@ -712,6 +712,11 @@ try {
   await seite.breit(1440, 900);
   await seite.oeffne(adresse);
   await seite.warteAuf('!!window.fbp');
+  /* Im Übersichtsmaßstab holt ein Tipp beim Zeichnen nur heran (`strecken.js`,
+     ZEICHNEN_AB_ZOOM). Gezeichnet wird deshalb auf der kleinsten Stufe, die
+     Punkte setzt – so weit weg wie möglich vom Stand vor dieser Regel. */
+  await seite.auswerten('window.fbp.karte.setZoom(12, { animate: false }); return true;');
+  await seite.ruhe();
   await seite.klick('#btn-neue-strecke');
   await seite.klickeKarte(760, 380);
   await seite.klickeKarte(900, 460);

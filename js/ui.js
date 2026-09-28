@@ -5510,6 +5510,27 @@ function materialFeld(s, eintrag, abschnittId, soll, summe) {
     fuss.push(`über alle Abschnitte ${materialMengeText(summe.get(eintrag.id), eintrag.einheit)}`);
   }
   if (fuss.length) rahmen.appendChild(el('span', 'mat-fuss', escapeHtml(fuss.join(' · '))));
+
+  /* Ein Zahlendreher fällt neben dem Bedarf auf – wenn jemand hinsieht. Im
+     Audit stand 31.200 m Feldkabel ohne Wimpernzucken neben „Bedarf 3.120 m“
+     und wäre so in die Baudokumentation gegangen. Gewarnt wird ab dem
+     Doppelten: darunter liegen Reserven und Umwege, darüber fast immer eine
+     Null zu viel. Gesperrt wird nichts – der Trupp weiß, was verbraucht ist. */
+  if (soll && soll.artikel === eintrag.id && soll.menge > 0) {
+    const warn = el('span', 'mat-warnung');
+    const pruefen = text => {
+      const z = zahlLesen(text).zahl;
+      const zuViel = Number.isFinite(z) && z > 2 * soll.menge + 100;
+      warn.hidden = !zuViel;
+      warn.textContent = zuViel
+        ? `⚠ ${String(Math.round(z / soll.menge * 10) / 10).replace('.', ',')}-fach des Bedarfs – Zahlendreher?`
+        : '';
+    };
+    const ein = rahmen.querySelector('input');
+    if (ein) ein.addEventListener('input', () => pruefen(ein.value));
+    pruefen(String(wert));
+    rahmen.appendChild(warn);
+  }
   return rahmen;
 }
 
