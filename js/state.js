@@ -15,6 +15,8 @@ import { gueltigerUmkreis } from './ausbreitung.js';
 export const SCHEMA = 17;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
+const KEY_VERLAUF  = 'fbp.verlauf.v1';   // Rückgängig-Verlauf, im Sitzungsspeicher
+const VERLAUF_SICHERN = 15;
 const KEY_DATEI    = 'fbp.dateisicherung.v1';
 
 /** Grobes Kontingent, das Browser je Website für den localStorage bereitstellen */
@@ -796,6 +798,36 @@ class Store {
     return true;
   }
 
+  /* Der Rückgängig-Verlauf überlebt das Neuladen im selben Fenster. Am Telefon
+     lädt der Browser eine Seite neu, sobald man aus dem Messenger oder der
+     Funk-App zurückkommt – und danach war „↶“ leer, auch für eine Strecke, die
+     eine Minute vorher versehentlich gelöscht wurde. Gesichert wird im
+     Sitzungsspeicher des Fensters, nicht im Gerät: der Verlauf gehört zu dieser
+     Arbeitssitzung, und ein Rückgängig über Tage wäre eine Überraschung und
+     keine Hilfe. Die letzten fünfzehn Schritte, und weniger, wenn der Speicher
+     sie nicht fasst – verloren ist dann nur der Verlauf, nie die Planung. */
+  verlaufSichern() {
+    let stapel = this.undoStapel.slice(-VERLAUF_SICHERN);
+    while (true) {
+      try {
+        sessionStorage.setItem(KEY_VERLAUF, JSON.stringify({ pid: this.projekt.id, stapel }));
+        return;
+      } catch (e) {
+        if (!stapel.length) return;
+        stapel = stapel.slice(Math.ceil(stapel.length / 2));
+      }
+    }
+  }
+
+  verlaufLaden() {
+    try {
+      const roh = JSON.parse(sessionStorage.getItem(KEY_VERLAUF) || 'null');
+      if (roh && roh.pid === this.projekt.id && Array.isArray(roh.stapel)) {
+        this.undoStapel = roh.stapel.filter(x => typeof x === 'string');
+      }
+    } catch (e) { /* ohne Verlauf beginnt „↶“ leer, wie vorher */ }
+  }
+
   // -------------------------------------------------------------- Zugriffe
 
   strecke(sid) { return this.projekt.strecken.find(s => s.id === sid); }
@@ -816,6 +848,7 @@ class Store {
       alle[this.projekt.id] = this.projekt;
       localStorage.setItem(KEY_PROJEKTE, JSON.stringify(alle));
       localStorage.setItem(KEY_AKTIV, this.projekt.id);
+      this.verlaufSichern();
       this.melden('gespeichert');
       return true;
     } catch (e) {
@@ -887,6 +920,7 @@ class Store {
       const liste = Object.values(alle).sort((a, b) => (b.geaendert || '').localeCompare(a.geaendert || ''));
       this.projekt = liste.length ? migrieren(liste[0]) : neuesProjekt('Neue Planung');
     }
+    this.verlaufLaden();
     this.speichern();
     return this.projekt;
   }

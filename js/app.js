@@ -1985,7 +1985,9 @@ modusAnwenden();
 sichtBeschriften();
 modusAnzeigen();
 speicherstatusZeigen('ruhe');
-$('#btn-undo').disabled = true;
+/* Nach dem Neuladen kann der Verlauf schon Schritte tragen (`verlaufLaden` in
+   state.js) – dann ist „↶“ vom Start an greifbar. */
+$('#btn-undo').disabled = !store.undoStapel.length;
 $('#btn-redo').disabled = true;
 
 /* ---------------------------------------------------------------- Eigener Speicher

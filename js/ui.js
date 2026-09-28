@@ -100,14 +100,15 @@ let ctx = null;   // { karte, sl, zl, aufAenderung }
 
 /* Wie man zurücknimmt, in den Worten des Geräts. „Strg+Z“ stand auch auf dem
    Telefon da, das keine Strg-Taste hat; der Knopf „↶“ oben ist dort der Weg.
-   Und ehrlich über die Grenze: nach dem Neuladen ist der Verlauf leer. */
+   Und ehrlich über die Grenze: der Verlauf übersteht das Neuladen, aber nicht
+   das Schließen des Fensters (`verlaufSichern` in state.js). */
 const NUR_TOUCH = window.matchMedia('(pointer: coarse)').matches &&
   !window.matchMedia('(any-pointer: fine)').matches;
 const RUECKGAENGIG_TEXT = NUR_TOUCH ? '„↶“ oben holt es zurück' : '„↶“ oben oder Strg+Z holt es zurück';
 const RUECKGAENGIG_HTML = (NUR_TOUCH
   ? 'Rückgängig machen geht mit dem Knopf <b>↶</b> oben'
   : 'Rückgängig machen geht mit <b>↶</b> oben oder <kbd>Strg</kbd>+<kbd>Z</kbd>') +
-  ' – solange die Seite nicht neu geladen wird.';
+  ' – auch nach dem Neuladen, solange das Browserfenster offen bleibt.';
 
 export function initUI(kontext) { ctx = kontext; }
 
