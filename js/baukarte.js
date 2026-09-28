@@ -244,6 +244,8 @@ export function punktkarteOeffnen(s, { ist = null, soll = null } = {}) {
     fehler: null
   };
   punktkarteZeichnen(true);
+  /* Die Zurück-Taste schließt die Punktkarte (siehe `fbp:ebene` in app.js). */
+  document.dispatchEvent(new CustomEvent('fbp:ebene'));
   if (ctx.zurKarte) ctx.zurKarte();
 }
 

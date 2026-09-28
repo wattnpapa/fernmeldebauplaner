@@ -755,6 +755,15 @@ export class StreckenLayer {
       this.aufGrobmass();
       return;
     }
+    /* Zwei Tipps an dieselbe Stelle binnen eines Augenblicks sind einer: ein
+       Doppeltipp oder ein Handschuh, der zweimal auslöst. Als zwei Punkte
+       stünde eine Teilstrecke von 0 m in der Tabelle und eine Muffe zu viel
+       im Bauauftrag. */
+    const jetzt = Date.now();
+    const pt = this.karte.latLngToContainerPoint(e.latlng);
+    const vorher = this._letzterTipp;
+    this._letzterTipp = { zeit: jetzt, x: pt.x, y: pt.y };
+    if (vorher && jetzt - vorher.zeit < 500 && Math.hypot(pt.x - vorher.x, pt.y - vorher.y) < 12) return;
     this.punktAnfuegen(e.latlng.lat, e.latlng.lng);
   }
 

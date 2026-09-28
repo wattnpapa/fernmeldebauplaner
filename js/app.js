@@ -27,7 +27,9 @@ import {
   abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen, zeichneBauListe,
   baumeldungDialog
 } from './ui.js';
-import { baustrecke, baustreckeSetzen, truppAmGeraet, truppAmGeraetSetzen } from './baudoku.js';
+import {
+  baustrecke, baustreckeSetzen, truppAmGeraet, truppAmGeraetSetzen, bauBegonnen as bauBegonnenAn
+} from './baudoku.js';
 import {
   initBaukarte, punktkarteOeffnen, punktkarteSchliessen, punktkarteOffen, punktkarteNachfuehren,
   punktHierAufnehmen, punktAufKarteStarten, punktAusKoordinate
@@ -191,7 +193,47 @@ function weiterzeichnen(sid) {
   sl.starteZeichnen(sid);
   zurKarte();
   modusAnzeigen();
+  zurueckFangen();
 }
+
+// ---------------------------------------------------------------- Zurück-Taste
+
+/* Die Zurück-Taste des Telefons verließ die Anwendung, auch mit offenem Dialog
+   und mitten im Zeichnen – im Audit stand danach eine leere Seite da. Auf
+   Android ist „Zurück“ aber der Griff, mit dem man einen Dialog schließt. Wo
+   etwas offen ist, das „Zurück“ schließen soll, liegt deshalb ein eigener
+   Verlaufseintrag; der Druck darauf nimmt ihn weg und schließt das Oberste.
+
+   Es gibt höchstens einen solchen Eintrag. Geht das Offene anders zu – über
+   „Fertig“, das Kreuz, Esc –, bleibt er liegen, und der nächste Druck auf
+   „Zurück“ tut nichts; erst der übernächste verlässt die Seite. Ein
+   `history.back()` beim Schließen wäre sauberer, räumte aber im falschen
+   Augenblick auch einen Eintrag ab, den jemand anderes angelegt hat.
+
+   Kein Eintrag, solange die Adresse ein Fragment trägt: dort steht ein
+   geteilter Link mit der Planung darin, und die gehört nicht in den Verlauf
+   (siehe `fragmentRaeumen` in teilen.js). */
+let zurueckEintrag = false;
+function zurueckFangen() {
+  if (zurueckEintrag || location.hash) return;
+  try { history.pushState({ fbpZurueck: true }, ''); zurueckEintrag = true; }
+  catch (e) { /* ohne Verlauf bleibt es beim Verhalten des Browsers */ }
+}
+document.addEventListener('fbp:ebene', zurueckFangen);
+window.addEventListener('popstate', () => {
+  if (!zurueckEintrag) return;
+  zurueckEintrag = false;
+  if (!$('#dialog').hidden) dialogAbweisen();
+  else if (bauauftragOffen()) schliesseBauauftrag();
+  else if (punktkarteOffen()) punktkarteSchliessen();
+  else if (sl.zeichenModus) zeichnenBeenden(false);
+  /* Lag eine Ebene über der anderen – der Koordinatendialog über dem
+     Zeichnen –, bleibt nach dem Schließen noch etwas offen. Der nächste Druck
+     soll auch das schließen und nicht die Seite verlassen. */
+  if (!$('#dialog').hidden || bauauftragOffen() || punktkarteOffen() || sl.zeichenModus) {
+    zurueckFangen();
+  }
+});
 
 function zeichnenBeenden(abbrechen = false) {
   if (!sl.zeichenModus) return;
@@ -203,8 +245,13 @@ function zeichnenBeenden(abbrechen = false) {
      Liste stehen zu lassen, verfälscht auch die Zählung im Sammeldruck. */
   if (s && s.punkte.length === 0) {
     store.aendern(p => { p.strecken = p.strecken.filter(x => x.id !== sid); }, 'strecke');
-  } else if (s && s.punkte.length === 1) {
-    hinweis('Eine Strecke braucht mindestens zwei Trassenpunkte.', 'warnung');
+  } else if (s && s.punkte.length === 1 && !bauBegonnenAn(s)) {
+    /* Auch eine Strecke mit einem einzigen Punkt hat niemand gewollt: im Audit
+       blieb sie nach einem Doppeltipp als „Strecke 3 · 0 m“ auf Karte und
+       Liste liegen, und niemand wusste, woher. Sie geht, und der Rückgängig-
+       Knopf holt sie zurück, wenn doch. */
+    store.aendern(p => { p.strecken = p.strecken.filter(x => x.id !== sid); }, 'strecke');
+    hinweis('Strecke mit nur einem Punkt verworfen – „↶“ oben holt sie zurück.', 'warnung');
   }
   modusAnzeigen();
   zeichneSeite();
@@ -748,8 +795,11 @@ $('#speicherstatus').onclick = () => planungSichern();
    Streckenliste erklärt das Zeichnen nur, solange noch keine Strecke da ist –
    danach braucht es einen bleibenden Weg dorthin. */
 $('#btn-hilfe').onclick = hilfeDialog;
-$('#btn-undo').onclick = () => { if (!store.undo()) hinweis('Nichts zum Rückgängigmachen.'); };
-$('#btn-redo').onclick = () => { if (!store.redo()) hinweis('Nichts zum Wiederholen.'); };
+/* Beide sagen, was geschehen ist. Ohne Meldung stand nach dem Rückgängig-
+   machen noch „Strecke gelöscht“ über der wiederhergestellten Strecke – die
+   Pille des Löschens lief einfach weiter. */
+$('#btn-undo').onclick = () => hinweis(store.undo() ? 'Zurückgenommen' : 'Nichts zum Rückgängigmachen.');
+$('#btn-redo').onclick = () => hinweis(store.redo() ? 'Wiederhergestellt' : 'Nichts zum Wiederholen.');
 /* Liste und Karte lösen einander schmal ab. Der Umschalter unten ist der einzige
    Rückweg, der immer sichtbar ist – der Kartenbereich ist ausgeblendet, solange
    die Liste davorliegt, ein Knopf darin käme nie zum Vorschein. */
@@ -1550,7 +1600,23 @@ document.addEventListener('keydown', e => {
   if (taste === 'k') { e.preventDefault(); koordinatenSucheOeffnen(); }
 });
 
-karte.on('dblclick', () => { if (sl.zeichenModus) zeichnenBeenden(false); });
+/* Der Doppelklick schließt die Trasse nur mit der Maus ab. Am Touchgerät ist
+   der Doppeltipp die gewohnte Zoomgeste, und mit Handschuh wird aus einem
+   festen Tipp leicht ein doppelter: im Audit beendete er das Zeichnen nach dem
+   ersten Punkt, und eine Strecke mit einem Punkt blieb liegen. Dort schließt
+   „Fertig“ ab. Gefragt wird nach dem auslösenden Zeiger und nicht nach dem
+   Gerät – ein Tablet mit Maus bekommt den Doppelklick. */
+karte.on('dblclick', e => {
+  if (!sl.zeichenModus) return;
+  const oe = e.originalEvent;
+  const perTouch = oe && (oe.pointerType === 'touch' || oe.sourceCapabilities?.firesTouchEvents);
+  /* Safari nennt den Zeiger am Klick nicht immer; ein Gerät ohne jeden feinen
+     Zeiger hat dann ohnehin keine Maus. */
+  const nurTouch = window.matchMedia('(pointer: coarse)').matches &&
+    !window.matchMedia('(any-pointer: fine)').matches;
+  if (perTouch || nurTouch) return;
+  zeichnenBeenden(false);
+});
 
 // ---------------------------------------------------------------- Drucken
 
@@ -1772,6 +1838,15 @@ store.on((p, grund) => {
     }
   }
   zeichneSeite();
+});
+
+/* Telefone verlassen eine Seite oft, ohne `beforeunload` zu melden – beim
+   Wechsel in eine andere App, beim Wegwischen aus der Übersicht. Die Planung
+   wird 400 ms nach jeder Änderung gesichert; wer in diesem Fenster geht, verlor
+   sonst den letzten Punkt. */
+window.addEventListener('pagehide', () => store.speichern());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') store.speichern();
 });
 
 window.addEventListener('beforeunload', e => {

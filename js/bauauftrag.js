@@ -435,6 +435,8 @@ function oeffneDruckansicht(auftrag) {
     </div>`;
   document.body.appendChild(wurzel);
   document.body.classList.add('druckansicht');
+  /* Die Zurück-Taste schließt die Druckvorschau (siehe `fbp:ebene` in app.js). */
+  document.dispatchEvent(new CustomEvent('fbp:ebene'));
 
   /* Die Einstellungen stehen in benannten Gruppen, geordnet nach den Fragen,
      die man sich beim Drucken stellt: im Sammeldruck zuerst, welche Blätter

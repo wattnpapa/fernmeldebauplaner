@@ -98,6 +98,17 @@ import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
 
+/* Wie man zurücknimmt, in den Worten des Geräts. „Strg+Z“ stand auch auf dem
+   Telefon da, das keine Strg-Taste hat; der Knopf „↶“ oben ist dort der Weg.
+   Und ehrlich über die Grenze: nach dem Neuladen ist der Verlauf leer. */
+const NUR_TOUCH = window.matchMedia('(pointer: coarse)').matches &&
+  !window.matchMedia('(any-pointer: fine)').matches;
+const RUECKGAENGIG_TEXT = NUR_TOUCH ? '„↶“ oben holt es zurück' : '„↶“ oben oder Strg+Z holt es zurück';
+const RUECKGAENGIG_HTML = (NUR_TOUCH
+  ? 'Rückgängig machen geht mit dem Knopf <b>↶</b> oben'
+  : 'Rückgängig machen geht mit <b>↶</b> oben oder <kbd>Strg</kbd>+<kbd>Z</kbd>') +
+  ' – solange die Seite nicht neu geladen wird.';
+
 export function initUI(kontext) { ctx = kontext; }
 
 // ---------------------------------------------------------------- Hinweise
@@ -228,6 +239,11 @@ export function dialog({ titel, inhalt, fuss = [], breit = false, geteilt = fals
      Hinweisbox liegen außerhalb von #app und bleiben bedienbar. */
   document.getElementById('app').inert = true;
   huelle.hidden = false;
+  /* Die Zurück-Taste des Telefons soll den Dialog schließen und nicht die
+     Anwendung verlassen – `app.js` legt dafür einen Verlaufseintrag an. Ein
+     geschützter Dialog bekommt keinen: er geht nicht beiläufig zu, und er steht
+     über einem Link, dessen Adresse sonst im Verlauf landete. */
+  if (!schutz) document.dispatchEvent(new CustomEvent('fbp:ebene'));
   /* Reine Text-Dialoge haben im Inhalt nichts Fokussierbares – dann übernimmt
      der erste Fußknopf, sonst der Schließen-Knopf, damit die Tastatur im
      Dialog beginnt statt dahinter. */
@@ -1283,7 +1299,7 @@ function streckenKarte(s) {
       inhalt: `<p>Soll <b>${escapeHtml(s.name)}</b> mit ${s.punkte.length} Punkten wirklich gelöscht werden?</p>
                ${bauBegonnen(s) ? `<p class="bau-warnung">Dabei geht auch die Baudokumentation
                  dieser Strecke verloren: ${escapeHtml(bauUmfangText(s))}.</p>` : ''}
-               <p class="klein">Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
+               <p class="klein">${RUECKGAENGIG_HTML}</p>`,
       fuss: [
         { text: 'Abbrechen' },
         { text: 'Löschen', gefahr: true, tun: () => {
@@ -2524,7 +2540,7 @@ function querungsGruppe(s) {
       }
     }, 'strecke');
     hinweis(`${reihe.length} Querung${reihe.length === 1 ? '' : 'en'} übernommen – ` +
-      'Strg+Z macht es rückgängig');
+      RUECKGAENGIG_TEXT);
   };
 
   const pruefen = () => {
@@ -2736,7 +2752,7 @@ function punktZeile(s, pt, i, aktiv, seg, kum) {
   const weg = el('button', 'mini-knopf gefahr pz-weg', '✕');
   weg.title = `Punkt ${i + 1} löschen`;
   weg.setAttribute('aria-label', `Punkt ${i + 1} löschen`);
-  weg.onclick = () => {
+  const loeschen = () => {
     store.aendern(() => {
       s.punkte = s.punkte.filter(x => x.id !== pt.id);
       sollPunktGeloescht(s, pt.id);
@@ -2746,7 +2762,27 @@ function punktZeile(s, pt, i, aktiv, seg, kum) {
         else if (j === s.punkte.length - 1) q.art = 'ziel';
       });
     }, 'strecke');
-    hinweis(`Punkt ${i + 1} gelöscht – Strg+Z macht es rückgängig`);
+    hinweis(`Punkt ${i + 1} gelöscht – ${RUECKGAENGIG_TEXT}`);
+  };
+  /* An einer Strecke, an der schon gebaut wird, ist ein gelöschter Punkt kein
+     Tippfehler der Planung mehr: der Trupp hat den Auftrag mit diesem Punkt in
+     der Hand, und seine Aufnahme dort verliert ihren Bezug. Im Audit reichte
+     ein Tipp auf das ✕ neben der Koordinate, und aus „3/3 Punkte“ wurde still
+     „2/2“. Dort wird gefragt – beim Planen ohne Bau bleibt es beim Tipp. */
+  weg.onclick = () => {
+    if (!bauBegonnen(s)) { loeschen(); return; }
+    const ist = istZuSoll(s, pt.id);
+    dialog({
+      titel: `Punkt ${i + 1} löschen?`,
+      inhalt: `<p>An <b>${escapeHtml(s.name)}</b> wird schon gebaut. Der Trupp hat den Auftrag
+          mit diesem Punkt; ändert sich die Planung, gehört ihm ein neuer Link.</p>
+        ${ist ? '<p class="bau-warnung">Der Punkt ist am Bauort schon bestätigt – die Aufnahme bleibt, ' +
+          'verliert aber ihren Bezug zum Plan.</p>' : ''}`,
+      fuss: [
+        { text: 'Abbrechen' },
+        { text: 'Punkt löschen', gefahr: true, tun: loeschen }
+      ]
+    });
   };
   fuss.appendChild(weg);
   zeile.appendChild(fuss);
@@ -3166,7 +3202,7 @@ function abschnittAufloesen(ea) {
         : 'Diesem Abschnitt ist nichts zugeteilt.'}
         ${unter ? `${unter} ${unter === 1 ? 'Unterabschnitt rückt' : 'Unterabschnitte rücken'}
            ${oben ? `unter <b>${escapeHtml(oben.name)}</b>` : 'auf die oberste Ebene'}.` : ''}
-        Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
+        ${RUECKGAENGIG_HTML}</p>`,
     fuss: [
       { text: 'Abbrechen', tun: () => { einsatzabschnittDialog(ea.id); return false; } },
       { text: 'Auflösen', gefahr: true, tun: () => {
@@ -3333,7 +3369,7 @@ function zeichengruppeAufloesen(gr) {
                danach wieder auf der Karte.`
             : '')
         : 'Dieser Gruppe ist kein Zeichen zugeteilt.'}
-        Rückgängig machen ist mit <kbd>Strg</kbd>+<kbd>Z</kbd> möglich.</p>`,
+        ${RUECKGAENGIG_HTML}</p>`,
     fuss: [
       { text: 'Abbrechen', tun: () => { zeichengruppeDialog(gr.id); return false; } },
       { text: 'Auflösen', gefahr: true, tun: () => {
@@ -6321,7 +6357,7 @@ function loeschDialog(pr) {
         taktischen Zeichen${pr.bilder ? ` und ${pr.bilder} ${pr.bilder === 1 ? 'Bild' : 'Bildern'}` : ''}
         wird endgültig aus dem Browserspeicher entfernt.</p>
      <p class="klein"><b>Rückgängig machen ist danach nicht mehr möglich</b> –
-        auch nicht mit <kbd>Strg</kbd>+<kbd>Z</kbd>. Liegt keine Datei vor,
+        auch nicht mit <b>↶</b>. Liegt keine Datei vor,
         ist die Planung weg.</p>
      <label class="feld"><span class="feld-titel">Zur Bestätigung
          <b>${escapeHtml(zielwort)}</b> eingeben</span>
@@ -6742,7 +6778,7 @@ export function hilfeDialog() {
         <p><b>Herein:</b> Die Vorplanung dort als <b>.kml</b> oder <b>.kmz</b> sichern und über
            <b>Datei → Planung oder KML laden</b> öffnen. Pfade werden zu Strecken,
            Ortsmarken zu taktischen Zeichen; beides tritt zur geöffneten Planung hinzu und
-           lässt sich mit <kbd>Strg</kbd>+<kbd>Z</kbd> wieder zurücknehmen.</p>
+           lässt sich mit <b>↶</b> oben wieder zurücknehmen.</p>
         <p><b>Hinaus:</b> <b>Datei → Alles als KML</b>, für eine einzelne Trasse der Knopf
            <b>KML</b> in der geöffneten Strecke. Jede Strecke wird ein Pfad in ihrer Farbe,
            dazu Ortsmarken für Anfang, Ende und jede bauliche Besonderheit; die
