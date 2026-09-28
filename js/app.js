@@ -27,7 +27,7 @@ import {
   abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen, zeichneBauListe,
   baumeldungDialog
 } from './ui.js';
-import { baustrecke, baustreckeSetzen } from './baudoku.js';
+import { baustrecke, baustreckeSetzen, truppAmGeraet, truppAmGeraetSetzen } from './baudoku.js';
 import {
   initBaukarte, punktkarteOeffnen, punktkarteSchliessen, punktkarteOffen, punktkarteNachfuehren,
   punktHierAufnehmen, punktAufKarteStarten, punktAusKoordinate
@@ -1062,8 +1062,32 @@ async function geteiltenLinkPruefen() {
     ? `<p class="klein">Ausschnitt „${escapeHtml(roh.herkunft.einsatzabschnitt)}“ aus der Planung
         „${escapeHtml(roh.herkunft.projekt || '')}“.</p>` : '';
 
+  /* Eine einzelne Strecke ist der Link an den Bautrupp. Wer ihn bekommt, will
+     bauen und nicht planen – im Audit landete der Trupp nach „Übernehmen“ in
+     der Planung vor „+ Neue Strecke zeichnen“, und kein Wort wies auf den
+     Baumodus. Der Griff dafür steht deshalb vorn; „Übernehmen“ bleibt für den
+     Planer, der eine Strecke nur weitergereicht bekommt. */
+  const bauauftrag = !!roh.herkunft?.strecke && (roh.strecken || []).length === 1;
+  const uebernehmen = () => {
+    teilen.fragmentRaeumen();
+    /* `uebernehmen` schickt die Planung durch `migrieren()` – dieselbe
+       Strecke, die eine geladene Datei nimmt – und meldet „geladen“;
+       daran hängt der vollständige Neuaufbau samt Kartensprung. */
+    try {
+      store.uebernehmen(roh);
+      return true;
+    } catch (e) {
+      /* Ein von Hand gebauter Link kann Werte falschen Typs mitbringen –
+         `punkte` als Objekt statt als Feld etwa. Ohne diesen Fang bliebe
+         der Dialog offen stehen und der Knopf ohne jede Wirkung. */
+      console.error('Geteilte Planung nicht lesbar', e);
+      hinweis('Die Planung in diesem Link ist beschädigt und wurde nicht übernommen.', 'fehler');
+      return false;
+    }
+  };
+
   dialog({
-    titel: 'Geteilte Planung geöffnet',
+    titel: bauauftrag ? 'Bauauftrag geöffnet' : 'Geteilte Planung geöffnet',
     inhalt: `<p>Über den Link kommt <b>${escapeHtml(roh.name || 'eine Planung')}</b> herein.</p>
       <p class="teilen-umfang">${escapeHtml(umfangText(roh))}${stand ? ' · Stand ' + escapeHtml(stand) : ''}</p>
       ${herkunft}
@@ -1080,21 +1104,55 @@ async function geteiltenLinkPruefen() {
         teilen.fragmentRaeumen();
         hinweis('Geteilte Planung verworfen – der Link ist damit verbraucht.', 'warnung');
       } },
-      { text: 'Übernehmen', primaer: true, tun: () => {
-        teilen.fragmentRaeumen();
-        /* `uebernehmen` schickt die Planung durch `migrieren()` – dieselbe
-           Strecke, die eine geladene Datei nimmt – und meldet „geladen“;
-           daran hängt der vollständige Neuaufbau samt Kartensprung. */
-        try {
-          store.uebernehmen(roh);
-          hinweis('Geteilte Planung übernommen');
-        } catch (e) {
-          /* Ein von Hand gebauter Link kann Werte falschen Typs mitbringen –
-             `punkte` als Objekt statt als Feld etwa. Ohne diesen Fang bliebe
-             der Dialog offen stehen und der Knopf ohne jede Wirkung. */
-          console.error('Geteilte Planung nicht lesbar', e);
-          hinweis('Die Planung in diesem Link ist beschädigt und wurde nicht übernommen.', 'fehler');
-        }
+      { text: 'Übernehmen', primaer: !bauauftrag, tun: () => {
+        if (uebernehmen()) hinweis('Geteilte Planung übernommen');
+      } },
+      ...(bauauftrag ? [{ text: 'Bau beginnen', primaer: true, tun: () => {
+        if (!uebernehmen()) return;
+        const s = store.projekt.strecken[0];
+        if (s) baustreckeSetzen(s.id);
+        if (!baumodus) modusUmschalten({ still: true });
+        else reiterWechseln('bau');
+        /* Der Dialog, der gerade schließt, darf den nächsten nicht mitnehmen:
+           `schliesseDialog` läuft erst nach diesem Griff. */
+        setTimeout(truppFragen, 0);
+        return true;
+      } }] : [])
+    ]
+  });
+}
+
+/* Wer baut, wird am Anfang gefragt und nicht am Ende. Im Audit standen Trupp
+   und Truppführer als letzte Felder des Bau-Reiters, darüber der Satz, dass
+   eine Meldung ohne Namen die eines anderen Trupps ersetzt – gelesen hat ihn
+   dort niemand. Beim Übernehmen eines Bauauftrags wird einmal gefragt; wer
+   schon benannt ist, wird nicht wieder gefragt. */
+function truppFragen() {
+  const danach = () =>
+    /* Die Karte zuerst: jetzt ist noch Netz da, am Bauort vielleicht nicht
+       mehr. Im Audit stand „Karte mitnehmen“ als letzter Block des Reiters,
+       und der Trupp merkte erst draußen an der leeren Karte, dass er sie
+       hätte holen sollen. */
+    hinweis('Bauauftrag übernommen. Solange Netz da ist: oben „Karte mitnehmen“.');
+  const v = truppAmGeraet();
+  if (v.trupp || v.fuehrer) { danach(); return; }
+  const feld = dialog({
+    titel: 'Wer baut?',
+    inhalt: `<p>Die Baumeldung nennt diesen Absender. Ohne Namen ersetzt die Meldung eines
+        zweiten Trupps an derselben Strecke die eigene.</p>
+      <label class="feld"><span class="feld-titel">Trupp</span>
+        <input type="text" id="tf-trupp" placeholder="z. B. Trupp 1" autocomplete="off"></label>
+      <label class="feld"><span class="feld-titel">Truppführer</span>
+        <input type="text" id="tf-fuehrer" placeholder="Name" autocomplete="off"></label>`,
+    fuss: [
+      { text: 'Später', tun: danach },
+      { text: 'Weiter', primaer: true, tun: () => {
+        truppAmGeraetSetzen({
+          trupp: feld.querySelector('#tf-trupp').value.trim(),
+          fuehrer: feld.querySelector('#tf-fuehrer').value.trim()
+        });
+        zeichneBauListe();
+        danach();
       } }
     ]
   });
@@ -1290,6 +1348,7 @@ function einstiegDialog() {
   dialog({ titel: 'Willkommen im FMBauplaner', inhalt: box, fuss: [{ text: 'Erst einmal umsehen' }] });
 }
 const KEY_MODUS = 'fbp.modus.v1';
+const KEY_BAU_ERKLAERT = 'fbp.bauerklaert.v1';
 
 /* Der Modus überlebt das Neuladen. Das ist kein Beiwerk: am Bauort wird die
    Seite neu geladen, weil das Netz weg war oder der Browser den Reiter
@@ -1347,7 +1406,7 @@ function modusAnwenden() {
   erstesAnwenden = false;
 }
 
-function modusUmschalten() {
+function modusUmschalten(o = {}) {
   /* Hinter dem gedruckten Blatt wird nicht umgeschaltet: der Bauauftrag liegt
      über der Anwendung, und ein Moduswechsel dahinter beendete still einen
      Setzmodus, wechselte den Reiter und meldete etwas, das niemand sieht.
@@ -1365,12 +1424,21 @@ function modusUmschalten() {
   modusAnwenden();
   reiterWechseln(baumodus ? 'bau' : 'strecken');
   modusAnzeigen();
-  hinweis(baumodus
-    ? 'Baumodus: festhalten, was gebaut wurde. Die Planung bleibt unangetastet.'
-    : 'Planungsmodus.');
+  if (o.still) return;
+  /* Die Erklärung des Baumodus kommt einmal je Gerät. Bei jedem Wechsel lag
+     sie drei Sekunden über dem Hinweis zu den Bauabschnitten – genau in der
+     Zeit, in der der Trupp auf den Schirm sieht. Danach genügt der Name. */
+  let erklaert = false;
+  try { erklaert = localStorage.getItem(KEY_BAU_ERKLAERT) === '1'; } catch (e) { /* ohne Belang */ }
+  if (baumodus && !erklaert) {
+    hinweis('Baumodus: festhalten, was gebaut wurde. Die Planung bleibt unangetastet.');
+    try { localStorage.setItem(KEY_BAU_ERKLAERT, '1'); } catch (e) { /* ohne Belang */ }
+  } else {
+    hinweis(baumodus ? 'Baumodus' : 'Planungsmodus');
+  }
 }
 
-$('#btn-modus').onclick = modusUmschalten;
+$('#btn-modus').onclick = () => modusUmschalten();
 
 function reiterWechseln(name) {
   document.querySelectorAll('.reiter button').forEach(b => {

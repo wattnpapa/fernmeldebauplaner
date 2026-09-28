@@ -2091,6 +2091,18 @@ body.baumodus .modus-schalter {
   border-color: var(--warnung-auf-blau-linie);
   color: var(--warnung-auf-blau);
 }
+/* Der Modus stand vorher nur in der Farbe eines Wortes: in Graustufen und bei
+   Sonne auf dem Schirm sahen „Planung“ und „Baumodus“ gleich aus, und der
+   Trupp zeichnete in der Planung, statt aufzunehmen. Das Streifenband an der
+   Unterkante der Kopfzeile trägt über das Muster, nicht über die Farbe – es
+   liegt in der Kopfzeile und nimmt der Karte keinen Bildpunkt. */
+body.baumodus .kopf {
+  background-image: repeating-linear-gradient(-45deg,
+    var(--warnung-auf-blau) 0 10px, transparent 10px 20px);
+  background-size: 100% 6px;
+  background-position: left bottom;
+  background-repeat: no-repeat;
+}
 /* Ohne Zeigegerät gibt es keinen Titel zu lesen. Das Zeichen ist am Bauort die
    einzige Zusage, dass der Knopf umschaltet und nicht nur anzeigt – es tritt
    aber hinter den Modusnamen zurück, um den es geht. */
