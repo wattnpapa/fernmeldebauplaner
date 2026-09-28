@@ -80,6 +80,7 @@ const schmalAbfrage = window.matchMedia(`(max-width: ${SCHMAL_BIS}px)`);
    „antippen“ statt „anklicken“, und der Doppelklick schließt nichts ab. */
 const NUR_TOUCH = window.matchMedia('(pointer: coarse)').matches &&
   !window.matchMedia('(any-pointer: fine)').matches;
+const RUECKGAENGIG_KURZ = NUR_TOUCH ? '„↶“ oben nimmt es zurück' : '„↶“ oder Strg+Z nimmt es zurück';
 
 // ---------------------------------------------------------------- Karte & Layer
 
@@ -92,6 +93,11 @@ const sl = new StreckenLayer(karte, {
   },
   aufAenderung: () => aktualisiereKennzahlen(),
   aufGrobmass: () => hinweis('Herangeholt – jetzt die Trassenpunkte antippen.'),
+  aufPlanTipp: (art, i) => {
+    modusAnzeigen();
+    hinweis(art === 'verschieben' ? `Punkt ${i + 1} neu gesetzt – ${RUECKGAENGIG_KURZ}`
+      : `Punkt ${i + 2} eingefügt – ${RUECKGAENGIG_KURZ}`);
+  },
   /* Die gebaute Trasse gehört auf die Arbeitskarte – auch im Planungsmodus:
      der Planer soll sehen, was draußen entstanden ist, ohne erst umzuschalten.
      Die Druckkarten in `bauauftrag.js` bekommen sie nicht; sie zeigen den
@@ -176,6 +182,14 @@ initUI({
   /* Die Seitenleiste teilt eine einzelne Strecke – den Dialog dazu führt
      dieses Modul, weil er am Projekt und an der Karte hängt. */
   teilenDialog: vorwahl => teilenDialog(vorwahl),
+  planTipp: (sid, pid, art) => {
+    zeichnenBeenden(true);
+    zl.beendeSetzen(); fl.beendeSetzen(); rl.beendeSetzen(); bl.beendeSetzen();
+    sl.startePlanTipp(sid, pid, art);
+    zurKarte();
+    modusAnzeigen();
+    zurueckFangen();
+  },
   /* Die Seitenleiste startet im Baumodus einen Setzmodus („Punkt auf der
      Karte“). Die Modusleiste hängt an der Werkzeugleiste und wird deshalb von
      hier aus geführt – ohne diesen Weg bliebe sie beim Setzen aus, und schmal
@@ -240,11 +254,12 @@ window.addEventListener('popstate', () => {
   if (!$('#dialog').hidden) dialogAbweisen();
   else if (bauauftragOffen()) schliesseBauauftrag();
   else if (punktkarteOffen()) punktkarteSchliessen();
+  else if (sl.planTipp) { sl.beendePlanTipp(); modusAnzeigen(); }
   else if (sl.zeichenModus) zeichnenBeenden(false);
   /* Lag eine Ebene über der anderen – der Koordinatendialog über dem
      Zeichnen –, bleibt nach dem Schließen noch etwas offen. Der nächste Druck
      soll auch das schließen und nicht die Seite verlassen. */
-  if (!$('#dialog').hidden || bauauftragOffen() || punktkarteOffen() || sl.zeichenModus) {
+  if (!$('#dialog').hidden || bauauftragOffen() || punktkarteOffen() || sl.zeichenModus || sl.planTipp) {
     zurueckFangen();
   }
 });
@@ -352,7 +367,9 @@ function modusAnzeigen() {
   /* Die Zielwahl zählt als Relaismodus: auch sie wartet auf einen Kartenklick,
      und das Werkzeug muss zeigen, dass der nächste Klick vergeben ist. */
   const relais = !!rl.setzModus || !!rl.zielModus;
-  const istSetzen = !!sl.istSetzModus;
+  /* Verschieben und Einfügen per Tipp warten wie das Setzen eines Ist-Punktes
+     auf genau einen Kartentipp und teilen sich dessen Leiste. */
+  const istSetzen = !!sl.istSetzModus || !!sl.planTipp;
   $('#wz-strecke').classList.toggle('aktiv', zeichnet);
   $('#wz-zeichen').classList.toggle('aktiv', setzt);
   $('#wz-flaeche').classList.toggle('aktiv', flaecht);
@@ -382,6 +399,16 @@ function modusAnzeigen() {
      selbst vom Schirm, siehe .zh-taste). */
   box.querySelector('[data-akt="abbruch"]').innerHTML =
     (istSetzen ? 'Setzen abbrechen' : 'Abbrechen') + '<i class="zh-taste">Esc</i>';
+  if (sl.planTipp) {
+    const s = store.strecke(sl.planTipp.sid);
+    const nr = s ? s.punkte.findIndex(x => x.id === sl.planTipp.pid) + 1 : 0;
+    box.querySelector('.zh-text').innerHTML = sl.planTipp.art === 'verschieben'
+      ? `Punkt ${nr} – neuen Ort auf der Karte antippen`
+      : `Nach Punkt ${nr} einfügen – Ort auf der Karte antippen`;
+    box.querySelector('[data-akt="fertig"]').hidden = true;
+    box.querySelector('[data-akt="zurueck"]').hidden = true;
+    return;
+  }
   if (istSetzen) {
     const s = store.strecke(sl.istSetzModus.sid);
     /* Kurz, weil die Leiste am unteren Kartenrand steht und jede Zeile dort
@@ -421,6 +448,10 @@ $('#zeichen-hinweis').addEventListener('click', e => {
   const akt = e.target.dataset.akt;
   if (akt === 'abbruch' && sl.istSetzModus) {
     sl.beendeIstSetzen();
+    return modusAnzeigen();
+  }
+  if (akt === 'abbruch' && sl.planTipp) {
+    sl.beendePlanTipp();
     return modusAnzeigen();
   }
   if (akt === 'zurueck') { sl.letztenPunktZurueck(); modusAnzeigen(); }
@@ -1529,6 +1560,7 @@ function modusUmschalten(o = {}) {
   zeichnenBeenden(true);
   zl.beendeSetzen(); fl.beendeSetzen(); rl.beendeSetzen(); bl.beendeSetzen();
   sl.beendeIstSetzen();
+  sl.beendePlanTipp();
   punktkarteSchliessen();
   modusAnwenden();
   reiterWechseln(baumodus ? 'bau' : 'strecken');
@@ -1613,6 +1645,7 @@ document.addEventListener('keydown', e => {
     }
     if (punktkarteOffen()) return punktkarteSchliessen();
     if (sl.istSetzModus) { sl.beendeIstSetzen(); return modusAnzeigen(); }
+    if (sl.planTipp) { sl.beendePlanTipp(); return modusAnzeigen(); }
     if (sl.zeichenModus) return zeichnenBeenden(true);
     if (zl.setzModus) { zl.beendeSetzen(); return modusAnzeigen(); }
     if (fl.setzModus) { fl.beendeSetzen(); return modusAnzeigen(); }

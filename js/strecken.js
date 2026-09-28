@@ -597,6 +597,8 @@ export class StreckenLayer {
     this.aufAuswahl = opt.aufAuswahl || (() => {});
     this.aufAenderung = opt.aufAenderung || (() => {});
     this.aufGrobmass = opt.aufGrobmass || (() => {});
+    this.aufPlanTipp = opt.aufPlanTipp || (() => {});
+    this.planTipp = null;   // { sid, pid, art } – Verschieben/Einfügen per Tipp
     this.sw = !!opt.sw;                       // Schwarz-Weiß-Druck
     this.hervorheben = opt.hervorheben || null;  // diese Strecke betonen
     this.nurStrecke = opt.nurStrecke || null;    // nur diese zeichnen
@@ -721,7 +723,50 @@ export class StreckenLayer {
     this.zeichne();
   }
 
+  // ------------------------------------------------------------ Planpunkt per Tipp
+
+  /* Verschieben und Einfügen gingen in der Planung nur durch Ziehen – mit
+     Handschuh verwechselt der Browser das mit dem Verschieben der Karte, und
+     der Einfügegriff misst 32 px. Der Baumodus kannte schon den Weg per Tipp
+     („Auf Karte verschieben“); dieser hier ist sein Gegenstück für die
+     Planung: Punkt wählen, Griff, Zielort antippen. Ziehen bleibt daneben. */
+  startePlanTipp(sid, pid, art) {
+    this.planTipp = { sid, pid, art: art === 'einfuegen' ? 'einfuegen' : 'verschieben' };
+    this.auswahl = sid;
+    L.DomUtil.addClass(this.karte.getContainer(), 'modus-zeichnen');
+    this.zeichne();
+  }
+
+  beendePlanTipp() {
+    if (!this.planTipp) return;
+    this.planTipp = null;
+    L.DomUtil.removeClass(this.karte.getContainer(), 'modus-zeichnen');
+    this.zeichne();
+  }
+
   _kartenKlick(e) {
+    if (this.planTipp) {
+      const m = this.planTipp;
+      const s = store.strecke(m.sid);
+      if (e.originalEvent) e.originalEvent._fbpVerbraucht = true;
+      const i = s ? s.punkte.findIndex(pt => pt.id === m.pid) : -1;
+      if (i < 0) return this.beendePlanTipp();
+      store.aendern(() => {
+        if (m.art === 'verschieben') {
+          s.punkte[i].lat = e.latlng.lat;
+          s.punkte[i].lng = e.latlng.lng;
+        } else {
+          const np = neuerPunkt(e.latlng.lat, e.latlng.lng);
+          np._manuell = false;
+          s.punkte.splice(i + 1, 0, np);
+          this._artenAktualisieren(s);
+        }
+      }, 'strecke');
+      this.beendePlanTipp();
+      this.aufAenderung();
+      this.aufPlanTipp(m.art, i);
+      return;
+    }
     if (this.istSetzModus) {
       const m = this.istSetzModus;
       const s = store.strecke(m.sid);

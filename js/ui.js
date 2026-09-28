@@ -2883,6 +2883,28 @@ function koordinatenDialog(s, pt, i) {
      <p class="klein" id="kd-status">Erkannt werden z. B. <code>32U LB 56560 45282</code>,
        <code>50.9413, 6.9583</code> oder <code>N 50 56.478 O 006 57.498</code>.</p>`;
 
+  /* Die beiden Wege per Tipp stehen hier, am Punkt, und nicht als weitere
+     Griffe in jeder Tabellenzeile: dort stehen schon Art, Zeigen und Löschen,
+     und ein vierter Griff pro Zeile machte die Tabelle zum Suchbild. */
+  if (ctx.planTipp && !document.body.classList.contains('baumodus')) {
+    const tasten = el('div', 'tastenreihe kd-tipp');
+    tasten.appendChild(knopf('✛ Auf der Karte neu setzen', () => {
+      schliesseDialog(); ctx.planTipp(s.id, pt.id, 'verschieben');
+    }, 'klein'));
+    tasten.appendChild(knopf('⊕ Danach einen Punkt einfügen', () => {
+      schliesseDialog(); ctx.planTipp(s.id, pt.id, 'einfuegen');
+    }, 'klein'));
+    box.prepend(tasten);
+  }
+  /* Dieselbe Einsicht wie beim Löschen eines Punktes: an einer Strecke, an der
+     gebaut wird, ändert jede Verschiebung den Auftrag, den der Trupp in der
+     Hand hat. Gefragt wird hier nicht – verschieben ist umkehrbar und kein
+     Verlust –, aber gesagt. */
+  if (bauBegonnen(s)) {
+    box.prepend(el('p', 'bau-warnung',
+      'An dieser Strecke wird schon gebaut. Nach einer Änderung braucht der Trupp einen neuen Link.'));
+  }
+
   box.addEventListener('click', e => {
     const b = e.target.closest('[data-kopie]');
     if (!b) return;
