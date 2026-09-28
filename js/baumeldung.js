@@ -110,7 +110,26 @@ export function befund(projekt, meldung, zuordnung) {
     const planAbweicht = !!ziel && Number.isInteger(m.sollPunkte) &&
       m.sollPunkte !== (ziel.punkte || []).length;
 
+    /* Der jüngste Eintrag auf beiden Seiten. Im Messenger stehen mehrere Links
+       untereinander, und wer den falschen antippt, spielt einen älteren Stand
+       über einen neueren; ein zweimal geöffneter Link kam als gewöhnliche
+       Meldung daher. Beides wird jetzt benannt – entschieden wird weiter vom
+       Planer. */
+    const juengster = bau => {
+      let z = '';
+      for (const x of [...((bau && bau.punkte) || []), ...((bau && bau.meldungen) || [])]) {
+        if (x && typeof x.zeit === 'string' && x.zeit > z) z = x.zeit;
+      }
+      return z;
+    };
+    const standMeldung = juengster(m.bau);
+    const standHier = ziel ? juengster(ziel.bau) : '';
+    const schonDa = !!(standMeldung && standMeldung === standHier &&
+      ((m.bau && m.bau.punkte) || []).length === ((ziel.bau && ziel.bau.punkte) || []).length);
+    const aelter = !!(standMeldung && standHier && standMeldung < standHier);
+
     return {
+      standMeldung, standHier, schonDa, aelter,
       stelle: i,
       name: m.name,
       ziel,

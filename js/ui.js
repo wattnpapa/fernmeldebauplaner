@@ -6061,7 +6061,12 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
        auf beiden Seiten nicht gemeinsam (siehe `baumeldung.js`). Stimmt er
        nicht, ist das ein Hinweis und keine Sperre: der Planer kann die Planung
        zwischenzeitlich umbenannt haben. */
-    (meldung.planung && meldung.planung !== p.name
+    /* Der Trupp arbeitet in „Planung – Strecke“: so benennt die Anwendung
+       selbst eine über den Link übernommene Strecke. Das ist dieselbe Planung
+       und kein Grund zur Warnung – im Audit kam sie bei jeder gewöhnlichen
+       Rückmeldung und wurde so zu einer, die man wegklickt. */
+    (meldung.planung && meldung.planung !== p.name &&
+     !String(meldung.planung).startsWith(p.name + ' – ')
       ? `<p class="bau-warnung">Die Meldung nennt die Planung
            „${escapeHtml(meldung.planung)}“ – offen ist „${escapeHtml(p.name)}“.
            Zuordnung unten prüfen.</p>`
@@ -6124,6 +6129,16 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
         zeile.appendChild(el('p', 'klein',
           'Keine Strecke dieses Namens – oder mehrere. Von Hand zuordnen oder auslassen.'));
       } else {
+        if (b.schonDa) {
+          zeile.appendChild(el('p', 'bau-warnung',
+            `Diese Meldung ist hier schon eingespielt (Stand ${escapeHtml(zeitpunkt(b.standMeldung))}). ` +
+            'Noch einmal einspielen ändert nichts – verwerfen genügt.'));
+        } else if (b.aelter) {
+          zeile.appendChild(el('p', 'bau-warnung',
+            `Diese Meldung ist <b>älter</b> als der Stand hier: sie endet ` +
+            `${escapeHtml(zeitpunkt(b.standMeldung))}, hier steht schon ` +
+            `${escapeHtml(zeitpunkt(b.standHier))}. Einspielen ersetzt den neueren Stand.`));
+        }
         if (b.ersetzt) {
           /* Die Einzahl vollständig gebildet und nicht nur am Hauptwort:
              „Dabei weichen 1 hier schon aufgenommene Punkt“ stand in dem
