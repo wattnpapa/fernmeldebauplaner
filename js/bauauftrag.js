@@ -1200,7 +1200,7 @@ function deckblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
     sammelStammHTML(p, auftrag) +
     kartenfeldHTML() +
     sammelLegendeHTML(auftrag, sw, 12) +
-    sammelKennzahlenHTML(ges) +
+    sammelKennzahlenHTML(ges, auftrag.strecken) +
     fussHTML(p, opt);
 
   kartenbau.push(() => {
@@ -1248,7 +1248,7 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
     (opt.legende ? lageLegendeHTML(blattauftrag, opt, sw, mass) : '') +
     zonenLegendeHTML(blattauftrag, opt) +
     (opt.kennzahlen && blattauftrag.strecken.length
-      ? sammelKennzahlenHTML(gesamtKennzahlen(blattauftrag.strecken)) : '') +
+      ? sammelKennzahlenHTML(gesamtKennzahlen(blattauftrag.strecken), blattauftrag.strecken) : '') +
     (opt.fuss ? fussHTML(p, opt) : '');
 
   kartenbau.push(() => {
@@ -2047,7 +2047,26 @@ function zonenLegendeHTML(auftrag, opt) {
     `<span class="lg-vorbehalt">${escapeHtml(befund)}</span></div>`;
 }
 
-function sammelKennzahlenHTML(ges) {
+/* Der Baustand als Kachel der Lagekarte und des Sammeldrucks – nur, wenn an
+   einer der Strecken gebaut wird. Im Audit trug die Lagekarte für die Wand der
+   Führungsstelle Trassen, Bedarf und Bauzeit, aber kein Wort darüber, was
+   davon steht; für die Lagebesprechung schrieb jemand die Stände aus der Liste
+   ab. */
+function baustandKachel(strecken) {
+  if (!strecken || !strecken.some(bauBegonnen)) return null;
+  const zahl = { offen: 0, laeuft: 0, gebaut: 0, uebergeben: 0 };
+  for (const s of strecken) {
+    const stand = bauBegonnen(s) && s.bau ? s.bau.stand : 'offen';
+    zahl[stand in zahl ? stand : 'offen'] += 1;
+  }
+  const unter = [
+    zahl.gebaut && `${zahl.gebaut} gebaut`, zahl.laeuft && `${zahl.laeuft} im Bau`,
+    zahl.offen && `${zahl.offen} offen`
+  ].filter(Boolean).join(' · ');
+  return ['Baustand', `${zahl.uebergeben} von ${strecken.length} übergeben`, unter || 'alle übergeben'];
+}
+
+function sammelKennzahlenHTML(ges, strecken = null) {
   const kacheln = [
     ['Strecken', String(ges.anzahl), `${ges.punkte} Trassenpunkte`],
     ['Trassenlänge', formatLaenge(ges.trasse),
@@ -2057,8 +2076,9 @@ function sammelKennzahlenHTML(ges) {
     ['Trommeln', String(ges.trommeln), ges.gewicht
       ? gewichtText(ges.gewicht) + (ges.gewichtVollstaendig ? '' : ' (soweit bekannt)')
       : 'je Strecke aufgerundet'],
-    ['Richtwert Bauzeit', stundenText(ges.bauzeitStunden), 'Summe, ohne Parallelbau']
-  ];
+    ['Richtwert Bauzeit', stundenText(ges.bauzeitStunden), 'Summe, ohne Parallelbau'],
+    baustandKachel(strecken)
+  ].filter(Boolean);
   return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>
     `<div class="kz"><span class="kz-titel">${t}</span><span class="kz-wert">${escapeHtml(w)}</span><span class="kz-unter">${escapeHtml(u)}</span></div>`
   ).join('')}</div>`;
