@@ -28,7 +28,8 @@ import {
   baumeldungDialog
 } from './ui.js';
 import {
-  baustrecke, baustreckeSetzen, truppAmGeraet, truppAmGeraetSetzen, bauBegonnen as bauBegonnenAn
+  baustrecke, baustreckeSetzen, truppAmGeraet, truppAmGeraetSetzen, bauBegonnen as bauBegonnenAn,
+  auftragsTrupps, bauabschnitte, bauabschnittAnlegen, bauabschnittAktivSetzen
 } from './baudoku.js';
 import {
   initBaukarte, punktkarteOeffnen, punktkarteSchliessen, punktkarteOffen, punktkarteNachfuehren,
@@ -1316,6 +1317,40 @@ function truppFragen() {
       : 'Bauauftrag übernommen. Solange Netz da ist: oben „Karte mitnehmen“.',
       navigator.onLine === false ? 'warnung' : undefined);
   const v = truppAmGeraet();
+  const s = baustrecke();
+  const trupps = auftragsTrupps(s);
+  /* Hat der Planer mehrere Trupps eingetragen, wird hier gewählt – und der
+     gewählte bekommt seinen Bauabschnitt (`auftragsTrupps` in baudoku.js). */
+  if (s && trupps.length >= 2 && !bauabschnitte(s).length) {
+    const wahl = dialog({
+      titel: 'Welcher Trupp seid ihr?',
+      inhalt: `<p>An <b>${escapeHtml(s.name)}</b> bauen ${trupps.length} Trupps. Jeder baut in
+          seinem eigenen Bauabschnitt, damit sich die Meldungen beim Planer nicht ersetzen.</p>
+        <label class="feld"><span class="feld-titel">Trupp</span>
+          <select id="tf-wahl">${trupps.map(x => `<option${x === v.trupp ? ' selected' : ''}>` +
+            `${escapeHtml(x)}</option>`).join('')}</select></label>
+        <label class="feld"><span class="feld-titel">Truppführer</span>
+          <input type="text" id="tf-fuehrer" placeholder="Name" autocomplete="off"
+            value="${escapeHtml(v.fuehrer || '')}"></label>`,
+      fuss: [
+        { text: 'Später', tun: danach },
+        { text: 'Weiter', primaer: true, tun: () => {
+          const trupp = wahl.querySelector('#tf-wahl').value;
+          const fuehrer = wahl.querySelector('#tf-fuehrer').value.trim();
+          truppAmGeraetSetzen({ trupp, fuehrer });
+          let a;
+          store.aendern(() => {
+            a = bauabschnittAnlegen(s);
+            a.name = trupp; a.trupp = trupp; a.fuehrer = fuehrer;
+          }, 'bau');
+          bauabschnittAktivSetzen(a.id);
+          zeichneBauListe();
+          danach();
+        } }
+      ]
+    });
+    return;
+  }
   if (v.trupp || v.fuehrer) { danach(); return; }
   const feld = dialog({
     titel: 'Wer baut?',
@@ -1527,8 +1562,8 @@ function einstiegDialog() {
     <p>Hast du vom Planer einen <b>Link</b> bekommen? Antippen genügt – die Planung öffnet
        sich hier, und im <b>Baumodus</b> hältst du fest, was gebaut wurde.</p>
     <p class="klein">Das ist die einfache Ansicht. Taktische Zeichen, Flächen, Relaisstellen
-       und die Bauansatzwerte stehen in der erweiterten Ansicht – der Umschalter steht oben
-       in der linken Leiste.</p>`;
+       und die Bauansatzwerte stehen in der erweiterten Ansicht – der Umschalter steht über
+       den Reitern „Strecken“ und „Auftrag“.</p>`;
   const erledigt = einstiegMerken;
   box.querySelector('[data-weg="strecke"]').onclick = () => { erledigt(); schliesseDialog(); neueStreckeStarten(); };
   box.querySelector('[data-weg="laden"]').onclick = () => { erledigt(); schliesseDialog(); $('#datei-import').click(); };
@@ -1916,8 +1951,11 @@ function bandNachfuehren() {
   /* „Noch nie als Datei gesichert“ las sich im Audit wie „nicht gespeichert“ –
      dabei liegt jede Eingabe längst im Gerät. Der Satz sagt deshalb beides:
      was sicher ist und was fehlt. */
+  /* Kurz genug für 360 px: „… · noch keine Sicherungsdatei“ endete dort im
+     Audit als „noch ke…“, und ausgerechnet das Fehlende war abgeschnitten. */
   stand.textContent = zeit ? 'Im Gerät gespeichert · Datei vom ' + zeitpunktKurz(zeit)
-    : 'Im Gerät gespeichert · noch keine Sicherungsdatei';
+    : 'Im Gerät gespeichert · keine Datei';
+  stand.title = zeit ? '' : 'Im Gerät gespeichert, aber noch nie als Datei gesichert';
 }
 
 function zeitpunktKurz(iso) {

@@ -1151,9 +1151,13 @@ export class StreckenLayer {
          war nur aus der Liste zu lesen. Nur auf der Arbeitskarte (`mitIst`)
          und der Lagekarte (`mitStand`): die Auftragsblätter zeigen den
          Auftrag, nicht den Bau. */
+      /* Auf der Lagekarte trägt auch die noch nicht begonnene Strecke ihre
+         Marke, sobald irgendwo gebaut wird – sonst ist „offen“ dort nicht von
+         „ohne Angabe“ zu unterscheiden. */
       const standSchild = (this.mitIst || this.mitStand) && bauBegonnen(s)
         ? `<span class="bz-marke bz-${escapeHtml(s.bau.stand)}">${escapeHtml(baustandById(s.bau.stand).kurz)}</span>`
-        : '';
+        : this.mitStand && store.projekt.strecken.some(bauBegonnen)
+          ? '<span class="bz-marke bz-offen">offen</span>' : '';
       const marke = L.marker([anker.lat, anker.lng], {
         pane: 'fbp-labels', interactive: false,
         icon: L.divIcon({
@@ -1563,7 +1567,19 @@ export class StreckenLayer {
 
     m.on('click', e => {
       L.DomEvent.stop(e);
-      if (this.zeichenModus) return;
+      /* Beim Zeichnen zählt der Tipp auf den Punkt einer ANDEREN Strecke als
+         Punkt genau dort: eine zweite Strecke ab derselben Vermittlung oder
+         demselben Endverzweiger ist der Normalfall. Im Audit schluckte die
+         aufgeweitete Trefferfläche der Marke drei Tipps ohne jede Wirkung, und
+         der Helfer hielt die Anwendung für hängend. Die eigene Strecke bleibt
+         ausgenommen – ein Tipp auf den eben gesetzten Punkt ist ein Doppeltipp
+         und kein zweiter Punkt. */
+      if (this.zeichenModus) {
+        if (s.id !== this.zeichenModus) {
+          this._kartenKlick({ latlng: m.getLatLng(), originalEvent: e.originalEvent });
+        }
+        return;
+      }
       /* Wer beim Setzen eines Ist-Punktes die geplante Marke trifft, sagt
          damit: genau hier. Der Tipp zählt als Kartentipp an dieser Stelle –
          sonst müsste er knapp neben die Marke zielen, und der Punkt läge dann

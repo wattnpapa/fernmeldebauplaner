@@ -20,6 +20,7 @@
 import { bauNormalisieren, BAUSTAENDE, id as neueKennung } from './state.js';
 import { bauabschnitte, istPunkte } from './baudoku.js';
 import { bauAbdruck } from './teilen.js';
+import { materialById } from './vorschrift.js';
 
 /* Die Reihenfolge der Baustände, um sie vergleichen zu können. */
 const STAND_RANG = new Map(BAUSTAENDE.map((b, i) => [b.id, i]));
@@ -143,9 +144,15 @@ export function befund(projekt, meldung, zuordnung) {
        dieselben drei Punkte gleich wieder hereinkamen, und wer das einmal
        gesehen hat, liest es beim nächsten Mal nicht mehr. */
     const verloren = probe ? verlust(ziel.bau, probe.bau) : { punkte: 0, meldungen: 0, material: 0 };
+    /* Eine Materialzeile desselben Artikels ist kein Verlust, sondern eine
+       Änderung – und die Änderung ist genau das, was der Planer sehen muss:
+       im Audit nannte der Dialog bei der berichtigten Meldung „1 Materialzeile
+       geht verloren“ und nirgends „31.200 → 3.120 m“. */
+    const geaendert = probe ? mengenAenderung(ziel.bau, probe.bau) : [];
+    verloren.material = Math.max(0, verloren.material - geaendert.length);
 
     return {
-      standMeldung, standHier, schonDa, aelter, verloren,
+      standMeldung, standHier, schonDa, aelter, verloren, geaendert,
       /* Wessen Aufnahme hier steht. Ohne den Namen war „Dabei weichen 3
          Punkte“ nicht von „mein eigener älterer Stand“ zu unterscheiden – und
          im Audit verschwand so die Aufnahme des ANDEREN Trupps. */
@@ -172,13 +179,11 @@ export function befund(projekt, meldung, zuordnung) {
       /* Was eine Meldung über die ganze Strecke beim Planer wegnimmt: sie tritt
          an die Stelle des ganzen Bogens, also auch an die von Bauabschnitten,
          die sie gar nicht nennt, und von Prüfung und Übergabe. */
-      verdraengt: (ziel && ganzeStrecke) ? {
-        abschnitte: vorhandene.length,
-        pruefzeilen: ((ziel.bau && ziel.bau.pruefung && ziel.bau.pruefung.staemme) || []).length,
-        uebergabe: !!(ziel.bau && ziel.bau.pruefung && ziel.bau.pruefung.uebergabeAn),
-        material: ((ziel.bau && ziel.bau.material) || []).length,
-        abweichung: !!(ziel.bau && ziel.bau.abweichung)
-      } : null,
+      /* Auch hier nach dem Inhalt und nicht nach der Zahl: was die Abschrift
+         nach dem Einspielen noch trägt, geht nicht verloren. Vorher stand
+         „Dabei gehen verloren: 1 Materialzeilen“ auch dann, wenn dieselbe
+         Zeile gleich wieder hereinkam. */
+      verdraengt: (ziel && ganzeStrecke && probe) ? verdraengtNachInhalt(ziel.bau, probe.bau, verloren) : null,
       /* Was beim Planer verlorenginge. Bei der ganzen Strecke ist das der
          ganze Bogen, bei einzelnen Abschnitten nur deren Eintragungen. */
       ersetzt: ziel ? (ganzeStrecke ? istPunkte(ziel).length
@@ -238,6 +243,35 @@ function verlust(vorher, nachher) {
   return { punkte: zaehle('punkte'), meldungen: zaehle('meldungen'), material: zaehle('material') };
 }
 
+function mengenAenderung(vorher, nachher) {
+  const schluessel = z => `${z.artikel}|${z.abschnitt || ''}|${z.artikel === 'sonstiges' ? z.bemerkung : ''}`;
+  const neu = new Map(((nachher && nachher.material) || []).map(z => [schluessel(z), z]));
+  const liste = [];
+  for (const z of (vorher && vorher.material) || []) {
+    const n = neu.get(schluessel(z));
+    if (n && n.menge !== z.menge) {
+      const m = materialById(z.artikel);
+      liste.push({ name: (z.artikel === 'sonstiges' && z.bemerkung) || (m ? m.name : z.artikel),
+        einheit: m ? m.einheit : '', alt: z.menge, neu: n.menge });
+    }
+  }
+  return liste;
+}
+
+function verdraengtNachInhalt(vorher, nachher, verloren) {
+  const v = vorher || {}, n = nachher || {};
+  const pv = v.pruefung || {}, pn = n.pruefung || {};
+  const namen = new Set((n.abschnitte || []).map(a => a.name));
+  const zeilenNachher = new Set((pn.staemme || []).map(inhaltVon));
+  return {
+    abschnitte: (v.abschnitte || []).filter(a => !namen.has(a.name)).length,
+    pruefzeilen: (pv.staemme || []).filter(z => !zeilenNachher.has(inhaltVon(z))).length,
+    uebergabe: !!pv.uebergabeAn && (pv.uebergabeAn !== pn.uebergabeAn || pv.uebergabeZeit !== pn.uebergabeZeit),
+    material: verloren.material,
+    abweichung: !!v.abweichung && v.abweichung !== n.abweichung
+  };
+}
+
 /* Wer den Stand gemeldet hat, der ersetzt würde: der Trupp der betroffenen
    Bauabschnitte, sonst der Absender der letzten eingespielten Meldung. */
 function bisherVon(ziel, namen, ganzeStrecke) {
@@ -287,7 +321,9 @@ export function einspielen(projekt, meldung, zuordnung) {
     else abschnitteErsetzen(ziel, frisch);
     /* Der Absender bleibt an der Strecke stehen: die Streckenliste nennt ihn,
        und die nächste Meldung sagt damit, WESSEN Aufnahme sie ersetzt. */
-    if (meldung.von) ziel.bau.gemeldetVon = String(meldung.von).slice(0, 120);
+    /* Ohne Absender steht das auch so da: ein leeres Feld ließ die nächste
+       Meldung nicht mehr sagen, wessen Aufnahme sie ersetzt. */
+    ziel.bau.gemeldetVon = meldung.von ? String(meldung.von).slice(0, 120) : 'unbekannter Absender';
 
     bericht.strecken++;
     /* Gezählt wird, was danach WIRKLICH in der Planung steht, und nicht, was die

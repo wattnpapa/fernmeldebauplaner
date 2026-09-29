@@ -21,7 +21,7 @@ import {
   bauBegonnen, baukennzahlen, istPunkte, bauabschnitte, bauabschnittById, sollZuIst,
   punktartText, istKurz,
   materialzeilen, materialSumme, materialSoll, meldungenNachZeit, pruefzeilen,
-  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE, bilderAnStrecke, BILD_KORRIDOR
+  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE, bilderAnStrecke, BILD_KORRIDOR, truppAmGeraet
 } from './baudoku.js';
 import { bildUrl } from './bildspeicher.js';
 import { MATERIALKATALOG, MATERIALGRUPPEN, pruefartById, dtg, PRUEFART_JE_KABEL } from './vorschrift.js';
@@ -1195,6 +1195,7 @@ function deckblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
   const el = blatt(ziel, opt);
   el.innerHTML =
     kopfHTML(p, {
+      strecken: auftrag.strecken,
       titel: auftragTitel(auftrag),
       unter: streckenzahl(auftrag.strecken.length) +
              (auftrag.umfang === 'projekt' ? ' der Planung' : ''),
@@ -1797,10 +1798,15 @@ function datenblaetter(ziel, p, strecke, k, opt) {
   if (opt.material) fluss.setze(elementAus(materialHTML(strecke, k)));
   if (opt.hinweise) fluss.setze(elementAus(regelnHTML(k)));
   if (opt.pruefanweisung && k.kabel.funk) fluss.setze(elementAus(pruefanweisungHTML()));
-  /* Der Baunachweis beginnt auf einem eigenen Blatt: es wird abgetrennt und
-     auf dem Klemmbrett mitgeführt, während der Rest des Auftrags im Fahrzeug
-     bleibt. Bei der Funkstrecke nicht – dort gibt es keine Trasse abzuhaken,
-     und die Prüfanweisung ist ihr Nachweis. */
+  if (opt.bemerkungen) fluss.setze(elementAus(bemerkungHTML(p, strecke)));
+  if (opt.unterschrift) fluss.setze(elementAus(unterschriftHTML(p)));
+  /* Der Baunachweis beginnt auf einem eigenen Blatt und steht am Ende: es
+     wird abgetrennt und auf dem Klemmbrett mitgeführt, während der Rest des
+     Auftrags im Fahrzeug bleibt. Vor den Bemerkungen und Bestätigungen
+     mischte er sich im Audit mit „Auftrag erteilt (Führung)“ auf einem Blatt –
+     abtrennen hieß dann, der Führung ihr Unterschriftsfeld mitzunehmen. Bei
+     der Funkstrecke nicht – dort gibt es keine Trasse abzuhaken, und die
+     Prüfanweisung ist ihr Nachweis. */
   if (opt.baunachweis && !k.kabel.funk && strecke.punkte.length) {
     if (!fluss.leer()) fluss.neuBlatt();
     const kopfEl = elementAus(baunachweisKopfHTML());
@@ -1812,8 +1818,6 @@ function datenblaetter(ziel, p, strecke, k, opt) {
     fluss.setze(elementAus(baunachweisAbweichungHTML()));
     fluss.setze(elementAus(baunachweisPruefungHTML(strecke)));
   }
-  if (opt.bemerkungen) fluss.setze(elementAus(bemerkungHTML(p, strecke)));
-  if (opt.unterschrift) fluss.setze(elementAus(unterschriftHTML(p)));
 }
 
 /** Streckenverzeichnis des Sammelauftrags: eine Zeile je Strecke, darunter
@@ -2713,7 +2717,8 @@ function baunachweisKopfHTML() {
     </table>
     <figure class="bl-qr-rahmen">
       <div class="bl-qr" aria-hidden="true"></div>
-      <figcaption>Scannen öffnet diesen Auftrag im FMBauplaner – dort „Bau beginnen“.</figcaption>
+      <figcaption>Scannen öffnet diesen Auftrag im FMBauplaner – dort „Bau beginnen“ und
+        vor der Abfahrt „Karte mitnehmen“.</figcaption>
     </figure>
   </section>`;
 }
@@ -2778,6 +2783,11 @@ function baunachweisPruefungHTML(s) {
      Vorliebe des Truppführers (3.5) – dieselbe Vorgabe, die der Baumodus
      vorschlägt. */
   const art = pruefartById(PRUEFART_JE_KABEL[s.kabeltyp] || 'messung');
+  /* So viele Zeilen, wie das Kabel Stämme hat – FK 1×2 einen, FFK 2×2 zwei.
+     Vier feste Zeilen verleiteten bei einem Stamm zu Nachfragen und Strichen.
+     Wo die Bezeichnung nichts sagt, bleiben es vier. */
+  const paare = /(\d+)×2/.exec(kabelById(s.kabeltyp).name);
+  const staemme = paare ? Math.min(Number(paare[1]), 10) : 4;
   const zeile = n => `<tr><td>Stamm ${n}</td><td>${escapeHtml(art.name)}</td>
       <td class="ausfuellen"></td>
       <td class="ankreuzen"><span class="kasten" aria-hidden="true"></span></td>
@@ -2787,7 +2797,7 @@ function baunachweisPruefungHTML(s) {
     <table class="tab-punkte tab-ausfuellen tab-nachweis-pruefung">
       <thead><tr><th>Stamm</th><th>Art</th><th>Messwert / Ergebnis</th><th>bestanden</th>
         <th>Uhrzeit</th><th>Prüfer</th></tr></thead>
-      <tbody>${[1, 2, 3, 4].map(zeile).join('')}</tbody>
+      <tbody>${Array.from({ length: staemme }, (_, i) => zeile(i + 1)).join('')}</tbody>
     </table>
     <table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
       <thead><tr><th>Übergeben an</th><th>Datum / Uhrzeit</th><th>Name, Unterschrift</th></tr></thead>
@@ -3090,7 +3100,12 @@ function baudokublaetter(ziel, strecke, opt, mass, sw, karten, kartenbau) {
 }
 
 function baudokuKopfHTML(p, s) {
+  /* Dieselbe Kennung wie auf dem Auftrag und im Bau-Reiter – über diese eine
+     Strecke. Im Audit trug die Baudokumentation eine andere, weil sie über
+     alle Strecken der Planung gebildet war, und der Nachweis behauptete einen
+     anderen Stand als den, nach dem gebaut wurde. */
   return kopfHTML(p, {
+    strecken: [s],
     titel: s.name,
     unter: (s.von || s.nach) ? `${s.von || '?'} → ${s.nach || '?'}` : '',
     doktyp: 'Baudokumentation Fernmeldebau'
@@ -3102,6 +3117,21 @@ function baudokuKopfHTML(p, s) {
    hier oben; bauen mehrere aufeinander zu, steht hier „mehrere“ und die
    Aufstellung folgt weiter unten. Eine Zusammenfassung wäre an dieser Stelle
    eine Behauptung: „1. und 2. FmTr“ sagt nicht, wer welchen Teil gebaut hat. */
+/* Eine Zeit auf dem Blatt: mit Tag, sobald er nicht der des Blattkopfs ist.
+   Die Baudokumentation druckte nur „23:50“, auch für einen Punkt vom Vortag –
+   nach Mitternacht oder bei einem Bau über zwei Tage stimmte dann die
+   Reihenfolge auf dem Papier nicht, obwohl sie im Gerät richtig stand. */
+function zeitDruck(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  if (isNaN(d)) return uhrzeit(iso) || '–';
+  const kopf = store.projekt.kopf.datum ? new Date(store.projekt.kopf.datum) : new Date();
+  const gleich = !isNaN(kopf) && d.getFullYear() === kopf.getFullYear() &&
+    d.getMonth() === kopf.getMonth() && d.getDate() === kopf.getDate();
+  return gleich ? uhrzeit(iso)
+    : `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${uhrzeit(iso)}`;
+}
+
 function baudokuStammHTML(p, s, k) {
   const abs = bauabschnitte(s);
   const eins = abs.length === 1 ? abs[0] : null;
@@ -3109,14 +3139,21 @@ function baudokuStammHTML(p, s, k) {
   /* Ohne Bauabschnitt weiß das Gerät weder Trupp noch Zeiten – dann bleibt das
      Feld LEER und nicht „–“. Ein Strich sagt „hier steht nichts“, ein leeres
      Feld auf einem Vordruck sagt „hier gehört etwas hin“, und genau das ist der
-     Fall: der Truppführer trägt es am Bauplatz mit der Hand nach. */
+     Fall: der Truppführer trägt es am Bauplatz mit der Hand nach.
+
+     Es sei denn, „Wer baut?“ wurde beantwortet: auf dem Gerät des Trupps steht
+     es dort, beim Planer als Absender der letzten Meldung. Im Audit war beides
+     bekannt und das Blatt trotzdem leer. */
+  const geraet = truppAmGeraet();
   const offen = abs.length ? null : '\u00a0';
+  const truppOhne = geraet.trupp || (s.bau && s.bau.gemeldetVon) || offen;
+  const fuehrerOhne = geraet.fuehrer || offen;
   return stammFelderHTML([
     ['Auftrag / Einsatz', p.kopf.einsatz],
     ['Einheit', p.kopf.einheit],
     ['Auftrags-Nr.', p.kopf.auftragNr],
-    ['Trupp', eins ? eins.trupp : (offen ?? mehrere)],
-    ['Truppführer', eins ? eins.fuehrer : (offen ?? mehrere)],
+    ['Trupp', eins ? eins.trupp : (abs.length ? mehrere : truppOhne)],
+    ['Truppführer', eins ? eins.fuehrer : (abs.length ? mehrere : fuehrerOhne)],
     ['Baubeginn', eins ? dtgOderStrich(eins.beginn) : (offen ?? mehrere)],
     ['Bauende', eins ? dtgOderStrich(eins.ende) : (offen ?? mehrere)],
     /* „Baustand“ und nicht „Stand“: im Kopf darüber steht schon der
@@ -3488,7 +3525,7 @@ function istpunkteZeilenHTML(s) {
       <td>${escapeHtml(pt.name || '')}</td>
       <td class="mono">${escapeHtml(toMGRS(pt.lat, pt.lng, 5))}</td>
       <td>${escapeHtml(quelleText(pt))}</td>
-      <td class="mono">${escapeHtml(uhrzeit(pt.zeit) || '–')}</td>
+      <td class="mono">${escapeHtml(zeitDruck(pt.zeit))}</td>
       <td>${escapeHtml(abschnitt ? abschnitt.name : '')}</td>
       <td class="zahl">${soll
         ? `Pkt. ${nr}${weit >= ABWEICHUNG_SCHWELLE
@@ -3568,7 +3605,7 @@ function meldungZeilenHTML(s) {
   return meldungenNachZeit(s).map(m => {
     const a = bauabschnittById(s, m.abschnitt);
     return `<tr>
-      <td class="mono">${escapeHtml(uhrzeit(m.zeit) || '–')}</td>
+      <td class="mono">${escapeHtml(zeitDruck(m.zeit))}</td>
       <td>${escapeHtml(a ? a.name : '')}</td>
       <td>${escapeHtml(m.text || '')}</td>
     </tr>`;
@@ -3609,7 +3646,7 @@ function pruefungZeilenHTML(s) {
     <td>${escapeHtml(z.ergebnis || '')}</td>
     <td>${z.bestanden === true ? 'bestanden'
          : z.bestanden === false ? '<b>nicht bestanden</b>' : 'offen'}</td>
-    <td class="mono">${escapeHtml(uhrzeit(z.zeit) || '–')}</td>
+    <td class="mono">${escapeHtml(zeitDruck(z.zeit))}</td>
     <td>${escapeHtml(z.pruefer || '')}</td>
   </tr>`).join('');
 }

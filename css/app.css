@@ -2435,7 +2435,14 @@ body.baumodus .sichtwahl { display: none; }
   border-radius: var(--radius-klein); background: var(--flaeche); color: var(--text);
 }
 .zeit-wahl select.zw-tag { font-weight: 400; font-size: 14px; }
-.zeit-wahl:not(.knapp) { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; margin: 6px 0; }
+/* Der Tag in lesbarer Breite und mit Abstand zur Uhrzeit: mit `min-width: 0`
+   schrumpfte das Feld im Audit auf 18 px, sichtbar war nur sein Pfeil, und
+   der Handschuh traf die Uhrzeit daneben. */
+.zeit-wahl:not(.knapp) {
+  display: grid; grid-template-columns: minmax(7em, auto) minmax(7.5em, 1fr); gap: 4px 12px; margin: 6px 0;
+}
+.zeit-wahl:not(.knapp) select.zw-tag { min-width: 7em; min-height: 44px; }
+.zeit-wahl:not(.knapp) input.bm-zeit { min-height: 44px; }
 .zeit-wahl:not(.knapp) .feld-titel { grid-column: 1 / -1; }
 .zeit-wahl:not(.knapp) input.bm-zeit { min-width: 8em; font-weight: 650; }
 .bp-haken.bp-pruefen { background: var(--warnung) !important; color: #111 !important; }
@@ -2474,6 +2481,7 @@ body.baumodus .sichtwahl { display: none; }
 .mv-zeile .feld { margin: 8px 0 0; min-width: 0; }
 .mv-zeile select { width: 100%; min-width: 0; }
 .mv-ersetzt { margin: 8px 0 0; font-size: 12px; color: var(--warnung-tief); }
+.mv-geaendert { margin: 8px 0 0; font-size: 12.5px; color: var(--text); }
 .mv-s6 {
   margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--warnung);
   background: var(--warnung-flaeche); color: var(--warnung-tief); font-weight: 600;
@@ -2509,9 +2517,19 @@ body.baumodus .sichtwahl { display: none; }
 .bz-alter { font-variant-numeric: tabular-nums; }
 .bz-alter.spaet { color: var(--gefahr); font-weight: 700; }
 .bz-alter.spaet::before { content: '⚠ '; }
-.mini-knopf.bz-gesehen { margin-left: auto; font-size: 11.5px; padding: 2px 8px; }
+/* Der Knopf wächst mit seinem Wort: als `mini-knopf` hatte er eine feste
+   Breite, und „gesehen“ lief im Audit über den Rahmen – am Laptop sah er aus
+   wie ein Darstellungsfehler, nicht wie ein Knopf. */
+.mini-knopf.bz-gesehen {
+  margin-left: auto; width: auto; min-width: 44px; height: auto; min-height: 32px;
+  padding: 4px 10px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+}
+.bz-meldung-text { flex: 1; min-width: 0; }
+.eintrag-zeile.bz-meldung.erledigt { background: none; border-left-color: var(--linie-stark);
+  color: var(--text-schwach); }
+body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--thw-text); color: #0d1218; }
 .eintrag-zeile.bz-meldung {
-  display: block; margin: 0 10px 9px 32px; padding: 4px 8px; border-left: 3px solid var(--warnung);
+  display: flex; align-items: center; gap: 8px; margin: 0 10px 9px 32px; padding: 4px 8px; border-left: 3px solid var(--warnung);
   background: var(--warnung-flaeche); color: var(--warnung-tief); font-size: 12.5px;
   overflow-wrap: anywhere;
 }
@@ -2630,8 +2648,13 @@ body.baumodus .sichtwahl { display: none; }
      bleiben stehen (siehe .pk-kopf und .pk-abschluss). Das senkrechte Polster
      sitzt deshalb nicht mehr hier, sondern an beiden: ein Polster am
      rollenden Kasten liegt über dem Rollbereich, und der Inhalt zöge sichtbar
-     durch den Streifen über dem festgehaltenen Kopf. */
-  max-height: min(60%, calc(100% - var(--sl-hoehe) - var(--karten-fuss)
+     durch den Streifen über dem festgehaltenen Kopf.
+
+     72 % und nicht mehr 60: bei 360×740 lagen Ortungswarnung und die Zeile
+     „Was ist hier?“ unter dem Rand, sichtbar war nur „Fertig“ – und darüber
+     standen 100 px Karte, die niemand braucht, solange das Blatt offen ist.
+     Der Streifen zum Schließen bleibt über 150 px hoch. */
+  max-height: min(72%, calc(100% - var(--sl-hoehe) - var(--karten-fuss)
                    - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 24px));
   overflow-y: auto; overscroll-behavior: contain;
   /* Ohne das rückt die Rollverankerung des Browsers das Blatt beim Neuaufbau
@@ -3074,7 +3097,8 @@ body.baumodus .sichtwahl { display: none; }
   .mini-knopf { position: relative; width: 36px; height: 36px; }
   .mini-knopf::after { content: ''; position: absolute; inset: -4px; }
   .pz-weg { width: 38px; height: 38px; }
-  .pz-weg::after { inset: -3px; }
+  /* -4 und nicht -3: gemessen blieb das ✕ am Trassenpunkt mit -3 bei 42 px. */
+  .pz-weg::after { inset: -4px; }
   .farbe { position: relative; }
   /* -6px, nicht -4 wie bei den übrigen Griffen: das Farbfeld trägt einen 2 px
      breiten durchsichtigen Rand für die Auswahl, und `inset` misst vom
@@ -3087,7 +3111,7 @@ body.baumodus .sichtwahl { display: none; }
      Audit lag die Trefferzone des Auges über dem Winkel, ein Tipp zum
      Aufklappen blendete die Strecke aus – und sie wanderte so ausgeblendet
      in den Link an den Trupp. */
-  .augen::after { content: ''; position: absolute; inset: -5px 0 -5px -5px; }
+  .augen::after { content: ''; position: absolute; inset: -6px 0 -6px -6px; }
   .eintrag-kopf::after { margin-left: 14px; margin-right: 8px; }
   .eintrag.offen .eintrag-kopf::after { margin-left: 14px; margin-right: 8px; }
   .farbe { width: 36px; height: 36px; }
@@ -3096,7 +3120,9 @@ body.baumodus .sichtwahl { display: none; }
   /* Nur senkrecht aufziehen: waagerecht stünden die Zonen benachbarter Knöpfe
      ineinander, und „Fertig“ und „Abbrechen“ dürfen sich nicht überlappen. */
   .knopf.klein { position: relative; padding: 8px 12px; min-height: 40px; font-size: 12.5px; }
-  .knopf.klein::after { content: ''; position: absolute; inset: -2px 0; }
+  /* -2 ließ „Auf der Karte neu setzen“ bei 42 px; -3 hebt jeden kleinen
+     Knopf mit 40 px Höhe auf das Handschuhmaß. */
+  .knopf.klein::after { content: ''; position: absolute; inset: -3px 0; }
   .tastenreihe { gap: 8px; }
   .reiter button { padding: 13px 6px; font-size: 13px; }
   .wz { padding: 12px 10px; }
@@ -3106,13 +3132,16 @@ body.baumodus .sichtwahl { display: none; }
   .pz-querung select { padding: 9px 7px; min-height: 40px; }
   /* Auch die Kartenoptionen werden dort umgestellt – die Zeilen wachsen auf
      Trefferhöhe, die Tafel bleibt sichtbar kompakt. Vorher: 19 px. */
-  .ko-zeile { min-height: 36px; }
+  .ko-zeile { min-height: 44px; }
   /* Der Kopf ist bei zugeklappter Tafel der einzige Griff und trägt deshalb
      das volle Maß, nicht das der Zeilen darunter. */
   .ko-kopf { min-height: 44px; }
   .mini-input { padding: 10px 8px; }
   .koord-knopf { padding: 10px 6px; }
-  .sl-kopie::after { content: ''; position: absolute; inset: -9px -4px; }
+  /* Das Namensfeld der Planung maß 38 px – es ist das einzige Feld im Kopf,
+     und neben 44 px hohen Knöpfen das einzige, das der Handschuh verfehlt. */
+  .projektname { min-height: 44px; }
+  .sl-kopie::after { content: ''; position: absolute; inset: -12px -4px; }
   /* Die Einträge trugen 33 bis 37 px – zu wenig für den Handschuh, und die
      letzten beiden stehen ohnehin schon am gedeckelten unteren Rand. Die
      Höhe kommt aus min-height statt aus mehr Polsterung: so bleibt der Text
@@ -3248,6 +3277,21 @@ body.baumodus .sichtwahl { display: none; }
      dann innerhalb des Knopfes um, was sie lesbar lässt. */
   .zeichen-hinweis { gap: 8px; }
   .zeichen-hinweis .knopf { flex: 1 1 0; min-width: 0; padding: 9px 6px; white-space: normal; }
+  /* Der Merker steht über den Knöpfen und nicht neben ihnen: nebeneinander
+     nahm er bei 844×390 die Breite, und die drei Knöpfe schrumpften auf je
+     16 px – „Fertig“ neben „Abbrechen“, mit dem Handschuh nicht zu treffen.
+     Beim Setzen eines Ist-Punktes gilt weiter die Regel oben: ein Knopf, der
+     Merker daneben. */
+  body:not(.ist-setzen) .zeichen-hinweis .zh-text { flex: 1 0 100%; text-align: center; }
+  body:not(.ist-setzen) .zeichen-hinweis .knopf { min-width: 72px; }
+}
+
+/* Quer steht die Zoomsteuerung rechts bis in die untere Hälfte der Karte und
+   deckte bei 667×375 den rechten Teil von „Abbrechen“. Die Leiste lässt ihr
+   dort die Spalte frei, statt dass die Steuerung weicht – mit Handschuh ist
+   sie beim Zeichnen der einzige brauchbare Zoom. */
+@media (max-height: 500px) {
+  .zeichen-hinweis { right: calc(64px + env(safe-area-inset-right, 0px)); margin: 0; }
 }
 
 /* ------------------------------------------------- Die engste Breite
@@ -3531,6 +3575,10 @@ body.nacht {
 /* Der Vorgriff aus `index.html`: bis das Modul die Klasse setzt, trägt schon
    die Seite den dunklen Grund. */
 html.nacht-vor, html.nacht-vor body { background: #0d1218; color-scheme: dark; }
+/* Auch danach trägt die Seite hinter der Oberfläche den dunklen Grund: sonst
+   blitzt beim Überziehen einer Liste und am Rand um den sicheren Bereich das
+   helle `html` hervor. */
+html:has(body.nacht) { background: #0d1218; color-scheme: dark; }
 
 /* Der aktive Reiter und die Wahl „Liste/Karte“ sind nachts am Strich kaum zu
    erkennen: #0b2e7a auf #151c25 sind 1,38:1, und die Schrift unterschied sich
@@ -3554,6 +3602,17 @@ body.nacht .ansicht-wechsel .aw.aktiv { border-top-color: var(--thw-text); color
     border-color: var(--linie-stark) !important;
   }
   body.nacht .leaflet-control-attribution a { color: var(--thw-text); }
+  /* Schilder, Teillängen und Punktmarken der Arbeitskarte dunkel hinterlegt:
+     auf der abgedunkelten Karte waren die weißen Kästchen im Audit die
+     hellsten Punkte des Schirms. Die Streckenfarbe bleibt am Rand, die
+     Schrift wird hell. Nur hier, am Schirm – die Druckkarten sind eigene
+     Karten und bleiben hell. */
+  body.nacht #karte .strecken-mass,
+  body.nacht #karte .seg-mass,
+  body.nacht #karte .punkt-name { background: rgba(21,28,37,.94); color: var(--text); }
+  body.nacht #karte .strecken-mass b { color: var(--text); }
+  body.nacht #karte .strecken-mass .zus { color: var(--text-schwach); }
+  body.nacht #karte .fbp-punkt:not(.art-start):not(.art-ziel) { background: #1a222d; color: var(--text); }
   /* Leaflet legt dem Maßstab einen weißen Schatten unter die Schrift; auf dem
      dunklen Grund stand „1 km“ dadurch doppelt und verwaschen. */
   body.nacht .leaflet-control-scale-line { text-shadow: none; }

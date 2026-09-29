@@ -515,18 +515,23 @@ function istBlatt(s, ist, soll) {
               store.aendern(() => istSollZuordnen(s, ist, pid), 'bau');
             }, 'klein'));
             reihe.after(rueckfrage);
+            /* Ganz ins Bild, und über „Fertig“: im Audit reichte der Knopf
+               halb unter die klebende Abschlusszeile. */
+            rueckfrage.scrollIntoView({ block: 'nearest' });
             return;
           }
           store.aendern(() => istSollZuordnen(s, ist, pid || null), 'bau');
         },
         'Zuordnung zum Plan');
       reihe.appendChild(zuordnung);
-      links.appendChild(reihe);
+      /* Die Warnung steht VOR der Frage und nicht darunter: darunter lag sie
+         im Audit unter dem Rand des Blattes, sichtbar war nur „Fertig“. */
       if (offeneSoll[0].weg >= ABSEITS_SCHWELLE) {
         links.appendChild(el('p', 'pk-warnung',
           `Der Standort liegt ${escapeHtml(formatLaenge(offeneSoll[0].weg))} von der ` +
           'nächsten geplanten Stelle entfernt. Stimmt die Ortung?'));
       }
+      links.appendChild(reihe);
     }
   }
 

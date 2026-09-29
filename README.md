@@ -351,7 +351,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Plan-Kennung, die auch im Bau-Reiter steht
 - **Bau beginnen aus dem Link:** ein Link mit einer einzelnen Strecke öffnet den
   Baumodus auf dieser Strecke, fragt einmal nach Trupp und Truppführer und erinnert
-  daran, die Karte mitzunehmen
+  daran, die Karte mitzunehmen. Hat der Planer unter „Auftrag an (Trupp)“ mehrere
+  Trupps eingetragen, wählt jeder seinen Namen und baut in einem eigenen
+  Bauabschnitt – ihre Meldungen ersetzen sich dann nicht
 - **Nachtdarstellung:** dunkle Oberfläche und abgedunkelte Arbeitskarte, nach der
   Einstellung des Geräts oder über „Datei → Nachtdarstellung“ (und von dort zurück zur
   Einstellung des Geräts); der Druck bleibt hell

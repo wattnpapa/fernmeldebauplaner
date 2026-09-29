@@ -1127,6 +1127,14 @@ body.druckansicht { overflow: hidden; }
 .karten-inner .strecken-mass b { font-size: calc(8.5px * var(--karten-schrift)); }
 .karten-inner .strecken-mass .wert { font-size: calc(9px * var(--karten-schrift)); }
 .karten-inner .strecken-mass .zus { font-size: calc(7px * var(--karten-schrift)); }
+/* Der Baustand im Schild der Lagekarte: in der Größe der Längenangabe und
+   als Block mit eigener Zeilenhöhe. Mit den 10 px der Arbeitskarte stand er im
+   Audit winzig auf der Unterkante des Schildes und wurde dort angeschnitten. */
+.karten-inner .strecken-mass .bz-marke {
+  display: inline-block; margin: calc(1.5px * var(--karten-schrift)) 0 calc(.5px * var(--karten-schrift));
+  font-size: calc(8px * var(--karten-schrift)); line-height: 1.3;
+  padding: 0 calc(4px * var(--karten-schrift));
+}
 .karten-inner .gitter-zahl { font-size: calc(9.5px * var(--karten-schrift)); }
 .karten-inner .gitter-zahl small { font-size: calc(7px * var(--karten-schrift)); }
 .karten-inner .gitter-info {

@@ -907,5 +907,28 @@ export function bauabschnittAktivSetzen(aid) { aktiverAbschnittId = aid || null;
 export function bauabschnittAktivId() { return aktiverAbschnittId; }
 /** Der aktive Bauabschnitt dieser Strecke – oder `null`, wenn keiner (mehr) gilt */
 export function aktiverBauabschnitt(s) {
-  return bauabschnittById(s, aktiverAbschnittId);
+  const gewaehlt = bauabschnittById(s, aktiverAbschnittId);
+  if (gewaehlt) return gewaehlt;
+  /* Ohne Wahl in dieser Sitzung nimmt kein Abschnitt auf – mit einer
+     Ausnahme: hat der Planer mehrere Trupps aufgetragen und dieses Gerät
+     seinen gewählt (`auftragsTrupps`), gehört der Abschnitt dieses Trupps
+     dem Gerät. Die Wahl überlebte das Neuladen sonst nicht, und die Punkte
+     danach ersetzten beim Planer, was dort ohne Abschnitt steht – also die
+     Aufnahme des anderen Trupps. */
+  const ich = truppAmGeraet().trupp;
+  if (ich && auftragsTrupps(s).includes(ich)) {
+    return bauabschnitte(s).find(a => a.name === ich && a.trupp === ich) || null;
+  }
+  return null;
+}
+
+/**
+ * Die Trupps, die der Planer der Strecke aufgetragen hat – „Auftrag an
+ * (Trupp)“, mehrere durch Komma oder Semikolon getrennt. Sind es mehrere,
+ * wählt jeder Trupp beim Übernehmen seinen Namen und baut in einem eigenen
+ * Bauabschnitt dieses Namens. So ersetzen sich ihre Meldungen beim Planer
+ * nicht: eingeordnet wird über den Namen des Abschnitts (`baumeldung.js`).
+ */
+export function auftragsTrupps(s) {
+  return String((s && s.trupp) || '').split(/[,;]/).map(x => x.trim()).filter(Boolean);
 }

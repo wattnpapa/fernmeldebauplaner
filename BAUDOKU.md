@@ -748,6 +748,57 @@ Vermerk über „Fertig“, und ein Randtipp auf „Leaflet“ verließ die Anwe
 zu zoomen gibt es unter einem Blatt, das die Karte deckt, nichts. Die Verweise
 im Kartenvermerk öffnen seitdem ein eigenes Fenster.
 
+## Nach der dritten Runde der THW-Reviewer
+
+Die elf Prüfungen ein drittes Mal. Alle sahen den Stand besser als zuvor;
+drei Befunde der Stufe P1 waren neu, keiner davon so schwer wie die der
+zweiten Runde.
+
+**Ein Tippfehler im Mengenfeld hält den Wert von vorher.** Geschrieben wird
+bei jedem gültigen Anschlag, und aus „3l20“ stand nach dem „3“ schon 3 in der
+Planung – das Zurücksetzen „auf den bisherigen Wert“ setzte genau darauf.
+Bisher heißt jetzt: vor der Eingabe, und dieser Wert wird beim Verlassen des
+Feldes auch wieder geschrieben. Das Leerzeichen gilt in Mengenfeldern als
+Tausendertrenner wie der Punkt.
+
+**Mehrere Trupps an einer Strecke vergibt der Planer.** Stehen unter „Auftrag an
+(Trupp)“ mehrere Namen, durch Komma getrennt, wählt jeder Trupp beim Übernehmen
+des Links seinen Namen und bekommt einen Bauabschnitt dieses Namens. Seine
+Meldungen ersetzen beim Planer dann nur diesen Abschnitt (`auftragsTrupps` in
+`baudoku.js`). Der Abschnitt nimmt auch nach dem Neuladen auf, obwohl die Wahl
+des aktiven Abschnitts sonst eine Sache der Sitzung bleibt – das Gerät weiß
+hier, welcher Trupp es ist. Eine allgemeine Regel „ein einziger Abschnitt nimmt
+immer auf“ war der naheliegendere Weg und ist verworfen: sie bräche die
+Festlegung, dass nach dem Neuladen ohne Wahl nichts einem Abschnitt zufällt.
+
+**Riskantes Einspielen ist nicht mehr der Hauptknopf.** Ist die Meldung älter
+als der Stand beim Planer oder ersetzt sie die Aufnahme eines anderen
+Absenders, steht „Verwerfen“ vorn, daneben „Erst als Datei sichern“ – der Rat
+dazu hatte vorher keinen Griff. Der Abstand steht als Spanne da („4 s älter“),
+weil zwei Zeiten derselben Minute nichts erklärten. Geänderte Mengen nennt der
+Dialog als „alt → neu“ statt als verlorene Zeile.
+
+**Die Baudokumentation passt zum Auftrag:** dieselbe Plan-Kennung über die eine
+Strecke, der Tag an jeder Zeit, die nicht vom Tag des Blattkopfs ist, und der
+Trupp aus „Wer baut?“ im Kopf. Der Baunachweis steht am Ende des Auftrags als
+eigener Block, getrennt von Bemerkungen und Bestätigungen, und hat so viele
+Prüfzeilen, wie das Kabel Stämme hat.
+
+**Für die Führungsstelle** zählen Summenband und Abschnittskopf auch „neu“ und
+„ohne Meldung seit 2 h“; die Meldung an den S 6 lässt sich als erledigt abhaken
+(im Gerät gemerkt, für genau diesen Wortlaut). Die Lagekarte trägt die
+Standmarke in Schriftgröße der Längenangabe und „offen“ an noch nicht
+begonnenen Strecken.
+
+**Am Bauort:** Die Punktkarte ist höher (72 % statt 60 % des Kartenbereichs),
+die Ortungswarnung steht vor der Frage „Welcher Punkt?“. Die Zeichenleiste setzt
+ihren Merker über die Knöpfe, die damit quer nicht mehr auf 16 px schrumpfen,
+und lässt quer dem Zoom seine Spalte. Beim Zeichnen setzt ein Tipp auf die
+Punktmarke einer anderen Strecke einen Punkt genau dort. Der Kartenchip heißt
+wie im Hinweis „Karte mitnehmen“ und nennt „kein Netz“ selbst. Eine
+nachgetragene Meldungszeit wird von heute aus gerechnet, nicht vom bisherigen
+Tag der Meldung.
+
 ## Verworfene Wege
 
 **Eine eigene Leiste für den Ist-Setzmodus, oder die beiden abgeschalteten
