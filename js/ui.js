@@ -4816,9 +4816,9 @@ function vorratChip(chip) {
     chip.classList.toggle('vorrat-leer', !b.anzahl);
     /* Kurz, denn der Streifen soll in wenigen Zeilen stehen: die Marke sagt
        den Zustand, der Mahnton den Handlungsbedarf. */
-    chip.textContent = b.anzahl
-      ? `Karte ✓${netz ? '' : ' · kein Netz'}`
-      : netz ? 'Karte mitnehmen ⚠' : 'Karte fehlt · kein Netz';
+    chip.textContent = b.anzahl ? 'Karte ✓' : 'Karte fehlt';
+    chip.title = b.anzahl ? `${b.anzahl} Kacheln im Gerät${netz ? '' : ' · kein Netz'}`
+      : netz ? 'Noch keine Karte im Gerät – mitnehmen, solange Netz da ist' : 'Keine Karte im Gerät und kein Netz';
   }).catch(() => { /* dann bleibt die Beschriftung */ });
 }
 
@@ -5119,27 +5119,6 @@ function baukopfBlock(s, k) {
     box.appendChild(w);
   }
 
-  /* Wo es weitergeht. Nach einer Unterbrechung – Anruf, Funk, der Browser hat
-     den Reiter weggeräumt – stand im Audit die Liste wieder von oben, und
-     niemand wusste, welcher Punkt zuletzt dran war. Der letzte Eintrag steht
-     deshalb oben, mit einem Griff zurück in sein Blatt. */
-  const letzter = istPunkte(s).reduce((a, b) => (!a || (b.zeit || '') > (a.zeit || '') ? b : a), null);
-  if (letzter) {
-    const nr = letzter.sollPunkt ? s.punkte.findIndex(p => p.id === letzter.sollPunkt) + 1 : 0;
-    const w = el('div', 'bau-zuletzt',
-      `<span>Zuletzt: <b>${escapeHtml(nr ? `Punkt ${nr}` : punktartText(letzter))}</b>` +
-      `${letzter.zeit ? ` · ${escapeHtml(uhrzeit(letzter.zeit))}` : ''}</span>` +
-      kennungHTML(s));
-    w.appendChild(knopf('Dort weiter', () => {
-      ctx.karte.setView([letzter.lat, letzter.lng], Math.max(ctx.karte.getZoom(), 16));
-      ctx.zurKarte?.();
-      punktkarteOeffnen(s, { ist: letzter });
-    }, 'klein'));
-    box.appendChild(w);
-  } else {
-    box.appendChild(el('div', 'bau-zuletzt', kennungHTML(s)));
-  }
-
   const standFeld = feld('Stand des Baus', k.stand.id, wert => {
     /* „Übergeben“ ist ein Abschluss mit Unterschrift, kein Zwischenstand. Er
        geht mit der Baumeldung an den Planer, und dort las er sich als geprüfte
@@ -5181,6 +5160,38 @@ function baukopfBlock(s, k) {
       ]
     });
   }, { typ: 'select', werte: BAUSTAENDE.map(b => [b.id, b.name]), klasse: 'bau-stand' });
+  /* Wo es weitergeht. Nach einer Unterbrechung – Anruf, Funk, der Browser hat
+     den Reiter weggeräumt – stand im Audit die Liste wieder von oben, und
+     niemand wusste, welcher Punkt zuletzt dran war. Der letzte Eintrag steht
+     deshalb in der Beschriftung des Standes, mit der Plan-Kennung daneben –
+     dort kostet er keine eigene Zeile. Ein Tipp darauf öffnet sein Blatt. */
+  const letzter = istPunkte(s).reduce((a, b) => (!a || (b.zeit || '') > (a.zeit || '') ? b : a), null);
+  const titel = standFeld.querySelector('.feld-titel');
+  if (titel) {
+    titel.classList.add('bau-stand-titel');
+    if (letzter) {
+      const nr = letzter.sollPunkt ? s.punkte.findIndex(p => p.id === letzter.sollPunkt) + 1 : 0;
+      /* Ein `span` mit Knopfrolle und kein `button`: ein Knopf im Label wäre
+         dessen erstes beschriftbares Element und nähme dem Auswahlfeld seine
+         Beschriftung. */
+      const z = el('span', 'bau-zuletzt',
+        `zuletzt ${escapeHtml(nr ? `Punkt ${nr}` : punktartText(letzter))}` +
+        `${letzter.zeit ? ` · ${escapeHtml(uhrzeit(letzter.zeit))}` : ''}`);
+      z.setAttribute('role', 'button');
+      z.tabIndex = 0;
+      z.title = 'Dieses Blatt öffnen';
+      const oeffnen = e => {
+        e.preventDefault();
+        ctx.karte.setView([letzter.lat, letzter.lng], Math.max(ctx.karte.getZoom(), 16));
+        ctx.zurKarte?.();
+        punktkarteOeffnen(s, { ist: letzter });
+      };
+      z.onclick = oeffnen;
+      z.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') oeffnen(e); };
+      titel.appendChild(z);
+    }
+    titel.insertAdjacentHTML('beforeend', kennungHTML(s));
+  }
   box.appendChild(merkeFeld(standFeld, 'stand'));
 
   const zahlen = el('div', 'bau-zahlen');
@@ -5214,9 +5225,8 @@ function baukopfBlock(s, k) {
 
   if (k.laenge) {
     box.appendChild(el('p', 'klein',
-      'Die gebaute Länge ist die Trasse zwischen den aufgenommenen Punkten – ' +
-      'ohne Bauzuschlag und ohne Reserve. Was an Kabel verbraucht wurde, sagt ' +
-      'die Materialliste des Trupps und keine Rechnung.'));
+      'Gebaut = Trasse zwischen den aufgenommenen Punkten, ohne Zuschlag und Reserve. ' +
+      'Den Kabelverbrauch sagt der Materialnachweis.'));
   }
   return box;
 }
@@ -6133,8 +6143,7 @@ function bauRueckwegBlock(s) {
 
   const einleitung = el('p', 'klein',
     `Zurück geht die Baudokumentation von ` +
-    `<b>${alle.length} ${alle.length === 1 ? 'Strecke' : 'Strecken'}</b> ` +
-    `(${escapeHtml(alle.map(x => x.name).join(', '))}) – die Planung hat der Planer schon.`);
+    `<b>${escapeHtml(alle.map(x => x.name).join(', '))}</b>, nicht die Planung.`);
   box.appendChild(einleitung);
 
   /* Was noch fehlt, bevor die Meldung eine Abschlussmeldung ist. Im Audit ging
@@ -6150,8 +6159,8 @@ function bauRueckwegBlock(s) {
       !ue.uebergeben && 'Übergabe'
     ].filter(Boolean);
     if (fehlt.length) {
-      const satz = `${alle.length > 1 ? `<b>${escapeHtml(x.name)}</b>: ` : ''}Zwischenmeldung – ` +
-        `noch offen: ${escapeHtml(fehlt.join(', '))}.`;
+      const satz = `${alle.length > 1 ? `<b>${escapeHtml(x.name)}</b>: ` : ''}Noch offen: ` +
+        `${escapeHtml(fehlt.join(', '))}.`;
       if (alle.length === 1) einleitung.insertAdjacentHTML('beforeend', ` <span class="bau-fehlt">${satz}</span>`);
       else box.appendChild(el('p', 'klein bau-fehlt', satz));
     }

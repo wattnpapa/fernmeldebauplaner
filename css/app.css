@@ -2263,10 +2263,17 @@ body.baumodus .sichtwahl { display: none; }
 .bz.bz-fraglich .bz-wert, .bz.bz-fraglich .bz-titel { color: var(--gefahr); }
 
 .bau-stand select { font-weight: 650; }
-.bau-zuletzt { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 4px 0 8px;
-  font-size: 13px; color: var(--text-blau); }
-.bau-zuletzt .knopf { margin-left: auto; }
-.plan-kennung { color: var(--text-schwach); white-space: nowrap; }
+/* Die Beschriftung des Standes trägt rechts den letzten Eintrag und die
+   Plan-Kennung. Der letzte Eintrag ist ein Griff; seine Trefferzone reicht
+   nach oben und unten auf Handschuhmaß, ohne die Zeile zu erhöhen. */
+.bau-stand-titel { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.bau-zuletzt {
+  position: relative; margin-left: auto; border: 0; background: none; padding: 0;
+  font: inherit; font-size: 12.5px; color: var(--thw-text); text-decoration: underline;
+  cursor: pointer; text-transform: none; letter-spacing: 0;
+}
+.bau-zuletzt::after { content: ''; position: absolute; inset: -14px -6px; }
+.plan-kennung { color: var(--text-schwach); white-space: nowrap; text-transform: none; letter-spacing: 0; }
 
 /* Der Kachelvorrat. Die Zahl vor dem Knopfdruck ist das Wesentliche: wer am
    Bauort feststellt, dass der Vorrat zu klein war, kann ihn nicht nachholen. */
