@@ -790,7 +790,7 @@ Prüfzeilen, wie das Kabel Stämme hat.
 Standmarke in Schriftgröße der Längenangabe und „offen“ an noch nicht
 begonnenen Strecken.
 
-**Am Bauort:** Die Punktkarte ist höher (72 % statt 60 % des Kartenbereichs),
+**Am Bauort:** Die Punktkarte ist höher (75 % statt 60 % des Kartenbereichs),
 die Ortungswarnung steht vor der Frage „Welcher Punkt?“. Die Zeichenleiste setzt
 ihren Merker über die Knöpfe, die damit quer nicht mehr auf 16 px schrumpfen,
 und lässt quer dem Zoom seine Spalte. Beim Zeichnen setzt ein Tipp auf die

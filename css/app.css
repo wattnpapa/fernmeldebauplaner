@@ -2650,11 +2650,13 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
      rollenden Kasten liegt über dem Rollbereich, und der Inhalt zöge sichtbar
      durch den Streifen über dem festgehaltenen Kopf.
 
-     72 % und nicht mehr 60: bei 360×740 lagen Ortungswarnung und die Zeile
+     75 % und nicht mehr 60: bei 360×740 lagen Ortungswarnung und die Zeile
      „Was ist hier?“ unter dem Rand, sichtbar war nur „Fertig“ – und darüber
      standen 100 px Karte, die niemand braucht, solange das Blatt offen ist.
-     Der Streifen zum Schließen bleibt über 150 px hoch. */
-  max-height: min(72%, calc(100% - var(--sl-hoehe) - var(--karten-fuss)
+     Nicht 72: dabei reichte bei 390×844 „Zurücknehmen“ fünf Pixel unter die
+     festgehaltene Abschlusszeile, und sein unterer Rand war nicht zu treffen.
+     Der Streifen zum Schließen bleibt über 130 px hoch. */
+  max-height: min(75%, calc(100% - var(--sl-hoehe) - var(--karten-fuss)
                    - max(var(--wechsel-hoehe), env(safe-area-inset-bottom, 0px)) - 24px));
   overflow-y: auto; overscroll-behavior: contain;
   /* Ohne das rückt die Rollverankerung des Browsers das Blatt beim Neuaufbau
