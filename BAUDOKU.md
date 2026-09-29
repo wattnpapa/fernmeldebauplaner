@@ -669,7 +669,7 @@ gebaute Trasse mehr als doppelt so lang wie die geplante, warnt der Kopf des
 Reiters, und der beruhigende Satz steht nur noch, wenn er stimmt. Eine Ortung,
 die so weit vom gewählten geplanten Punkt liegt, wird als zusätzlicher Punkt
 aufgenommen und bestätigt ihn nicht; die Zuordnung in der Punktkarte verlangt
-dann einen zweiten Tipp.
+dann eine eigene Bestätigung (siehe unten, zweite Runde).
 
 **Der Link an den Bautrupp führt in den Baumodus.** Nach „Übernehmen“ stand der
 Trupp in der Planung vor „+ Neue Strecke zeichnen“. Ein Link mit einer
@@ -677,15 +677,76 @@ einzelnen Strecke bietet jetzt „Bau beginnen“ an: Baumodus auf dieser Streck
 einmal „Wer baut?“ (Trupp und Truppführer, am Gerät gemerkt) und der Hinweis,
 die Karte mitzunehmen, solange Netz da ist.
 
-**Doppelte und ältere Meldungen werden benannt.** Der Empfangsdialog vergleicht
-den jüngsten Eintrag der Meldung mit dem Stand an der Zielstrecke und sagt, wenn
-sie schon eingespielt oder älter ist.
+**Doppelte und ältere Meldungen werden benannt.** Der Empfangsdialog sagt, wenn
+eine Meldung schon eingespielt oder älter ist. Wie „schon eingespielt“
+festgestellt wird, hat die zweite Runde geändert (unten).
 
 **Nachtragen vom Meldeblock.** Die Uhrzeit einer Baumeldung ist ein Feld; wer
 abends vom Papier nachträgt, bekommt die Zeit vom Blatt statt der des Eintippens.
 Der Bauauftrag trägt dafür ein eigenes Blatt „Baunachweis zum Ausfüllen“ mit
-denselben Feldern wie der Baumodus. Offen bleibt, dass die Zeit eines
-aufgenommenen Punktes nicht änderbar ist.
+denselben Feldern wie der Baumodus.
+
+## Nach der zweiten Runde der THW-Reviewer
+
+Dieselben elf Prüfungen noch einmal, gegen den veröffentlichten Stand. Alle
+sahen ihn besser als zuvor; vier Befunde der Stufe P1 waren aber erst durch die
+Änderungen der ersten Runde entstanden. Was sich daraufhin geändert hat:
+
+**Wer einen Link übernommen hat, bekommt keine Begrüßung mehr.** Der Einstieg
+galt nur als erledigt, wenn jemand ihn selbst schloss. Der Trupp, der über
+„Bau beginnen“ kam, bekam ihn deshalb beim nächsten Öffnen über dem Baumodus,
+und dessen blauer Knopf „Strecke planen“ legte im Bauauftrag eine zweite
+„Strecke 2“ an. Die Übernahme eines Links merkt den Einstieg jetzt, im
+Baumodus erscheint er nie, und eine Strecke ohne Punkt, die beim Schließen
+mitten im Zeichnen übrig blieb, räumt der Start weg.
+
+**„Schon eingespielt“ wird ausprobiert, nicht an der Uhr abgelesen.** Der
+Empfangsdialog verglich nur den jüngsten Zeitstempel und die Zahl der Punkte.
+Eine berichtigte Meldung – 31.200 m Kabel auf 3.120 m korrigiert – galt damit
+als doppelt, und darüber stand „verwerfen genügt“. `befund()` spielt die Meldung
+jetzt an einer Abschrift der Zielstrecke ein und vergleicht den Fingerabdruck
+(`bauAbdruck`) davor und danach. Nur wenn beide gleich sind, heißt es „ändert
+nichts“, und dann ist „Verwerfen“ der Hauptknopf. Was verloren ginge, wird über
+den Inhalt der Einträge gezählt statt über ihre Zahl.
+
+**Der Empfangsdialog nennt, wessen Aufnahme ersetzt wird.** Die Planung merkt
+sich an der Strecke, wer die zuletzt eingespielte Meldung geschickt hat
+(`bau.gemeldetVon`, Schema 18; ältere Stände öffnen ohne). Kommt eine Meldung
+von einem anderen Absender und würde etwas ersetzen, ist das eine Warnung mit
+Namen und nicht mehr „3 Punkte weichen“. „Wer baut?“ verspricht keinen Schutz
+mehr, den der Name nicht gibt: getrennt bleiben zwei Aufnahmen nur über
+Bauabschnitte. Die Meldung an den S 6 und der Standwechsel stehen jetzt oben im
+Dialog, denn entschieden wurde vorher ohne sie.
+
+**Neu Eingegangenes bleibt markiert.** Nach dem Einspielen trägt die Strecke in
+der Liste „neu“, bis jemand „gesehen“ tippt – gemerkt im Gerät, nicht in der
+Planung. Neben der Uhrzeit des letzten Eintrags steht sein Alter, und nach
+zwei Stunden ohne Eintrag wird eine Strecke im Bau hervorgehoben.
+
+**Nachtragen mit Tag.** Tag und Uhrzeit lassen sich an Punkten und Meldungen
+setzen. In der Meldungszeile ist für ein Tagesfeld kein Platz; dort gilt: eine
+Meldung liegt nie in der Zukunft, wer morgens „14:20“ nachträgt, meint gestern.
+
+**Der Baunachweis bildet den ganzen Reiter ab** – Trupp, Punkte, Meldungen,
+Kabel, übriges Material, Abweichungen und Meldung an den S 6, Prüfung je Stamm,
+Übergabe – und trägt den Auftrag als QR-Code. Gescannt öffnet er dieselbe
+Strecke im FMBauplaner. Der Link entsteht beim Drucken und steht nur auf dem
+Papier; bis 900 Zeichen wird er zum Code, darüber steht der Hinweis, den Link
+zu verschicken. Jeder Blattkopf trägt dazu die Plan-Kennung (`planKennung`),
+dieselbe wie im Bau-Reiter.
+
+**Ferne Punkte brauchen eine eigene Bestätigung.** Der zweite Tipp auf
+denselben Chip genügte nicht: mit Handschuh tippt man ohnehin oft doppelt. Die
+Rückfrage steht jetzt als Knopf an anderer Stelle, und ein bestätigter Punkt,
+der weiter als `ABSEITS_SCHWELLE` von seinem geplanten liegt, heißt „prüfen“
+statt „✓ gebaut“ und steht in der Warnung oben.
+
+**Quer und mit offener Tastatur** weichen Zoom, Maßstab und Kartenvermerk,
+solange die Punktkarte offen ist. Das korrigiert die Festlegung unten, die
+Zoomsteuerung stehen zu lassen, für genau diesen Fall: bei 667×375 lag der
+Vermerk über „Fertig“, und ein Randtipp auf „Leaflet“ verließ die Anwendung;
+zu zoomen gibt es unter einem Blatt, das die Karte deckt, nichts. Die Verweise
+im Kartenvermerk öffnen seitdem ein eigenes Fenster.
 
 ## Verworfene Wege
 

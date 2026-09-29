@@ -738,9 +738,13 @@ export function baukennzahlen(strecke) {
   const abseits = [];
   if (soll.length) {
     for (const pt of ist) {
-      if (pt.sollPunkt) continue;
-      const meter = abstandZurLinie(pt, soll);
-      if (meter >= ABSEITS_SCHWELLE) abseits.push({ ist: pt, meter });
+      /* Auch ein BESTÄTIGTER Punkt kann weit weg liegen – eine Ortung 80 km
+         daneben, zweimal angetippt. Im Audit nannte die Warnung oben nur den
+         Zusatzpunkt, der bestätigte stand mit grünem Haken darunter. Gemessen
+         wird er gegen seinen geplanten Punkt, nicht gegen die Linie. */
+      const s = pt.sollPunkt ? sollZuIst(strecke, pt) : null;
+      const meter = s ? distanz(s, pt) : abstandZurLinie(pt, soll);
+      if (meter >= ABSEITS_SCHWELLE) abseits.push({ ist: pt, meter, soll: s });
     }
     abseits.sort((a, b) => b.meter - a.meter);
   }
@@ -861,9 +865,16 @@ export function bauzeile(strecke) {
   const teile = [];
   if (k.sollPunkte) teile.push(`${k.bestaetigt}/${k.sollPunkte} Punkte`);
   const trupps = [...new Set(bauabschnitte(strecke).map(a => a.trupp).filter(Boolean))];
+  /* Ohne Bauabschnitt nennt der Absender der letzten Meldung den Trupp – im
+     Audit stand sonst nur „zuletzt 06:13“, und nach einer zweiten Meldung war
+     nicht zu sehen, wessen Stand in der Liste steht. */
+  if (!trupps.length && strecke.bau.gemeldetVon) trupps.push(strecke.bau.gemeldetVon);
+  if (!trupps.length && strecke.trupp) trupps.push(strecke.trupp);
   if (trupps.length) teile.push(trupps.join(', '));
+  /* Die Zeit des letzten Eintrags steht nicht mehr im Text: die Liste setzt
+     sie mit ihrem Alter daneben („vor 2 h 50 min“). Eine bloße Uhrzeit las
+     sich im Audit wie eine frische Meldung, auch drei Stunden später. */
   const zuletzt = zuletztVomBau(strecke);
-  if (zuletzt) teile.push(`zuletzt ${uhrzeit(zuletzt)}`);
   const warnungen = [];
   if (k.abweichungen.length) {
     warnungen.push(`${k.abweichungen.length} ${k.abweichungen.length === 1 ? 'Abweichung' : 'Abweichungen'}`);
@@ -872,7 +883,7 @@ export function bauzeile(strecke) {
     warnungen.push(`${k.abseits.length} ${k.abseits.length === 1 ? 'Punkt' : 'Punkte'} abseits`);
   }
   const meldung = ((strecke.bau && strecke.bau.abweichung) || '').trim();
-  return { stand: k.stand, text: teile.join(' · '), warnungen, meldung };
+  return { stand: k.stand, text: teile.join(' · '), warnungen, meldung, zuletzt };
 }
 
 /** Die Strecke, die im Baumodus gerade bearbeitet wird – merkt sich die Wahl */

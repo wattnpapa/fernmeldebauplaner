@@ -261,6 +261,16 @@ export function erstelleKarte(el, ansicht = {}) {
   L.control.zoom({ position: 'topright', zoomInTitle: 'Vergrößern', zoomOutTitle: 'Verkleinern' }).addTo(karte);
   L.control.scale({ position: 'bottomright', imperial: false, maxWidth: 160 }).addTo(karte);
 
+  /* Die Verweise im Kartenvermerk öffnen ein eigenes Fenster. Leaflet setzt
+     keins, und im Audit führte ein Handschuhtipp auf den oberen Rand von
+     „Fertig“ über den Vermerk „Leaflet“ aus der Anwendung – mitten in der
+     Punktaufnahme, und ohne Netz auf eine Fehlerseite. Gesetzt wird beim
+     Tipp, weil Leaflet den Vermerk bei jedem Kartenwechsel neu schreibt. */
+  karte.getContainer().addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('.leaflet-control-attribution a');
+    if (a) { a.target = '_blank'; a.rel = 'noopener'; }
+  }, true);
+
   setzeBasiskarte(karte, ansicht.basemap || 'topplus');
   return karte;
 }

@@ -10,7 +10,19 @@
 <title>FMBauplaner – Fernmeldebauplanung für das THW</title>
 <meta name="description" content="FMBauplaner: GIS-Planungswerkzeug für den Fernmeldebau. Strecken planen, Längen ermitteln, Bauaufträge als PDF ausgeben.">
 <link rel="canonical" href="https://fmbauplaner.app/">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="light dark">
+<!-- Die Nachtdarstellung schaltet `js/app.js` – und bis das Modul geladen ist,
+     stand die helle Seite 270 ms auf dem Schirm. Beim Öffnen am Bauort, nachts,
+     ist das ein Blitz. Dieser Vorgriff liest dieselbe Wahl wie `nachtGewaehlt()`
+     und setzt nur den dunklen Grund; alles Weitere macht das Modul. -->
+<script>
+  try {
+    var w = localStorage.getItem('fbp.nacht.v1');
+    if (w === 'an' || (w !== 'aus' && matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('nacht-vor');
+    }
+  } catch (e) { /* ohne Speicher eben hell */ }
+</script>
 <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="css/app.css">
@@ -105,6 +117,7 @@
           <!-- Die Nachtdarstellung steht oben im Menü und in beiden Ansichten:
                gebraucht wird sie am Bauort, im Dunkeln, mit einem Griff. -->
           <button data-akt="nacht" id="menu-nacht">Nachtdarstellung einschalten</button>
+          <button data-akt="nacht-auto" id="menu-nacht-auto" hidden>Nachtdarstellung wie das Gerät</button>
           <hr>
           <button data-akt="neu">Neue Planung …</button>
           <button data-akt="oeffnen">Gespeicherte Planungen …</button>

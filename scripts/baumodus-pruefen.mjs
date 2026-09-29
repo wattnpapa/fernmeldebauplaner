@@ -74,7 +74,7 @@ try {
   await seite.oeffne(adresse);
   await seite.warteAuf('!!window.fbp');
   b.pruefe(await seite.sichtbar('#karte'), 'Karte steht');
-  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 17, 'Schema 17');
+  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 18, 'Schema 18');
   b.gleich(await seite.text('#btn-modus.modus-schalter > .modus-name'), 'Planung',
     'Der Umschalter nennt den Modus, in dem man ist');
   b.pruefe(await seite.auswerten('document.querySelector("#reiter-bau").hidden'),

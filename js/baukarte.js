@@ -29,7 +29,18 @@ import { escapeHtml } from './strecken.js';
 
 let ctx = null;   // { karte, sl, hinweis, hinweisAus, modusAnzeigen, zurKarte }
 
-export function initBaukarte(kontext) { ctx = kontext; }
+export function initBaukarte(kontext) {
+  ctx = kontext;
+  /* Geht die Bildschirmtastatur auf, schrumpft das Fenster, und das Feld mit
+     dem Schreibzeichen lag im Audit genau unter dem klebenden „Fertig“ – es
+     wurde blind getippt. Nachgerückt wird, sobald die Tastatur steht; wie weit,
+     sagt `scroll-padding-bottom` am Blatt. */
+  document.addEventListener('focusin', e => {
+    const f = e.target;
+    if (!f.matches || !f.matches('input, textarea') || !f.closest('.punktkarte')) return;
+    setTimeout(() => f.scrollIntoView({ block: 'nearest' }), 350);
+  });
+}
 
 const hinweis = (text, art) => ctx && ctx.hinweis(text, art);
 const hinweisAus = () => ctx && ctx.hinweisAus();
@@ -480,10 +491,13 @@ function istBlatt(s, ist, soll) {
       const reihe = el('div', 'pk-zuordnung');
       reihe.appendChild(el('span', 'pk-frage', 'Welcher Punkt?'));
       /* Ein Punkt, der weiter weg liegt, als eine Umgehung reicht, verlangt
-         einen zweiten Tipp. Im Audit stand „Punkt 1 · 82,43 km“ gleichrangig
-         neben „zusätzlich“, ein Tipp machte daraus „✓ gebaut“ – und die
-         Warnung war danach nur noch ein orangefarbenes Kärtchen. */
-      let nachgefragt = null;
+         eine eigene Bestätigung. Im Audit stand „Punkt 1 · 82,43 km“
+         gleichrangig neben „zusätzlich“, ein Tipp machte daraus „✓ gebaut“.
+         Ein zweiter Tipp auf denselben Chip genügte danach auch nicht: mit
+         Handschuh tippt man ohnehin oft doppelt, und die Warnung stand nur in
+         einer Pille unten. Bestätigt wird deshalb über einen Knopf, der erst
+         erscheint und an anderer Stelle steht als der Chip. */
+      let rueckfrage = null;
       const weit = new Map(offeneSoll.map(e => [e.punkt.id, e]));
       const zuordnung = chips(
         [...offeneSoll.map(e => [e.punkt.id,
@@ -492,10 +506,15 @@ function istBlatt(s, ist, soll) {
         '',
         pid => {
           const e = pid ? weit.get(pid) : null;
-          if (e && e.weg >= ABSEITS_SCHWELLE && nachgefragt !== pid) {
-            nachgefragt = pid;
-            hinweis(`Punkt ${e.nr} liegt ${formatLaenge(e.weg)} entfernt – ` +
-              'noch einmal tippen, wenn er es wirklich ist.', 'warnung');
+          if (rueckfrage) { rueckfrage.remove(); rueckfrage = null; }
+          if (e && e.weg >= ABSEITS_SCHWELLE) {
+            rueckfrage = el('div', 'pk-warnung pk-rueckfrage',
+              `Punkt ${e.nr} liegt ${escapeHtml(formatLaenge(e.weg))} von hier. ` +
+              'Stimmt die Ortung wirklich?');
+            rueckfrage.appendChild(knopf(`Ja, das ist Punkt ${e.nr}`, () => {
+              store.aendern(() => istSollZuordnen(s, ist, pid), 'bau');
+            }, 'klein'));
+            reihe.after(rueckfrage);
             return;
           }
           store.aendern(() => istSollZuordnen(s, ist, pid || null), 'bau');

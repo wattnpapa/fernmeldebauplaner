@@ -123,6 +123,10 @@ function bauVerschlanken(s) {
      weiterreicht. Wann gemeldet wurde, steht als `gemeldet` in der Meldung
      selbst. */
   delete raus.abgesetzt;
+  /* Ebenso der Absender der zuletzt eingespielten Meldung: er ist eine Notiz
+     des Planers, und im Fingerabdruck ließe er eine unveränderte Meldung als
+     geändert erscheinen. */
+  delete raus.gemeldetVon;
 
   if (bau.abschnitte.length) {
     raus.abschnitte = bau.abschnitte.map((a, i) => {

@@ -12,7 +12,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 17;
+export const SCHEMA = 18;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_VERLAUF  = 'fbp.verlauf.v1';   // Rückgängig-Verlauf, im Sitzungsspeicher
@@ -134,6 +134,21 @@ const kabelById = id => {
 export { kabelById };
 export const punktartById = id => PUNKTARTEN.find(p => p.id === id) || PUNKTARTEN[1];
 export const baustandById = id => BAUSTAENDE.find(b => b.id === id) || BAUSTAENDE[0];
+
+/* Eine kurze Kennung des geplanten Verlaufs: Name, Leitungsart und Punkte.
+   Sie steht im Kopf jedes Auftragsblatts und im Bau-Reiter – so sieht der
+   Trupp am Bauort, ob Papier und Gerät denselben Plan tragen, und der Planer,
+   ob der Trupp noch nach dem alten baut. Im Audit war eine Planänderung nach
+   dem Druck am Papier unsichtbar („Stand –“ auf allen Blättern).
+   Eine Prüfsumme (djb2), keine Sicherung: sie soll eine Änderung bemerken. */
+export function planKennung(strecken) {
+  const text = JSON.stringify((strecken || []).map(s => [
+    s.name, s.kabeltyp, (s.punkte || []).map(pt => [pt.lat.toFixed(5), pt.lng.toFixed(5), pt.art])
+  ]));
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = (((h << 5) + h) ^ text.charCodeAt(i)) >>> 0;
+  return h.toString(36).toUpperCase().slice(-4).padStart(4, '0');
+}
 export const istquelleById = id => ISTQUELLEN.find(q => q.id === id) || ISTQUELLEN[2];
 
 export function id() {
@@ -481,7 +496,13 @@ export function neuerBau() {
        Er reist NICHT mit: für den Planer wäre er die Auskunft, wann der Trupp
        gemeldet hat – und die steht als `gemeldet` schon in der Meldung selbst,
        aus erster Hand. Der Codec in `teilen.js` wirft ihn deshalb weg. */
-    abgesetzt: null
+    abgesetzt: null,
+    /* Die Gegenseite beim Planer: wer die zuletzt eingespielte Meldung
+       geschickt hat. Die nächste Meldung an dieselbe Strecke nennt damit,
+       WESSEN Aufnahme sie ersetzt – im Audit verschwand die Aufnahme eines
+       zweiten Trupps, und der Empfangsdialog sagte nur „3 Punkte weichen“.
+       Auch er bleibt am Gerät und reist nicht mit. */
+    gemeldetVon: ''
   };
 }
 
@@ -920,6 +941,11 @@ class Store {
       const liste = Object.values(alle).sort((a, b) => (b.geaendert || '').localeCompare(a.geaendert || ''));
       this.projekt = liste.length ? migrieren(liste[0]) : neuesProjekt('Neue Planung');
     }
+    /* Eine Strecke ohne Punkt bleibt übrig, wenn das Fenster mitten im
+       Zeichnen zugeht – „Fertig“ und „Abbrechen“ räumen sie weg, das Schließen
+       nicht. Im Audit stand danach „Strecke 1 · 0 m“ dauerhaft in der Liste,
+       und im Bauauftrag eines Trupps eine zweite, leere „Strecke 2“. */
+    this.projekt.strecken = this.projekt.strecken.filter(s => (s.punkte || []).length || bauBegonnen(s));
     this.verlaufLaden();
     this.speichern();
     return this.projekt;
@@ -1156,7 +1182,8 @@ export function bauNormalisieren(roh) {
     })),
     pruefung: pruefungNormalisieren(roh.pruefung),
     abweichung: String(roh.abweichung || ''),
-    abgesetzt: abgesetztNormalisieren(roh.abgesetzt)
+    abgesetzt: abgesetztNormalisieren(roh.abgesetzt),
+    gemeldetVon: String(roh.gemeldetVon || '').slice(0, 120)
   };
 }
 
@@ -1261,7 +1288,11 @@ export function migrieren(p) {
            „offen“ zu setzen machte aus einer dokumentierten Aussage eine Lücke,
            die nie eine war. Und wer vor dem Wechsel gemeldet hat, bekommt den
            Block ohne Vermerk zu sehen: „nicht bekannt, ob abgesetzt“ ist die
-           richtige Auskunft, nicht „nie abgesetzt“. */
+           richtige Auskunft, nicht „nie abgesetzt“.
+
+           Schema 18 hat `gemeldetVon` ergänzt. Ältere Stände öffnen ohne
+           Absender – woher eine früher eingespielte Meldung kam, weiß die
+           Planung nicht, und ein geratener Name wäre schlimmer als keiner. */
         bau: bauNormalisieren(s.bau)
       };
     }),

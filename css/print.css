@@ -571,7 +571,17 @@ body.druckansicht { overflow: hidden; }
 .tab-ausfuellen td { height: 7mm; vertical-align: middle; }
 .tab-ausfuellen tbody tr:nth-child(even) { background: none; }
 .tab-ausfuellen td.ausfuellen { border-bottom: .6pt solid #444; }
-.tab-ausfuellen th:nth-child(5) { width: 40%; }
+.tab-ausfuellen:not(.tab-nachweis-kopf, .tab-nachweis-material, .tab-nachweis-pruefung) th:nth-child(5) { width: 40%; }
+.tab-nachweis-material th:first-child { width: 50%; }
+.tab-nachweis-pruefung th:nth-child(3) { width: 30%; }
+.tab-nachweis-pruefung th:nth-child(4) { width: 10%; }
+.bl-freitext-hoch { min-height: 34mm; }
+.bl-nachweis-kopf { display: flex; gap: 4mm; align-items: flex-start; }
+.bl-nachweis-kopf .tab-nachweis-kopf { flex: 1; }
+.bl-qr-rahmen { margin: 0; width: 34mm; flex-shrink: 0; text-align: center; }
+.bl-qr { width: 32mm; height: 32mm; margin: 0 auto; }
+.bl-qr svg { display: block; width: 100%; height: 100%; }
+.bl-qr-rahmen figcaption { font-size: .66em; line-height: 1.25; color: #444; margin-top: 1mm; }
 .tab-ausfuellen .ankreuzen { text-align: center; }
 .tab-ausfuellen .kasten {
   display: inline-block; width: 4mm; height: 4mm; border: .8pt solid #111; vertical-align: middle;

@@ -55,6 +55,9 @@ const KEY_EINSTIEG = 'fbp.einstieg.v1';
 const einstiegErledigt = () => {
   try { return localStorage.getItem(KEY_EINSTIEG) === '1'; } catch (e) { return false; }
 };
+const einstiegMerken = () => {
+  try { localStorage.setItem(KEY_EINSTIEG, '1'); } catch (e) { /* dann eben nochmal */ }
+};
 const einstiegZeigen = store.erststart && !einstiegErledigt();
 sichtStarten(store.erststart);
 
@@ -93,6 +96,8 @@ const sl = new StreckenLayer(karte, {
   },
   aufAenderung: () => aktualisiereKennzahlen(),
   aufGrobmass: () => hinweis('Herangeholt – jetzt die Trassenpunkte antippen.'),
+  aufGebautGeaendert: s => hinweis(`An ${s.name} wird schon gebaut – der Trupp braucht ` +
+    `einen neuen Link. ${RUECKGAENGIG_KURZ}`, 'warnung'),
   aufPlanTipp: (art, i) => {
     modusAnzeigen();
     hinweis(art === 'verschieben' ? `Punkt ${i + 1} neu gesetzt – ${RUECKGAENGIG_KURZ}`
@@ -512,12 +517,14 @@ function koordinatenPopup(ll) {
   /* Im Baumodus bietet der Tipp auf die Karte an, was dort gebraucht wird:
      den Punkt aufnehmen. „Zeichen setzen“ und „Neue Strecke“ gehören zur
      Planung – ihre Werkzeuge sind im Baumodus vom Schirm, und ein Griff, der
-     einen Zeichenmodus ohne Werkzeugleiste startete, wäre eine Sackgasse. */
+     einen Zeichenmodus ohne Werkzeugleiste startete, wäre eine Sackgasse.
+     Taktische Zeichen gehören zur erweiterten Ansicht – in der einfachen fehlt
+     ihr Werkzeug, und der Griff hier war im Audit der einzige Weg dorthin. */
   const tasten = baumodus
     ? `<button data-kp="kopie">Kopieren</button>
        <button data-kp="ist" class="kp-primaer">Punkt hier aufnehmen</button>`
     : `<button data-kp="kopie">Kopieren</button>
-       <button data-kp="zeichen">Zeichen setzen</button>
+       <button data-kp="zeichen" class="nur-erweitert">Zeichen setzen</button>
        <button data-kp="strecke">Neue Strecke ab hier</button>`;
   const html = `<div class="koord-popup">
       <div class="kp-zeile"><span>MGRS</span><code>${escapeHtml(f.mgrs)}</code></div>
@@ -805,7 +812,11 @@ koKopf.onclick = () => {
 };
 let koGemerkt = null;
 try { koGemerkt = sessionStorage.getItem('fmbauplaner.kartenoptionen'); } catch { }
-kartenoptionenSetzen(koGemerkt ? koGemerkt === 'zu' : schmalAbfrage.matches);
+/* Auch auf dem Tablet beginnen sie zugeklappt: im Audit deckten sie bei
+   820 px mit der Werkzeugleiste das obere Drittel der Karte ab, und wer sie
+   brauchte, fand sie mit einem Tipp. Am Rechner mit Maus stehen sie offen. */
+kartenoptionenSetzen(koGemerkt ? koGemerkt === 'zu'
+  : schmalAbfrage.matches || matchMedia('(pointer: coarse)').matches);
 
 const optionsFelder = [
   ['#opt-gitter', 'gitter'],
@@ -913,7 +924,8 @@ dateiMenu.addEventListener('click', e => {
     'export-gpx': () => io.gpxExportieren(),
     'export-kml': () => io.kmlExportieren(),
     hilfe: hilfeDialog,
-    nacht: () => nachtUmschalten()
+    nacht: () => nachtUmschalten(),
+    'nacht-auto': () => nachtWieGeraet()
   })[akt]?.();
 });
 
@@ -934,7 +946,17 @@ function nachtGewaehlt() {
 function nachtAnwenden() {
   const an = nachtGewaehlt();
   document.body.classList.toggle('nacht', an);
+  /* Der Vorgriff aus `index.html` hat seinen Zweck erfüllt, sobald die Klasse
+     am Körper steht – ließe man ihn stehen, bliebe der Grund dunkel, wenn
+     jemand auf „aus“ schaltet. */
+  document.documentElement.classList.remove('nacht-vor');
   $('#menu-nacht').textContent = an ? 'Nachtdarstellung ausschalten' : 'Nachtdarstellung einschalten';
+  let wahl = '';
+  try { wahl = localStorage.getItem(KEY_NACHT) || ''; } catch (e) { /* dann gibt es keine Wahl */ }
+  /* Wer einmal selbst geschaltet hat, kam nicht mehr zur Einstellung des
+     Geräts zurück – im Audit blieb „aus“ hell, obwohl das Telefon abends
+     dunkel wurde. Der Rückweg steht nur da, wenn es eine eigene Wahl gibt. */
+  $('#menu-nacht-auto').hidden = !wahl;
 }
 function nachtUmschalten() {
   const an = !document.body.classList.contains('nacht');
@@ -944,6 +966,11 @@ function nachtUmschalten() {
   document.body.classList.toggle('nacht', an);
   $('#menu-nacht').textContent = an ? 'Nachtdarstellung ausschalten' : 'Nachtdarstellung einschalten';
   hinweis(an ? 'Nachtdarstellung an' : 'Nachtdarstellung aus');
+}
+function nachtWieGeraet() {
+  try { localStorage.removeItem(KEY_NACHT); } catch (e) { /* bleibt dann bei der Wahl */ }
+  nachtAnwenden();
+  hinweis('Nachtdarstellung folgt wieder dem Gerät');
 }
 dunkelAbfrage.addEventListener?.('change', nachtAnwenden);
 nachtAnwenden();
@@ -1212,7 +1239,16 @@ async function geteiltenLinkPruefen() {
        Strecke, die eine geladene Datei nimmt – und meldet „geladen“;
        daran hängt der vollständige Neuaufbau samt Kartensprung. */
     try {
+      /* Ein Bauauftrag kommt immer sichtbar an: war die Strecke beim Planer
+         ausgeblendet, stand sie beim Trupp blass in der Liste und fehlte auf
+         der Karte – ohne dass er wüsste, warum. */
+      if (bauauftrag) roh.strecken.forEach(s => { if (s) s.sichtbar = true; });
       store.uebernehmen(roh);
+      /* Wer einen Link übernommen hat, ist kein Neuling mehr, der eine leere
+         Karte vor sich hat. Im Audit kam die Begrüßung beim nächsten Öffnen
+         über dem Baumodus, und ihr blauer Knopf „Strecke planen“ legte im
+         Bauauftrag des Trupps eine zweite Strecke an. */
+      einstiegMerken();
       return true;
     } catch (e) {
       /* Ein von Hand gebauter Link kann Werte falschen Typs mitbringen –
@@ -1271,13 +1307,25 @@ function truppFragen() {
        mehr. Im Audit stand „Karte mitnehmen“ als letzter Block des Reiters,
        und der Trupp merkte erst draußen an der leeren Karte, dass er sie
        hätte holen sollen. */
-    hinweis('Bauauftrag übernommen. Solange Netz da ist: oben „Karte mitnehmen“.');
+    /* Ohne Netz verlangte der Satz eine Handlung, die gerade nicht geht – im
+       Audit suchte der Trupp den Knopf und erfuhr erst beim zweiten Hinweis,
+       dass die Karte jetzt nicht zu bekommen ist. */
+    hinweis(navigator.onLine === false
+      ? 'Bauauftrag übernommen. Kein Netz – die Karte ist nicht im Gerät, die Trasse steht ' +
+        'ohne Hintergrund. Mitnehmen, sobald Netz da ist.'
+      : 'Bauauftrag übernommen. Solange Netz da ist: oben „Karte mitnehmen“.',
+      navigator.onLine === false ? 'warnung' : undefined);
   const v = truppAmGeraet();
   if (v.trupp || v.fuehrer) { danach(); return; }
   const feld = dialog({
     titel: 'Wer baut?',
-    inhalt: `<p>Die Baumeldung nennt diesen Absender. Ohne Namen ersetzt die Meldung eines
-        zweiten Trupps an derselben Strecke die eigene.</p>
+    /* Der Satz davor versprach einen Schutz, den es nicht gibt: „ohne Namen
+       ersetzt die Meldung eines zweiten Trupps die eigene“ – mit Namen tat sie
+       es genauso. Getrennt bleiben zwei Aufnahmen nur über Bauabschnitte, und
+       der Name ist dafür da, dass der Planer weiß, von wem was kommt. */
+    inhalt: `<p>Damit der Planer weiß, von wem die Baumeldung kommt.</p>
+      <p class="klein">Baut noch ein Trupp an derselben Strecke, legt im Bau-Reiter
+        jeder seinen Bauabschnitt an – sonst ersetzt die spätere Meldung die frühere.</p>
       <label class="feld"><span class="feld-titel">Trupp</span>
         <input type="text" id="tf-trupp" placeholder="z. B. Trupp 1" autocomplete="off"></label>
       <label class="feld"><span class="feld-titel">Truppführer</span>
@@ -1481,7 +1529,7 @@ function einstiegDialog() {
     <p class="klein">Das ist die einfache Ansicht. Taktische Zeichen, Flächen, Relaisstellen
        und die Bauansatzwerte stehen in der erweiterten Ansicht – der Umschalter steht oben
        in der linken Leiste.</p>`;
-  const erledigt = () => { try { localStorage.setItem(KEY_EINSTIEG, '1'); } catch (e) { /* dann eben nochmal */ } };
+  const erledigt = einstiegMerken;
   box.querySelector('[data-weg="strecke"]').onclick = () => { erledigt(); schliesseDialog(); neueStreckeStarten(); };
   box.querySelector('[data-weg="laden"]').onclick = () => { erledigt(); schliesseDialog(); $('#datei-import').click(); };
   dialog({ titel: 'Willkommen im FMBauplaner', inhalt: box,
@@ -1973,6 +2021,15 @@ function bilderAufraeumenWennRuhig() {
   // Die offene Planung zählt mit ihrem Stand im Arbeitsspeicher: der ist dem
   // gespeicherten immer eine Sekunde voraus.
   for (const b of store.projekt.bilder || []) behalten.add(b.id);
+  /* Und was der Rückgängig-Verlauf noch nennt. Er übersteht seit Kurzem das
+     Neuladen (`verlaufLaden` in state.js), und im Audit holte „↶“ ein
+     gelöschtes Lichtbild danach als Eintrag zurück – mit „Belegt 106 kB“ und
+     ohne Bild, weil dieses Aufräumen es vier Sekunden nach dem Start
+     weggenommen hatte. */
+  for (const stand of [...store.undoStapel, ...store.redoStapel]) {
+    try { for (const b of JSON.parse(stand).bilder || []) behalten.add(b.id); }
+    catch (e) { /* ein unlesbarer Stand nennt nichts */ }
+  }
   bilderAufraeumen(behalten);
 }
 setTimeout(bilderAufraeumenWennRuhig, 4000);
@@ -2081,7 +2138,9 @@ function waechterEinrichten() {
 if (document.readyState === 'complete') waechterEinrichten();
 else window.addEventListener('load', waechterEinrichten);
 
-if (einstiegZeigen && !teilen.artDesFragments()) einstiegDialog();
+/* Im Baumodus nie: dort ist ein Auftrag schon da, und „Strecke planen“ wäre
+   genau der Irrweg, den der Baumodus verhindern soll. */
+if (einstiegZeigen && !baumodus && !teilen.artDesFragments()) einstiegDialog();
 geteiltenLinkPruefen();
 
 /* Wer den Link in ein Fenster einfügt, in dem die Anwendung schon läuft, ändert

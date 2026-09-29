@@ -94,9 +94,9 @@ export async function alleKennungen() {
  * Bilddaten wegräumen, die keine Planung mehr nennt.
  *
  * Gelöscht wird beim Aufräumen und nicht beim Löschen des Bildes: sonst nähme
- * ein Rückgängig zwar den Eintrag zurück, das Bild dazu wäre aber fort. Nach
- * dem Neuladen ist der Undo-Stapel ohnehin leer – dann ist das Wegräumen ohne
- * Verlust möglich.
+ * ein Rückgängig zwar den Eintrag zurück, das Bild dazu wäre aber fort. Der
+ * Rückgängig-Verlauf übersteht das Neuladen; was er noch nennt, gehört deshalb
+ * zu `behalten` (`bilderAufraeumenWennRuhig` in app.js).
  */
 export async function aufraeumen(behalten) {
   try {

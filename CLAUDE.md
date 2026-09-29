@@ -10,7 +10,7 @@ hier steht nur, was beim Arbeiten am Quelltext zu beachten ist.
 **Kein Build-Schritt, keine Abhängigkeiten.** Reines ES-Modul-JavaScript, von
 Hand geschrieben, ohne Framework, Bundler, Transpiler oder Paketmanager. Es gibt
 keine `package.json` und soll keine geben. Fremdcode liegt entpackt unter
-`vendor/` (Leaflet, mgrs, libheif als WebAssembly) und ist in `LIZENZEN.md`
+`vendor/` (Leaflet, mgrs, libheif als WebAssembly, qrcode-generator) und ist in `LIZENZEN.md`
 verzeichnet. Wer eine
 Bibliothek ergänzen will, legt sie dort ab und trägt die Lizenz nach — er fügt
 keinen Installationsschritt ein.

@@ -19,6 +19,7 @@
 
 import { bauNormalisieren, BAUSTAENDE, id as neueKennung } from './state.js';
 import { bauabschnitte, istPunkte } from './baudoku.js';
+import { bauAbdruck } from './teilen.js';
 
 /* Die Reihenfolge der Baustände, um sie vergleichen zu können. */
 const STAND_RANG = new Map(BAUSTAENDE.map((b, i) => [b.id, i]));
@@ -69,7 +70,9 @@ export function truppText(meldung) {
   if (meldung.von) namen.add(String(meldung.von));
   for (const m of meldung.strecken || []) {
     for (const a of (m.bau && m.bau.abschnitte) || []) {
-      if (a && a.trupp) namen.add(a.trupp);
+      /* „Trupp 3 · Krause, Trupp 3“ stand im Audit da: der Abschnitt nennt
+         den Trupp, den der Absender schon enthält. */
+      if (a && a.trupp && !String(meldung.von || '').includes(a.trupp)) namen.add(a.trupp);
     }
   }
   return [...namen].join(', ');
@@ -124,12 +127,32 @@ export function befund(projekt, meldung, zuordnung) {
     };
     const standMeldung = juengster(m.bau);
     const standHier = ziel ? juengster(ziel.bau) : '';
-    const schonDa = !!(standMeldung && standMeldung === standHier &&
-      ((m.bau && m.bau.punkte) || []).length === ((ziel.bau && ziel.bau.punkte) || []).length);
-    const aelter = !!(standMeldung && standHier && standMeldung < standHier);
+
+    /* Ob das Einspielen etwas ändert, wird ausprobiert und nicht an den
+       Zeitstempeln abgelesen: an einer Abschrift der Zielstrecke, und
+       verglichen wird, was danach hinausginge. Vorher galt eine Meldung als
+       „schon eingespielt“, sobald ihr jüngster Eintrag mit dem hiesigen
+       übereinstimmte – im Audit genau die BERICHTIGTE Meldung, in der der
+       Trupp 31.200 m auf 3.120 m korrigiert hatte. „Verwerfen genügt“ stand
+       darüber, und der Zahlendreher blieb in der Dokumentation. */
+    const probe = ziel ? probeEinspielen(ziel, m) : null;
+    const schonDa = !!(probe && bauAbdruck(ziel) && bauAbdruck(probe) === bauAbdruck(ziel));
+    const aelter = !schonDa && !!(standMeldung && standHier && standMeldung < standHier);
+    /* Was danach nicht mehr dasteht – gezählt über den Inhalt der Einträge und
+       nicht über ihre Zahl. „Dabei weichen 3 Punkte“ stand auch dann da, wenn
+       dieselben drei Punkte gleich wieder hereinkamen, und wer das einmal
+       gesehen hat, liest es beim nächsten Mal nicht mehr. */
+    const verloren = probe ? verlust(ziel.bau, probe.bau) : { punkte: 0, meldungen: 0, material: 0 };
 
     return {
-      standMeldung, standHier, schonDa, aelter,
+      standMeldung, standHier, schonDa, aelter, verloren,
+      /* Wessen Aufnahme hier steht. Ohne den Namen war „Dabei weichen 3
+         Punkte“ nicht von „mein eigener älterer Stand“ zu unterscheiden – und
+         im Audit verschwand so die Aufnahme des ANDEREN Trupps. */
+      bisherVon: ziel ? bisherVon(ziel, abschnitteDerMeldung, ganzeStrecke) : '',
+      standAlt: ziel && ziel.bau ? ziel.bau.stand : '',
+      standNeu: m.bau && typeof m.bau.stand === 'string' ? m.bau.stand : '',
+      s6: m.bau && typeof m.bau.abweichung === 'string' ? m.bau.abweichung.trim() : '',
       stelle: i,
       name: m.name,
       ziel,
@@ -178,6 +201,55 @@ const zaehleOhneAbschnitt = bau =>
   (bau.material || []).filter(nichtZugeordnet).length +
   (bau.meldungen || []).filter(nichtZugeordnet).length;
 
+/* Das Einspielen an einer Abschrift – dieselben Schritte wie in
+   `einspielen()`, nur ohne Folgen. */
+function probeEinspielen(ziel, m) {
+  const kopie = JSON.parse(JSON.stringify(ziel));
+  const planAbweicht = Number.isInteger(m.sollPunkte) &&
+    m.sollPunkte !== (kopie.punkte || []).length;
+  const frisch = aufloesen(kopie, m, planAbweicht);
+  if (!frisch) return null;
+  if (!frisch.abschnitte.length) ganzeStreckeErsetzen(kopie, frisch);
+  else abschnitteErsetzen(kopie, frisch);
+  return kopie;
+}
+
+/* Ein Eintrag ohne das, was beim Einspielen neu vergeben wird: Kennungen und
+   Verweise. Übrig bleibt, was der Trupp ausgesagt hat. */
+const inhaltVon = x => {
+  const { id, abschnitt, sollPunkt, ...rest } = x || {};
+  return JSON.stringify(rest, Object.keys(rest).sort());
+};
+function verlust(vorher, nachher) {
+  const zaehle = feld => {
+    const da = new Map();
+    for (const x of (nachher && nachher[feld]) || []) {
+      const k = inhaltVon(x);
+      da.set(k, (da.get(k) || 0) + 1);
+    }
+    let weg = 0;
+    for (const x of (vorher && vorher[feld]) || []) {
+      const k = inhaltVon(x);
+      if (da.get(k)) da.set(k, da.get(k) - 1);
+      else weg++;
+    }
+    return weg;
+  };
+  return { punkte: zaehle('punkte'), meldungen: zaehle('meldungen'), material: zaehle('material') };
+}
+
+/* Wer den Stand gemeldet hat, der ersetzt würde: der Trupp der betroffenen
+   Bauabschnitte, sonst der Absender der letzten eingespielten Meldung. */
+function bisherVon(ziel, namen, ganzeStrecke) {
+  const bau = ziel.bau;
+  if (!bau) return '';
+  const trupps = (bau.abschnitte || [])
+    .filter(a => ganzeStrecke || namen.includes(a.name))
+    .map(a => a.trupp).filter(Boolean);
+  if (trupps.length) return [...new Set(trupps)].join(', ');
+  return String(bau.gemeldetVon || '');
+}
+
 /** Hängt an diesem Bauabschnitt überhaupt etwas? */
 function traegtEintraege(strecke, aid) {
   const bau = strecke.bau;
@@ -213,6 +285,9 @@ export function einspielen(projekt, meldung, zuordnung) {
     const vorher = istPunkte(ziel).length;
     if (!frisch.abschnitte.length) ganzeStreckeErsetzen(ziel, frisch);
     else abschnitteErsetzen(ziel, frisch);
+    /* Der Absender bleibt an der Strecke stehen: die Streckenliste nennt ihn,
+       und die nächste Meldung sagt damit, WESSEN Aufnahme sie ersetzt. */
+    if (meldung.von) ziel.bau.gemeldetVon = String(meldung.von).slice(0, 120);
 
     bericht.strecken++;
     /* Gezählt wird, was danach WIRKLICH in der Planung steht, und nicht, was die

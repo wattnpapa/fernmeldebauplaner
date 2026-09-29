@@ -1,7 +1,7 @@
 // strecken.js – Darstellung, Zeichnen und Bearbeiten der Bau-Strecken
 
 import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText } from './geo.js';
-import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar } from './state.js';
+import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar, bauBegonnen, baustandById } from './state.js';
 import {
   istPunkte, sollZuIst, istPunktSetzen, sollPunktGeloescht, ABWEICHUNG_SCHWELLE,
   istKurz, punktartText
@@ -583,6 +583,7 @@ export class StreckenLayer {
        Option und bringt beides mit (`baudokuLegendeHTML` in
        `bauauftrag.js`). */
     this.mitIst = !!opt.mitIst;
+    this.mitStand = !!opt.mitStand;
     this.istSetzModus = null;   // { sid, sollPunkt, art, … } während „Punkt setzen“
     this.aufIstPunkt = opt.aufIstPunkt || (() => {});
     /* Im Baumodus ist die Karte eine andere: der geplante Punkt wird nicht
@@ -598,6 +599,11 @@ export class StreckenLayer {
     this.aufAenderung = opt.aufAenderung || (() => {});
     this.aufGrobmass = opt.aufGrobmass || (() => {});
     this.aufPlanTipp = opt.aufPlanTipp || (() => {});
+    /* Gezogen wird ohne Rückfrage – ein Dialog mitten in der Geste wäre
+       schlimmer als keiner. Hängt an der Strecke schon ein Bau, meldet die
+       Ebene es danach: im Audit änderte das Ziehen den Auftrag des Trupps,
+       während das ✕ daneben längst nachfragte. */
+    this.aufGebautGeaendert = opt.aufGebautGeaendert || (() => {});
     this.planTipp = null;   // { sid, pid, art } – Verschieben/Einfügen per Tipp
     this.sw = !!opt.sw;                       // Schwarz-Weiß-Druck
     this.hervorheben = opt.hervorheben || null;  // diese Strecke betonen
@@ -1125,6 +1131,7 @@ export class StreckenLayer {
             this._artenAktualisieren(s);
           }, 'strecke');
           this.aufAenderung();
+          if (bauBegonnen(s)) this.aufGebautGeaendert(s);
         });
       }
     }
@@ -1138,6 +1145,15 @@ export class StreckenLayer {
          über ihm stehen. */
       const abstand = s.punkte.length >= 2 ? schildAbstand(o) : 0;
       const anker = s.punkte[Math.floor((s.punkte.length - 1) / 2)];
+      /* Der Baustand steht auch auf der Karte, im Schild der Strecke und mit
+         derselben Marke wie in der Liste. Im Audit sahen auf der Arbeitskarte
+         alle Strecken gleich aus – die Lage „was ist fertig, wo wird gebaut“
+         war nur aus der Liste zu lesen. Nur auf der Arbeitskarte (`mitIst`)
+         und der Lagekarte (`mitStand`): die Auftragsblätter zeigen den
+         Auftrag, nicht den Bau. */
+      const standSchild = (this.mitIst || this.mitStand) && bauBegonnen(s)
+        ? `<span class="bz-marke bz-${escapeHtml(s.bau.stand)}">${escapeHtml(baustandById(s.bau.stand).kurz)}</span>`
+        : '';
       const marke = L.marker([anker.lat, anker.lng], {
         pane: 'fbp-labels', interactive: false,
         icon: L.divIcon({
@@ -1148,6 +1164,7 @@ export class StreckenLayer {
                      <b>${escapeHtml(s.name)}</b>
                      <span class="wert">${formatLaenge(k.trasse)}</span>
                      ${k.zuschlag || k.reserve ? `<span class="zus">${bedarfsHerkunft(k)} → ${formatLaenge(k.bedarf)}</span>` : ''}
+                     ${standSchild}
                    </span>
                  </span>`,
           iconSize: null
@@ -1564,6 +1581,7 @@ export class StreckenLayer {
       const ll = ev.target.getLatLng();
       store.aendern(() => { pt.lat = ll.lat; pt.lng = ll.lng; }, 'strecke', { undo: false });
       this.aufAenderung();
+      if (bauBegonnen(s)) this.aufGebautGeaendert(s);
     });
     const zusatz = bauweise && bauweise.kurz ? ` · ${escapeHtml(bauweise.name)}` : '';
     m.bindTooltip(

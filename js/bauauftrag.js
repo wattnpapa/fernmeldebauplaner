@@ -4,7 +4,7 @@
 
 import {
   store, punktartById, kabelById, VERLEGEARTEN, abschnittById, abschnittGewaehlt, streckenUnter,
-  abschnitteGeordnet, abschnittTiefe, abschnittPfad, abschnittBaum, aufEinerLinie
+  abschnitteGeordnet, abschnittTiefe, abschnittPfad, abschnittBaum, aufEinerLinie, planKennung
 } from './state.js';
 import {
   StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen
@@ -24,7 +24,7 @@ import {
   quelleText, uhrzeit, ABWEICHUNG_SCHWELLE, bilderAnStrecke, BILD_KORRIDOR
 } from './baudoku.js';
 import { bildUrl } from './bildspeicher.js';
-import { MATERIALKATALOG, MATERIALGRUPPEN, pruefartById, dtg } from './vorschrift.js';
+import { MATERIALKATALOG, MATERIALGRUPPEN, pruefartById, dtg, PRUEFART_JE_KABEL } from './vorschrift.js';
 import { HOEHEN_QUELLE } from './hoehe.js';
 import { OBERFLAECHEN_QUELLE } from './oberflaeche.js';
 import {
@@ -45,6 +45,9 @@ import { urteilLesen, meterText } from './funkrechnung.js';
 import { profilSVG, profilLegendeHTML, profilVorbehalt } from './hoehenprofil.js';
 import { hinweis } from './ui.js';
 import { VERSION } from './version.js';
+import qrcode from '../vendor/qrcode-generator.esm.js';
+import { alsLink, kannPacken } from './teilen.js';
+import { streckeAlsProjekt } from './io.js';
 
 const FORMATE = {
   a4: [210, 297], a3: [297, 420], a2: [420, 594], a1: [594, 841], a0: [841, 1189]
@@ -1496,10 +1499,14 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null) {
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
 
   if (opt.strecken !== false) {
+    /* Die Lagekarte trägt den Baustand im Schild jeder Strecke: sie ist das
+       Blatt der Führungsstelle, und im Audit sahen darauf alle Strecken gleich
+       aus. Die Auftragsblätter bekommen ihn nicht – sie zeigen den Auftrag. */
     const sl = new StreckenLayer(karte, {
       interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt),
       nurStrecken: auftrag.strecken.map(s => s.id),
-      punktzeichen: opt.punktzeichen !== false
+      punktzeichen: opt.punktzeichen !== false,
+      mitStand: true
     });
     sl.zeichne({
       ...p.optionen, teillaengen: false,
@@ -1796,8 +1803,14 @@ function datenblaetter(ziel, p, strecke, k, opt) {
      und die Prüfanweisung ist ihr Nachweis. */
   if (opt.baunachweis && !k.kabel.funk && strecke.punkte.length) {
     if (!fluss.leer()) fluss.neuBlatt();
+    const kopfEl = elementAus(baunachweisKopfHTML());
+    fluss.setze(kopfEl);
+    qrFuellen(kopfEl.querySelector('.bl-qr'), strecke.id);
     tabelleFliessen(fluss, baunachweisRahmenHTML, baunachweisZeilenHTML(strecke));
     fluss.setze(elementAus(baunachweisMeldungenHTML(k)));
+    fluss.setze(elementAus(baunachweisMaterialHTML()));
+    fluss.setze(elementAus(baunachweisAbweichungHTML()));
+    fluss.setze(elementAus(baunachweisPruefungHTML(strecke)));
   }
   if (opt.bemerkungen) fluss.setze(elementAus(bemerkungHTML(p, strecke)));
   if (opt.unterschrift) fluss.setze(elementAus(unterschriftHTML(p)));
@@ -1847,8 +1860,9 @@ function kopfHTML(p, angaben) {
   return einstufungHTML(p) + blattkopfHTML(p, angaben);
 }
 
-function blattkopfHTML(p, { titel, unter = '', doktyp: typ }) {
+function blattkopfHTML(p, { titel, unter = '', doktyp: typ, strecken = null }) {
   const k = p.kopf;
+  const kennung = planKennung(strecken || p.strecken);
   return `<header class="bl-kopf">
     <div class="bl-marke">
       <span class="bl-org">${escapeHtml(k.einheit || 'THW')}</span>
@@ -1858,7 +1872,7 @@ function blattkopfHTML(p, { titel, unter = '', doktyp: typ }) {
     <table class="bl-kennung">
       <tr><th>Auftrag-Nr.</th><td>${escapeHtml(k.auftragNr || '–')}</td></tr>
       <tr><th>Datum</th><td>${datumDE(k.datum)}</td></tr>
-      <tr><th>Stand</th><td class="mono">${escapeHtml(k.stand || '–')}</td></tr>
+      <tr><th>Stand</th><td class="mono">${k.stand ? escapeHtml(k.stand) + ' · ' : ''}Plan ${escapeHtml(kennung)}</td></tr>
       <tr><th>Blatt</th><td class="bl-blattnr">–</td></tr>
     </table>
   </header>`;
@@ -1866,6 +1880,7 @@ function blattkopfHTML(p, { titel, unter = '', doktyp: typ }) {
 
 function streckenKopfHTML(p, s) {
   return kopfHTML(p, {
+    strecken: [s],
     titel: s.name,
     unter: (s.von || s.nach) ? `${s.von || '?'} → ${s.nach || '?'}` : '',
     doktyp: 'Bauauftrag Fernmeldebau'
@@ -2678,6 +2693,111 @@ function regelnHTML(k) {
    eine Abschrift ist. Im Audit schrieb der Trupp ohne Vordruck auf die
    Rückseite, und beim Übertragen musste jemand freie Notizen den Feldern
    zuordnen; genau dort entstehen die Fehler. */
+/* Der Baunachweis folgt der Reihenfolge des Bau-Reiters: wer baut, Punkte,
+   Meldungen und Kabel, übriges Material, Abweichungen, Prüfung und Übergabe.
+   Im Audit endete das Blatt nach dem Kabelverbrauch – Messwerte, Übergabe und
+   die Meldung an den S 6 landeten wieder auf der Rückseite, und die
+   Zuordnungsarbeit war genau dort zurück, wo sie am wichtigsten ist. */
+/* Neben der Kopfzeile steht der Auftrag als QR-Code: gescannt öffnet er
+   dieselbe Strecke im FMBauplaner, wo „Bau beginnen“ in den Baumodus führt.
+   Papier und Link waren im Audit zwei getrennte Wege – wer das Blatt in der
+   Hand hatte, musste auf den Link im Messenger warten. Der Platz ist fest
+   reserviert, damit der Blattumbruch nicht davon abhängt, wann der Code
+   fertig ist. Übertragen wird dabei nichts: der Link entsteht hier und steht
+   nur auf dem Papier. */
+function baunachweisKopfHTML() {
+  return `<section class="bl-abschnitt bl-baunachweis bl-nachweis-kopf">
+    <table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
+      <thead><tr><th>Trupp</th><th>Truppführer</th><th>Datum</th><th>Bau begonnen (Uhrzeit)</th></tr></thead>
+      <tbody><tr>${'<td class="ausfuellen"></td>'.repeat(4)}</tr></tbody>
+    </table>
+    <figure class="bl-qr-rahmen">
+      <div class="bl-qr" aria-hidden="true"></div>
+      <figcaption>Scannen öffnet diesen Auftrag im FMBauplaner – dort „Bau beginnen“.</figcaption>
+    </figure>
+  </section>`;
+}
+
+/* Bis zu dieser Länge wird der Link zum Code. Darüber wird das Raster so
+   fein, dass eine Telefonkamera auf 32 mm nicht mehr sicher liest –
+   Version 21 bei Fehlerstufe L, gut 0,3 mm je Modul. */
+const QR_HOECHSTENS = 900;
+
+async function qrFuellen(ziel, sid) {
+  if (!ziel) return;
+  const quelle = streckeAlsProjekt(sid);
+  if (!quelle || !kannPacken()) { ziel.closest('.bl-qr-rahmen').remove(); return; }
+  try {
+    const link = await alsLink(quelle);
+    if (link.length > QR_HOECHSTENS) {
+      ziel.closest('.bl-qr-rahmen').querySelector('figcaption').textContent =
+        'Für einen QR-Code ist dieser Auftrag zu umfangreich – den Link an den Bautrupp verschicken.';
+      ziel.remove();
+      return;
+    }
+    const qr = qrcode(0, 'L');
+    qr.addData(link);
+    qr.make();
+    const n = qr.getModuleCount();
+    let pfad = '';
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) if (qr.isDark(y, x)) pfad += `M${x} ${y}h1v1h-1z`;
+    }
+    /* Als SVG mit eigener weißer Fläche und Ruhezone: ein Bild aus Kacheln
+       oder ein Filter käme aus Firefox' Druck nicht heraus (`CLAUDE.md`). */
+    ziel.innerHTML = `<svg viewBox="-4 -4 ${n + 8} ${n + 8}" shape-rendering="crispEdges"
+      xmlns="http://www.w3.org/2000/svg"><rect x="-4" y="-4" width="${n + 8}" height="${n + 8}" fill="#fff"/>
+      <path d="${pfad}" fill="#000"/></svg>`;
+  } catch (e) {
+    ziel.closest('.bl-qr-rahmen').remove();
+  }
+}
+
+function baunachweisMaterialHTML() {
+  const zeile = '<tr><td class="ausfuellen"></td><td class="ausfuellen"></td><td class="ausfuellen"></td></tr>';
+  return `<section class="bl-abschnitt bl-baunachweis">
+    <h2>Übriges Material</h2>
+    <table class="tab-punkte tab-ausfuellen tab-nachweis-material">
+      <thead><tr><th>Material (Muffe, Bauhaken, Ankerpfahl, Erdung …)</th><th>Menge</th><th>Bemerkung</th></tr></thead>
+      <tbody>${zeile.repeat(5)}</tbody>
+    </table>
+  </section>`;
+}
+
+function baunachweisAbweichungHTML() {
+  return `<section class="bl-abschnitt bl-baunachweis">
+    <h2>Abweichungen vom Auftrag / Meldung an den S 6</h2>
+    <div class="bl-freitext bl-freitext-hoch">
+      <div class="bl-linien" aria-hidden="true">${'<i></i>'.repeat(12)}</div>
+    </div>
+  </section>`;
+}
+
+function baunachweisPruefungHTML(s) {
+  /* Die Prüfart steht vorgedruckt: sie hängt an der Kabelart und nicht an der
+     Vorliebe des Truppführers (3.5) – dieselbe Vorgabe, die der Baumodus
+     vorschlägt. */
+  const art = pruefartById(PRUEFART_JE_KABEL[s.kabeltyp] || 'messung');
+  const zeile = n => `<tr><td>Stamm ${n}</td><td>${escapeHtml(art.name)}</td>
+      <td class="ausfuellen"></td>
+      <td class="ankreuzen"><span class="kasten" aria-hidden="true"></span></td>
+      <td class="ausfuellen"></td><td class="ausfuellen"></td></tr>`;
+  return `<section class="bl-abschnitt bl-baunachweis">
+    <h2>Prüfung und Übergabe</h2>
+    <table class="tab-punkte tab-ausfuellen tab-nachweis-pruefung">
+      <thead><tr><th>Stamm</th><th>Art</th><th>Messwert / Ergebnis</th><th>bestanden</th>
+        <th>Uhrzeit</th><th>Prüfer</th></tr></thead>
+      <tbody>${[1, 2, 3, 4].map(zeile).join('')}</tbody>
+    </table>
+    <table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
+      <thead><tr><th>Übergeben an</th><th>Datum / Uhrzeit</th><th>Name, Unterschrift</th></tr></thead>
+      <tbody><tr>${'<td class="ausfuellen"></td>'.repeat(3)}</tr></tbody>
+    </table>
+    <p class="tab-fussnote">${escapeHtml(art.name)} nach ${escapeHtml(fundstelleText(art))}. Im
+      Baumodus unter „Übergabe“ in derselben Reihenfolge übernehmen.</p>
+  </section>`;
+}
+
 function baunachweisRahmenHTML(fortsetzung) {
   return `<section class="bl-abschnitt bl-baunachweis">
     <h2>Baunachweis zum Ausfüllen${fortsetzung ? ' (Fortsetzung)' : ''}</h2>
@@ -2689,8 +2809,8 @@ function baunachweisRahmenHTML(fortsetzung) {
       <tbody></tbody>
     </table>
     <p class="tab-fussnote">Je Punkt ankreuzen oder die gebaute Lage eintragen. Im Baumodus
-      danach „wie geplant“ bzw. die Koordinate unter „Koordinate“ übernehmen; zusätzliche
-      Punkte (Mast, Muffe, Umgehung) in die freien Zeilen.</p>
+      danach „wie geplant“ bzw. die Koordinate unter „Koordinate“ übernehmen und die Uhrzeit
+      am Punkt nachtragen; zusätzliche Punkte (Mast, Muffe, Umgehung) in die freien Zeilen.</p>
   </section>`;
 }
 
@@ -2728,8 +2848,8 @@ function baunachweisMeldungenHTML(k) {
         <td class="ausfuellen"></td><td class="ausfuellen"></td>
       </tr></tbody>
     </table>
-    <p class="tab-fussnote">${regel ? `${escapeHtml(regel.text)} (${escapeHtml(fundstelleText(regel))}). ` : ''}Die
-      Uhrzeiten lassen sich im Baumodus unter „Meldungen“ so nachtragen, wie sie hier stehen.</p>
+    <p class="tab-fussnote">${regel ? `${escapeHtml(regel.text)} (${escapeHtml(fundstelleText(regel))}). ` : ''}Uhrzeit
+      und Datum lassen sich im Baumodus unter „Meldungen“ so nachtragen, wie sie hier stehen.</p>
   </section>`;
 }
 
@@ -3528,7 +3648,7 @@ function baudokuAbweichungHTML(s, k) {
   const liste = k.abweichungen.map(a => {
     const nr = s.punkte.indexOf(a.soll) + 1;
     return `<li>Punkt ${nr}: <b>${escapeHtml(formatLaenge(a.meter))}</b> vom geplanten Ort</li>`;
-  }).join('') + k.abseits.map(a =>
+  }).join('') + k.abseits.filter(a => !a.soll).map(a =>
     `<li>Zusätzlicher Punkt (${escapeHtml(punktartText(a.ist))}): ` +
     `<b>${escapeHtml(formatLaenge(a.meter))}</b> neben der Trasse</li>`).join('');
   /* Der Satz „kein Punkt weicht ab“ steht nur, wenn er stimmt: vorher stand er

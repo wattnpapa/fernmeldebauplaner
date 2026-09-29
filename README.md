@@ -343,14 +343,22 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   nur so bleibt die Abweichung nachweisbar. Die drei Auftragsblätter zeigen
   weiterhin den Auftrag
 - **Baunachweis zum Ausfüllen:** ein eigenes, abschaltbares Blatt im Bauauftrag mit
-  denselben Feldern wie der Baumodus – Punkte abhaken, Baumeldungen mit Uhrzeit,
-  Kabelverbrauch. Fällt das Telefon aus, wird dort mitgeschrieben und später
-  nachgetragen; die Uhrzeit einer Baumeldung lässt sich dabei vom Blatt übernehmen
+  denselben Feldern wie der Baumodus – Trupp, Punkte abhaken, Baumeldungen mit Uhrzeit,
+  Kabel und übriges Material, Abweichungen und Meldung an den S 6, Prüfung je Stamm und
+  Übergabe. Fällt das Telefon aus, wird dort mitgeschrieben und später nachgetragen;
+  Tag und Uhrzeit von Punkten und Meldungen lassen sich dabei vom Blatt übernehmen. Ein
+  QR-Code auf dem Blatt öffnet den Auftrag im FMBauplaner, und jeder Blattkopf trägt die
+  Plan-Kennung, die auch im Bau-Reiter steht
 - **Bau beginnen aus dem Link:** ein Link mit einer einzelnen Strecke öffnet den
   Baumodus auf dieser Strecke, fragt einmal nach Trupp und Truppführer und erinnert
   daran, die Karte mitzunehmen
 - **Nachtdarstellung:** dunkle Oberfläche und abgedunkelte Arbeitskarte, nach der
-  Einstellung des Geräts oder über „Datei → Nachtdarstellung“; der Druck bleibt hell
+  Einstellung des Geräts oder über „Datei → Nachtdarstellung“ (und von dort zurück zur
+  Einstellung des Geräts); der Druck bleibt hell
+- **Für die Führungsstelle:** die Streckenliste zeigt je Strecke Baustand, Trupp und
+  das Alter der letzten Meldung, markiert neu eingegangene Meldungen bis „gesehen“ und
+  hebt Strecken hervor, von denen seit zwei Stunden nichts kam. Der Baustand steht auch
+  im Schild der Strecke auf Arbeitskarte und Lagekarte
 
 **Ohne Netz**
 - Die Anwendung startet ohne Verbindung. Nach dem ersten Aufruf mit Netz liegt sie im

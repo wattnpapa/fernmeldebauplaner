@@ -5,7 +5,7 @@ auf, was zusätzlich mitgeliefert oder zur Laufzeit abgerufen wird.
 
 ## Verwendete Fremdbibliotheken
 
-Alle drei Bibliotheken liegen unverändert unter `vendor/` im Repository, damit die
+Alle vier Bibliotheken liegen unverändert unter `vendor/` im Repository, damit die
 Anwendung ohne Netzwerkzugriff auf fremde CDNs auskommt.
 
 | Bibliothek | Version | Lizenz | Herkunft |
@@ -13,8 +13,11 @@ Anwendung ohne Netzwerkzugriff auf fremde CDNs auskommt.
 | Leaflet | 1.9.4 | BSD-2-Clause | https://leafletjs.com |
 | mgrs (proj4 team) | 2.1.0 | MIT | https://github.com/proj4js/mgrs |
 | libheif (als WebAssembly, `libheif-js`) | 1.19.8 | LGPL-3.0-or-later | https://github.com/strukturag/libheif |
+| qrcode-generator (Kazuhiko Arase) | 2.0.4 | MIT | https://github.com/kazuhikoarase/qrcode-generator |
 
-Der vollständige Lizenztext von `mgrs` liegt in `vendor/mgrs.LICENSE.md`,
+Der vollständige Lizenztext von `mgrs` liegt in `vendor/mgrs.LICENSE.md`, der
+von qrcode-generator in `vendor/qrcode-generator.LICENSE.md` (die Datei
+`vendor/qrcode-generator.esm.js` ist `dist/qrcode.mjs` des Pakets, unverändert),
 der von Leaflet im Kopf von `vendor/leaflet/leaflet.js`, der von libheif in
 `vendor/libheif/LICENSE`.
 
