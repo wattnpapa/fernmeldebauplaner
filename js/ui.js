@@ -1314,18 +1314,17 @@ function streckenKarte(s) {
      dort nichts zu sagen und blieben doch als Zahlen im Weg. */
   if (!k.kabel.funk) {
     g2.appendChild(feld('Verlegeart', s.verlegeart, v => {
-      schreib(() => { s.verlegeart = v; });
-      frisch();          // Hoch- oder Tiefbau entscheidet über die Sprechreichweite
-      ctx.aufAenderung();
+      // Hoch- oder Tiefbau entscheidet über die Sprechreichweite
+      schreib(() => { s.verlegeart = v; }, () => { frisch(); ctx.aufAenderung(); });
     }, { typ: 'select', klasse: 'nur-erweitert', werte: VERLEGEARTEN.map(v => [v.id, v.name]) }));
 
     const zahlen = el('div', 'feld-dreier nur-erweitert');
     zahlen.append(
-      feld('Bauzuschlag', s.zuschlag, v => { schreib(() => { s.zuschlag = v; }); frisch(); ctx.aufAenderung(); },
+      feld('Bauzuschlag', s.zuschlag, v => schreib(() => { s.zuschlag = v; }, () => { frisch(); ctx.aufAenderung(); }),
         { typ: 'number', min: 0, max: 100, step: 1, einheit: '%' }),
-      feld('Trommellänge', s.trommellaenge, v => { schreib(() => { s.trommellaenge = v; }); frisch(); },
+      feld('Trommellänge', s.trommellaenge, v => schreib(() => { s.trommellaenge = v; }, frisch),
         { typ: 'number', min: 1, step: 10, einheit: 'm' }),
-      feld('Verlegeleistung', s.verlegeleistung, v => { schreib(() => { s.verlegeleistung = v; }); frisch(); },
+      feld('Verlegeleistung', s.verlegeleistung, v => schreib(() => { s.verlegeleistung = v; }, frisch),
         { typ: 'number', min: 1, step: 50, einheit: 'm/h' })
     );
     g2.appendChild(zahlen);
@@ -1566,7 +1565,7 @@ function stromGruppe(s) {
   /* Bei Gleichstrom gibt es keinen Leistungsfaktor. Das Feld bleibt stehen und
      wird gesperrt – so springt die Gruppe beim Umschalten nicht in der Höhe. */
   const cosFeld = feld('Leistungsfaktor cos φ', s.strom.cosphi,
-    v => { schreib(() => { s.strom.cosphi = v; }); aktualisieren(); },
+    v => schreib(() => { s.strom.cosphi = v; }, aktualisieren),
     { typ: 'number', min: 0.3, max: 1, step: 0.05 });
   const cosEingabe = cosFeld.querySelector('input');
   const cosPflegen = () => {
@@ -1580,9 +1579,7 @@ function stromGruppe(s) {
   const oben = el('div', 'feld-paar');
   oben.append(
     feld('Netzform', s.strom.netz, v => {
-      schreib(() => { s.strom.netz = v; });
-      cosPflegen();
-      aktualisieren();
+      schreib(() => { s.strom.netz = v; }, () => { cosPflegen(); aktualisieren(); });
     }, { typ: 'select', werte: NETZFORMEN.map(n => [n.id, n.name]) }),
     cosFeld
   );
@@ -1590,12 +1587,12 @@ function stromGruppe(s) {
 
   const unten = el('div', 'feld-dreier');
   unten.append(
-    feld('Last', s.strom.last, v => { schreib(() => { s.strom.last = v; }); aktualisieren(); },
+    feld('Last', s.strom.last, v => schreib(() => { s.strom.last = v; }, aktualisieren),
       { typ: 'number', min: 0, step: 0.5, platzhalter: 'z. B. 3,5' }),
-    feld('Einheit', s.strom.einheit, v => { schreib(() => { s.strom.einheit = v; }); aktualisieren(); },
+    feld('Einheit', s.strom.einheit, v => schreib(() => { s.strom.einheit = v; }, aktualisieren),
       { typ: 'select', werte: LASTEINHEITEN }),
     feld('Zul. Spannungsfall', s.strom.spannungsfall,
-      v => { schreib(() => { s.strom.spannungsfall = v; }); aktualisieren(); },
+      v => schreib(() => { s.strom.spannungsfall = v; }, aktualisieren),
       { typ: 'number', min: 0.5, max: 20, step: 0.5, einheit: '%' })
   );
   gruppe.appendChild(unten);
