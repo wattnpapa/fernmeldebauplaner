@@ -18,8 +18,9 @@ import {
   formatLaenge, meter, toMGRS, toDDM, alleFormate, parseKoordinate, himmelsrichtung, distanz
 } from './geo.js';
 import {
-  NETZFORMEN, LASTEINHEITEN, netzById, MAX_QUERSCHNITT,
-  querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText
+  NETZFORMEN, LASTEINHEITEN, EINSPEISUNGEN, netzById, einspeisungById, MAX_QUERSCHNITT,
+  querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText,
+  grenzHerkunftText, schutztrennungText
 } from './strom.js';
 import {
   QUERUNGSARTEN, QUERUNG_BAUWEISEN, VS_GRADE, querungsartById, bauweiseById, massText, dtg,
@@ -1576,10 +1577,33 @@ function stromGruppe(s) {
   };
   cosPflegen();
 
+  /* Die Einspeisung setzt den zulässigen Spannungsfall auf ihren Richtwert –
+     überschrieben wird dabei auch ein eigener Wert. Wer die Einspeisung
+     umstellt, fragt nach der Grenze, die zu ihr gehört; ein vorher eingetragener
+     Wert gehörte zur alten. Danach bleibt das Feld frei einstellbar. */
+  const fallFeld = feld('Zul. Spannungsfall', s.strom.spannungsfall,
+    v => schreib(() => { s.strom.spannungsfall = v; }, aktualisieren),
+    { typ: 'number', min: 0.5, max: 20, step: 0.5, einheit: '%' });
+  const einspeisungFeld = feld('Einspeisung', einspeisungById(s.strom.einspeisung).id, v => {
+    const richtwert = einspeisungById(v).fall.prozent;
+    fallFeld.querySelector('input').value = zahlText(richtwert);
+    schreib(() => { s.strom.einspeisung = v; s.strom.spannungsfall = richtwert; }, aktualisieren);
+  }, { typ: 'select', werte: EINSPEISUNGEN.map(e => [e.id, e.name]) });
+  /* Gleichstrom kommt aus der Batterie. Gesperrt wie der Leistungsfaktor. */
+  const einspeisungPflegen = () => {
+    const gleich = !!netzById(s.strom.netz).gleich;
+    einspeisungFeld.querySelector('select').disabled = gleich;
+    einspeisungFeld.classList.toggle('gesperrt', gleich);
+    einspeisungFeld.title = gleich ? 'Bei Gleichstrom ohne Bedeutung' : '';
+  };
+  einspeisungPflegen();
+  gruppe.appendChild(einspeisungFeld);
+
   const oben = el('div', 'feld-paar');
   oben.append(
     feld('Netzform', s.strom.netz, v => {
-      schreib(() => { s.strom.netz = v; }, () => { cosPflegen(); aktualisieren(); });
+      schreib(() => { s.strom.netz = v; },
+        () => { cosPflegen(); einspeisungPflegen(); aktualisieren(); });
     }, { typ: 'select', werte: NETZFORMEN.map(n => [n.id, n.name]) }),
     cosFeld
   );
@@ -1591,9 +1615,7 @@ function stromGruppe(s) {
       { typ: 'number', min: 0, step: 0.5, platzhalter: 'z. B. 3,5' }),
     feld('Einheit', s.strom.einheit, v => schreib(() => { s.strom.einheit = v; }, aktualisieren),
       { typ: 'select', werte: LASTEINHEITEN }),
-    feld('Zul. Spannungsfall', s.strom.spannungsfall,
-      v => schreib(() => { s.strom.spannungsfall = v; }, aktualisieren),
-      { typ: 'number', min: 0.5, max: 20, step: 0.5, einheit: '%' })
+    fallFeld
   );
   gruppe.appendChild(unten);
 
@@ -1616,6 +1638,8 @@ function stromErgebnisHTML(a) {
          Spannungsfall von ${escapeHtml(grenzText(a.grenze))} nicht. Höhere Spannung wählen,
          Last verringern oder unterwegs einspeisen.`}</p>`;
   }
+  const schutz = schutztrennungText(a);
+  const herkunft = grenzHerkunftText(a);
   const zeilen = [
     ['Betriebsstrom', stromText(a.strom)],
     ['Leistung', leistungText(a.leistung)],
@@ -1628,6 +1652,8 @@ function stromErgebnisHTML(a) {
     </div>
     <div class="se-zeilen">${zeilen.map(([t, w]) =>
       `<span><i>${t}</i><b>${escapeHtml(w)}</b></span>`).join('')}</div>
+    ${schutz ? `<p class="${schutz.warnung ? 'se-warnung' : 'se-fuss'}">Schutztrennung: ${escapeHtml(schutz.text)}</p>` : ''}
+    ${herkunft ? `<p class="se-fuss">${escapeHtml(herkunft)}</p>` : ''}
     ${a.laenge > 0 ? '' : `<p class="se-fuss">Noch keine Trasse gezeichnet – gerechnet ist
        allein die Belastbarkeit, ohne Spannungsfall über die Länge.</p>`}
     <p class="se-fuss">Richtwert für Kupferleitung, drei belastete Adern, frei in Luft.

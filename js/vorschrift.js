@@ -36,10 +36,30 @@ export const QUELLEN = {
     kurz: 'Hdb Feldfernkabelbau',
     lang: 'Handbuch für den Feldfernkabelbau (einschließlich Verbindungs- und ' +
           'Anschlusskabel), Bundesanstalt Technisches Hilfswerk, 2003'
+  },
+  /* Die beiden Quellen der Stromleitung stehen ohne Gliederungsnummer da: die
+     Texte lagen beim Eintragen nicht vor, und eine Nummer aus dem Gedächtnis
+     wäre am Bauort schlimmer als keine. Wer sie nachschlägt, trägt sie an den
+     Werten unter „Stromleitung“ als `fundstelle` nach. */
+  vde520: {
+    kurz: 'DIN VDE 0100-520',
+    lang: 'DIN VDE 0100-520, Errichten von Niederspannungsanlagen – Auswahl und ' +
+          'Errichtung elektrischer Betriebsmittel – Kabel- und Leitungsanlagen'
+  },
+  dguv: {
+    kurz: 'DGUV Information 203-032',
+    lang: 'DGUV Information 203-032, Auswahl und Betrieb von Stromerzeugern auf ' +
+          'Bau- und Montagestellen'
   }
 };
 
 export const QUELLE_STANDARD = 'kats';
+
+/** Quelle eines Datums, mit Nummer, wo es eine gibt: „DGUV Information 203-032“. */
+export function quelleText(o) {
+  if (!o || !QUELLEN[o.quelle]) return '';
+  return QUELLEN[o.quelle].kurz + (o.fundstelle ? ', ' + o.fundstelle : '');
+}
 
 /** Vollständige Fundstelle eines Datums: „Hdb Kabelbau, 4.2“. */
 export function fundstelleText(o) {
@@ -563,3 +583,27 @@ export function schutzabstandText(kv) {
   if (!isFinite(n) || n <= 0) return null;
   return SCHUTZABSTAENDE.find(s => s.kv >= n) || null;
 }
+
+// ------------------------------------------------------------ Stromleitung
+
+/* Wie viel Spannungsfall zulässig ist, hängt an der Einspeisung. Die 3 %, mit
+   denen die Rechnung früher fest begann, sind der Wert der Hausinstallation
+   vom Zähler bis zur Steckdose – für eine Leitung am Stromerzeuger verlangten
+   sie einen Querschnitt, der nicht gebraucht wird. Die Werte hier sind die
+   Empfehlung für „andere Verbraucher“; Beleuchtung liegt jeweils darunter und
+   bleibt dem eingestellten Wert überlassen. */
+export const SPANNUNGSFALL = {
+  netz:     { prozent: 5, quelle: 'vde520' },
+  erzeuger: { prozent: 8, quelle: 'vde520' }
+};
+
+/* Schutztrennung mit mehreren Verbrauchern ohne Isolationsüberwachung: ein
+   kleiner Stromerzeuger liefert zu wenig Kurzschlussstrom, als dass über eine
+   lange Leitung im Fehlerfall sicher abgeschaltet würde. Begrenzt ist deshalb
+   die Summe ALLER Leitungen am Erzeuger, nicht die einzelne Strecke. Größere
+   Querschnitte als 2,5 mm² nennt die Regel nicht – darüber gibt es keinen Wert,
+   und hier wird auch keiner hochgerechnet. */
+export const SCHUTZTRENNUNG_LAENGE = {
+  stufen: [{ mm2: 1.5, meter: 100 }, { mm2: 2.5, meter: 250 }],
+  quelle: 'dguv'
+};

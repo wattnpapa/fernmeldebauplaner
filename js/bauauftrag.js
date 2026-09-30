@@ -28,7 +28,8 @@ import { MATERIALKATALOG, MATERIALGRUPPEN, pruefartById, dtg, PRUEFART_JE_KABEL 
 import { HOEHEN_QUELLE } from './hoehe.js';
 import { OBERFLAECHEN_QUELLE } from './oberflaeche.js';
 import {
-  querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText, MAX_QUERSCHNITT
+  querschnittText, stromText, leistungText, prozentText, grenzText, massgebendText, MAX_QUERSCHNITT,
+  grenzHerkunftText, schutztrennungText
 } from './strom.js';
 import {
   massText, bauweiseById, BAUREGELN, SCHUTZABSTAENDE, fundstelleText,
@@ -2631,6 +2632,7 @@ function materialHTML(s, k) {
   if (a) {
     zeilen.push(
       ['Netzform', a.netz.name],
+      ...(a.netz.gleich ? [] : [['Einspeisung', escapeHtml(a.einspeisung.name)]]),
       ['Angeschlossene Last', `${leistungText(a.leistung)} · ${stromText(a.strom)}` +
         (a.netz.gleich ? '' : ` (cos φ ${String(a.cosphi).replace('.', ',')})`)],
       a.querschnitt
@@ -2642,7 +2644,15 @@ function materialHTML(s, k) {
         `${a.querschnitt ? prozentText(a.spannungsfallProzent) : '–'} (zulässig ${grenzText(a.grenze)})`],
       ['Maßgebend für den Querschnitt', massgebendText(a)]
     );
+    /* Die Längengrenze gehört als Zeile auf das Blatt, nicht in die Fußnote:
+       der Trupp am Erzeuger ist es, der weitere Leitungen ansteckt. */
+    const schutz = schutztrennungText(a);
+    if (schutz) {
+      zeilen.push(['Schutztrennung', schutz.warnung
+        ? `<b>${escapeHtml(schutz.text)}</b>` : escapeHtml(schutz.text)]);
+    }
   }
+  const herkunft = a ? grenzHerkunftText(a) : '';
   return `<section class="bl-abschnitt bl-material">
     <h2>Materialbedarf und Ansatz</h2>
     <table class="tab-material"><tbody>${zeilen.map(([t, w]) =>
@@ -2656,6 +2666,7 @@ function materialHTML(s, k) {
     ${a ? `<p class="tab-fussnote mat-fussnote">Querschnitt als Planungsrichtwert für Kupferleitung
       (drei belastete Adern, frei in Luft) über die Leitungslänge einschließlich Bauzuschlag
       und Kabelreserve.
+      ${escapeHtml(herkunft)}
       Aufgerollte Leitungsroller tragen deutlich weniger Strom. Die verbindliche Auslegung
       und die Prüfung der Anlage obliegen einer Elektrofachkraft.</p>` : ''}
   </section>`;

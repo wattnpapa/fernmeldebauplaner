@@ -126,7 +126,10 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Kabelbedarf durch Verlegeleistung plus Zeitansatz der Querungen (Überbau 45 min,
   Unterbau 60 min, Bauwerk 20 min, sonst 10 min – je Punkt anpassbar)
 - Bei Stromleitungen: Leiterquerschnitt aus angeschlossener Last (kW oder A), Netzform
-  (230 V 1~, 400 V 3~, 24 V, 12 V), Leistungsfaktor und zulässigem Spannungsfall
+  (230 V 1~, 400 V 3~, 24 V, 12 V), Leistungsfaktor und zulässigem Spannungsfall;
+  die Einspeisung (Stromerzeuger mit Schutztrennung oder Isolationsüberwachung,
+  Netzanschluss) setzt den Richtwert für den Spannungsfall und bei Schutztrennung
+  die Längengrenze
 
 **Taktische Zeichen**
 - 894 Zeichen aus der Sammlung [jonas-koeritz/Taktische-Zeichen](https://github.com/jonas-koeritz/Taktische-Zeichen)
@@ -750,7 +753,13 @@ grobe Planungsgröße aus Bedarfslänge geteilt durch die eingestellte Verlegele
 Der **Leiterquerschnitt** von Stromleitungen ist ein Planungsrichtwert: gerechnet für
 Kupfer über die Leitungslänge einschließlich Bauzuschlag und Kabelreserve, maßgebend ist der zulässige
 Spannungsfall oder die Strombelastbarkeit – je nachdem, was den größeren Querschnitt
-verlangt. Die Belastbarkeit gilt für drei belastete Adern frei in Luft bei 30 °C;
+verlangt. Der zulässige Spannungsfall richtet sich nach der Einspeisung: 8 % am
+Stromerzeuger, 5 % am Netzanschluss (Empfehlung für Verbraucher nach DIN VDE 0100-520),
+von Hand änderbar. Am Stromerzeuger mit Schutztrennung ohne Isolationsüberwachung kommt
+die Längengrenze der DGUV Information 203-032 hinzu: höchstens 100 m Leitung bei
+1,5 mm², 250 m bei 2,5 mm² – für alle Leitungen am selben Erzeuger zusammen. Die
+Anwendung prüft sie je Strecke und nennt sie; welche Strecken sich einen Erzeuger
+teilen, weiß sie nicht. Die Belastbarkeit gilt für drei belastete Adern frei in Luft bei 30 °C;
 aufgerollte Leitungsroller tragen deutlich weniger. Die verbindliche Auslegung und die
 Prüfung der Anlage obliegen einer Elektrofachkraft.
 

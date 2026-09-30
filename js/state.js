@@ -12,7 +12,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 18;
+export const SCHEMA = 19;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_VERLAUF  = 'fbp.verlauf.v1';   // Rückgängig-Verlauf, im Sitzungsspeicher
@@ -1242,6 +1242,13 @@ export function migrieren(p) {
         id: s.id || id(),
         farbe: farbeOderVorgabe(s.farbe, v.farbe),
         kabeltyp: KABEL_ALIAS[s.kabeltyp] || s.kabeltyp || v.kabeltyp,
+        /* Schema 19 hat die Einspeisung eingeführt. Ältere Stände bekommen die
+           Vorgabe, den Stromerzeuger mit Schutztrennung – so erscheint die
+           Längengrenze dort, wo sie gilt, statt still zu fehlen. Sie kann
+           einen Querschnitt von 1,5 auf 2,5 mm² heben; das ist gewollt, sie
+           schützt gegen Schlag. Der eingetragene Spannungsfall dagegen bleibt
+           stehen, meist die alten 3 %: ihn auf den neuen Richtwert zu heben,
+           verkleinerte still Querschnitte, die schon auf einem Blatt stehen. */
         strom: { ...v.strom, ...(s.strom || {}) },
         /* Schema 7 hat die Angaben der Richtfunkstrecke eingeführt, Schema 8
            die Leistungsangaben für die EIRP-Prüfung. Ältere Stände bringen sie

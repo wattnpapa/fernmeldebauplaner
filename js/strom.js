@@ -4,7 +4,11 @@
      ΔU = (f · L · I · cos φ) / (κ · A)      f = 2 bei Wechsel-/Gleichstrom, √3 bei Drehstrom
    nach A umgestellt und auf den nächstgrößeren genormten Querschnitt aufgerundet.
    Zusätzlich muss der Querschnitt den Betriebsstrom thermisch tragen; maßgebend
-   ist, was den größeren Querschnitt verlangt. */
+   ist, was den größeren Querschnitt verlangt. Am Stromerzeuger mit
+   Schutztrennung kommt die Längengrenze dazu: bis 100 m genügen 1,5 mm², bis
+   250 m braucht es 2,5 mm². */
+
+import { SPANNUNGSFALL, SCHUTZTRENNUNG_LAENGE, quelleText } from './vorschrift.js';
 
 /** Leitfähigkeit von Kupfer bei Betriebstemperatur in m/(Ω·mm²) */
 const KAPPA = 56;
@@ -17,6 +21,21 @@ export const NETZFORMEN = [
 ];
 
 export const netzById = id => NETZFORMEN.find(n => n.id === id) || NETZFORMEN[0];
+
+/* Woher der Strom kommt. Das entscheidet über den zulässigen Spannungsfall und
+   darüber, ob die Längengrenze der Schutztrennung gilt. Vorgabe ist der
+   Stromerzeuger mit Schutztrennung – der Fall, für den die Grenze gilt; wer
+   ohne sie plant, soll das bewusst umstellen, nicht übersehen. */
+export const EINSPEISUNGEN = [
+  { id: 'erzeuger',     name: 'Stromerzeuger, Schutztrennung',
+    fall: SPANNUNGSFALL.erzeuger, schutztrennung: true },
+  { id: 'erzeuger_iso', name: 'Stromerzeuger mit Isolationsüberwachung',
+    fall: SPANNUNGSFALL.erzeuger },
+  { id: 'netz',         name: 'Netzanschluss',
+    fall: SPANNUNGSFALL.netz }
+];
+
+export const einspeisungById = id => EINSPEISUNGEN.find(e => e.id === id) || EINSPEISUNGEN[0];
 
 /* Genormte Leiterquerschnitte mit Richtwert der Strombelastbarkeit:
    Gummischlauchleitung (H07RN-F o. ä.), drei belastete Adern, frei in Luft
@@ -37,7 +56,11 @@ export const MAX_QUERSCHNITT = QUERSCHNITTE[QUERSCHNITTE.length - 1].mm2;
 
 /** Vorgabewerte einer neuen Stromstrecke */
 export function neueStromangabe() {
-  return { last: '', einheit: 'kw', netz: 'ac230', spannungsfall: 3, cosphi: 0.8 };
+  const einspeisung = EINSPEISUNGEN[0];
+  return {
+    last: '', einheit: 'kw', netz: 'ac230', einspeisung: einspeisung.id,
+    spannungsfall: einspeisung.fall.prozent, cosphi: 0.8
+  };
 }
 
 const klemm = (n, min, max) => Math.min(max, Math.max(min, n));
@@ -53,6 +76,7 @@ export function auslegung(v, laenge) {
   if (!isFinite(last) || last <= 0) return null;
 
   const netz = netzById(v.netz);
+  const einspeisung = einspeisungById(v.einspeisung);
   const cos = netz.gleich ? 1 : klemm(Number(v.cosphi) || 0.8, 0.3, 1);
   const dreh = netz.phasen === 3;
   const faktor = dreh ? Math.sqrt(3) : 2;
@@ -64,7 +88,7 @@ export function auslegung(v, laenge) {
     ? last * netz.spannung * cos * (dreh ? Math.sqrt(3) : 1)
     : last * 1000;
 
-  const grenze = klemm(Number(v.spannungsfall) || 3, 0.5, 20);
+  const grenze = klemm(Number(v.spannungsfall) || einspeisung.fall.prozent, 0.5, 20);
   const fallVolt = netz.spannung * grenze / 100;
   const L = Math.max(0, Number(laenge) || 0);
 
@@ -74,22 +98,49 @@ export function auslegung(v, laenge) {
   // … und aus der Strombelastbarkeit
   const qStrom = QUERSCHNITTE.find(q => q.ampere >= strom) || null;
 
-  const gewaehlt = qFall && qStrom
+  /* … und bei Schutztrennung aus der Länge. Gleichstrom kommt aus der
+     Batterie, nicht aus dem Erzeuger – dort gilt die Grenze nicht. Jenseits der
+     letzten Stufe gibt es keinen Querschnitt, der sie erfüllt; der Querschnitt
+     wird dann ohne sie gewählt und die Anzeige sagt, warum das nicht reicht. */
+  const schutz = einspeisung.schutztrennung && !netz.gleich;
+  const stufe = schutz ? SCHUTZTRENNUNG_LAENGE.stufen.find(st => st.meter >= L) : null;
+  const qSchutz = stufe ? QUERSCHNITTE.find(q => q.mm2 >= stufe.mm2) : null;
+
+  let gewaehlt = qFall && qStrom
     ? (qFall.mm2 >= qStrom.mm2 ? qFall : qStrom)
+    : null;
+  if (gewaehlt && qSchutz && qSchutz.mm2 > gewaehlt.mm2) gewaehlt = qSchutz;
+  const ausSchutz = !!(gewaehlt && qSchutz && qSchutz === gewaehlt
+    && qSchutz.mm2 > qFall.mm2 && qSchutz.mm2 > qStrom.mm2);
+
+  const erreicht = schutz && gewaehlt
+    ? SCHUTZTRENNUNG_LAENGE.stufen.filter(st => st.mm2 <= gewaehlt.mm2).pop() || null
     : null;
 
   const istVolt = gewaehlt ? (faktor * L * strom * cos) / (KAPPA * gewaehlt.mm2) : 0;
 
   return {
-    netz, strom, leistung, cosphi: cos, laenge: L,
+    netz, einspeisung, strom, leistung, cosphi: cos, laenge: L,
     grenze,
     querschnitt: gewaehlt ? gewaehlt.mm2 : null,
     belastbarkeit: gewaehlt ? gewaehlt.ampere : null,
     mindestFall: ausFall,
     spannungsfallVolt: istVolt,
     spannungsfallProzent: netz.spannung ? istVolt / netz.spannung * 100 : 0,
-    massgebend: !gewaehlt ? null
+    massgebend: !gewaehlt ? null : ausSchutz ? 'schutz'
       : (qFall.mm2 > qStrom.mm2 ? 'fall' : (qStrom.mm2 > qFall.mm2 ? 'strom' : 'beide')),
+    /* Die Längengrenze der Schutztrennung, soweit sie gilt: `null` ohne
+       Schutztrennung, sonst die Stufe, die der gewählte Querschnitt erreicht
+       (ein stärkerer Leiter hält die Grenze des schwächeren, weiter gerechnet
+       wird nicht), und `ueber`, wenn die Leitung schon allein länger ist als
+       die letzte Stufe. */
+    schutztrennung: !schutz ? null : {
+      grenze: erreicht ? erreicht.meter : null,
+      grenzeMm2: erreicht ? erreicht.mm2 : null,
+      hoechst: SCHUTZTRENNUNG_LAENGE.stufen[SCHUTZTRENNUNG_LAENGE.stufen.length - 1].meter,
+      ueber: !stufe,
+      quelle: SCHUTZTRENNUNG_LAENGE.quelle
+    },
     /* Reicht die Tabelle nicht, muss die Anzeige den wahren Grund nennen:
        ein zu großer Strom ist etwas anderes als eine zu lange Leitung. */
     ueberLast: !gewaehlt,
@@ -132,5 +183,45 @@ export function massgebendText(a) {
   if (!a || !a.querschnitt) return '–';
   if (a.massgebend === 'fall') return 'Spannungsfall';
   if (a.massgebend === 'strom') return 'Strombelastbarkeit';
+  if (a.massgebend === 'schutz') return 'Länge bei Schutztrennung';
   return 'Spannungsfall und Belastbarkeit';
+}
+
+/* Die beiden Hinweise zur Einspeisung stehen im Formular und im Bauauftrag
+   gleich lautend – deshalb hier und nicht zweimal. Beide geben reinen Text
+   zurück; das Einsetzen in HTML ist Sache der Aufrufer. */
+
+/** Woher die Grenze des Spannungsfalls kommt, oder '' bei einem eigenen Wert */
+export function grenzHerkunftText(a) {
+  if (!a) return '';
+  const fall = a.einspeisung.fall;
+  if (a.grenze !== fall.prozent) return '';
+  return `${grenzText(fall.prozent)} Spannungsfall: Empfehlung für Verbraucher ` +
+    (a.einspeisung.id === 'netz' ? 'am öffentlichen Netz' : 'an eigener Einspeisung') +
+    ` (${quelleText(fall)}).`;
+}
+
+/** Die Längengrenze der Schutztrennung als Satz ohne Vorspann – `null`, wo sie nicht gilt */
+export function schutztrennungText(a) {
+  const st = a && a.schutztrennung;
+  if (!st) return null;
+  const quelle = quelleText(st);
+  if (st.ueber) {
+    return {
+      warnung: true,
+      text: `Die Leitung allein ist länger als ${nf(st.hoechst)} m. ` +
+        `Weiter reicht die Regel nicht – Stromerzeuger mit Isolationsüberwachung ` +
+        `einsetzen oder unterwegs einspeisen (${quelle}).`
+    };
+  }
+  /* Die Grenze gilt für alles, was am Erzeuger hängt. Die Planung weiß nicht,
+     welche Strecken sich einen Erzeuger teilen – gesagt wird es deshalb, statt
+     eine Summe vorzutäuschen. */
+  return {
+    warnung: false,
+    text: `Höchstens ${nf(st.grenze)} m Leitung ` +
+      (st.grenzeMm2 === a.querschnitt ? `bei ${querschnittText(a.querschnitt)}`
+        : `(Wert für ${querschnittText(st.grenzeMm2)}, stärkere Leiter nennt die Regel nicht)`) +
+      ` – für alle Leitungen am selben Stromerzeuger zusammen (${quelle}).`
+  };
 }
