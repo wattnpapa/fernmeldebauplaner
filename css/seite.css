@@ -96,6 +96,20 @@ footer {
 }
 footer a { color: var(--text-schwach); }
 
+/* Die anderen Werkzeuge stehen als letzte Zeile unter allem anderen, auch der
+   FMBauplaner selbst – die Zeile steht in allen vier Werkzeugen gleich. Der
+   Mittelpunkt ist ein eigenes Element außerhalb der Links: im Link würde er
+   mit unterstrichen und vom Vorleser als „Punkt“ mitgelesen. */
+.werkzeuge {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 .5rem;
+  margin-top: 1rem; border-top: 1px solid var(--linie);
+}
+.werkzeuge a {
+  display: inline-flex; align-items: center; min-height: 44px;
+  overflow-wrap: anywhere;
+}
+.werkzeuge a:hover { color: var(--thw-hell); }
+
 /* ── Autor-Seite ─────────────────────────────────────────────────────────────
    Impressum und Datenschutz sind Fließtext mit Zwischenüberschriften; die
    Autor-Seite hat zusätzlich einen Wegweiser, eine Herkunftskette und
