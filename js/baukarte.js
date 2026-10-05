@@ -22,7 +22,7 @@ import {
   istPunkte, istZuSoll, sollZuIst, istPunktSetzen, istArtSetzen, bauabschnittById,
   istSollZuordnen, offeneSollPunkte, sollVorschlag, andereStreckeNahe, istPunktUmhaengen,
   baustrecke, baustreckeSetzen, aktiverBauabschnitt, bauabschnitte, bauabschnittAktivSetzen,
-  quelleText, punktartText, ABWEICHUNG_SCHWELLE, ABSEITS_SCHWELLE
+  quelleText, punktartText, auftragsTrupps, truppAmGeraet, ABWEICHUNG_SCHWELLE, ABSEITS_SCHWELLE
 } from './baudoku.js';
 import { toMGRS, formatLaenge, distanz } from './geo.js';
 import { escapeHtml } from './strecken.js';
@@ -48,19 +48,107 @@ export function initBaukarte(kontext) {
      selbst, und nur, was ein Finger auslöst (`isTrusted`): ein Aufruf aus dem
      Programm ist kein verirrter zweiter Tipp. */
   document.addEventListener('click', e => {
-    if (!e.isTrusted || performance.now() - aufgeschlagen >= TIPPSPERRE_MS) return;
+    if (!e.isTrusted) return;
+    const jetzt = performance.now();
+    echterTipp = jetzt;
     const b = blatt();
-    if (!b || b.hidden || !b.contains(e.target)) return;
-    e.preventDefault();
-    e.stopPropagation();
+    if (jetzt - aufgeschlagen < TIPPSPERRE_MS && b && !b.hidden && b.contains(e.target)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    /* Und in der Gegenrichtung: nach dem Schließen liegt unter dem Finger die
+       Leiste, die das Blatt verdeckt hatte. Der zweite Tipp eines Doppeltipps
+       auf „Fertig“ traf im Review „Punkt hier“ (ein zweiter, deckungsgleicher
+       Punkt samt „Stimmt die Ortung?“), „Auf Karte“ (Setzmodus still an) oder
+       „Ort suchen“ (ein Dialog). Gesperrt werden genau diese Leisten – die
+       Liste und die Kopfzeile lagen nie unter dem Blatt. */
+    if (jetzt - geschlossen < TIPPSPERRE_MS && e.target.closest &&
+        e.target.closest('.werkzeuge, #zeichen-hinweis')) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   }, true);
+  /* Was zwischen dem Start einer Ortung und ihrem Ergebnis geschieht (siehe
+     `istPunktAusStandort`). Gezählt wird, was ein Finger oder die Tastatur
+     auslöst – außer auf der Karte, wo Verschieben und Zoomen nur Hinsehen
+     ist, und außer auf „Punkt hier“ selbst, dessen zweiter Tipp nichts
+     startet. */
+  document.addEventListener('pointerdown', e => {
+    if (!e.isTrusted || (e.target.closest && e.target.closest('#karte, #wz-punkt-hier'))) return;
+    eingaben++;
+  }, true);
+  document.addEventListener('keydown', e => { if (e.isTrusted) eingaben++; }, true);
+  /* Gedreht oder die Tastatur geht auf: das gekürzte Maß (`blattKuerzen`)
+     gehört zur alten Höhe des Fensters. */
+  window.addEventListener('resize', () => { const b = blatt(); if (b) b.style.maxHeight = ''; });
+  /* Ein Feld, das halb unter der klebenden Abschlusszeile steht, ist nur
+     halb zu treffen – im Review die Bemerkung mit 28 von 44 px, und der Rest
+     des Tipps traf „Fertig“. Kommt das Rollen so zum Stehen, rückt das Blatt
+     das Feld ganz darüber. Beim Aufschlagen sorgt `blattKuerzen` dafür. */
+  let rollTimer = null;
+  document.addEventListener('scroll', e => {
+    if (e.target !== blatt()) return;
+    clearTimeout(rollTimer);
+    rollTimer = setTimeout(feldFreiRuecken, 140);
+  }, true);
+  unterbrocheneOrtungMelden();
+}
+
+/* Steht beim Aufschlagen ein Feld halb unter der Abschlusszeile, wird das
+   Blatt um genau so viel niedriger, dass es ganz darunter verschwindet: bei
+   390×844 traf die untere Hälfte der Bezeichnung „Fertig“, und das Blatt ging
+   zu, wo geschrieben werden sollte. Niedriger und nicht gerollt: Rollen
+   schöbe Befund und Zuordnung unter den Kopf, das Kürzen gibt die Höhe der
+   Karte über dem Blatt – dort, wo der Punkt steht, den es benennt. */
+function blattKuerzen() {
+  const b = blatt();
+  if (!b) return;
+  b.style.maxHeight = '';
+  const fuss = b.querySelector('.pk-abschluss');
+  if (!fuss || b.hidden || b.scrollTop) return;
+  const kante = fuss.getBoundingClientRect().top;
+  for (const f of b.querySelectorAll('.pk-felder input')) {
+    const r = f.getBoundingClientRect();
+    if (r.top < kante && r.bottom > kante) {
+      b.style.maxHeight = `${Math.floor(b.getBoundingClientRect().height - (kante - r.top) - 8)}px`;
+      return;
+    }
+  }
+}
+
+function feldFreiRuecken() {
+  const b = blatt();
+  const fuss = b && !b.hidden && b.querySelector('.pk-abschluss');
+  if (!fuss) return;
+  const kante = fuss.getBoundingClientRect().top;
+  for (const f of b.querySelectorAll('.pk-felder input')) {
+    const r = f.getBoundingClientRect();
+    if (r.top < kante && r.bottom > kante) { b.scrollTop += r.bottom - kante + 8; return; }
+  }
 }
 
 /* Wie lange das Blatt nach dem Aufschlagen taub bleibt. Ein Doppeltipp liegt
    bei 100 bis 300 ms; wer das Blatt liest, bevor er tippt, braucht länger als
-   400 ms. */
+   400 ms. Dieselbe Frist gilt nach dem Schließen für die Leisten darunter. */
 const TIPPSPERRE_MS = 400;
 let aufgeschlagen = -Infinity;
+let geschlossen = -Infinity;
+let echterTipp = -Infinity;
+let eingaben = 0;
+
+/**
+ * Ob ein Kartentipp in die Sperre um das Blatt fällt – kurz nach dem
+ * Aufschlagen oder kurz nach dem Schließen. Quer und auf dem Tablet steht das
+ * Blatt seitlich, und der zweite Tipp eines Doppeltipps auf „Punkt hier“ traf
+ * die Karte: der Kartentipp in app.js schloss das eben aufgeschlagene Blatt,
+ * und der Punkt blieb ohne Art. Nur echte Tipps (`isTrusted`).
+ */
+export function punktkarteTaub(ereignis) {
+  if (!ereignis || !ereignis.isTrusted) return false;
+  const jetzt = performance.now();
+  return (offen && jetzt - aufgeschlagen < TIPPSPERRE_MS) || jetzt - geschlossen < TIPPSPERRE_MS;
+}
 
 const hinweis = (text, art) => ctx && ctx.hinweis(text, art);
 const hinweisAus = () => ctx && ctx.hinweisAus();
@@ -97,21 +185,51 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
   hinweis('Position wird ermittelt …');
   ortungAnzeigen(true);
   const abschnittId = (aktiverBauabschnitt(store.strecke(sid)) || {}).id || null;
+  /* Was bei Start galt – daran misst das Ergebnis, ob es noch erwartet wird.
+     Zwischen Griff und Antwort liegen bis zu zwölf Sekunden, und im Review
+     riss eine späte Ortung den Trupp aus der Liste, aus einer Meldung, die er
+     gerade schrieb, oder aus dem Blatt eines anderen Punktes. Nach „◉ Hier“
+     und gleich darauf „✓ Wie geplant“ überschrieb sie die Bestätigung vier
+     Sekunden später still mit der Ortung. */
+  const start = lage();
+  const sollVorher = sollPunktId ? !!istZuSoll(store.strecke(sid), sollPunktId) : false;
+  const ersetztVorher = o.ersetzt ? punktAbdruck(store.strecke(sid), o.ersetzt) : null;
+  ortungVermerken(sid);
   navigator.geolocation.getCurrentPosition(pos => {
     ortungAnzeigen(false);
+    ortungVermerken(null);
     const { latitude: lat, longitude: lng, accuracy } = pos.coords;
     const s = store.strecke(sid);
     if (!s) return hinweis('Die Strecke gibt es nicht mehr – nichts aufgenommen.', 'fehler');
+    /* Eine spätere ausdrückliche Wahl gilt vor einer früher gestarteten
+       Ortung: ist der geplante Punkt inzwischen bestätigt oder der zu
+       ersetzende inzwischen anders gesetzt, wird das Ergebnis verworfen und
+       das gesagt. Überschreiben hieße, die bewusste Wahl still zu kassieren. */
+    const nrVon = pid => s.punkte.findIndex(pt => pt.id === pid) + 1;
+    if (sollPunktId && !o.ersetzt && !sollVorher && istZuSoll(s, sollPunktId)) {
+      return hinweis(`Ortung verworfen – Punkt ${nrVon(sollPunktId)} ist inzwischen ` +
+        'aufgenommen.', 'warnung');
+    }
+    if (o.ersetzt && punktAbdruck(s, o.ersetzt) !== ersetztVorher) {
+      return hinweis('Ortung verworfen – der Punkt ist inzwischen anders gesetzt.', 'warnung');
+    }
+    /* Kam seit dem Start etwas anderes dazwischen – eine andere Ansicht, ein
+       anderes Blatt, ein Dialog, ein Tipp anderswo –, wird aufgenommen, aber
+       nichts aufgeschlagen: der Trupp ist woanders beschäftigt, und das
+       Ergebnis steht still in der Pille. Ohne Blatt wird auch nichts
+       vorgeschlagen; eine Zuordnung, die niemand sieht, wäre geraten. */
+    const dazwischen = lage() !== start;
     /* Ohne gewählten geplanten Punkt („Punkt hier“ aus der Bauleiste) wird der
        eine offene Punkt vorgeschlagen, der in Ortungsnähe liegt – sichtbar und
        benannt im Blatt, „zusätzlich“ einen Tipp daneben (`sollVorschlag`).
        Das ist kein Raten im Sinne von „geraten wird nichts“: geraten hieße,
        still zuzuordnen, was der Trupp nicht sieht. Hier steht die Wahl im
-       Blatt, das ohnehin aufschlägt, gedrückt und mit dem Wort
-       „vorgeschlagen“ – und wo zwei Punkte in Frage kommen, wird weiter
-       gefragt. Vorher stand „zusätzlich“ vorgewählt, auch 6 m neben Punkt 2,
-       und wer gleich „Fertig“ tippte, hatte „0 von 3 bestätigt“. */
-    const vorschlag = !sollPunktId && !o.ersetzt ? sollVorschlag(s, { lat, lng }) : null;
+       Blatt, das ohnehin aufschlägt, gedrückt und als „zugeordnet: Punkt 2 –
+       ändern?“ – und wo zwei Punkte in Frage kommen, wird weiter gefragt.
+       Vorher stand „zusätzlich“ vorgewählt, auch 6 m neben Punkt 2, und wer
+       gleich „Fertig“ tippte, hatte „0 von 3 bestätigt“. */
+    const vorschlag = !sollPunktId && !o.ersetzt && !dazwischen
+      ? sollVorschlag(s, { lat, lng }) : null;
     const gewuenscht = sollPunktId ? s.punkte.find(pt => pt.id === sollPunktId)
       : vorschlag ? vorschlag.punkt : null;
     /* „◉ hier“ an einem geplanten Punkt bestätigte ihn mit JEDER Ortung – im
@@ -149,7 +267,7 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
       });
     }, 'bau');
     if (vorschlag && neu && neu.sollPunkt === vorschlag.punkt.id) vorgeschlagen = neu.id;
-    if (o.danach && neu) o.danach(s, neu);
+    if (o.danach && neu && !dazwischen) o.danach(s, neu);
     /* Gemeldet wird nur, was das Blatt nicht schon zeigt. Schlägt die
        Punktkarte am frischen Punkt auf, nennt sie Herkunft, Genauigkeit,
        Gitterangabe und Abweichung – die Pille sagte dasselbe ein zweites Mal
@@ -163,6 +281,9 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
       hinweis(`Standort liegt ${formatLaenge(distanz(gewuenscht, { lat, lng }))} vom geplanten ` +
         `Punkt ${s.punkte.indexOf(gewuenscht) + 1} – als zusätzlicher Punkt aufgenommen. ` +
         'Ortung prüfen.', 'warnung');
+    } else if (dazwischen && neu) {
+      hinweis(`Punkt an „${s.name}“ aufgenommen (±${Math.round(accuracy)} m)` +
+        (neu.art === 'offen' ? ' – die Art fehlt noch, der Bau-Reiter führt hin.' : ''));
     } else if (!neu || !offen || offen.istId !== neu.id) {
       hinweis(abw !== null && abw >= ABWEICHUNG_SCHWELLE
         ? `Punkt aufgenommen (±${Math.round(accuracy)} m) – ${formatLaenge(abw)} vom Plan`
@@ -173,7 +294,11 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
          fertigen Punkt schon zeigt. */
       hinweisAus();
     }
-  }, err => { ortungAnzeigen(false); ortungFehlerMelden(err, sid, sollPunktId, o); },
+  }, err => {
+    ortungAnzeigen(false);
+    ortungVermerken(null);
+    ortungFehlerMelden(err, sid, sollPunktId, o, lage() !== start);
+  },
      /* Eine frische Position, keine gemerkte. Mit `maximumAge: 10000` gab das
         Gerät 5 s nach dem ersten Punkt dieselbe Koordinate zurück, obwohl der
         Trupp 60 m weiter stand – und das Blatt nannte „Standort ±6 m“. Akku
@@ -185,17 +310,72 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
 }
 
 let ortungLaeuft = false;
-/* Der Knopf „Punkt hier“ zeigt, dass er arbeitet. Nur der in der Bauleiste:
-   die Griffe der Liste entstehen bei jeder Änderung neu, sie hält der Merker
-   oben. */
+/* Der Knopf „Punkt hier“ zeigt, dass er arbeitet – und ebenso der Ortungsgriff
+   im offenen Blatt („◉ Hier“, „◉ Neu orten“): dort tippte der Trupp im Review
+   ein zweites Mal, weil nichts zu sehen war, und bekam „Die Position wird noch
+   ermittelt …“. Die Griffe der Liste entstehen bei jeder Änderung neu, sie
+   hält der Merker oben. */
 function ortungAnzeigen(an) {
   ortungLaeuft = an;
   const k = document.getElementById('wz-punkt-hier');
-  if (!k) return;
-  const wort = k.querySelector('span:not(.wz-icon)');
-  if (wort) wort.textContent = an ? 'ortet …' : 'Punkt hier';
-  k.classList.toggle('ortet', an);
-  k.setAttribute('aria-busy', String(an));
+  if (k) {
+    const wort = k.querySelector('span:not(.wz-icon)');
+    if (wort) wort.textContent = an ? 'ortet …' : 'Punkt hier';
+    k.classList.toggle('ortet', an);
+    k.setAttribute('aria-busy', String(an));
+  }
+  document.querySelectorAll('#punktkarte [data-ortung]').forEach(ortungsgriffZeigen);
+}
+function ortungsgriffZeigen(k) {
+  k.textContent = ortungLaeuft ? '◉ ortet …' : k.dataset.ortung;
+  k.classList.toggle('ortet', ortungLaeuft);
+  k.setAttribute('aria-busy', String(ortungLaeuft));
+}
+
+/* Der Zustand, an dem eine Ortung misst, ob sie noch erwartet wird: Eingaben
+   seit dem Start, Liste oder Karte vorn, Dialog, offenes Blatt, Setzmodus. */
+function lage() {
+  const dlg = document.getElementById('dialog');
+  return [
+    eingaben,
+    document.body.classList.contains('seite-zu'),
+    !!dlg && !dlg.hidden,
+    offen ? `${offen.sid}/${offen.istId}/${offen.sollId}/${!!offen.fehler}` : '',
+    !!(ctx && ctx.sl && ctx.sl.istSetzModus)
+  ].join('|');
+}
+
+/** Woran zu sehen ist, ob ein aufgenommener Punkt inzwischen anders gesetzt wurde */
+function punktAbdruck(s, istId) {
+  const pt = istPunkte(s).find(x => x.id === istId);
+  return pt ? `${pt.lat},${pt.lng},${pt.zeit},${pt.sollPunkt || ''}` : '';
+}
+
+/* Ein Neuladen mitten in der Ortung hinterließ keine Spur: der Knopf hieß
+   wieder „Punkt hier“, und ob der Punkt stand, war nur in der Liste zu
+   suchen. Die Sitzung merkt sich deshalb, dass eine lief – nicht die
+   Planung, und nicht über das Schließen des Fensters hinaus: wer morgen
+   öffnet, braucht den Satz nicht mehr. */
+const ORTUNG_SCHLUESSEL = 'fbp.ortung.v1';
+function ortungVermerken(sid) {
+  try {
+    if (sid) sessionStorage.setItem(ORTUNG_SCHLUESSEL, new Date().toISOString());
+    else sessionStorage.removeItem(ORTUNG_SCHLUESSEL);
+  } catch { /* ohne Sitzungsspeicher bleibt es beim stummen Neustart */ }
+}
+function unterbrocheneOrtungMelden() {
+  let zeit = null;
+  try {
+    zeit = sessionStorage.getItem(ORTUNG_SCHLUESSEL);
+    sessionStorage.removeItem(ORTUNG_SCHLUESSEL);
+  } catch { return; }
+  const d = zeit ? new Date(zeit) : null;
+  if (!d || Number.isNaN(d.getTime())) return;
+  const uhr = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  /* Ein wenig später als der Start: die Anwendung meldet beim Laden selbst
+     (Speicherstand, Baumodus), und die letzte Meldung gewinnt die Pille. */
+  setTimeout(() => hinweis(`Die Aufnahme von ${uhr} wurde unterbrochen – ` +
+    'noch einmal „Punkt hier“.', 'warnung'), 800);
 }
 
 /**
@@ -208,7 +388,7 @@ function ortungAnzeigen(an) {
  * drei Fälle, was zu tun ist, und der Ausweg steht als Griff in der Meldung –
  * am Bauort wird nicht gesucht, wo er sonst noch stünde.
  */
-function ortungFehlerMelden(err, sid, sollPunktId, o = {}) {
+function ortungFehlerMelden(err, sid, sollPunktId, o = {}, dazwischen = false) {
   const codes = {
     1: 'Der Standort ist für diese Seite gesperrt. Im Browser die Freigabe für ' +
        'den Standort erlauben – oder den Punkt auf der Karte setzen.',
@@ -220,14 +400,20 @@ function ortungFehlerMelden(err, sid, sollPunktId, o = {}) {
   };
   const text = codes[err && err.code] ||
     'Standort nicht zu bekommen. Den Punkt auf der Karte setzen.';
-  hinweis(text, 'fehler');
   /* Der Ausweg steht als GRIFF und nicht nur als Satz. In die Meldungspille
      gehört er nicht: die nimmt seit dem Gerätelauf ausdrücklich keine Tipps
      mehr entgegen, weil sie sonst die Griffe darunter abfing. Also trägt ihn
      das Blatt, das an dieser Stelle ohnehin aufschlüge, wenn die Ortung
-     gelungen wäre – dieselbe Stelle, derselbe Daumen. */
+     gelungen wäre – dieselbe Stelle, derselbe Daumen.
+
+     Die Meldung schweigt, wo das Blatt spricht: die rote Pille stand sechs
+     Sekunden über dem Fehlerblatt und deckte genau dessen zwei Auswege zu.
+     Sie bleibt dort, wo kein Blatt aufschlägt – weil die Strecke fehlt oder
+     der Trupp inzwischen etwas anderes tut und nicht herausgerissen wird. */
   const s = store.strecke(sid);
-  if (s) punktkarteFehlerOeffnen(s, { text, sollPunktId, ersetzt: o.ersetzt || null });
+  if (!s || dazwischen) return hinweis(text, 'fehler');
+  hinweisAus();
+  punktkarteFehlerOeffnen(s, { text, sollPunktId, ersetzt: o.ersetzt || null });
 }
 
 // ---------------------------------------------------------------- Bauleiste
@@ -313,7 +499,7 @@ export function punktAusKoordinate(lat, lng) {
 
 let offen = null;   // { sid, istId, sollId, fehler } oder null
 /* Der Punkt, dessen Zuordnung die Ortung vorgeschlagen und der Trupp noch
-   nicht selbst gewählt hat – solange heißt sie im Blatt „vorgeschlagen“, und
+   nicht selbst gewählt hat – solange steht sie im Blatt mit „ändern?“, und
    die Wahl bleibt offen. Und der Punkt, an dem er selbst gewählt hat: dort
    mahnt „Fertig“ keine Zuordnung an, die er bewusst nicht wollte. */
 let vorgeschlagen = null;
@@ -328,8 +514,12 @@ export function punktkarteSchliessen() {
   offen = null;
   vorgeschlagen = null;
   selbstGewaehlt = null;
+  /* Die Sperre danach nur, wenn ein Finger das Blatt geschlossen hat – dann
+     ist der nächste Tipp womöglich sein zweiter. Schließt das Programm, folgt
+     kein Doppeltipp. */
+  if (performance.now() - echterTipp < 50) geschlossen = performance.now();
   const b = blatt();
-  if (b) { b.hidden = true; b.innerHTML = ''; }
+  if (b) { b.hidden = true; b.innerHTML = ''; b.style.maxHeight = ''; }
   document.body.classList.remove('punktkarte-offen');
 }
 
@@ -340,6 +530,11 @@ export function punktkarteOeffnen(s, { ist = null, soll = null } = {}) {
      nächste Aufnahme über die Bauleiste soll dorthin gehen und nicht an die
      Strecke, die im Reiter zufällig oben stand. */
   baustreckeSetzen(s.id);
+  /* Der Merker an der Bauleiste folgt sofort. Er wird sonst nur bei einer
+     Änderung der Planung nachgeführt – und die kam beim Umhängen an eine
+     andere Strecke VOR dem Wechsel der Baustrecke: die Leiste nannte danach
+     weiter die alte, während „Punkt hier“ schon an die neue schrieb. */
+  bauzielNachfuehren();
   offen = {
     sid: s.id,
     istId: ist ? ist.id : null,
@@ -354,16 +549,25 @@ export function punktkarteOeffnen(s, { ist = null, soll = null } = {}) {
 }
 
 /**
- * Den Punkt ins Bild rücken, wenn er außerhalb des freien Kartenbandes liegt.
+ * Den Punkt ins Bild rücken, wenn er außerhalb der freien Kartenfläche liegt.
  *
  * Nach „Punkt hier“ blieb der Ausschnitt stehen, wo er war, und der eigene
  * Punkt lag oft außerhalb – das Blatt fragte „Was ist hier?“, und „hier“ war
- * nicht zu sehen. Frei ist, was das Blatt unten und Zoom samt Kartenoptionen
- * oben übrig lassen; gerückt wird nur, wenn der Punkt dort nicht steht, und
- * nur so weit wie nötig – ein Sprung bei jeder Aufnahme nähme dem Trupp den
+ * nicht zu sehen. Frei ist, was das Blatt und die übrigen Leisten der Karte
+ * übrig lassen; gerückt wird nur, wenn der Punkt dort nicht steht, und nur so
+ * weit wie nötig – ein Sprung bei jeder Aufnahme nähme dem Trupp den
  * Überblick, den er sich eingestellt hat. Ein Bild später, wenn das Blatt
  * seine Höhe hat; die Schmalansicht schiebt die Karte erst in 280 ms herein,
  * deshalb zählt das Maß von #karte, das davon nicht berührt wird.
+ *
+ * Das Blatt zählt IMMER. Vorher galt es nur, wenn seine Oberkante unter
+ * einem Drittel der Karte lag – bei 390×844 reicht es von 196 bis 709 px,
+ * also nie, und der Punkt, den es benennt, lag im Review darunter. Steht das
+ * Blatt quer an der Seite, ist der freie Teil der daneben und nicht der
+ * darüber: dort wird nach links gerückt. Gemessen wird, was zu sehen ist –
+ * Zoom und Kartenoptionen gehen bei offenem Blatt aus dem Bild und zählen
+ * dann nicht mehr; Umschalter Liste/Karte und Statusleiste zählen, wo sie
+ * stehen – quer lag der Punkt sonst unter der Statusleiste.
  */
 function insBild(pt) {
   if (!pt || !ctx || !ctx.karte) return;
@@ -371,25 +575,50 @@ function insBild(pt) {
     const karte = ctx.karte;
     const rahmen = karte.getContainer().getBoundingClientRect();
     if (!rahmen.width || !rahmen.height) return;
-    let oben = 12, unten = rahmen.height - 12;
+    const rand = 24;
+    let oben = rand, unten = rahmen.height - rand, links = rand, rechts = rahmen.width - rand;
+    const flaeche = e => {
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      const st = getComputedStyle(e);
+      return st.visibility === 'hidden' || st.display === 'none' ? null : r;
+    };
+    const p = karte.latLngToContainerPoint([pt.lat, pt.lng]);
     const b = blatt();
-    if (b && !b.hidden) {
-      const r = b.getBoundingClientRect();
-      if (r.top - rahmen.top > rahmen.height / 3) unten = Math.min(unten, r.top - rahmen.top - 28);
-    }
-    for (const wahl of ['.leaflet-control-zoom', '.kartenoptionen']) {
-      const e = document.querySelector(wahl);
-      const r = e && e.getBoundingClientRect();
-      if (r && r.height && r.top - rahmen.top < rahmen.height / 3) {
-        oben = Math.max(oben, r.bottom - rahmen.top + 24);
+    const rb = b && !b.hidden ? flaeche(b) : null;
+    if (rb) {
+      /* Gezählt wird das Blatt dort, wo es steht: am Schreibtisch füllt es
+         unten links nur einen Teil der Breite, und ein Punkt rechts daneben
+         liegt schon frei. */
+      const seitlich = rb.left - rahmen.left > rahmen.width / 3 && rb.height > rahmen.height / 2;
+      if (seitlich) rechts = Math.min(rechts, rb.left - rahmen.left - rand);
+      else if (p.x > rb.left - rahmen.left - rand && p.x < rb.right - rahmen.left + rand) {
+        unten = Math.min(unten, rb.top - rahmen.top - 28);
       }
     }
-    if (unten - oben < 40) return;
-    const p = karte.latLngToContainerPoint([pt.lat, pt.lng]);
-    const rand = 24;
+    for (const wahl of ['.leaflet-control-zoom', '.kartenoptionen', '#ansicht-wechsel', '.werkzeuge',
+                        '.statusleiste']) {
+      const r = flaeche(document.querySelector(wahl));
+      if (!r || r.bottom <= rahmen.top || r.top >= rahmen.bottom) continue;
+      /* Was neben der Karte steht, deckt nichts: quer ist der Umschalter
+         Liste/Karte eine Spalte links von ihr und reicht über die ganze Höhe –
+         als Streifen gerechnet, ließe er dem Punkt keinen Platz. */
+      if (r.right <= rahmen.left || r.left >= rahmen.right) continue;
+      /* Eine Ecke als ganzer Streifen gerechnet: der Punkt soll nicht unter
+         „+“ landen, nur weil daneben noch Karte wäre. */
+      if (r.top - rahmen.top < rahmen.height / 3) oben = Math.max(oben, r.bottom - rahmen.top + rand);
+      else if (r.bottom - rahmen.top > rahmen.height * 2 / 3) {
+        unten = Math.min(unten, r.top - rahmen.top - rand);
+      }
+    }
+    /* Bleibt kaum Platz, steht der Punkt wenigstens mitten in dem, was bleibt
+       – lieber knapp über dem Blatt als unter ihm. */
+    if (unten - oben < 40) { const m = (oben + unten) / 2; oben = unten = m; }
+    if (rechts - links < 40) { const m = (links + rechts) / 2; links = rechts = m; }
     let dx = 0, dy = 0;
-    if (p.x < rand) dx = p.x - rand;
-    else if (p.x > rahmen.width - rand) dx = p.x - (rahmen.width - rand);
+    if (p.x < links) dx = p.x - links;
+    else if (p.x > rechts) dx = p.x - rechts;
     if (p.y < oben) dy = p.y - oben;
     else if (p.y > unten) dy = p.y - unten;
     if (dx || dy) karte.panBy([dx, dy], { animate: false });
@@ -400,6 +629,10 @@ function insBild(pt) {
 export function punktkarteFehlerOeffnen(s, fehler) {
   offen = { sid: s.id, istId: null, sollId: fehler.sollPunktId || null, fehler };
   punktkarteZeichnen(true);
+  /* Wie die Punktkarte: die Zurück-Taste schließt das Blatt. Ohne den
+     Eintrag verließ sie im Review die Anwendung – ausgerechnet in dem Blatt,
+     das man nach einem Fehlschlag am ehesten wegdrücken will. */
+  document.dispatchEvent(new CustomEvent('fbp:ebene'));
   if (ctx.zurKarte) ctx.zurKarte();
 }
 
@@ -460,6 +693,7 @@ function punktkarteZeichnen(neuAufgeschlagen = false) {
   b.hidden = false;
   b.scrollTop = Math.min(rollstand, Math.max(0, b.scrollHeight - b.clientHeight));
   document.body.classList.add('punktkarte-offen');
+  if (neuAufgeschlagen) blattKuerzen();
 }
 
 // ---------------------------------------------------------------- Bausteine
@@ -478,15 +712,31 @@ function knopf(text, tun, klasse = '') {
   return k;
 }
 
-function kopf(titel, untertitel, s) {
+/* Ein Griff, der die Ortung startet – er zeigt wie „Punkt hier“, dass sie
+   läuft, auch wenn das Blatt in der Wartezeit neu gezeichnet wird. */
+function ortungsgriff(text, tun, klasse) {
+  const k = knopf(text, tun, klasse);
+  k.dataset.ortung = text;
+  ortungsgriffZeigen(k);
+  return k;
+}
+
+function kopf(titel, untertitel, s, zuText = 'Schließen') {
   const k = el('header', 'pk-kopf');
   /* Der Schließgriff steht links, und zwar vor dem Titel im Baum: rechts oben
      liegt Leaflets Zoomsteuerung über dem Blatt, und von den 44 px des
      Kreuzes waren dort nur 25 wirksam – die rechte Hälfte zoomte aus, statt
      zu schließen. Links steht bei keiner Breite etwas von Leaflet. */
-  const zu = el('button', 'mini-knopf pk-zu', '✕');
+  /* Am aufgenommenen Punkt sagt das Kreuz, was mit dem Punkt geschieht:
+     nichts. Ein Erstnutzer las es als „Aufnahme verwerfen“ – oder umgekehrt
+     als „Zuordnung verwerfen“, solange sie noch „vorgeschlagen“ hieß. Wo das
+     Blatt breit genug ist, steht es auch da (`.pk-zu-text`). */
+  const mitText = zuText !== 'Schließen';
+  const zu = el('button', 'mini-knopf pk-zu' + (mitText ? ' pk-zu-mit-text' : ''),
+    '✕' + (mitText ? `<span class="pk-zu-text">${escapeHtml(zuText)}</span>` : ''));
   zu.type = 'button';
-  zu.setAttribute('aria-label', 'Schließen');
+  zu.setAttribute('aria-label', zuText);
+  zu.title = zuText;
   zu.onclick = punktkarteSchliessen;
   k.appendChild(zu);
   k.appendChild(el('div', 'pk-titel',
@@ -592,7 +842,8 @@ function istBlatt(s, ist, soll) {
   const box = el('div', 'pk-ist');
   const nr = soll ? s.punkte.indexOf(soll) + 1 : 0;
   box.appendChild(kopf(soll ? `Punkt ${nr}` : 'Zusätzlicher Punkt',
-    soll ? punktartText(soll) + (soll.name ? ` · ${soll.name}` : '') : '', s));
+    soll ? punktartText(soll) + (soll.name ? ` · ${soll.name}` : '') : '', s,
+    'Schließen – Punkt bleibt'));
 
   /* Der Befund in einer Zeile: woher die Koordinate stammt, wo sie liegt und
      – die Zahl, um die es geht – wie weit vom Plan. „✓ gebaut“ und die
@@ -636,10 +887,15 @@ function istBlatt(s, ist, soll) {
      die ganze Liste im Bau-Reiter: die Liste ist der Bogen, die Karte der
      Griff. */
   const vorschlagAktiv = !!soll && vorgeschlagen === ist.id;
+  const zwilling = soll ? null : ebenAufgenommen(s, ist);
   if (!soll || vorschlagAktiv) {
     /* Steht die Zuordnung nur als Vorschlag, bleibt die Reihe stehen: der
-       vorgeschlagene Punkt gedrückt und als solcher benannt, „zusätzlich“ einen
-       Tipp daneben. */
+       zugeordnete Punkt gedrückt und benannt, „zusätzlich“ einen Tipp daneben.
+       Das Wort ist „zugeordnet“ und nicht „vorgeschlagen“: Liste und Kopf des
+       Bau-Reiters zählen den Punkt im selben Augenblick als bestätigt, und das
+       Kreuz behält die Zuordnung (Festlegung der vierten Runde). Hieß sie hier
+       „vorgeschlagen“, widersprach das Blatt der Liste darunter – ein
+       Erstnutzer schloss es in dem Glauben, nichts sei entschieden. */
     const offeneSoll = vorschlagAktiv
       ? [{ punkt: soll, nr, weg: distanz(soll, ist) }, ...offeneSollPunkte(s, ist).slice(0, 2)]
       : offeneSollPunkte(s, ist).slice(0, 3);
@@ -649,29 +905,20 @@ function istBlatt(s, ist, soll) {
        gewählt war die falsche Strecke. Der Griff hängt den Punkt um, mit
        allem, was schon an ihm steht. */
     const andere = andereStreckeNahe(store.projekt, s, ist);
+    if (zwilling) links.appendChild(zwillingWarnung(s, ist, zwilling));
     if (andere) {
       const w = el('div', 'pk-warnung pk-andere',
         `Der Standort liegt an <b>${escapeHtml(andere.strecke.name)}</b> – Punkt ${andere.nr} ` +
         `ist ${escapeHtml(formatLaenge(andere.weg))} entfernt.`);
       w.appendChild(knopf(`Zu ${andere.strecke.name} · ` +
-        (andere.offen ? `Punkt ${andere.nr}` : 'zusätzlich'), () => {
-        const ziel = andere.strecke;
-        const a = aktiverBauabschnitt(ziel);
-        let neu = null;
-        store.aendern(() => {
-          neu = istPunktUmhaengen(s, ziel, ist, andere.offen ? andere.punkt.id : null,
-            a ? a.id : null);
-        }, 'bau');
-        if (!neu) return;
-        punktkarteOeffnen(ziel, { ist: neu });
-        hinweis(`An ${ziel.name} aufgenommen – „↶“ oben nimmt es zurück`);
-      }, 'klein'));
+        (andere.offen ? `Punkt ${andere.nr}` : 'zusätzlich'),
+        () => umhaengenFragen(s, ist, andere, w), 'klein'));
       links.appendChild(w);
     }
     if (offeneSoll.length) {
       const reihe = el('div', 'pk-zuordnung');
       reihe.appendChild(el('span', 'pk-frage', vorschlagAktiv
-        ? `Welcher Punkt? <span class="pk-vorschlag">vorgeschlagen: Punkt ${nr}</span>`
+        ? `<span class="pk-vorschlag">zugeordnet: Punkt ${nr}</span> – ändern?`
         : 'Welcher Punkt?'));
       /* Ein Punkt, der weiter weg liegt, als eine Umgehung reicht, verlangt
          eine eigene Bestätigung. Im Audit stand „Punkt 1 · 82,43 km“
@@ -682,10 +929,19 @@ function istBlatt(s, ist, soll) {
          erscheint und an anderer Stelle steht als der Chip. */
       let rueckfrage = null;
       const weit = new Map(offeneSoll.map(e => [e.punkt.id, e]));
+      /* „zusätzlich“ steht zwischen den nahen und den fernen Punkten: mit dem
+         Handschuh lag „Punkt 2 · 8 m“ unmittelbar neben „Punkt 3 · 448 m ⚠“,
+         und der Fehlgriff auf den Nachbarn ordnete einen Punkt zu, der eine
+         halbe Trasse weiter liegt. Die Rückfrage fing das zwar ab, aber erst
+         nach dem Griff. Liegt alles fern, steht „zusätzlich“ vorn – dann ist
+         es die wahrscheinliche Antwort. */
+      const nahe = offeneSoll.filter(e => e.weg < ABSEITS_SCHWELLE);
+      const ferne = offeneSoll.filter(e => e.weg >= ABSEITS_SCHWELLE);
+      const chipText = e =>
+        `Punkt ${e.nr} · ${formatLaenge(e.weg)}${e.weg >= ABSEITS_SCHWELLE ? ' ⚠' : ''}`;
       const zuordnung = chips(
-        [...offeneSoll.map(e => [e.punkt.id,
-          `Punkt ${e.nr} · ${formatLaenge(e.weg)}${e.weg >= ABSEITS_SCHWELLE ? ' ⚠' : ''}`]),
-         ['', 'zusätzlich']],
+        [...nahe.map(e => [e.punkt.id, chipText(e)]), ['', 'zusätzlich'],
+         ...ferne.map(e => [e.punkt.id, chipText(e)])],
         vorschlagAktiv ? soll.id : '',
         pid => {
           const e = pid ? weit.get(pid) : null;
@@ -705,8 +961,8 @@ function istBlatt(s, ist, soll) {
             rueckfrage.scrollIntoView({ block: 'nearest' });
             return;
           }
-          /* Wer tippt, hat gewählt – auch den Vorschlag selbst. Danach heißt
-             nichts mehr „vorgeschlagen“, und „Fertig“ mahnt nichts an. */
+          /* Wer tippt, hat gewählt – auch den Vorschlag selbst. Danach fragt
+             nichts mehr „ändern?“, und „Fertig“ mahnt nichts an. */
           vorgeschlagen = null;
           selbstGewaehlt = ist.id;
           store.aendern(() => istSollZuordnen(s, ist, pid || null), 'bau');
@@ -716,19 +972,33 @@ function istBlatt(s, ist, soll) {
         const c = zuordnung.querySelector(`[data-wert="${CSS.escape(soll.id)}"]`);
         if (c) c.classList.add('pk-chip-vorschlag');
       }
+      for (const e of ferne) {
+        const c = zuordnung.querySelector(`[data-wert="${CSS.escape(e.punkt.id)}"]`);
+        if (c) c.classList.add('pk-chip-fern');
+      }
       reihe.appendChild(zuordnung);
       /* Die Warnung steht VOR der Frage und nicht darunter: darunter lag sie
          im Audit unter dem Rand des Blattes, sichtbar war nur „Fertig“. */
-      if (!andere && offeneSoll[0].weg >= ABSEITS_SCHWELLE) {
-        links.appendChild(el('p', 'pk-warnung',
-          `Der Standort liegt ${escapeHtml(formatLaenge(offeneSoll[0].weg))} von der ` +
-          'nächsten geplanten Stelle entfernt. Stimmt die Ortung?'));
+      /* „Vom nächsten noch OFFENEN Planpunkt“: gemessen wird nur gegen die
+         offenen. Stand der Trupp neben einem schon bestätigten Punkt, las
+         sich „434 m von der nächsten geplanten Stelle“ im Review wie ein
+         Fehler der Ortung – der Punkt daneben war ja geplant. Die Frage
+         zuerst: quer steht die Warnung einzeilig und ist erst auf Tipp ganz zu
+         lesen (`.pk-ortung`), und abgeschnitten soll die Entfernung werden,
+         nicht die Frage. */
+      if (!andere && !zwilling && offeneSoll[0].weg >= ABSEITS_SCHWELLE) {
+        const w = links.appendChild(el('p', 'pk-warnung pk-ortung',
+          `Stimmt die Ortung? Der Standort liegt ${escapeHtml(formatLaenge(offeneSoll[0].weg))} ` +
+          'vom nächsten noch offenen Planpunkt entfernt.'));
+        w.onclick = () => w.classList.toggle('ganz');
       }
       links.appendChild(reihe);
     }
   }
 
-  links.appendChild(el('div', 'pk-frage' + (ist.art === 'offen' ? ' pk-frage-offen' : ''),
+  /* `pk-art` markiert Frage und Chips der Punktart: quer rücken sie an den
+     Anfang des Blattes (`css/app.css`, „Quer auf dem Telefon“). */
+  links.appendChild(el('div', 'pk-frage pk-art' + (ist.art === 'offen' ? ' pk-frage-offen' : ''),
     ist.art === 'offen' ? 'Was ist hier? <span>fehlt noch</span>' : 'Was ist hier?'));
   /* Anfang und Ende stehen zur Wahl, wenn der Punkt sie trägt ODER der
      geplante Punkt sie trug: wer am Anfangspunkt versehentlich „Muffe“
@@ -739,7 +1009,7 @@ function istBlatt(s, ist, soll) {
   const extra = [ist.art, soll ? soll.art : null]
     .filter(a => a && a !== 'offen' && !CHIP_ARTEN.includes(a));
   const arten = [...new Set(extra), ...CHIP_ARTEN];
-  links.appendChild(chips(
+  const artChips = links.appendChild(chips(
     arten.map(a => [a, CHIP_NAMEN[a] || punktartById(a).name]), ist.art,
     art => {
       store.aendern(() => istArtSetzen(ist, art), 'bau');
@@ -747,6 +1017,7 @@ function istBlatt(s, ist, soll) {
          sichtbaren Ausschnitt. Wer sie nicht sieht, beantwortet sie nicht. */
       if (art === 'querung') zeigeImBlatt('.pk-bauweise');
     }, 'Punktart'));
+  artChips.classList.add('pk-art');
 
   /* Die Bauweise nur an der Querung, und erst nach der Wahl: vier Griffe
      mehr für jeden Punkt hätten das Blatt auf drei Reihen wachsen lassen.
@@ -754,13 +1025,14 @@ function istBlatt(s, ist, soll) {
      entscheidet, was der nächste Trupp dort vorfindet –, deshalb nennt die
      Frage sich selbst als offen, solange keine steht. */
   if (ist.art === 'querung') {
-    links.appendChild(el('div', 'pk-frage pk-bauweise' + (ist.bauweise ? '' : ' pk-frage-offen'),
+    links.appendChild(el('div', 'pk-frage pk-art pk-bauweise' + (ist.bauweise ? '' : ' pk-frage-offen'),
       ist.bauweise ? 'Wie gequert?' : 'Wie gequert? <span>fehlt noch</span>'));
     links.appendChild(chips(
       QUERUNG_BAUWEISEN.map(b => [b.id, b.id === 'trasse' ? 'wie die Trasse'
         : b.id === 'bauwerk' ? 'an Brücke' : b.name.replace(/ \(.*\)$/, '')]),
       ist.bauweise,
-      bw => store.aendern(() => { ist.bauweise = bw; }, 'bau'), 'Bauweise'));
+      bw => store.aendern(() => { ist.bauweise = bw; }, 'bau'), 'Bauweise'))
+      .classList.add('pk-art');
   }
 
   /* Kein Bauabschnitt gewählt, obwohl die Strecke welche hat: nach dem
@@ -797,7 +1069,7 @@ function istBlatt(s, ist, soll) {
      eben eingetragene Aufnahme zurück, und der Rückweg dafür liegt oben in
      der Kopfzeile. */
   const tasten = el('div', 'pk-tasten');
-  tasten.appendChild(knopf('◉ Neu orten', () =>
+  tasten.appendChild(ortungsgriff('◉ Neu orten', () =>
     istPunktAusStandort(s.id, ist.sollPunkt, { ersetzt: ist.id }), 'klein'));
   tasten.appendChild(knopf('✛ Verschieben', () => {
     punktkarteSchliessen();
@@ -842,6 +1114,93 @@ function istBlatt(s, ist, soll) {
   }, 'primaer'));
   box.appendChild(abschluss);
   return box;
+}
+
+/* Ein zweiter „Punkt hier“ an derselben Stelle, Sekunden nach dem ersten, ist
+   ein Doppeltipp und keine Aufnahme. Im Review stand dann „1,2 km von der
+   nächsten geplanten Stelle – Stimmt die Ortung?“: der erste Punkt hatte die
+   nahe Stelle schon belegt, und das Blatt verdächtigte die Ortung, die
+   stimmte. Zehn Sekunden und die Genauigkeit der Ortung, mindestens 5 m –
+   wer in der Zeit weitergeht, ist weiter als das. */
+const ZWILLING_SEKUNDEN = 10;
+function ebenAufgenommen(s, ist) {
+  if (ist.quelle !== 'standort') return null;
+  const t = Date.parse(ist.zeit);
+  if (Number.isNaN(t)) return null;
+  const weit = Math.max(5, Math.min(Number(ist.genauigkeit) || 0, ABWEICHUNG_SCHWELLE));
+  let bester = null;
+  for (const pt of istPunkte(s)) {
+    if (pt.id === ist.id) continue;
+    const vor = (t - Date.parse(pt.zeit)) / 1000;
+    if (!(vor >= 0 && vor <= ZWILLING_SEKUNDEN) || distanz(pt, ist) > weit) continue;
+    if (!bester || vor < bester.vor) bester = { punkt: pt, vor };
+  }
+  return bester;
+}
+
+function zwillingWarnung(s, ist, z) {
+  const nr = z.punkt.sollPunkt ? s.punkte.findIndex(pt => pt.id === z.punkt.sollPunkt) + 1 : 0;
+  const w = el('div', 'pk-warnung pk-zwilling',
+    `Eben schon aufgenommen (${nr ? `Punkt ${nr}` : 'zusätzlicher Punkt'}, ` +
+    `vor ${Math.max(1, Math.round(z.vor))}\u00a0s) – an derselben Stelle.`);
+  w.appendChild(knopf('Diesen wieder löschen', () => {
+    store.aendern(() => { s.bau.punkte = s.bau.punkte.filter(x => x.id !== ist.id); }, 'bau');
+    const frueher = istPunkte(s).find(x => x.id === z.punkt.id);
+    if (frueher) punktkarteOeffnen(s, { ist: frueher }); else punktkarteSchliessen();
+    hinweis('Doppelter Punkt gelöscht – „↶“ oben holt ihn zurück');
+  }, 'klein'));
+  return w;
+}
+
+/**
+ * Den Punkt an eine andere Strecke hängen – und vorher fragen, wenn sie
+ * anderen gehört.
+ *
+ * Vorher hing ein Tipp den Punkt sofort um, ohne Bauabschnitt, auch an eine
+ * Strecke, die der Planer zwei anderen Trupps aufgetragen hatte. Beim
+ * Planer ersetzte die Meldung dann, was dort ohne Abschnitt stand. Gefragt
+ * wird im Blatt und nicht in einem Dialog: dort steht schon, warum.
+ */
+function umhaengenFragen(s, ist, andere, nach) {
+  const ziel = andere.strecke;
+  const a = aktiverBauabschnitt(ziel);
+  if (a) return umhaengen(s, ist, andere, a.id);
+  const abschnitte = bauabschnitte(ziel);
+  const trupps = auftragsTrupps(ziel);
+  const ich = truppAmGeraet().trupp;
+  const fremd = trupps.length > 0 && !(ich && trupps.includes(ich));
+  if (!abschnitte.length && !fremd) return umhaengen(s, ist, andere, null);
+  const alt = blatt() && blatt().querySelector('.pk-umhaengen');
+  if (alt) alt.remove();
+  const name = escapeHtml(ziel.name);
+  const wem = fremd ? ` ist ${escapeHtml(trupps.join(', '))} aufgetragen` : '';
+  const frage = el('div', 'pk-warnung pk-rueckfrage pk-umhaengen', abschnitte.length
+    ? `„${name}“${wem}${wem ? ' und' : ''} wird in Bauabschnitten gebaut – für welchen?`
+    : `„${name}“${wem} – trotzdem dorthin?`);
+  if (abschnitte.length) {
+    for (const ab of abschnitte) {
+      frage.appendChild(knopf(`Für ${ab.trupp || ab.name}`,
+        () => umhaengen(s, ist, andere, ab.id), 'klein'));
+    }
+  } else {
+    frage.appendChild(knopf(`Ja, zu ${ziel.name}`, () => umhaengen(s, ist, andere, null), 'klein'));
+  }
+  nach.after(frage);
+  frage.scrollIntoView({ block: 'nearest' });
+}
+
+function umhaengen(s, ist, andere, abschnittId) {
+  const ziel = andere.strecke;
+  let neu = null;
+  store.aendern(() => {
+    neu = istPunktUmhaengen(s, ziel, ist, andere.offen ? andere.punkt.id : null, abschnittId);
+  }, 'bau');
+  if (!neu) return;
+  /* Wer einen Abschnitt wählt, baut von da an in ihm – wie die Wahl im
+     Blatt unter „Bauabschnitt?“. */
+  if (abschnittId) bauabschnittAktivSetzen(abschnittId);
+  punktkarteOeffnen(ziel, { ist: neu });
+  hinweis(`An ${ziel.name} aufgenommen – „↶“ oben nimmt es zurück`);
 }
 
 // ------------------------------------------------------------ Das Fehlerblatt
@@ -913,7 +1272,7 @@ function sollBlatt(s, soll) {
       });
     }, 'bau');
   }, 'bau-taste primaer'));
-  tasten.appendChild(knopf('◉ Hier', () => istPunktAusStandort(s.id, soll.id), 'bau-taste'));
+  tasten.appendChild(ortungsgriff('◉ Hier', () => istPunktAusStandort(s.id, soll.id), 'bau-taste'));
   tasten.appendChild(knopf('✛ Auf Karte', () => {
     punktkarteSchliessen();
     ctx.sl.starteIstSetzen(s.id, { sollPunkt: soll.id, art: soll.art,

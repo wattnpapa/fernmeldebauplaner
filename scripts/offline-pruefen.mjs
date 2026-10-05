@@ -363,6 +363,76 @@ try {
   b.pruefe(abgebrochen.spaet.hatteAdresse, 'Die fertige Kachel trug ihre Blob-Adresse');
   b.gleich(abgebrochen.spaet.adresse, false, 'Das Abräumen gibt sie frei');
 
+  b.abschnitt('Offline bei Zoom 18 ist der Hintergrund sichtbar');
+  /* Die Ebene fragt bis Stufe 18, der Vorrat reicht nach Vorgabe bis 17 –
+     am Bauort war die mitgenommene Karte beim Heranzoomen auf eine Muffe
+     weg. Gelegt wird nur Stufe 17, und zwar genau die Eltern der Kacheln,
+     die bei Stufe 18 im Bild stehen; danach geht das Netz aus. */
+  await seite.auswerten('return (await import("./js/kacheln.js")).leeren();');
+  await seite.auswerten(`window.fbp.karte.setView([51.803, 10.60], 18, { animate: false }); return true;`);
+  await new Promise(f => setTimeout(f, 800));
+  const gelegt = await seite.auswerten(`
+    const k = await import('./js/kacheln.js');
+    const basis = window.fbp.karte._fbpBasis;
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#c8d8e8'; ctx.fillRect(0, 0, 256, 256);
+    const blob = await new Promise(f => c.toBlob(f, 'image/png'));
+    const eltern = new Set();
+    for (const t of Object.values(basis._tiles || {})) {
+      if (t.coords.z !== 18) continue;
+      eltern.add(k.kacheladresse(basis._url, { z: 17, x: t.coords.x >> 1, y: t.coords.y >> 1 }));
+    }
+    const db = await new Promise((f, r) => {
+      const a = indexedDB.open('fbp.kacheln', 1);
+      a.onsuccess = () => f(a.result); a.onerror = () => r(a.error);
+    });
+    await new Promise((f, r) => {
+      const v = db.transaction('kacheln', 'readwrite');
+      for (const url of eltern) {
+        v.objectStore('kacheln').put({ url, blob, karte: 'topplus', zeit: Date.now(), groesse: blob.size });
+      }
+      v.oncomplete = f; v.onerror = () => r(v.error);
+    });
+    return eltern.size;`);
+  b.pruefe(gelegt > 0, `Stufe 17 liegt im Vorrat (${gelegt} Kacheln), Stufe 18 nicht`);
+  await seite.auswerten('return (await import("./js/ui.js")).hinweisAus();');
+  await seite.warteAuf('document.getElementById("hinweisbox").hidden', 5000);
+  await seite.zwischenspeicherLeeren();
+  server.netzAus();
+  await seite.ohneNetz();
+  await seite.auswerten('window.fbp.karte._fbpBasis.redraw(); return true;');
+  await seite.warteAuf(`
+    const bilder = [...document.querySelectorAll('#karte img.leaflet-tile')];
+    return bilder.length > 0 && bilder.every(i => i.src.startsWith('blob:') && i.complete);`, 15000)
+    .catch(() => {});
+  const zoom18 = await seite.auswerten(`
+    const k = window.fbp.karte;
+    const bilder = [...document.querySelectorAll('#karte img.leaflet-tile')];
+    const sichtbar = bilder.filter(i => i.src.startsWith('blob:') && i.complete && i.naturalWidth === 256);
+    /* Das Bild muss die Farbe der gröberen Kachel tragen, nicht nur geladen
+       sein: ein leeres Bild aus einer toten Adresse wäre auch „complete“. */
+    let farbe = '';
+    if (sichtbar[0]) {
+      const c = document.createElement('canvas'); c.width = c.height = 1;
+      c.getContext('2d').drawImage(sichtbar[0], 128, 128, 1, 1, 0, 0, 1, 1);
+      farbe = [...c.getContext('2d').getImageData(0, 0, 1, 1).data].slice(0, 3).join(',');
+    }
+    return { zoom: k.getZoom(), bilder: bilder.length, sichtbar: sichtbar.length, farbe,
+             leiste: document.getElementById('sl-netz').hidden ? '' : document.getElementById('sl-netz').textContent };`);
+  b.gleich(zoom18.zoom, 18, 'Die Karte steht auf Stufe 18');
+  b.pruefe(zoom18.bilder > 0 && zoom18.sichtbar === zoom18.bilder,
+    `Jede Kachel zeigt den Ausschnitt der gröberen Stufe (${zoom18.sichtbar} von ${zoom18.bilder})`);
+  b.gleich(zoom18.farbe, '200,216,232', 'Und zwar mit ihrem Bild, nicht als leere Fläche');
+  b.pruefe(/kein Netz/.test(zoom18.leiste) && /feiner nicht mitgenommen/.test(zoom18.leiste),
+    `Die Statusleiste sagt still, dass es feiner nicht mitgenommen ist („${zoom18.leiste}“)`);
+  b.pruefe(await seite.auswerten('document.getElementById("hinweisbox").hidden'),
+    'Ohne Hinweispille – die gröbere Stufe ist ein Zustand, keine Meldung');
+  server.netzAn();
+  await seite.mitNetz();
+  await seite.auswerten(`window.fbp.karte.setView([51.803, 10.60], 15, { animate: false }); return true;`);
+
   b.abschnitt('Der Vorrat lässt sich löschen');
   const geleert = await seite.auswerten(`
     const k = await import('./js/kacheln.js');
@@ -460,7 +530,10 @@ try {
     document.dispatchEvent(new Event('visibilitychange'));
     (await import('./js/ui.js')).zeichneBauListe();
     return k.kachellisteLinien([s.punkte]).length;`);
-  const chip = () => seite.auswerten('document.querySelector(".vorrat-chip").textContent');
+  /* Vor dem ersten Punkt nennt der Chip den Baunachweis mit („Karte
+     mitnehmen + Baunachweis“) – gemessen wird hier nur, was er zur Karte sagt. */
+  const chip = () => seite.auswerten(
+    'document.querySelector(".vorrat-chip").textContent.replace(/ \\+ Baunachweis/, "")');
   /* Chip und Bestandszeile schreiben jeder für sich, sobald ihre Abfrage
      zurück ist – gewartet wird deshalb auf jede einzeln. */
   const bald = ausdruck => seite.warteAuf(ausdruck, 5000).then(() => true, () => false);
@@ -568,7 +641,108 @@ try {
   b.gleich(abbruch.danach, '↓ Karte holen', 'Danach steht wieder „Karte holen“ da');
   await seite.auswerten('return (await import("./js/kacheln.js")).leeren();');
 
-  b.abschnitt('Ohne Netz sagt die Statusleiste, dass die Kacheln ausbleiben');
+  b.abschnitt('Ein halber Abruf heißt „unvollständig“, und die Statusleiste zählt nach');
+  /* „Karte mitgenommen: 60 von 222 Kacheln … 162 fehlen“ las sich als
+     Erfolg. Und die Statusleiste zählte den Vorrat nur, wenn eine Kachel
+     ausblieb – nach „Karte holen“ stand dort weiter „Vorrat leer“. Jede
+     zweite Kachel kommt hier an, die übrigen nicht; `fetch` wird dafür in der
+     Seite ersetzt, damit der Fall nicht an einem fremden Server hängt. */
+  const halb = await seite.auswerten(`
+    const ui = await import('./js/ui.js');
+    const warte = n => new Promise(f => setTimeout(f, n));
+    const echt = window.fetch;
+    const c = document.createElement('canvas'); c.width = c.height = 8;
+    const blob = await new Promise(f => c.toBlob(f, 'image/png'));
+    let n = 0;
+    window.fetch = async (url, o) => (n++ % 2 ? new Response(blob) : new Response('', { status: 404 }));
+    /* Die Leiste zeigen, als schwiege der Kartenserver: das Netz ist da. */
+    window.fbp.karte.fire('fbp:kachelnot', { aus: true });
+    await warte(400);
+    const r = { leisteVorher: document.getElementById('sl-netz').textContent, zeileImLauf: '' };
+    try {
+      ui.zeichneBauListe();
+      const knopf = [...document.querySelectorAll('.bau-vorrat button')]
+        .find(k => k.textContent.includes('Karte holen'));
+      knopf.click();
+      const box = document.getElementById('hinweisbox');
+      const ende = Date.now() + 30000;
+      while (Date.now() < ende) {
+        const zeile = document.querySelector('.bau-vorrat .vorrat-stand')?.textContent || '';
+        if (/Wird geholt/.test(zeile)) r.zeileImLauf = zeile;
+        if (/unvollständig|mitgenommen|Abgebrochen/.test(box.textContent || '')) break;
+        await warte(50);
+      }
+      r.meldung = box.textContent || '';
+      const bis = Date.now() + 5000;
+      while (Date.now() < bis && !/Vorrat: \\d/.test(document.getElementById('sl-netz').textContent)) await warte(100);
+      r.leisteNachher = document.getElementById('sl-netz').textContent;
+    } finally {
+      window.fetch = echt;
+      /* Zurück auf „nichts gemeldet“, auch in der Kachelwacht: sonst hielte
+         sie den Ausfall für schon bekannt und meldete den nächsten nicht. */
+      window.fbp.karte._fbpKachelAus = undefined;
+      window.fbp.karte.fire('fbp:kachelnot', { aus: false });
+    }
+    return r;`);
+  b.pruefe(/^Karte unvollständig: \d+ von \d+ – noch einmal holen, solange Netz da ist/.test(halb.meldung),
+    `Die Meldung beginnt mit „unvollständig“ („${halb.meldung}“)`);
+  b.pruefe(/Wird geholt: \d+ von \d+ Kacheln/.test(halb.zeileImLauf),
+    `Die Bestandszeile führt den Abruf mit, auch wenn die Pille sie deckt („${halb.zeileImLauf}“)`);
+  b.pruefe(/Vorrat leer/.test(halb.leisteVorher), `Vorher: „${halb.leisteVorher}“`);
+  b.pruefe(/Vorrat: \d+ Kacheln/.test(halb.leisteNachher),
+    `Nach „Karte holen“ zählt die Statusleiste neu („${halb.leisteNachher}“)`);
+  await seite.auswerten('return (await import("./js/kacheln.js")).leeren();');
+
+  b.abschnitt('Ein hängender Abruf hat eine Frist und sagt, dass nichts kommt');
+  /* Ohne Frist stand ein Abruf an schwachem Netz still, unter einem Balken,
+     der sich nicht rührte. Jetzt endet jede Kachel nach zehn Sekunden, und
+     nach zehn Sekunden ohne neue Kachel steht es in Pille und Zeile. Der
+     ersetzte `fetch` antwortet nie – er hört nur auf den Abbruch. */
+  const haengt = await seite.auswerten(`
+    const ui = await import('./js/ui.js');
+    const k = await import('./js/kacheln.js');
+    const warte = n => new Promise(f => setTimeout(f, n));
+    const echt = window.fetch;
+    let abgebrochen = 0;
+    window.fetch = (url, o) => new Promise((f, r) => {
+      o.signal.addEventListener('abort', () => { abgebrochen++; r(new DOMException('Frist', 'AbortError')); });
+    });
+    const r = {};
+    try {
+      ui.zeichneBauListe();
+      const knoepfe = () => [...document.querySelectorAll('.bau-vorrat .bau-tasten button')];
+      knoepfe()[0].click();
+      const box = document.getElementById('hinweisbox');
+      await warte(8000);
+      r.vorDerFrist = { abgebrochen, pille: box.textContent };
+      const ende = Date.now() + 6000;
+      while (Date.now() < ende && !/kommt nichts/.test(box.textContent || '')) await warte(100);
+      r.pille = box.textContent || '';
+      r.zeile = document.querySelector('.bau-vorrat .vorrat-stand')?.textContent || '';
+      /* Die Frist läuft je Kachel erst ab dem Abruf, die Uhr des Hinweises
+         ab dem Knopfdruck – die Abbrüche folgen also knapp danach. */
+      const frist = Date.now() + 3000;
+      while (Date.now() < frist && abgebrochen < 4) await warte(100);
+      r.abgebrochen = abgebrochen;
+      knoepfe()[1].click();
+      const schluss = Date.now() + 5000;
+      while (Date.now() < schluss && !/Abgebrochen/.test(box.textContent || '')) await warte(100);
+      r.schluss = box.textContent || '';
+      r.frist = k.FRIST;
+    } finally {
+      window.fetch = echt;
+    }
+    return r;`);
+  b.gleich(haengt.frist, 10000, 'Jede Kachel hat zehn Sekunden');
+  b.gleich(haengt.vorDerFrist.abgebrochen, 0, 'Vorher wird keine abgebrochen');
+  b.pruefe(haengt.abgebrochen >= 4, `Danach geben die vier Abrufe auf (${haengt.abgebrochen})`);
+  b.pruefe(/^Seit \d+\s?s kommt nichts – Netz schwach\. Abbrechen oder warten\./.test(haengt.pille),
+    `Die Pille sagt, dass nichts kommt („${haengt.pille}“)`);
+  b.pruefe(/kommt nichts/.test(haengt.zeile), `Und die Bestandszeile ebenso („${haengt.zeile}“)`);
+  b.pruefe(/Abgebrochen/.test(haengt.schluss), 'Abbrechen beendet den Lauf');
+  await seite.auswerten('return (await import("./js/kacheln.js")).leeren();');
+
+  b.abschnitt('Schweigt nur der Kartenserver, sagt die Statusleiste nicht „kein Netz“');
   /* Der Browser gilt weiter als online – geprüft wird gerade der Fall, in dem
      `navigator.onLine` nichts merkt und nur die Kacheln ausbleiben: schwaches
      Netz, Funkloch, gesperrter Anbieter. Der Server schweigt dazu. */
@@ -587,7 +761,11 @@ try {
   await seite.auswerten('window.fbp.karte._fbpBasis.redraw(); return true;');
   await seite.warteAuf('!document.getElementById("sl-netz").hidden', 15000);
   const netzText = (await seite.text('#sl-netz') || '');
-  b.pruefe(/kein Netz/.test(netzText), `Die Leiste nennt den Ausfall („${netzText}“)`);
+  /* Der Browser hat Netz, nur die Kacheln kommen nicht. „kein Netz“ stand
+     hier früher auch – und wer dabei Balken auf dem Telefon sieht, glaubt der
+     Anzeige danach nichts mehr. */
+  b.pruefe(/Karte nicht erreichbar/.test(netzText), `Die Leiste nennt den Ausfall („${netzText}“)`);
+  b.pruefe(!/kein Netz/.test(netzText), 'Und behauptet nicht, das Netz sei weg');
   b.pruefe(/Vorrat/.test(netzText),
     'Und den Vorrat – das ist die Zahl, die am Bauort darüber entscheidet, ' +
     'ob die Karte trotzdem etwas zeigt');

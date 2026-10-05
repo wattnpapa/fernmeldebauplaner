@@ -4,10 +4,12 @@
 
 import {
   store, punktartById, kabelById, VERLEGEARTEN, abschnittById, abschnittGewaehlt, streckenUnter,
-  abschnitteGeordnet, abschnittTiefe, abschnittPfad, abschnittBaum, aufEinerLinie, planKennung
+  abschnitteGeordnet, abschnittTiefe, abschnittPfad, abschnittBaum, aufEinerLinie, planKennung,
+  BAUSTAENDE
 } from './state.js';
 import {
-  StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen
+  StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen,
+  standmarkeKurz
 } from './strecken.js';
 import { ZeichenLayer, gezeichneteZeichen } from './zeichen.js';
 import { FlaechenLayer, flaechenEcken } from './flaechen.js';
@@ -22,7 +24,7 @@ import {
   punktartText, istKurz,
   materialzeilen, materialSumme, materialSoll, meldungenNachZeit, pruefzeilen,
   quelleText, uhrzeit, ABWEICHUNG_SCHWELLE, bilderAnStrecke, BILD_KORRIDOR, truppAmGeraet,
-  auftragsTrupps, baumeldungen
+  auftragsTrupps, baumeldungen, uebergabestand, bauzeile
 } from './baudoku.js';
 import { bildUrl } from './bildspeicher.js';
 import { MATERIALKATALOG, MATERIALGRUPPEN, pruefartById, dtg, PRUEFART_JE_KABEL } from './vorschrift.js';
@@ -1833,7 +1835,7 @@ function datenblaetter(ziel, p, strecke, k, opt) {
     const trupps = auftragsTrupps(strecke);
     for (const trupp of trupps.length > 1 ? trupps : [null]) {
       fluss.kopfWechseln(baunachweisBlattkopfHTML(p, strecke, trupp));
-      const kopfEl = elementAus(baunachweisKopfHTML(trupp));
+      const kopfEl = elementAus(baunachweisKopfHTML(trupp, opt));
       fluss.setze(kopfEl);
       qrFuellen(kopfEl.querySelector('.bl-qr'), strecke.id);
       tabelleFliessen(fluss, baunachweisRahmenHTML, baunachweisZeilenHTML(strecke));
@@ -1861,9 +1863,30 @@ function verzeichnisblaetter(ziel, auftrag, opt) {
 
 function blattzahlSchreiben(ziel) {
   const blaetter = [...ziel.querySelectorAll('.blatt')];
+  /* Ein Baunachweis zählt seine Blätter selbst. Er wird abgetrennt und auf
+     dem Klemmbrett mitgeführt, und bei zwei Trupps hielt jeder „Blatt 6 von
+     10“ und „Blatt 9 von 10“ in der Hand – ob der eigene Bogen vollständig
+     ist, war daraus nicht zu lesen. Gezählt wird über die Kennung im Kopf
+     (`data-bogen`), die je Trupp eine eigene ist. */
+  const boegen = new Map();
+  for (const el of blaetter) {
+    const b = el.querySelector('.bl-kopf[data-bogen]')?.dataset.bogen;
+    if (b) boegen.set(b, (boegen.get(b) || 0) + 1);
+  }
+  const gezaehlt = new Map();
   blaetter.forEach((el, i) => {
     const feld = el.querySelector('.bl-blattnr');
-    if (feld) feld.textContent = `${i + 1} von ${blaetter.length}`;
+    if (!feld) return;
+    const kopf = el.querySelector('.bl-kopf[data-bogen]');
+    if (!kopf) { feld.textContent = `${i + 1} von ${blaetter.length}`; return; }
+    const n = (gezaehlt.get(kopf.dataset.bogen) || 0) + 1;
+    gezaehlt.set(kopf.dataset.bogen, n);
+    /* Der Name wird gekürzt: die Kennungsspalte bricht nicht um, und ein
+       langer Truppname schöbe sonst den Titel des Blattes beiseite. Der
+       volle Name steht ohnehin im Untertitel daneben. */
+    const name = kopf.dataset.bogenName || '';
+    const kurz = name.length > 16 ? name.slice(0, 15).trimEnd() + '…' : name;
+    feld.textContent = `Bogen ${kurz} ${n}/${boegen.get(kopf.dataset.bogen)}`.replace(/\s+/g, ' ');
   });
 }
 
@@ -1894,10 +1917,13 @@ function kopfHTML(p, angaben) {
    Im Audit stand die Uhrzeit nur klein in der Fußzeile, und zwei Lagekarten
    desselben Tages waren an der Wand nicht auseinanderzuhalten. Geschrieben
    wie in der Baudokumentation (`dtg()`), so wird sie auch durchgegeben. */
-function blattkopfHTML(p, { titel, unter = '', doktyp: typ, strecken = null, lagestand = null }) {
+function blattkopfHTML(p, { titel, unter = '', doktyp: typ, strecken = null, lagestand = null,
+                            bogen = null }) {
   const k = p.kopf;
   const kennung = planKennung(strecken || p.strecken);
-  return `<header class="bl-kopf">
+  const bogenAttr = bogen
+    ? ` data-bogen="${escapeHtml(bogen.kennung)}" data-bogen-name="${escapeHtml(bogen.name || '')}"` : '';
+  return `<header class="bl-kopf"${bogenAttr}>
     <div class="bl-marke">
       <span class="bl-org">${escapeHtml(k.einheit || 'THW')}</span>
       <span class="bl-doktyp">${escapeHtml(typ)}</span>
@@ -1907,7 +1933,7 @@ function blattkopfHTML(p, { titel, unter = '', doktyp: typ, strecken = null, lag
       <tr><th>Auftrag-Nr.</th><td>${escapeHtml(k.auftragNr || '–')}</td></tr>
       <tr><th>Datum</th><td>${datumDE(k.datum)}</td></tr>
       ${lagestand ? `<tr><th>Lagestand</th><td class="mono bl-lagestand">${dtg(lagestand)}</td></tr>` : ''}
-      <tr><th>Stand</th><td class="mono">${k.stand ? escapeHtml(k.stand) + ' · ' : ''}Plan ${escapeHtml(kennung)}</td></tr>
+      <tr><th>Stand</th><td class="mono">${k.stand ? escapeHtml(k.stand) + ' · ' : ''}Plan-Nr. <span class="plan-nr">${escapeHtml(kennung)}</span></td></tr>
       <tr><th>Blatt</th><td class="bl-blattnr">–</td></tr>
     </table>
   </header>`;
@@ -2062,7 +2088,30 @@ function lageLegendeHTML(auftrag, opt, sw, mass) {
   const hinweis = opt.beschriftung
     ? 'Bezeichnung und Trassenlänge stehen an jeder Strecke'
     : (sw ? '' : 'Die Farbe der Linie ordnet die Strecke zu');
-  return sammelLegendeHTML(auftrag, sw, Math.round(12 * mass.blatt), punkte, hinweis);
+  return sammelLegendeHTML(auftrag, sw, Math.round(12 * mass.blatt),
+    punkte + (opt.beschriftung ? standmarkenLegendeHTML(auftrag.strecken) : ''), hinweis);
+}
+
+/* Die Marken im Schild der Lagekarte. Wörter wie „gebaut“ erklären sich
+   selbst; was nicht, sind die Kurzformen „Abw.“ und „S 6“ und die Form der
+   Marke, die im Schwarz-Weiß-Druck den Stand trägt. Erklärt wird nur, was auf
+   dem Blatt vorkommt. */
+function standmarkenLegendeHTML(strecken) {
+  if (!strecken.some(bauBegonnen)) return '';
+  const staende = new Set(strecken.map(s => bauBegonnen(s) && s.bau ? s.bau.stand : 'offen'));
+  const zeilen = strecken.map(bauzeile).filter(Boolean);
+  const warn = new Set(zeilen.flatMap(z => z.warnungen.map(standmarkeKurz)));
+  const marke = (klasse, text) => `<span class="bz-marke ${klasse}">${text}</span>`;
+  const teile = [`<span class="lg-eintrag">${BAUSTAENDE.filter(b => staende.has(b.id))
+    .map(b => marke('bz-' + b.id, escapeHtml(b.kurz))).join(' ')} Baustand</span>`];
+  const abw = [...warn].find(w => / Abw\.$/.test(w));
+  if (abw) teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ ' + escapeHtml(abw))}` +
+    'Punkte abweichend vom Plan gebaut</span>');
+  if (warn.has('abseits')) teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ abseits')}` +
+    'Punkt weit neben der Trasse</span>');
+  if (zeilen.some(z => z.meldung)) teile.push(`<span class="lg-eintrag">${marke('bz-s6', '✉ S&nbsp;6')}` +
+    'Meldung des Trupps an den S&nbsp;6</span>');
+  return teile.join('');
 }
 
 /* Die Zeichenerklärung der drei Ausbreitungszonen. Sie steht NICHT unter dem
@@ -2109,9 +2158,14 @@ function baustandKachel(strecken) {
     const stand = bauBegonnen(s) && s.bau ? s.bau.stand : 'offen';
     zahl[stand in zahl ? stand : 'offen'] += 1;
   }
+  /* Die durchgefallene Prüfung zählt mit wie im Summenband der Liste. Im
+     Review stand die Strecke auf der Lagekarte nur als eine von „2 gebaut“ –
+     die Kachel ist das, was an der Wand zuerst gelesen wird. */
+  const durch = strecken.filter(s => bauBegonnen(s) && uebergabestand(s).durchgefallen).length;
   const unter = [
     zahl.gebaut && `${zahl.gebaut} gebaut`, zahl.laeuft && `${zahl.laeuft} im Bau`,
-    zahl.offen && `${zahl.offen} offen`
+    zahl.offen && `${zahl.offen} offen`,
+    durch && `⚠ ${durch} Prüfung nicht bestanden`
   ].filter(Boolean).join(' · ');
   return ['Baustand', `${zahl.uebergeben} von ${strecken.length} übergeben`, unter || 'alle übergeben'];
 }
@@ -2740,15 +2794,17 @@ function regelnHTML(k) {
    reserviert, damit der Blattumbruch nicht davon abhängt, wann der Code
    fertig ist. Übertragen wird dabei nichts: der Link entsteht hier und steht
    nur auf dem Papier. */
-function baunachweisKopfHTML(trupp = null) {
+/* „Baudatum“ und nicht „Datum“: im Blattkopf rechts daneben steht schon das
+   Datum des Auftrags, und im Review trug der Trupp dort das Auftragsdatum ab. */
+function baunachweisKopfHTML(trupp = null, opt = {}) {
   const leer = '<td class="ausfuellen"></td>';
   return `<section class="bl-abschnitt bl-baunachweis bl-nachweis-kopf">
     <div class="bl-nachweis-felder">
       <table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
-        <thead><tr><th>Trupp</th><th>Truppführer</th><th>Datum</th><th>Bau begonnen (Uhrzeit)</th></tr></thead>
+        <thead><tr><th>Trupp</th><th>Truppführer</th><th>Baudatum</th><th>Bau begonnen (Uhrzeit)</th></tr></thead>
         <tbody><tr>${trupp ? `<td class="ausfuellen vorgedruckt">${escapeHtml(trupp)}</td>` : leer}${leer.repeat(3)}</tr></tbody>
       </table>
-      ${baunachweisAbschnittHTML()}
+      ${baunachweisAbschnittHTML(opt)}
     </div>
     <figure class="bl-qr-rahmen">
       <div class="bl-qr" aria-hidden="true"></div>
@@ -2767,8 +2823,20 @@ function baunachweisKopfHTML(trupp = null) {
    Gerät fällt mitten im Bau aus. Ohne sie ist später nicht zu sagen, was vor
    dem Ausfall im Gerät steht und was ab da nur auf dem Papier – und beim
    Nachtragen wird beides doppelt oder gar nicht übernommen. */
-function baunachweisAbschnittHTML() {
+function baunachweisAbschnittHTML(opt = {}) {
   const leer = '<td class="ausfuellen"></td>';
+  /* Quer in einer Zeile: der Satzspiegel ist breit genug für fünf
+     Schreibfelder, und die zweite Tabelle kostete dort die 17 mm, um die die
+     Baumeldungen nicht mehr auf das erste Blatt passten. */
+  if (opt.ausrichtung === 'quer') {
+    return `<table class="tab-punkte tab-ausfuellen tab-nachweis-kopf tab-nachweis-ausfall">
+      <thead><tr><th>Bauabschnitt von Punkt</th><th>bis Punkt</th><th>Bau beendet (Uhrzeit)</th>
+        <th>Gerät ausgefallen um (Uhrzeit)</th><th>nach Punkt</th></tr></thead>
+      <tbody><tr>${leer.repeat(5)}</tr></tbody>
+    </table>
+    <p class="tab-fussnote">Ab dem Ausfall gilt dieses Blatt; was davor aufgenommen wurde, steht
+      im Gerät und wird nicht noch einmal nachgetragen.</p>`;
+  }
   return `<table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
       <thead><tr><th>Bauabschnitt von Punkt</th><th>bis Punkt</th><th>Bau beendet (Uhrzeit)</th></tr></thead>
       <tbody><tr>${leer.repeat(3)}</tr></tbody>
@@ -2789,7 +2857,8 @@ function baunachweisBlattkopfHTML(p, s, trupp) {
     strecken: [s],
     titel: s.name,
     unter: [strecke, trupp].filter(Boolean).join(' · '),
-    doktyp: 'Baunachweis Fernmeldebau'
+    doktyp: 'Baunachweis Fernmeldebau',
+    bogen: { kennung: `${s.id}:${trupp || ''}`, name: trupp || '' }
   });
 }
 
@@ -2918,14 +2987,16 @@ function baunachweisPruefungHTML(s) {
      und offen, und ein leeres einzelnes Kästchen hieß auf dem Papier beides –
      durchgefallen oder nicht geprüft. Leer lassen heißt jetzt „offen“. */
   const kasten = '<td class="ankreuzen"><span class="kasten" aria-hidden="true"></span></td>';
+  /* Mit Datum: die Übernahmemessung liegt oft am Tag nach dem Bau, und die
+     Prüfzeile im Gerät nimmt beides auf. */
   const zeile = n => `<tr><td>Stamm ${n}</td><td>${escapeHtml(art.name)}</td>
       <td class="ausfuellen"></td>${kasten}${kasten}
-      <td class="ausfuellen"></td><td class="ausfuellen"></td></tr>`;
+      <td class="ausfuellen"></td><td class="ausfuellen"></td><td class="ausfuellen"></td></tr>`;
   return `<section class="bl-abschnitt bl-baunachweis">
     <h2>Prüfung und Übergabe</h2>
     <table class="tab-punkte tab-ausfuellen tab-nachweis-pruefung">
       <thead><tr><th>Stamm</th><th>Art</th><th>Messwert / Ergebnis</th><th>bestanden</th>
-        <th>nicht bestanden</th><th>Uhrzeit</th><th>Prüfer</th></tr></thead>
+        <th>nicht bestanden</th><th>Datum</th><th>Uhrzeit</th><th>Prüfer</th></tr></thead>
       <tbody>${Array.from({ length: staemme }, (_, i) => zeile(i + 1)).join('')}</tbody>
     </table>
     <table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
@@ -2944,13 +3015,15 @@ function baunachweisRahmenHTML(fortsetzung) {
     <table class="tab-punkte tab-ausfuellen">
       <thead><tr>
         <th>Nr.</th><th>Art</th><th>MGRS geplant</th><th>wie geplant</th>
-        <th>abweichend: MGRS oder Beschreibung</th><th>Uhrzeit</th>
+        <th>abweichend: MGRS oder Beschreibung</th><th>Datum</th><th>Uhrzeit</th>
       </tr></thead>
       <tbody></tbody>
     </table>
-    <p class="tab-fussnote">Je Punkt ankreuzen oder die gebaute Lage eintragen. Im Baumodus
-      danach „wie geplant“ bzw. die Koordinate unter „Koordinate“ übernehmen und die Uhrzeit
-      am Punkt nachtragen; zusätzliche Punkte (Mast, Muffe, Umgehung) in die freien Zeilen.</p>
+    <p class="tab-fussnote">Je Punkt ankreuzen oder die gebaute Lage eintragen; das Datum nur,
+      wenn es nicht das Baudatum oben ist. Im Baumodus unter „Punkte“ → „Vom Baunachweis
+      nachtragen“ den Tag wählen, dann je Punkt „✓ wie geplant“ oder „⌖ Koordinate“ und die
+      Uhrzeit in der Zeile; zusätzliche Punkte (Mast, Muffe, Umgehung) in die freien Zeilen
+      und dort „⌖ Punkt nach Koordinate“.</p>
   </section>`;
 }
 
@@ -2961,12 +3034,12 @@ function baunachweisZeilenHTML(s) {
       <td>${escapeHtml(punktartById(pt.art).name)}</td>
       <td class="mono">${escapeHtml(toMGRS(pt.lat, pt.lng, 5))}</td>
       <td class="ankreuzen"><span class="kasten" aria-hidden="true"></span></td>
-      ${leer}${leer}
+      ${leer}${leer}${leer}
     </tr>`);
   /* Drei freie Zeilen für das, was der Plan nicht kennt. Mehr nicht: eine
      halbe Seite leerer Zeilen liest sich wie eine Aufforderung, sie zu füllen. */
   for (let i = 0; i < 3; i++) {
-    zeilen.push(`<tr><td class="nr">+</td>${leer}${leer}<td></td>${leer}${leer}</tr>`);
+    zeilen.push(`<tr><td class="nr">+</td>${leer}${leer}<td></td>${leer}${leer}${leer}</tr>`);
   }
   return zeilen.join('');
 }
@@ -2978,11 +3051,11 @@ function baunachweisMeldungenHTML(k, opt) {
      Zeilen bringen. Sechs Meldungen sind drei Stunden Bau im
      Halbstundentakt. */
   const zeilen = opt.ausrichtung === 'quer' ? 6 : 8;
-  const zeile = '<tr><td class="ausfuellen"></td><td class="ausfuellen"></td><td class="ausfuellen"></td></tr>';
+  const zeile = '<tr>' + '<td class="ausfuellen"></td>'.repeat(4) + '</tr>';
   return `<section class="bl-abschnitt bl-baunachweis">
     <h2>Baumeldungen und Kabelverbrauch</h2>
-    <table class="tab-punkte tab-ausfuellen">
-      <thead><tr><th>Uhrzeit</th><th>Stand (Kabellänge, Punkt)</th><th>gemeldet an</th></tr></thead>
+    <table class="tab-punkte tab-ausfuellen tab-nachweis-meldungen">
+      <thead><tr><th>Datum</th><th>Uhrzeit</th><th>Stand (Kabellänge, Punkt)</th><th>gemeldet an</th></tr></thead>
       <tbody>${zeile.repeat(zeilen)}</tbody>
     </table>
     <table class="tab-punkte tab-ausfuellen">
@@ -2993,8 +3066,9 @@ function baunachweisMeldungenHTML(k, opt) {
         <td class="ausfuellen"></td><td class="ausfuellen"></td>
       </tr></tbody>
     </table>
-    <p class="tab-fussnote">${regel ? `${escapeHtml(regel.text)} (${escapeHtml(fundstelleText(regel))}). ` : ''}Uhrzeit
-      und Datum lassen sich im Baumodus unter „Meldungen“ so nachtragen, wie sie hier stehen.</p>
+    <p class="tab-fussnote">${regel ? `${escapeHtml(regel.text)} (${escapeHtml(fundstelleText(regel))}). ` : ''}Datum
+      nur, wenn es nicht das Baudatum oben ist. Im Baumodus mit „Vom Baunachweis nachtragen“
+      unter „Meldungen“ so übernehmen, wie es hier steht.</p>
   </section>`;
 }
 
@@ -3136,7 +3210,12 @@ function passeVorschauAn(wurzel, opt) {
   if (!buehne || !doku) return;
   const [bmm] = seitenmasse(opt);
   const breitePx = bmm * MM_PX;
-  const rand = buehne.clientWidth < 600 ? 16 : 48;
+  /* Das Polster der Bühne wird abgelesen und nicht angenommen: geschätzte
+     16 px gegen tatsächliche 48 ließen das Blatt am Telefon rechts 8 px über
+     den Rand stehen – abgeschnitten war ausgerechnet die Spalte, in der die
+     Mengen stehen. */
+  const polster = getComputedStyle(buehne);
+  const rand = parseFloat(polster.paddingLeft) + parseFloat(polster.paddingRight);
   const passend = Math.min(1, (buehne.clientWidth - rand) / breitePx);
   /* In Originalgröße bleibt das Blatt bei 1 und die Bühne scrollt – nur so ist
      die Schrift auf einem kleinen Schirm zu lesen. */
@@ -3312,8 +3391,14 @@ function baudokuStammHTML(p, s, k) {
     : eintraege.length ? `${dtgOderStrich(eintraege[0])} (aus Aufnahmen)` : '';
   const ende = alleZu ? dtgOderStrich(enden[enden.length - 1])
     : abs.length > 1 && enden.length ? `${enden.length} von ${abs.length} beendet`
-    : eintraege.length ? `${dtgOderStrich(eintraege[eintraege.length - 1])} ` +
-        (gebaut ? '(aus Aufnahmen)' : '(letzter Eintrag)') : '';
+    : eintraege.length ? `${dtgOderStrich(eintraege[eintraege.length - 1])}` +
+        (gebaut ? ' (aus Aufnahmen)' : '') : '';
+  /* Solange gebaut wird, ist die jüngste Aufnahme kein Bauende – das Feld
+     heißt dann so, wie es ist. Im Review stand „Bauende 14:20 (letzter
+     Eintrag)“ auf einem Blatt einer Strecke im Bau, und die Führungsstelle las
+     die erste Hälfte. */
+  const endeErklaert = alleZu || (abs.length > 1 && enden.length);
+  const endeTitel = !endeErklaert && eintraege.length && !gebaut ? 'letzter Eintrag' : 'Bauende';
 
   return stammFelderHTML([
     ['Auftrag / Einsatz', p.kopf.einsatz],
@@ -3322,7 +3407,7 @@ function baudokuStammHTML(p, s, k) {
     ['Trupp', trupp || leer],
     ['Truppführer', fuehrer || leer],
     ['Baubeginn', beginn || leer],
-    ['Bauende', ende || leer],
+    [endeTitel, ende || leer],
     /* „Baustand“ und nicht „Stand“: im Kopf darüber steht schon der
        Planungsstand als Datum-Zeit-Gruppe, und zwei Angaben gleichen Namens auf
        einem Blatt sind eine zu viel. */
@@ -3544,8 +3629,15 @@ function baudokuNachweiseNoetig(opt) {
 function baudokuNachweise(ziel, p, strecke, k, opt) {
   const fluss = blattfluss(ziel, opt, baudokuKopfHTML(p, strecke), fussHTML(p, opt));
 
-  if (bauabschnitte(strecke).length > 1) {
+  /* Die Aufstellung je Abschnitt steht, wenn mehrere Trupps gebaut haben –
+     oder wenn eine Angabe dazu nur hier stehen kann: von welchem bis zu
+     welchem Punkt, und wann das Gerät ausfiel. Der Kopf hat dafür kein Feld,
+     und die Angabe kam seit Schema 19 vom Bogen ins Gerät. */
+  const abs = bauabschnitte(strecke);
+  if (abs.length > 1 || abs.some(a => a.vonPunkt || a.bisPunkt || a.ausfallZeit || a.ausfallNach)) {
     fluss.setze(elementAus(bauabschnittHTML(strecke)));
+  } else if (!abs.length && strecke.bau && (strecke.bau.ausfallZeit || strecke.bau.ausfallNach)) {
+    fluss.setze(elementAus(geraeteausfallHTML(strecke)));
   }
   /* Jeder eingeschaltete Nachweis erscheint, auch wenn nichts darin steht –
      dann mit einem Satz, der das sagt. Ein Abschnitt, der wortlos verschwindet,
@@ -3669,20 +3761,67 @@ function markiereFehlend(img) {
    Strecke gebaut haben – bei einem einzigen stehen seine Angaben schon im
    Kopf, und eine Tabelle mit einer Zeile ist Papier ohne Aussage. */
 function bauabschnittHTML(s) {
-  const zeilen = bauabschnitte(s).map(a => `<tr>
+  const gebaut = ['gebaut', 'uebergeben'].includes(s.bau && s.bau.stand);
+  /* Beginn und Ende wie im Kopf: erklärte Zeiten gehen vor, sonst die
+     Aufnahmen dieses Abschnitts, gekennzeichnet. Vorher stand hier „–“, wo
+     der Kopf darüber eine abgeleitete Zeit nannte, und das Blatt widersprach
+     sich selbst. */
+  const zeiten = a => {
+    const e = eintragszeiten(s, a.id);
+    const beginn = a.beginn ? dtgOderStrich(a.beginn)
+      : e.length ? `${dtgOderStrich(e[0])} (aus Aufnahmen)` : '–';
+    const ende = a.ende ? dtgOderStrich(a.ende)
+      : e.length ? `${dtgOderStrich(e[e.length - 1])} (${gebaut ? 'aus Aufnahmen' : 'letzter Eintrag'})`
+        : '–';
+    return [beginn, ende];
+  };
+  const zeilen = bauabschnitte(s).map(a => {
+    const [beginn, ende] = zeiten(a);
+    return `<tr>
     <td>${escapeHtml(a.name)}</td>
     <td>${escapeHtml(a.trupp || '')}</td>
     <td>${escapeHtml(a.fuehrer || '')}</td>
-    <td class="mono">${escapeHtml(dtgOderStrich(a.beginn) || '–')}</td>
-    <td class="mono">${escapeHtml(dtgOderStrich(a.ende) || '–')}</td>
-  </tr>`).join('');
+    <td>${escapeHtml(vonBisText(s, a))}</td>
+    <td class="mono bd-zeit">${escapeHtml(beginn)}</td>
+    <td class="mono bd-zeit">${escapeHtml(ende)}</td>
+    <td>${escapeHtml(ausfallText(s, a) || '–')}</td>
+  </tr>`;
+  }).join('');
   return `<section class="bl-abschnitt">
     <h2>Bauabschnitte</h2>
-    <table class="tab-punkte">
-      <thead><tr><th>Abschnitt</th><th>Trupp</th><th>Truppführer</th>
-        <th>Baubeginn</th><th>Bauende</th></tr></thead>
+    <table class="tab-punkte tab-bauabschnitte">
+      <thead><tr><th>Abschnitt</th><th>Trupp</th><th>Truppführer</th><th>Punkte</th>
+        <th>Baubeginn</th><th>Bauende</th><th>Gerät ausgefallen</th></tr></thead>
       <tbody>${zeilen}</tbody>
     </table>
+    <p class="tab-fussnote">Zeiten „(aus Aufnahmen)“ sind aus den Einträgen des Abschnitts
+      abgeleitet, nicht vom Trupp erklärt. Nach einem Geräteausfall ist vom Baunachweis auf
+      Papier nachgetragen.</p>
+  </section>`;
+}
+
+/* „Pkt. 1–4“ aus den Kennungen am Abschnitt; leer heißt nicht angegeben. */
+function vonBisText(s, a) {
+  const nr = pid => { const i = s.punkte.findIndex(pt => pt.id === pid); return i >= 0 ? i + 1 : null; };
+  const von = nr(a.vonPunkt), bis = nr(a.bisPunkt);
+  if (!von && !bis) return '–';
+  return `Pkt. ${von || '?'}–${bis || '?'}`;
+}
+
+/* „14:20 nach Pkt. 3“ – der Geräteausfall am Abschnitt oder am Bau-Block */
+function ausfallText(s, ziel) {
+  const i = s.punkte.findIndex(pt => pt.id === ziel.ausfallNach);
+  return [ziel.ausfallZeit ? zeitDruck(ziel.ausfallZeit) : '',
+    i >= 0 ? `nach Pkt. ${i + 1}` : ''].filter(Boolean).join(' ');
+}
+
+/* Ohne Bauabschnitt hat der Geräteausfall keine Zeile in einer Tabelle – er
+   steht als eigener Satz da, mit dem, was er für den Rest des Blattes heißt. */
+function geraeteausfallHTML(s) {
+  return `<section class="bl-abschnitt">
+    <h2>Geräteausfall</h2>
+    <p>Gerät ausgefallen ${escapeHtml(ausfallText(s, s.bau))}. Was danach gebaut wurde, ist vom
+      Baunachweis auf Papier nachgetragen.</p>
   </section>`;
 }
 
@@ -3697,9 +3836,10 @@ function istpunkteRahmenHTML(fortsetzung) {
       <tbody></tbody>
     </table>
     <p class="tab-fussnote">Die Herkunft sagt, wie die Koordinate entstanden ist: bestätigt
-      aus dem Plan, vom Gerät geortet (mit Genauigkeit) oder auf der Karte gesetzt. Die
-      Spalte „geplant“ nennt die Nummer des bestätigten Trassenpunktes und die Entfernung
-      zu ihm.</p>
+      aus dem Plan, vom Gerät geortet (mit Genauigkeit), auf der Karte gesetzt oder vom
+      Baunachweis abgeschrieben (Papier). „nachgetragen“ heißt: vom Papier übernommen, die
+      Zeit stammt vom Blatt. Die Spalte „geplant“ nennt die Nummer des bestätigten
+      Trassenpunktes und die Entfernung zu ihm.</p>
   </section>`;
 }
 
@@ -3714,7 +3854,7 @@ function istpunkteZeilenHTML(s) {
       <td>${escapeHtml(punktartText(pt))}</td>
       <td>${escapeHtml(pt.name || '')}</td>
       <td class="mono">${escapeHtml(toMGRS(pt.lat, pt.lng, 5))}</td>
-      <td>${escapeHtml(quelleText(pt))}</td>
+      <td>${escapeHtml(quelleText(pt))}${nachtragHTML(pt)}</td>
       <td class="mono">${escapeHtml(zeitDruck(pt.zeit))}</td>
       <td>${escapeHtml(abschnitt ? abschnitt.name : '')}</td>
       <td class="zahl">${soll
@@ -3797,9 +3937,20 @@ function meldungZeilenHTML(s) {
     return `<tr>
       <td class="mono">${escapeHtml(zeitDruck(m.zeit))}</td>
       <td>${escapeHtml(a ? a.name : '')}</td>
-      <td>${escapeHtml(m.text || '')}</td>
+      <td>${escapeHtml(m.text || '')}${nachtragHTML(m)}</td>
     </tr>`;
   }).join('');
+}
+
+/* Der Vermerk der Abschrift: am Eintrag, nicht in einer eigenen Spalte – die
+   Tabellen sind auf A4 hoch ausgemessen, und eine Spalte, die fast immer leer
+   ist, nähme der Bemerkung den Platz. */
+function nachtragHTML(eintrag) {
+  if (!eintrag || !eintrag.nachgetragen) return '';
+  const d = new Date(eintrag.nachgetragen);
+  const wann = Number.isNaN(d.getTime()) ? ''
+    : ' ' + d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  return `<span class="bd-nachtrag">nachgetragen${escapeHtml(wann)}</span>`;
 }
 
 /* Messungen und Sprechproben je Leitungsstamm, darunter die Übergabe. Ohne
@@ -3836,7 +3987,7 @@ function pruefungZeilenHTML(s) {
     <td>${escapeHtml(z.ergebnis || '')}</td>
     <td>${z.bestanden === true ? 'bestanden'
          : z.bestanden === false ? '<b>nicht bestanden</b>' : 'offen'}</td>
-    <td class="mono">${escapeHtml(zeitDruck(z.zeit))}</td>
+    <td class="mono">${escapeHtml(zeitDruck(z.zeit))}${nachtragHTML(z)}</td>
     <td>${escapeHtml(z.pruefer || '')}</td>
   </tr>`).join('');
 }

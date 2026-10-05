@@ -47,6 +47,13 @@ export const HOECHSTENS = 2000;
 const GLEICHZEITIG = 4;
 const PAUSE = 120;
 
+/* Frist für eine einzelne Kachel. Ein Abruf ohne Frist hing an einer
+   schwachen Verbindung minutenlang, und mit ihm stand der ganze Lauf: vier
+   hängende Abrufe sind alle vier Arbeiter. Zehn Sekunden sind für 20 kB auch
+   über eine schlechte Mobilverbindung reichlich; was dann nicht da ist, zählt
+   als fehlend, und der Lauf geht weiter. */
+export const FRIST = 10000;
+
 export const ZOOM_VON = 13;
 export const ZOOM_BIS = 17;
 
@@ -163,6 +170,10 @@ function vorratGeaendert() {
   vorratStand++;
   adressenLauf = null;
   abdeckungen.clear();
+  /* Wer den Bestand anzeigt, zählt neu – die Statusleiste zählte bisher nur,
+     wenn eine Kachel ausblieb, und nannte nach „Karte holen“ und „Vorrat
+     löschen“ den alten Stand. Zählen und Drosseln ist Sache der Anzeige. */
+  if (typeof document !== 'undefined') document.dispatchEvent(new Event('fbp:vorrat'));
 }
 
 /* Ein zweites Fenster der Anwendung kann den Vorrat gefüllt oder geleert
@@ -368,19 +379,32 @@ export function vorladen(vorlage, kartenId, linien, o = {}) {
             vorhanden++;
           } else {
             ausDemNetz = true;
-            const antwort = await fetch(url, {
-              mode: 'cors', credentials: 'omit', signal: abbruch.signal
-            });
-            if (antwort.ok) {
-              const blob = await antwort.blob();
-              await kachelAblegen(url, blob, kartenId);
-              geholt++; bytes += blob.size;
-            } else {
-              fehler++;
+            /* Die Frist gilt bis zum letzten Byte und nicht nur bis zur
+               Antwort: eine Verbindung, die nach dem Kopf abreißt, hängt im
+               Lesen. Der Abbruch des ganzen Laufs geht durch dieselbe Leitung. */
+            const frist = new AbortController();
+            const uhr = setTimeout(() => frist.abort(), FRIST);
+            const weiter = () => frist.abort();
+            abbruch.signal.addEventListener('abort', weiter);
+            try {
+              const antwort = await fetch(url, {
+                mode: 'cors', credentials: 'omit', signal: frist.signal
+              });
+              if (antwort.ok) {
+                const blob = await antwort.blob();
+                clearTimeout(uhr);
+                await kachelAblegen(url, blob, kartenId);
+                geholt++; bytes += blob.size;
+              } else {
+                fehler++;
+              }
+            } finally {
+              clearTimeout(uhr);
+              abbruch.signal.removeEventListener('abort', weiter);
             }
           }
         } catch (e) {
-          if (e && e.name === 'AbortError') return;
+          if (e && e.name === 'AbortError' && abgebrochen) return;
           /* Ein volles Gerät bricht den ganzen Lauf ab. Weiterzuladen hieße,
              dem Kartenanbieter noch tausend Kacheln abzuverlangen, um sie
              sofort wegzuwerfen – genau die Art Zugriff, die eine Sperre

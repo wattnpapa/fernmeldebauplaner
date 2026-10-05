@@ -106,9 +106,24 @@ const stelleVon = (liste, kennung) => {
   return i >= 0 ? i : undefined;
 };
 
-function bauVerschlanken(s) {
+/* `nur` ist die Menge der Bauabschnitte, die mitgehen sollen – oder `null` für
+   alle. Gebraucht wird sie auf dem Rückweg: ein neu verschickter Auftrag trägt
+   den ganzen Bau-Block der Strecke, also auch den Abschnitt des ANDEREN Trupps,
+   wie ihn der Planer zuletzt eingespielt hat. Ging der unbesehen mit der
+   nächsten Meldung zurück, überschrieb beim Planer der alte Stand von Trupp 1
+   den neuen – gemeldet von Trupp 2. Weggelassen wird dann auch, was keinem
+   Abschnitt angehört: es ist der Bestand des Planers und nicht der Bau dieses
+   Trupps. Welche Abschnitte eigene sind, weiß das Gerät (`eigeneAbschnitte`
+   in baudoku.js), nicht der Codec. */
+function bauVerschlanken(s, nur = null) {
   if (!bauBegonnen(s)) return undefined;
-  const bau = s.bau;
+  const bau = nur ? {
+    ...s.bau,
+    abschnitte: s.bau.abschnitte.filter(a => nur.has(a.id)),
+    punkte: s.bau.punkte.filter(pt => nur.has(pt.abschnitt)),
+    material: s.bau.material.filter(z => nur.has(z.abschnitt)),
+    meldungen: s.bau.meldungen.filter(m => nur.has(m.abschnitt))
+  } : s.bau;
   const vorgabeBau = neuerBau();
   const raus = entruempeln(bau, vorgabeBau);
   delete raus.abschnitte;
@@ -127,6 +142,15 @@ function bauVerschlanken(s) {
      des Planers, und im Fingerabdruck ließe er eine unveränderte Meldung als
      geändert erscheinen. */
   delete raus.gemeldetVon;
+  /* Der Punkt, nach dem das Gerät ausfiel, ist eine Punktkennung wie
+     `vonPunkt` und reist deshalb ebenso als Stelle. */
+  if ('ausfallNach' in raus) {
+    raus.ausfallNach = stelleVon(s.punkte, bau.ausfallNach);
+    if (raus.ausfallNach === undefined) delete raus.ausfallNach;
+  }
+  /* Und der Rückgabe-Code der zuletzt eingespielten Meldung, aus demselben
+     Grund: er ist eine Notiz des Planers über den Empfang. */
+  delete raus.gemeldetCode;
 
   if (bau.abschnitte.length) {
     raus.abschnitte = bau.abschnitte.map((a, i) => {
@@ -150,6 +174,10 @@ function bauVerschlanken(s) {
       weg.bisPunkt = stelleVon(s.punkte, a.bisPunkt);
       if (weg.vonPunkt === undefined) delete weg.vonPunkt;
       if (weg.bisPunkt === undefined) delete weg.bisPunkt;
+      if ('ausfallNach' in weg) {
+        weg.ausfallNach = stelleVon(s.punkte, a.ausfallNach);
+        if (weg.ausfallNach === undefined) delete weg.ausfallNach;
+      }
       return weg;
     });
   }
@@ -230,8 +258,8 @@ function bauVerschlanken(s) {
  * eine Änderung am Bauort bemerken und nicht einer Fälschung standhalten. Acht
  * Zeichen reichen dafür – und der Vermerk bleibt ohnehin auf dem Gerät.
  */
-export function bauAbdruck(strecke) {
-  const schlank = bauVerschlanken(strecke);
+export function bauAbdruck(strecke, nur = null) {
+  const schlank = bauVerschlanken(strecke, nur);
   if (!schlank) return '';
   const text = JSON.stringify(schlank);
   let h = 5381;
@@ -259,9 +287,12 @@ export function meldungsCode(bloecke) {
   return code;
 }
 
-/** Der Kurzcode beim Trupp – über dieselben Strecken, die `alsBaumeldung` nimmt */
-export const meldungsCodeVon = strecken =>
-  meldungsCode((strecken || []).filter(bauBegonnen).map(bauVerschlanken));
+/** Der Kurzcode beim Trupp – über dieselben Strecken und dieselbe Auswahl der
+ *  Bauabschnitte, die `alsBaumeldung` nimmt. Ein Code über mehr, als
+ *  hinausgeht, stimmte beim Planer nie. */
+export const meldungsCodeVon = (strecken, auswahl = null) =>
+  meldungsCode((strecken || []).filter(bauBegonnen)
+    .map(s => bauVerschlanken(s, auswahl ? auswahl(s) : null)));
 
 /** Und beim Planer, aus der angekommenen Meldung nachgerechnet. Die Bögen
  *  sind dort genau das, was `bauVerschlanken` geliefert hat, durch JSON
@@ -285,7 +316,9 @@ function bauAuffuellen(objekt) {
     abschnitte.forEach(a => {
       a.vonPunkt = punktKennung(a.vonPunkt);
       a.bisPunkt = punktKennung(a.bisPunkt);
+      a.ausfallNach = punktKennung(a.ausfallNach);
     });
+    s.bau.ausfallNach = punktKennung(s.bau.ausfallNach);
     for (const pt of (Array.isArray(s.bau.punkte) ? s.bau.punkte : [])) {
       if (!pt) continue;
       pt.sollPunkt = punktKennung(pt.sollPunkt);
@@ -615,7 +648,9 @@ export async function planungAusFragment(fragment = location.hash) {
    Bauabschnitt“ und wusste nicht, wer gemeldet hat, während die Meldung beim
    Einspielen die Eintragungen eines anderen Trupps ersetzte. Er kostet ein paar
    Zeichen im Link und beantwortet die erste Frage, die der Planer stellt. */
-export function alsBaumeldung(projekt, strecken, von = '') {
+/* `auswahl` liefert je Strecke die Menge der Bauabschnitte, die mitgehen –
+   oder `null` für den ganzen Bogen (siehe `bauVerschlanken`). */
+export function alsBaumeldung(projekt, strecken, von = '', auswahl = null) {
   const gemeldet = (strecken || []).filter(bauBegonnen);
   return {
     fassung: 1,
@@ -625,17 +660,17 @@ export function alsBaumeldung(projekt, strecken, von = '') {
     strecken: gemeldet.map(s => ({
       name: s.name,
       sollPunkte: (s.punkte || []).length,
-      bau: bauVerschlanken(s)
+      bau: bauVerschlanken(s, auswahl ? auswahl(s) : null)
     }))
   };
 }
 
 /** Eine Baumeldung als Link. Wirft, wenn der Browser nicht packen kann. */
-export async function meldungAlsLink(projekt, strecken, von = '') {
+export async function meldungAlsLink(projekt, strecken, von = '', auswahl = null) {
   if (!kannPacken())
     throw new Error('Dieser Browser kann keine Links erzeugen – Baumeldung als Datei sichern.');
   return eigeneAdresse() + '#' + KENNUNG_MELDUNG +
-    await packen(JSON.stringify(alsBaumeldung(projekt, strecken, von)));
+    await packen(JSON.stringify(alsBaumeldung(projekt, strecken, von, auswahl)));
 }
 
 /**

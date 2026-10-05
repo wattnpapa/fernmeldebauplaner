@@ -352,10 +352,11 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   der Materialkatalog vorgedruckt, Abweichungen und Meldung an den S 6, Prüfung je Stamm
   mit „bestanden“ und „nicht bestanden“ und Übergabe; dazu Bauabschnitt, Bauende und der
   Zeitpunkt, zu dem das Gerät ausfiel. Stehen mehrere Trupps im Auftrag, bekommt jeder
-  seinen Bogen. Fällt das Telefon aus, wird dort mitgeschrieben und später nachgetragen;
-  Tag und Uhrzeit von Punkten und Meldungen lassen sich dabei vom Blatt übernehmen. Ein
-  QR-Code auf dem Blatt öffnet den Auftrag im FMBauplaner, und jeder Blattkopf trägt die
-  Plan-Kennung, die auch im Bau-Reiter steht
+  seinen Bogen. Fällt das Telefon aus, wird dort mitgeschrieben und später unter „Vom
+  Baunachweis nachtragen“ abgeschrieben: mit dem Baudatum vom Blatt, der Uhrzeit je
+  Zeile und, wo die Lage abwich, der Koordinate vom Blatt; die Baudokumentation nennt
+  solche Einträge „Papier“. Ein QR-Code auf dem Blatt öffnet den Auftrag im FMBauplaner,
+  und jeder Blattkopf trägt die Plan-Nr., die auch im Bau-Reiter steht
 - **Bau beginnen aus dem Link:** ein Link mit einer einzelnen Strecke öffnet den
   Baumodus auf dieser Strecke, fragt einmal nach Trupp und Truppführer und erinnert
   daran, die Karte mitzunehmen. Hat der Planer unter „Auftrag an (Trupp)“ mehrere
@@ -459,11 +460,15 @@ von ihm: sie wird am Bauort ausgefüllt, der Bauauftrag geht an die Führung.
 
 **Baumeldung zurückschicken:** Im Baumodus ganz unten unter „Baumeldung an den
 Planer“ – als Link oder als Datei. Sie geht über alle Strecken, an denen dieser
-Trupp gearbeitet hat, nicht nur über die gerade gewählte. Der Planer öffnet sie
+Trupp gearbeitet hat, nicht nur über die gerade gewählte; kennt das Gerät seinen Trupp,
+trägt sie nur dessen Bauabschnitte. Der Planer öffnet sie
 wie einen geteilten Link oder über „Datei → Planung oder KML laden“ und bekommt
 die Vorschau: die neuen Baumeldungen im Wortlaut, was sich am Stand ändert, und was
-dabei verloren ginge – dann steht „Verwerfen“ vorn. Beide Seiten zeigen einen
-vierstelligen Kurzcode der Meldung, der sich über Funk als Quittung zurückgeben lässt.
+dabei verloren ginge – dann steht „Verwerfen“ vorn. Eine durchgefallene Prüfung geht
+dabei nie verloren: je Stamm gewinnt „durchgefallen“, und eine Übergabe fällt zurück.
+Beide Seiten zeigen einen vierstelligen Rückgabe-Code, der sich über Funk als Quittung
+zurückgeben lässt; der Trupp sieht auch den zuletzt verschickten, der Planer den
+zuletzt eingespielten an der Strecke.
 Wer einen Bauauftrag ein zweites Mal öffnet, baut in der vorhandenen Aufnahme weiter
 statt in einer leeren Kopie.
 

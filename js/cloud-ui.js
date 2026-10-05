@@ -111,8 +111,16 @@ export function cloudUiStarten() {
        danach nichts mehr von vorher kennt. */
     if (lage.fernstand && lage.fernstand.nr !== fernstandGezeigt) {
       fernstandGezeigt = lage.fernstand.nr;
-      hinweis(`Neuerer Stand vom Speicher übernommen (${zeitKurz(lage.fernstand.zeit)})` +
-        (lage.fernstand.verlaufWeg ? ' – „↶“ beginnt damit neu.' : ''));
+      /* Im Baumodus ist ein geänderter Plan keine Nebensache: der Trupp baut
+         nach seinem Papier, und dort steht die alte Plan-Nr. Gesagt wird das
+         mit beiden Nummern und als Warnung, nicht in der gewöhnlichen Pille. */
+      const f = lage.fernstand;
+      const planAnders = f.planAlt && f.planNeu && f.planAlt !== f.planNeu &&
+        document.body.classList.contains('baumodus');
+      hinweis(`Neuerer Stand vom Speicher übernommen (${zeitKurz(f.zeit)})` +
+        (planAnders ? ` – der Plan hat sich geändert: Plan-Nr. ${f.planAlt} → ${f.planNeu}. ` +
+          'Der gedruckte Bauauftrag ist damit veraltet.' : '') +
+        (f.verlaufWeg ? ' – „↶“ beginnt damit neu.' : ''), planAnders ? 'warnung' : undefined);
     }
     /* Ein Konflikt darf nicht in einer Statuszeile versanden: er hält die
        Übertragung an, bis jemand entscheidet. Gezeigt wird er aber nur

@@ -1,6 +1,6 @@
 // map.js – Leaflet-Karte, Basiskarten, Panes
 
-import { kachelHolen } from './kacheln.js';
+import { kachelHolen, kacheladresse } from './kacheln.js';
 
 /* `vorrat: true` heißt: diese Karte darf für den Bauort mitgenommen werden.
    Es steht nur an den Ebenen des BKG. Deren Lizenz – dl-de/by-2-0 – erlaubt
@@ -253,6 +253,13 @@ export function erstelleKarte(el, ansicht = {}) {
   karte.createPane('fbp-griffe').style.zIndex = GRIFFE_UNTEN;
   karte.createPane('fbp-labels').style.zIndex = 620;
   karte.getPane('fbp-labels').style.pointerEvents = 'none';
+  /* Die Streckenschilder liegen über den Griffen, auch wenn die im Reiter
+     „Strecken“ nach vorn rücken (`setzeVorrang`): im Review lag „neu“ an der
+     Standmarke unter einer Punktmarke der Nachbarstrecke, und genau dieses
+     Wort sollte die Führungsstelle auf der Karte finden. Getippt wird durch
+     das Schild hindurch – die Ebene nimmt keine Zeigerereignisse an. */
+  karte.createPane('fbp-schilder').style.zIndex = 636;
+  karte.getPane('fbp-schilder').style.pointerEvents = 'none';
   /* Die Lichtbilder liegen unter den taktischen Zeichen: das Lagebild geht
      vor, die Bilder belegen es. */
   karte.createPane('fbp-bilder').style.zIndex = 630;
@@ -284,6 +291,11 @@ export function setzeVorrang(karte, bereich) {
   griffe.style.zIndex = vorn ? GRIFFE_UEBER_BILDERN : GRIFFE_UNTEN;
 }
 
+/* Wie viele Stufen gröber eine Ersatzkachel sein darf. Fünf reichen von der
+   feinsten Stufe der Ebene (18) bis zur gröbsten des Vorrats (13); darunter
+   ist ein Ausschnitt aus 32 × 32 Bildpunkten nur noch Farbe. */
+const ERSATZ_STUFEN = 5;
+
 /* Eine Kachelebene, die erst im Vorrat des Geräts nachsieht und nur dann ins
    Netz geht, wenn dort nichts liegt.
 
@@ -306,8 +318,35 @@ function vorratsEbene(url, optionen) {
       const bild = document.createElement('img');
       bild.alt = '';
       const adresse = this.getTileUrl(koordinaten);
+      let ersatzVersucht = false;
       L.DomEvent.on(bild, 'load', () => fertig(null, bild));
-      L.DomEvent.on(bild, 'error', () => fertig(new Error('Kachel nicht verfügbar'), bild));
+      /* Kommt die Kachel weder aus dem Vorrat noch aus dem Netz, springt die
+         gröbere Stufe aus dem Vorrat ein, bevor die Fläche grau bleibt. */
+      L.DomEvent.on(bild, 'error', () => {
+        if (bild._fbpWeg) return;
+        if (ersatzVersucht) return fertig(new Error('Kachel nicht verfügbar'), bild);
+        ersatzVersucht = true;
+        this._ersatzSetzen(bild, koordinaten).then(da => {
+          if (!da && !bild._fbpWeg) fertig(new Error('Kachel nicht verfügbar'), bild);
+        });
+      });
+      const ausDemNetz = () => {
+        /* Ohne Netz gar nicht erst fragen: der Abruf schlüge ohnehin fehl,
+           und bis dahin stünde die Fläche leer, wo der Vorrat sie füllen kann. */
+        if (navigator.onLine === false) {
+          ersatzVersucht = true;
+          this._ersatzSetzen(bild, koordinaten).then(da => {
+            if (da || bild._fbpWeg) return;
+            if (this.options.crossOrigin) bild.crossOrigin = this.options.crossOrigin;
+            bild.src = adresse;
+          });
+          return;
+        }
+        /* `crossOrigin` gilt nur für den Weg übers Netz: bei einer
+           Blob-Adresse ist es ohne Wirkung und bei manchen Browsern hinderlich. */
+        if (this.options.crossOrigin) bild.crossOrigin = this.options.crossOrigin;
+        bild.src = adresse;
+      };
       kachelHolen(adresse).then(blob => {
         /* Abgeräumt, bevor der Vorrat geantwortet hat. Dann darf hier nichts
            mehr geschehen: eine Blob-Adresse wäre ein Leck, das niemand mehr
@@ -319,17 +358,59 @@ function vorratsEbene(url, optionen) {
           bild._fbpBlobAdresse = URL.createObjectURL(blob);
           bild.src = bild._fbpBlobAdresse;
         } else {
-          /* `crossOrigin` gilt nur für den Weg übers Netz: bei einer
-             Blob-Adresse ist es ohne Wirkung und bei manchen Browsern hinderlich. */
-          if (this.options.crossOrigin) bild.crossOrigin = this.options.crossOrigin;
-          bild.src = adresse;
+          ausDemNetz();
         }
       }).catch(() => {
         if (bild._fbpWeg) return;
-        if (this.options.crossOrigin) bild.crossOrigin = this.options.crossOrigin;
-        bild.src = adresse;
+        ausDemNetz();
       });
       return bild;
+    },
+
+    /* Über der feinsten mitgenommenen Stufe war die Karte am Bauort weg: die
+       Ebene fragt bis Stufe 18, der Vorrat reicht nach Vorgabe bis 17, und
+       beim Einmessen einer Muffe wird genau dorthin gezoomt. Statt grau zu
+       bleiben, zeigt die Kachel dann ihr Viertel (oder Sechzehntel …) aus der
+       nächstgröberen Stufe, die im Vorrat liegt – unscharf, aber mit Weg und
+       Haus an der richtigen Stelle. `maxNativeZoom` der Ebene auf die
+       Vorratsstufe zu senken, hätte dasselbe gezeigt, aber auch mit Netz jede
+       feinere Kachel verschenkt.
+
+       Ausgeschnitten wird auf einer Leinwand und als Blob-Adresse übergeben,
+       damit das Bild denselben Weg geht wie jede Kachel aus dem Vorrat – samt
+       Freigabe beim Abräumen und ohne CSS-Filter, dessen Bereich Firefox beim
+       Drucken weglässt. */
+    async _ersatzSetzen(bild, { x, y, z }) {
+      for (let stufen = 1; stufen <= ERSATZ_STUFEN && z - stufen >= 0; stufen++) {
+        const teiler = 2 ** stufen;
+        const eltern = { x: Math.floor(x / teiler), y: Math.floor(y / teiler), z: z - stufen };
+        /* Nicht `getTileUrl()`: Leaflet setzt dort die Stufe der Karte ein und
+           nicht die der verlangten Kachel. `kacheladresse()` ist auch die
+           Adresse, unter der „Karte holen“ abgelegt hat. */
+        const blob = await kachelHolen(kacheladresse(this._url, eltern)).catch(() => null);
+        if (bild._fbpWeg) return false;
+        if (!blob) continue;
+        try {
+          const quelle = await createImageBitmap(blob);
+          const kante = quelle.width / teiler;
+          const leinwand = document.createElement('canvas');
+          leinwand.width = leinwand.height = 256;
+          leinwand.getContext('2d').drawImage(quelle,
+            (x % teiler) * kante, (y % teiler) * kante, kante, kante, 0, 0, 256, 256);
+          quelle.close?.();
+          const ausschnitt = await new Promise(f => leinwand.toBlob(f, 'image/png'));
+          if (!ausschnitt || bild._fbpWeg) return false;
+          bild.removeAttribute('crossorigin');
+          if (bild._fbpBlobAdresse) URL.revokeObjectURL(bild._fbpBlobAdresse);
+          bild._fbpBlobAdresse = URL.createObjectURL(ausschnitt);
+          bild.src = bild._fbpBlobAdresse;
+          if (this._map) this._map.fire('fbp:kachelgrob', { z, aus: z - stufen });
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
+      return false;
     }
   });
   const ebene = new Ebene(url, optionen);

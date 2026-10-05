@@ -171,8 +171,14 @@ body.druckansicht { overflow: hidden; }
   .ds-drucken { display: contents; }
   .ds-drucken .knopf { white-space: nowrap; }
   .ds-format { grid-column: 1 / -1; text-align: center; padding: 2px 8px; }
-  /* Der Rand um das Blatt ist Platz, den die Vorschau besser gebrauchen kann. */
-  .druck-buehne { padding: 10px 8px; }
+  /* Der Rand um das Blatt ist Platz, den die Vorschau besser gebrauchen kann.
+     Mit der Kennung davor: die Grundregel der Bühne steht weiter unten und
+     setzte sonst ihre 24 px durch – die Einpassung rechnete aber mit diesen 8,
+     und am Telefon fehlten dem Blatt rechts 8 px (bei 390 px Breite von 24 bis
+     398). Die Einpassung liest das Polster inzwischen selbst ab. Nur am
+     Schirm: ein A4-Blatt hochkant ist auch beim Drucken schmaler als 900 px,
+     und dort muss das Polster 0 aus dem Druckblock gewinnen. */
+  @media screen { #druck .druck-buehne { padding: 10px 8px; } }
 }
 
 /* Quer auf dem Telefon ist Höhe knapp und Breite reichlich – genau umgekehrt
@@ -372,6 +378,9 @@ body.druckansicht { overflow: hidden; }
   text-align: right; font-weight: 500; color: #555; padding: 0 2mm 0 0; white-space: nowrap;
 }
 .bl-kennung td { font-weight: 700; white-space: nowrap; }
+/* Die Plan-Nr. kennt 0 und O: am Funk und beim Abgleich mit dem Bau-Reiter
+   muss die Null als Null zu lesen sein. */
+.plan-nr { font-variant-numeric: slashed-zero; }
 
 /* -- Stammdaten */
 
@@ -459,6 +468,9 @@ body.druckansicht { overflow: hidden; }
 .lg-titel { font-weight: 700; text-transform: uppercase; letter-spacing: .4pt; font-size: .92em; }
 .lg-eintrag { display: inline-flex; align-items: center; gap: 1.4mm; }
 .lg-hinweis { color: #555; font-style: italic; margin-left: auto; }
+/* Die Standmarken der Lagekarte in der Erklärung: dieselben Marken wie im
+   Schild, in der Schrift der Erklärung statt in den 10,5 px der Oberfläche. */
+.bl-legende .bz-marke { font-size: .9em; padding: 0 1.2mm; line-height: 1.35; }
 
 /* Zeichenerklärung der Ausbreitungszonen. Sie bricht aus der einzeiligen
    Legendenreihe aus: ihre Einträge tragen einen ganzen Satz und nicht ein Wort,
@@ -600,9 +612,20 @@ body.druckansicht { overflow: hidden; }
 .tab-ausfuellen td { height: 7mm; vertical-align: middle; }
 .tab-ausfuellen tbody tr:nth-child(even) { background: none; }
 .tab-ausfuellen td.ausfuellen { border-bottom: .6pt solid #444; }
-.tab-ausfuellen:not(.tab-nachweis-kopf, .tab-nachweis-katalog, .tab-nachweis-pruefung) th:nth-child(5) { width: 40%; }
-.tab-nachweis-pruefung th:nth-child(3) { width: 28%; }
-.tab-nachweis-pruefung th:nth-child(4), .tab-nachweis-pruefung th:nth-child(5) { width: 9%; }
+.tab-ausfuellen:not(.tab-nachweis-kopf, .tab-nachweis-katalog, .tab-nachweis-pruefung,
+  .tab-nachweis-meldungen) th:nth-child(5) { width: 34%; }
+/* Datum und Uhrzeit schmal und gleich breit: hinein kommt „17.10.“ und
+   „14:20“, und ohne Vorgabe zog die automatische Breite sie auf ihre
+   Kopfzeile zusammen, schmaler als eine Handschrift. */
+.tab-ausfuellen:not(.tab-nachweis-kopf, .tab-nachweis-katalog, .tab-nachweis-pruefung,
+  .tab-nachweis-meldungen) th:nth-child(6),
+.tab-ausfuellen:not(.tab-nachweis-kopf, .tab-nachweis-katalog, .tab-nachweis-pruefung,
+  .tab-nachweis-meldungen) th:nth-child(7) { width: 10%; }
+.tab-nachweis-meldungen th:nth-child(1), .tab-nachweis-meldungen th:nth-child(2) { width: 12%; }
+.tab-nachweis-meldungen th:nth-child(4) { width: 22%; }
+.tab-nachweis-pruefung th:nth-child(3) { width: 24%; }
+.tab-nachweis-pruefung th:nth-child(4), .tab-nachweis-pruefung th:nth-child(5) { width: 8%; }
+.tab-nachweis-pruefung th:nth-child(6), .tab-nachweis-pruefung th:nth-child(7) { width: 9%; }
 /* Was der Planer schon weiß, steht vorgedruckt in der Schreibzeile – der
    Trupp eines Bogens bei mehreren Trupps. Kräftig, damit der Bogen auf dem
    Klemmbrett nicht mit dem des anderen Trupps verwechselt wird. */
@@ -627,9 +650,11 @@ body.druckansicht { overflow: hidden; }
    Abstand für aufeinanderfolgende Schreibtabellen setzte jede weitere sonst um
    3 mm tiefer, und die Zeilen fluchteten nicht mehr. */
 .bl-katalog .tab-ausfuellen + .tab-ausfuellen { margin-top: 0; }
-/* Unter „Sonstiges“ sind Bezeichnung und Menge beide zu schreiben; ohne
-   Trennstrich liefen die zwei Schreiblinien zu einer zusammen. */
-.tab-nachweis-katalog td.ausfuellen + td.ausfuellen { border-left: .6pt solid #444; }
+/* Zwei Schreibfelder nebeneinander bekommen einen Trennstrich – ohne ihn
+   liefen die Schreiblinien zu einer zusammen, und im Review stand die
+   Uhrzeit mitten in „abweichend“ und das Datum unter „Truppführer“. Zuerst
+   nur unter „Sonstiges“ gesetzt, gilt das für jede Schreibzeile des Bogens. */
+.tab-ausfuellen td.ausfuellen + td.ausfuellen { border-left: .6pt solid #444; }
 .tab-nachweis-katalog .gruppenzeile td {
   height: auto; padding-top: 1.6mm; font-size: .8em; font-weight: 700;
   text-transform: uppercase; letter-spacing: .3pt; color: #333; border-bottom: .4pt solid #999;
@@ -1045,6 +1070,17 @@ body.druckansicht { overflow: hidden; }
    nachgetragen, was das Gerät am Bauort nicht aufgenommen hat. */
 .tab-ist td, .tab-bogen td, .tab-meldung td, .tab-pruef td { padding: 1.2mm 1.2mm; }
 .tab-bogen .zahl, .tab-pruef .zahl { white-space: nowrap; }
+/* Der Vermerk der Abschrift steht unter dem Eintrag, klein und in der
+   Grundschrift – auch in einer Zelle mit Festbreitenschrift und ohne
+   Umbruch. Kursiv und nicht grau: im Schwarz-Weiß-Druck auf dem Kopierer
+   verschwände ein helles Grau. */
+.bd-nachtrag {
+  display: block; font-family: var(--schrift, inherit); font-size: .8em; font-style: italic;
+  white-space: normal;
+}
+/* Abgeleitete Zeiten tragen ihren Zusatz „(aus Aufnahmen)“ – in der
+   Abschnittstabelle darf die Zelle dafür umbrechen. */
+.tab-bauabschnitte td.bd-zeit { white-space: normal; }
 /* Eine leere Tabelle sagt „nichts eingetragen“ und bleibt nicht wortlos: ein
    leeres Feld auf einem Nachweis liest sich wie ein vergessenes. */
 .tab-leer { text-align: center; font-style: italic; color: #555; padding: 2.4mm 0; }
@@ -1216,6 +1252,13 @@ body.druckansicht { overflow: hidden; }
      abgeräumt, nicht Regel für Regel. */
   *, *::before, *::after { animation: none !important; transition: none !important; }
   html, body { height: auto; background: #fff; overflow: visible; }
+  /* Aus der Nachtdarstellung gedruckt, stand das Blatt in einer schwarzen
+     Fläche: `html:has(body.nacht)` und `body.nacht` in app.css sind
+     spezifischer als `html, body` und setzten den dunklen Grund auch hier
+     durch. Dieselben Wähler, mit `html` davor, schlagen sie. */
+  html:has(body.nacht), html.nacht-vor, html body.nacht, html.nacht-vor body {
+    background: #fff; color-scheme: light;
+  }
   .hinweisbox, .dialog-huelle, .druck-steuerung, .druck-lupe { display: none !important; }
   /* Die Bedienoberfläche nur wegblenden, wenn tatsächlich ein Blatt vorliegt.
      Ohne diese Einschränkung druckte Strg+P außerhalb des Bauauftrags eine

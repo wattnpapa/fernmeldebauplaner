@@ -19,7 +19,7 @@ import {
   neueMaterialzeile, neueBaumeldung, neuePruefzeile, neuePruefung,
   materialZusammenfassen, bauBegonnen, pruefungGehaltvoll, bildAufKarte
 } from './state.js';
-import { distanz, streckenlaenge, peilung, himmelsrichtung, meter } from './geo.js';
+import { distanz, streckenlaenge, peilung, himmelsrichtung, meter, formatLaenge } from './geo.js';
 import { MATERIALKATALOG, PRUEFART_JE_KABEL, bauweiseById } from './vorschrift.js';
 /* Der Abdruck kommt aus dem Codec und wird nicht hier gebildet: er muss über
    genau das laufen, was hinausgeht, und das weiß `teilen.js`. Kein Ring –
@@ -89,7 +89,12 @@ export const sollZuIst = (s, istPunkt) =>
  */
 export function istPunktSetzen(strecke, lat, lng, o = {}) {
   const bau = bauSichern(strecke);
-  const neu = neuerIstPunkt(lat, lng, o);
+  /* Im Nachtrag vom Papier trägt der Punkt keine Uhrzeit des Abtippens,
+     sondern die Abschrift (`nachtragFelder`). Die Ortung durch das Gerät ist
+     davon ausgenommen: sie misst jetzt und hier, abgeschrieben ist an ihr
+     nichts. */
+  const neu = neuerIstPunkt(lat, lng,
+    { ...(o.quelle === 'standort' ? {} : nachtragFelder()), ...o });
   if (bau.stand === 'offen') bau.stand = 'laeuft';
 
   /* Bestätigt der Punkt einen geplanten, ersetzt er eine frühere Bestätigung
@@ -115,11 +120,13 @@ export function istPunktSetzen(strecke, lat, lng, o = {}) {
     neu.sollPunkt = neu.sollPunkt || vorher.sollPunkt;
     if (!o.art) { neu.art = vorher.art; neu.bauweise = vorher.bauweise; }
     bau.punkte[alt] = neu;
+    truppFrageVormerken(strecke, neu);
     return neu;
   }
 
   const stelle = einsortierStelle(strecke, bau, neu);
   bau.punkte.splice(stelle, 0, neu);
+  truppFrageVormerken(strecke, neu);
   return neu;
 }
 
@@ -384,7 +391,9 @@ export function sollPunktGeloescht(strecke, pid) {
   bau.abschnitte.forEach(a => {
     if (a.vonPunkt === pid) a.vonPunkt = null;
     if (a.bisPunkt === pid) a.bisPunkt = null;
+    if (a.ausfallNach === pid) a.ausfallNach = null;
   });
+  if (bau.ausfallNach === pid) bau.ausfallNach = null;
 }
 
 /**
@@ -517,7 +526,7 @@ export const baumeldungen = s => (s && s.bau && s.bau.meldungen) || [];
 /** Eine Baumeldung anlegen. Nur innerhalb von `store.aendern` aufrufen. */
 export function baumeldungAnlegen(strecke, text = '', abschnitt = null) {
   const bau = bauSichern(strecke);
-  const m = neueBaumeldung({ text, abschnitt });
+  const m = neueBaumeldung({ text, abschnitt, ...nachtragFelder() });
   if (bau.stand === 'offen') bau.stand = 'laeuft';
   bau.meldungen.push(m);
   return m;
@@ -564,7 +573,7 @@ export const pruefzeilen = s => (s && s.bau && s.bau.pruefung && s.bau.pruefung.
 export function pruefzeileAnlegen(strecke) {
   const pr = pruefungSichern(strecke);
   const art = PRUEFART_JE_KABEL[strecke.kabeltyp] || 'messung';
-  const z = neuePruefzeile({ art, stamm: `Stamm ${pr.staemme.length + 1}` });
+  const z = neuePruefzeile({ art, stamm: `Stamm ${pr.staemme.length + 1}`, ...nachtragFelder() });
   pr.staemme.push(z);
   return z;
 }
@@ -648,16 +657,97 @@ export function truppAmGeraetSetzen(o) {
   return truppVermerk;
 }
 
+/**
+ * Die Bauabschnitte, die diesem Gerät gehören – oder `null`, wenn es keinen
+ * kennt. Eigen ist ein Abschnitt, dessen Trupp (oder, ohne Trupp, dessen Name)
+ * der Trupp am Gerät ist; so legt ihn auch „Welcher Trupp seid ihr?“ an.
+ *
+ * Gebraucht wird das auf dem Rückweg: ein zweiter Auftrag an denselben Trupp
+ * trägt den ganzen Bau-Block, wie ihn der Planer zuletzt hatte – samt dem
+ * Abschnitt des anderen Trupps. Ging der mit der nächsten Meldung zurück,
+ * überschrieb beim Planer der alte Stand von „1. FmTr“ den neuen, gemeldet von
+ * „2. FmTr“ (`alsBaumeldung` in teilen.js). Kennt das Gerät seinen Trupp
+ * nicht, bleibt alles wie bisher: dann ist nicht zu entscheiden, was fremd ist.
+ */
+export function eigeneAbschnitte(s) {
+  const ich = truppAmGeraet().trupp.trim();
+  if (!ich) return null;
+  const eigene = bauabschnitte(s).filter(a => a.trupp ? a.trupp.trim() === ich : a.name.trim() === ich);
+  return eigene.length ? new Set(eigene.map(a => a.id)) : null;
+}
+
+/** Ein Bauabschnitt, der nach `eigeneAbschnitte` einem anderen Trupp gehört –
+ *  auf diesem Gerät nur zur Ansicht, er geht mit der Meldung nicht hinaus */
+export function fremderAbschnitt(s, a) {
+  const eigene = eigeneAbschnitte(s);
+  return !!eigene && !eigene.has(a.id);
+}
+
 /** Wer die Meldung absetzt, in einer Zeile – Bauabschnitte gehen vor, denn sie
  *  stehen in der Planung und sagen, wer welchen Teil gebaut hat */
 export function absenderText(strecken) {
+  const v = truppAmGeraet();
   const ausAbschnitten = new Set();
   for (const s of strecken) {
-    for (const a of bauabschnitte(s)) if (a.trupp) ausAbschnitten.add(a.trupp);
+    /* Nur die Abschnitte, die auch hinausgehen: der Planer las sonst „1. FmTr,
+       2. FmTr“ über der Meldung eines einzigen Trupps. */
+    const eigene = eigeneAbschnitte(s);
+    for (const a of bauabschnitte(s)) {
+      if (!a.trupp || (eigene && !eigene.has(a.id))) continue;
+      /* Der Truppführer reist mit. Ohne ihn war beim Planer „1. FmTr“ vom
+         „1. FmTr“ eines anderen Geräts nicht zu unterscheiden – im Audit
+         baute ein zweiter Trupp unter der vorgewählten Bezeichnung des ersten,
+         und die Warnung vor einem anderen Absender schlug nicht an. */
+      const fuehrer = a.fuehrer || (a.trupp === v.trupp ? v.fuehrer : '');
+      ausAbschnitten.add([a.trupp, fuehrer].filter(Boolean).join(' · '));
+    }
   }
   if (ausAbschnitten.size) return [...ausAbschnitten].join(', ');
-  const v = truppAmGeraet();
   return [v.trupp, v.fuehrer].filter(Boolean).join(' · ');
+}
+
+// ------------------------------------------------- Welcher Trupp, rechtzeitig
+
+/* Hat der Planer mehrere Trupps aufgetragen, fragt „Bau beginnen“, welcher
+   dieses Gerät ist. Wer dort „Später“ drückte, wurde nie wieder gefragt – und
+   jede Aufnahme danach lief ohne Bauabschnitt hinaus und trat beim Planer an
+   die Stelle der Aufnahme des anderen Trupps. Gefragt wird deshalb noch einmal
+   bei der ersten Aufnahme, und zwar HIER, wo jeder Aufnahmeweg vorbeikommt –
+   Liste, Bauleiste, Punktkarte, Kartentipp. Ein Haken an jedem dieser Wege
+   wäre spätestens beim nächsten neuen Weg vergessen worden.
+
+   Der Punkt entsteht dabei trotzdem: die Frage kommt danach und nicht davor,
+   denn wer an der Muffe steht, soll die Ortung nicht verlieren, weil ein
+   Dialog dazwischenkam. Fällt die Wahl, bekommt er seinen Abschnitt
+   nachträglich (`truppWahlWartende`). Die Frage selbst stellt die Oberfläche
+   (`truppFrageAnmelden`) – hier steht nur, wann. */
+let truppFrage = null;
+const truppGefragt = new Set();
+const truppWartend = new Map();
+export function truppFrageAnmelden(fn) { truppFrage = fn; }
+
+/** Muss dieses Gerät noch sagen, welcher der aufgetragenen Trupps es ist? */
+export const truppWahlOffen = s => auftragsTrupps(s).length >= 2 && !eigeneAbschnitte(s);
+
+function truppFrageVormerken(strecke, neu) {
+  if (neu.abschnitt || !truppFrage || !truppWahlOffen(strecke)) return;
+  if (!truppWartend.has(strecke.id)) truppWartend.set(strecke.id, []);
+  truppWartend.get(strecke.id).push(neu.id);
+  /* Einmal je Sitzung und Strecke: wer zweimal „Später“ gesagt hat, will
+     aufnehmen und nicht bei jedem Punkt dieselbe Frage. Nach dem Neuladen
+     kommt sie wieder, solange kein Abschnitt dieses Geräts da ist. */
+  if (truppGefragt.has(strecke.id)) return;
+  truppGefragt.add(strecke.id);
+  const sid = strecke.id;
+  setTimeout(() => truppFrage && truppFrage(sid), 0);
+}
+
+/** Die Punkte, die in dieser Sitzung ohne Abschnitt aufgenommen wurden,
+ *  während die Wahl offen war – sie bekommen den gewählten nachträglich */
+export function truppWahlWartende(sid) {
+  const liste = truppWartend.get(sid) || [];
+  truppWartend.delete(sid);
+  return liste;
 }
 
 // ------------------------------------------------------------ Was hinausging
@@ -670,12 +760,17 @@ export function absenderText(strecken) {
 
 /** Festhalten, dass die Baumeldung dieser Strecke hinausgegangen ist.
  *  Nur innerhalb von `store.aendern` aufrufen. */
-export function absetzenVermerken(strecke, weg) {
+export function absetzenVermerken(strecke, weg, code = '') {
   const bau = bauSichern(strecke);
   bau.abgesetzt = {
     zeit: new Date().toISOString(),
     weg: weg === 'datei' ? 'datei' : 'link',
-    abdruck: bauAbdruck(strecke)
+    abdruck: bauAbdruck(strecke, eigeneAbschnitte(strecke)),
+    /* Der Rückgabe-Code, wie er hinausging. Der Rückmeldeblock zeigt sonst nur
+       den von JETZT – nach der nächsten Eintragung war der verschickte weg,
+       und nannte der Planer über Funk „5QVV“, stand am Gerät „VHTP“ und kein
+       Weg, die beiden zusammenzubringen. */
+    code: String(code || '')
   };
   return bau.abgesetzt;
 }
@@ -694,16 +789,16 @@ export function absetzenVermerken(strecke, weg) {
  */
 export function absetzstand(strecke) {
   const a = (strecke.bau && strecke.bau.abgesetzt) || null;
-  if (!a || !a.zeit) return { stand: 'nie', zeit: '', weg: '' };
-  const jetzt = bauAbdruck(strecke);
+  if (!a || !a.zeit) return { stand: 'nie', zeit: '', weg: '', code: '' };
+  const jetzt = bauAbdruck(strecke, eigeneAbschnitte(strecke));
   const geaendert = !!(a.abdruck && jetzt && a.abdruck !== jetzt);
-  return { stand: geaendert ? 'veraltet' : 'aktuell', zeit: a.zeit, weg: a.weg };
+  return { stand: geaendert ? 'veraltet' : 'aktuell', zeit: a.zeit, weg: a.weg, code: a.code || '' };
 }
 
 /** Der jüngste Absetz-Vermerk über mehrere Strecken – der Stand des Trupps */
 export function absetzstandGesamt(strecken) {
   const staende = strecken.map(absetzstand).filter(x => x.stand !== 'nie');
-  if (!staende.length) return { stand: 'nie', zeit: '', weg: '' };
+  if (!staende.length) return { stand: 'nie', zeit: '', weg: '', code: '' };
   const juengster = staende.reduce((a, b) => (b.zeit > a.zeit ? b : a));
   /* Eine einzige veraltete Strecke macht den ganzen Stand veraltet: gemeldet
      wird über alle zusammen, und der Planer bekäme sonst eine Strecke ohne die
@@ -1047,6 +1142,12 @@ export function bauzeile(strecke) {
   const k = baukennzahlen(strecke);
   const teile = [];
   if (k.sollPunkte) teile.push(`${k.bestaetigt}/${k.sollPunkte} Punkte`);
+  /* Die Lücke zwischen zwei Bauabschnitten steht hier wie im Bau-Reiter und
+     auf der Baudokumentation. Ohne sie las sich „4/7 Punkte“ zweier Trupps
+     in der Liste wie ein Stück am Anfang der Trasse, nicht wie ein offenes
+     Stück in der Mitte. Ohne ⚠: sie ist der Fortschritt beim abschnittsweisen
+     Bau, kein Fehler. */
+  if (k.lueckeLaenge) teile.push(`Lücke ${formatLaenge(k.lueckeLaenge)}`);
   const trupps = [...new Set(bauabschnitte(strecke).map(a => a.trupp).filter(Boolean))];
   /* Ohne Bauabschnitt nennt der Absender der letzten Meldung den Trupp – im
      Audit stand sonst nur „zuletzt 06:13“, und nach einer zweiten Meldung war
@@ -1118,6 +1219,29 @@ export function baustreckeSetzen(sid) {
 let aktiverAbschnittId = null;
 export function bauabschnittAktivSetzen(aid) { aktiverAbschnittId = aid || null; }
 export function bauabschnittAktivId() { return aktiverAbschnittId; }
+/* Das Nachtragen vom Baunachweis: der Tag, von dem abgeschrieben wird, als
+   „2026-10-04“, sonst `null`. Solange er steht, bekommt jeder neue Eintrag
+   diesen Tag und KEINE Uhrzeit – die steht auf dem Blatt und wird von dort
+   übernommen –, dazu den Zeitpunkt der Abschrift. Vorher stempelte „✓ wie
+   geplant“ beim Abtippen die Zeit des Abtippens, das Bauende der
+   Dokumentation war die Uhrzeit am Küchentisch, und der Tag musste an jedem
+   Punkt neu gewählt werden.
+
+   Sitzungszustand wie der aktive Abschnitt und nicht in der Planung: er sagt,
+   was gerade am Gerät geschieht, nicht, was gebaut wurde. Ein Neuladen und das
+   Verlassen des Bau-Reiters beenden ihn – wer am nächsten Morgen weiterbaut,
+   soll nicht still mit dem Tag von gestern aufnehmen. */
+let nachtragTagWert = null;
+export function nachtragSetzen(tag) {
+  nachtragTagWert = /^\d{4}-\d{2}-\d{2}$/.test(String(tag || '')) ? tag : null;
+}
+export const nachtragTag = () => nachtragTagWert;
+/** Was ein neuer Eintrag im Nachtrag mitbekommt – leer, wenn keiner läuft.
+ *  `zeit` ist dabei leer und nicht „jetzt“: eine Uhrzeit, die niemand vom
+ *  Blatt übernommen hat, ist keine Bauzeit. */
+export const nachtragFelder = () => nachtragTagWert
+  ? { zeit: '', nachgetragen: new Date().toISOString() } : {};
+
 /** Der aktive Bauabschnitt dieser Strecke – oder `null`, wenn keiner (mehr) gilt */
 export function aktiverBauabschnitt(s) {
   const gewaehlt = bauabschnittById(s, aktiverAbschnittId);
@@ -1143,5 +1267,9 @@ export function aktiverBauabschnitt(s) {
  * nicht: eingeordnet wird über den Namen des Abschnitts (`baumeldung.js`).
  */
 export function auftragsTrupps(s) {
-  return String((s && s.trupp) || '').split(/[,;]/).map(x => x.trim()).filter(Boolean);
+  /* „1. FmTr und 2. FmTr“ schreibt man so hin, und es ergab einen einzigen
+     Trupp dieses Namens – keiner wurde gefragt, beide meldeten ohne Abschnitt
+     und ersetzten einander. „und“ und „u.“ trennen deshalb wie das Komma. */
+  return String((s && s.trupp) || '').split(/[,;]|\s+und\s+|\s+u\.\s+/)
+    .map(x => x.trim()).filter(Boolean);
 }

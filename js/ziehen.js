@@ -25,8 +25,23 @@
  *  einer Marke beginnt, sie nie erreicht. */
 export const HALTEN_MS = 450;
 /* Bis hierhin gilt der Finger als stehend. Ein Handschuh zittert um einige
-   Bildpunkte; erst darüber hinaus ist es ein Wisch, und der gehört der Karte. */
-const RUHE_PX = 10;
+   Bildpunkte; erst darüber hinaus ist es ein Wisch, und der gehört der Karte.
+   14 und nicht mehr 10: im Review zitterte die Handschuhkuppe beim Halten
+   über 10 px, und das Halten endete still als Fehlstart – die Marke blieb
+   liegen, ohne dass etwas sagte, warum. Ein Wisch dagegen läuft in den
+   ersten Millisekunden weit über 14 px hinaus; die Schwelle trennt ihn
+   weiterhin sicher vom Halten. */
+const RUHE_PX = 14;
+/* So weit über dem Finger steht die Marke, solange sie am Finger gezogen
+   wird. Unter der Kuppe – mit Handschuh rund 15 mm – war der Ort, an dem sie
+   landet, nicht zu sehen, und abgesetzt wurde auf gut Glück. 40 px liegen
+   knapp über der Kuppe; weiter oben verlöre die Marke den Bezug zum Finger.
+   Die Maus zieht ohne Versatz: ihr Zeiger verdeckt nichts. */
+const VERSATZ_PX = 40;
+/* Wer so lange stand und dann doch abrutschte, wollte halten und nicht
+   wischen – ein Wisch setzt sich in den ersten Millisekunden in Bewegung.
+   Dann sagt es die Anwendung einmal (`fbp:ziehen-fehlstart`, js/app.js). */
+const FEHLSTART_MS = 200;
 /* Leaflets eigene Schwelle für die Maus: ein Klick, der um drei Bildpunkte
    verrutscht, bleibt ein Klick und kein Ziehen. */
 const MAUS_PX = 3;
@@ -76,6 +91,7 @@ function anfassen(karte, marke, el, e, { start, ziehen, ende }) {
   const ausgang = marke.getLatLng();
   const ausgangPunkt = karte.latLngToContainerPoint(ausgang);
   const x0 = e.clientX, y0 = e.clientY;
+  const t0 = performance.now();
   let gegriffen = !finger;   // die Maus greift sofort, der Finger nach dem Halten
   let gezogen = false;
   let uhr = null;
@@ -107,13 +123,26 @@ function anfassen(karte, marke, el, e, { start, ziehen, ende }) {
     }
     const dx = ev.clientX - x0, dy = ev.clientY - y0;
     if (!gegriffen) {
-      if (Math.hypot(dx, dy) > RUHE_PX) aufraeumen(false);
+      if (Math.hypot(dx, dy) > RUHE_PX) {
+        if (finger && performance.now() - t0 >= FEHLSTART_MS) {
+          document.dispatchEvent(new CustomEvent('fbp:ziehen-fehlstart'));
+          /* Auch der Klick beim Loslassen gehört noch zum Halten: er wählte
+             sonst die Marke oder setzte eine Koordinate, wo der Finger
+             abgerutscht war. */
+          document.addEventListener('pointerup', auf => {
+            if (auf.pointerId !== e.pointerId) return;
+            klickSperre = { bis: Date.now() + 400, x: auf.clientX, y: auf.clientY };
+          }, { capture: true, once: true });
+        }
+        aufraeumen(false);
+      }
       return;
     }
     if (!gezogen && Math.hypot(dx, dy) <= (finger ? 0 : MAUS_PX)) return;
     ev.preventDefault();
     if (!gezogen) { gezogen = true; start(); }
-    const ll = karte.containerPointToLatLng(ausgangPunkt.add(L.point(dx, dy)));
+    const ll = karte.containerPointToLatLng(
+      ausgangPunkt.add(L.point(dx, dy - (finger ? VERSATZ_PX : 0))));
     marke.setLatLng(ll);
     ziehen(ll);
   };
@@ -143,4 +172,42 @@ function anfassen(karte, marke, el, e, { start, ziehen, ende }) {
   document.addEventListener('pointermove', bewegen, true);
   document.addEventListener('pointerup', loslassen, true);
   document.addEventListener('pointercancel', loslassen, true);
+}
+
+/**
+ * Am Finger melden, dass hier gehalten wird, ohne dass etwas zu ziehen ist.
+ *
+ * Gezogen wird nur ein Punkt der gewählten Strecke. Wer im Review einen Punkt
+ * einer anderen hielt, sah nichts geschehen – kein Ring, keine Meldung – und
+ * hielt das Ziehen für kaputt; dass erst gewählt sein muss, stand nur in der
+ * Kurzanleitung. Dieselbe Haltezeit und dieselbe Ruheschwelle wie beim Ziehen,
+ * damit ein Wisch über die Marke still bleibt.
+ */
+export function haltenOhneZiehen(marke, melden) {
+  const binden = () => {
+    const el = marke.getElement();
+    if (!el || el._fbpHalten) return;
+    el._fbpHalten = true;
+    el.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse' || !e.isPrimary) return;
+      const x0 = e.clientX, y0 = e.clientY;
+      const weg = () => {
+        clearTimeout(uhr);
+        document.removeEventListener('pointermove', bewegen, true);
+        document.removeEventListener('pointerup', weg, true);
+        document.removeEventListener('pointercancel', weg, true);
+      };
+      const bewegen = ev => {
+        if (ev.pointerId !== e.pointerId ||
+            Math.hypot(ev.clientX - x0, ev.clientY - y0) > RUHE_PX) weg();
+      };
+      const uhr = setTimeout(() => { weg(); melden(); }, HALTEN_MS);
+      document.addEventListener('pointermove', bewegen, true);
+      document.addEventListener('pointerup', weg, true);
+      document.addEventListener('pointercancel', weg, true);
+    });
+  };
+  marke.on('add', binden);
+  binden();
+  return marke;
 }

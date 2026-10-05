@@ -12,7 +12,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 18;
+export const SCHEMA = 19;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_VERLAUF  = 'fbp.verlauf.v1';   // Rückgängig-Verlauf, im Sitzungsspeicher
@@ -124,7 +124,14 @@ export const BAUSTAENDE = [
 export const ISTQUELLEN = [
   { id: 'plan',     name: 'wie geplant bestätigt',  kurz: 'Plan' },
   { id: 'standort', name: 'Standort des Geräts',    kurz: 'Standort' },
-  { id: 'karte',    name: 'auf der Karte gesetzt',  kurz: 'Karte' }
+  { id: 'karte',    name: 'auf der Karte gesetzt',  kurz: 'Karte' },
+  /* Die vierte Herkunft kam mit dem Baunachweis auf Papier (Schema 19): fällt
+     das Gerät aus, schreibt der Trupp die gebaute Lage als MGRS auf den Bogen,
+     und abends wird sie abgetippt. Das ist weder gemessen noch getippt – es
+     ist abgeschrieben, mit der Genauigkeit dessen, der draußen die Karte
+     gelesen hat. Sie steht hinten, damit `istquelleById` für Unbekanntes
+     weiter auf „Karte“ fällt. */
+  { id: 'papier',   name: 'vom Baunachweis abgeschrieben', kurz: 'Papier' }
 ];
 
 /* Früher wurde das Feldfernkabel zusätzlich als eigener Typ „FK 2×2“ geführt.
@@ -492,6 +499,13 @@ export function neuerPunkt(lat, lng, art = 'punkt') {
    (BAUDOKU.md) und bleiben zunächst leer: sie jetzt anzulegen kostet nichts –
    der Codec in `teilen.js` wirft weg, was der Vorgabe entspricht – und spart
    der nächsten Stufe eine zweite Schemaerhöhung. */
+/* Der Zeitpunkt der Abschrift kommt aus derselben Fremde wie alles am
+   Bau-Block. Er landet als Text auf dem Blatt; was keine Zeit ist, fällt weg. */
+function nachtragZeit(roh) {
+  const t = String(roh || '').slice(0, 40);
+  return t && !Number.isNaN(Date.parse(t)) ? t : '';
+}
+
 export function neuerBau() {
   return {
     stand: 'offen',
@@ -522,7 +536,21 @@ export function neuerBau() {
        WESSEN Aufnahme sie ersetzt – im Audit verschwand die Aufnahme eines
        zweiten Trupps, und der Empfangsdialog sagte nur „3 Punkte weichen“.
        Auch er bleibt am Gerät und reist nicht mit. */
-    gemeldetVon: ''
+    gemeldetVon: '',
+    /* Wann das Gerät ausfiel und nach welchem geplanten Punkt (Schema 19). Ab
+       da gilt der Baunachweis auf Papier, und was davor aufgenommen wurde,
+       steht schon im Gerät – ohne die Angabe wird beim Nachtragen doppelt
+       oder gar nicht übernommen. Der Bogen fragt seit der vierten Runde
+       danach; das Gerät konnte es nicht aufnehmen. Hier steht der Fall ohne
+       Bauabschnitt, mit Abschnitten trägt ihn jeder Abschnitt selbst. */
+    ausfallZeit: '',
+    ausfallNach: null,
+    /* Und ihr Rückgabe-Code. Er stand beim Planer nur drei Sekunden in der
+       Pille nach dem Einspielen; fragte der Trupp eine Stunde später über
+       Funk „ist 5QVV angekommen?“, war er nirgends mehr nachzulesen. Kein
+       neues Schema: ein Stand ohne das Feld öffnet mit leerem Code, und
+       `bauNormalisieren()` stellt es her. */
+    gemeldetCode: ''
   };
 }
 
@@ -545,6 +573,11 @@ export function neuerBauabschnitt(bau) {
     bisPunkt: null,
     beginn: '',
     ende: '',
+    /* Der Geräteausfall dieses Trupps – wie `ausfallZeit`/`ausfallNach` am
+       Bau-Block, nur je Abschnitt: beim abschnittsweisen Bau fällt das Gerät
+       des einen Trupps aus und das des anderen nicht. */
+    ausfallZeit: '',
+    ausfallNach: null,
     farbe: FARBEN[n % FARBEN.length]
   };
 }
@@ -577,7 +610,13 @@ export function neuerIstPunkt(lat, lng, o = {}) {
        beiden
        bliebe eine Zahl eine Behauptung. */
     genauigkeit: Number.isFinite(o.genauigkeit) ? Math.round(o.genauigkeit) : null,
-    zeit: o.zeit || new Date().toISOString()
+    zeit: o.zeit ?? new Date().toISOString(),
+    /* Wann dieser Eintrag vom Papier abgeschrieben wurde, sonst leer (Schema
+       19). Die Herkunft der Koordinate sagt das nicht: auch ein vom Bogen
+       übernommenes „wie geplant“ trägt die Koordinate des Plans. Wer später
+       eine Bauzeit liest, muss aber wissen, ob sie draußen gestempelt oder
+       abends abgetippt wurde. */
+    nachgetragen: nachtragZeit(o.nachgetragen)
   };
 }
 
@@ -607,9 +646,10 @@ export function neueMaterialzeile(artikel, o = {}) {
 export function neueBaumeldung(o = {}) {
   return {
     id: id(),
-    zeit: o.zeit || new Date().toISOString(),
+    zeit: o.zeit ?? new Date().toISOString(),
     text: String(o.text || ''),
-    abschnitt: o.abschnitt || null
+    abschnitt: o.abschnitt || null,
+    nachgetragen: nachtragZeit(o.nachgetragen)
   };
 }
 
@@ -624,8 +664,9 @@ export function neuePruefzeile(o = {}) {
     art: PRUEFARTEN.some(a => a.id === o.art) ? o.art : PRUEFARTEN[0].id,
     ergebnis: '',
     bestanden: null,
-    zeit: o.zeit || new Date().toISOString(),
-    pruefer: ''
+    zeit: o.zeit ?? new Date().toISOString(),
+    pruefer: '',
+    nachgetragen: nachtragZeit(o.nachgetragen)
   };
 }
 
@@ -645,7 +686,7 @@ export const bauBegonnen = s => !!(s && s.bau &&
   ((s.bau.punkte || []).length || (s.bau.abschnitte || []).length ||
    (s.bau.material || []).length || (s.bau.meldungen || []).length ||
    pruefungGehaltvoll(s.bau.pruefung) ||
-   s.bau.stand !== 'offen' || s.bau.abweichung));
+   s.bau.stand !== 'offen' || s.bau.abweichung || s.bau.ausfallZeit));
 
 export function neuesZeichen(lat, lng, symbol = STANDARD_SYMBOL) {
   return {
@@ -1264,6 +1305,8 @@ export function bauNormalisieren(roh) {
     bisPunkt: a.bisPunkt || null,
     beginn: String(a.beginn || ''),
     ende: String(a.ende || ''),
+    ausfallZeit: String(a.ausfallZeit || ''),
+    ausfallNach: a.ausfallNach || null,
     farbe: farbeOderVorgabe(a.farbe, FARBEN[i % FARBEN.length])
   }));
   const punkte = (Array.isArray(roh.punkte) ? roh.punkte : [])
@@ -1298,7 +1341,10 @@ export function bauNormalisieren(roh) {
     pruefung: pruefungNormalisieren(roh.pruefung),
     abweichung: String(roh.abweichung || ''),
     abgesetzt: abgesetztNormalisieren(roh.abgesetzt),
-    gemeldetVon: String(roh.gemeldetVon || '').slice(0, 120)
+    gemeldetVon: String(roh.gemeldetVon || '').slice(0, 120),
+    ausfallZeit: String(roh.ausfallZeit || ''),
+    ausfallNach: roh.ausfallNach || null,
+    gemeldetCode: String(roh.gemeldetCode || '').slice(0, 8)
   };
 }
 
@@ -1313,7 +1359,11 @@ function abgesetztNormalisieren(roh) {
   return {
     zeit,
     weg: roh.weg === 'datei' ? 'datei' : 'link',
-    abdruck: String(roh.abdruck || '')
+    abdruck: String(roh.abdruck || ''),
+    /* Der verschickte Rückgabe-Code (`absetzenVermerken` in baudoku.js). Ein
+       Vermerk von vor seiner Einführung trägt keinen – dann steht eben nur
+       der von jetzt da. */
+    code: String(roh.code || '').slice(0, 8)
   };
 }
 
@@ -1407,7 +1457,12 @@ export function migrieren(p) {
 
            Schema 18 hat `gemeldetVon` ergänzt. Ältere Stände öffnen ohne
            Absender – woher eine früher eingespielte Meldung kam, weiß die
-           Planung nicht, und ein geratener Name wäre schlimmer als keiner. */
+           Planung nicht, und ein geratener Name wäre schlimmer als keiner.
+
+           Schema 19 hat die Herkunft „Papier“, den Zeitpunkt der Abschrift
+           (`nachgetragen`) und den Geräteausfall ergänzt. Auch hier kein
+           Schritt: was vorher vom Papier nachgetragen wurde, ist nicht als
+           solches erkennbar, und es nachträglich so zu nennen wäre geraten. */
         bau: bauNormalisieren(s.bau)
       };
     }),
@@ -1493,7 +1548,9 @@ export function migrieren(p) {
     s.bau.abschnitte.forEach(a => {
       if (!eigene.has(a.vonPunkt)) a.vonPunkt = null;
       if (!eigene.has(a.bisPunkt)) a.bisPunkt = null;
+      if (!eigene.has(a.ausfallNach)) a.ausfallNach = null;
     });
+    if (!eigene.has(s.bau.ausfallNach)) s.bau.ausfallNach = null;
     /* Material und Meldungen tragen dieselbe Zuordnung. Ein Verweis ins Leere
        machte die Zeile unsichtbar – der Bogen zeigt je Abschnitt, und zu einem
        Abschnitt, den es nicht gibt, gehört kein Bogen –, während sie in der

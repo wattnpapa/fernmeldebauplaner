@@ -285,9 +285,9 @@ export async function abschnittExportieren(aid) {
  * Netz ist, geht der Link; wo keines ist, geht die Datei über den Stick oder
  * das Fahrzeug – und sie kennt keine Längengrenze.
  */
-export function baumeldungExportieren(strecken, von = '') {
+export function baumeldungExportieren(strecken, von = '', auswahl = null) {
   const p = store.projekt;
-  const meldung = alsBaumeldung(p, strecken, von);
+  const meldung = alsBaumeldung(p, strecken, von, auswahl);
   if (!meldung.strecken.length) return false;
   herunterladen(JSON.stringify(meldung, null, 2),
     dateiname(['Baumeldung', p.name, p.kopf?.datum], 'json'));

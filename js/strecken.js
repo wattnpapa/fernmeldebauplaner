@@ -11,7 +11,7 @@ import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBeda
          kabelreserve } from './vorschrift.js';
 import { symbolSVG, GRUNDBREITE } from './symbols.js';
 import { signatur } from './signatur.js';
-import { ziehbar } from './ziehen.js';
+import { ziehbar, haltenOhneZiehen } from './ziehen.js';
 
 /* Eine rechnerische Trommelstelle so dicht an einer geplanten Muffe ist
    dieselbe Verbindung und wird nicht zusätzlich aufgeführt. */
@@ -417,6 +417,93 @@ export { kumuliert };
 
 const mitte = (a, b) => L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2);
 
+// ---------------------------------------------------------------- Nachtfarbe
+
+/* Gegen den dunklen Grund der Nachtdarstellung (`--grund` #0d1218) und die
+   dunkle Fassung darunter standen die tiefen Streckenfarben fast unsichtbar:
+   Lila 2,29:1, Braun 2,02:1, Schiefer 2,60:1. Die Palette umzustellen hülfe
+   nur neuen Strecken – jede Planung trägt ihre Farben gespeichert, und Farben
+   aus einer eingespielten Datei sind ohnehin frei. Gerechnet wird deshalb je
+   Farbe eine Nachtstufe: derselbe Farbton, so weit aufgehellt, bis sie 4:1
+   gegen den Grund hält. Das sind 3:1 auch gegen die Fassung, die zu 85 % deckt
+   und darunter die abgedunkelte Kachel durchlässt. Was schon hell genug ist,
+   bleibt, wie es ist.
+
+   Getragen wird die Stufe als `--farbe-nacht` neben `--farbe`; welche gilt,
+   entscheidet der Stilbogen, und zwar nur an der Arbeitskarte und nur am
+   Schirm (`app.css`). Die gespeicherte Farbe bleibt unberührt, und die
+   Druckkarten liegen außerhalb von `#karte` und behalten die Tagfarbe. Kein
+   CSS-`filter`: Firefox lässt gefilterte Bereiche beim Drucken weg, und ein
+   `brightness()` hellte Fassung und Schrift gleich mit auf. Ein `color-mix()`
+   im Stilbogen träfe die Schwelle nur geschätzt – hier wird sie gemessen. */
+const NACHT_GRUND = [13, 18, 24];
+const NACHT_KONTRAST = 4;
+const nachtFarben = new Map();
+
+const kanal = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+const leuchtdichte = ([r, g, b]) => 0.2126 * kanal(r) + 0.7152 * kanal(g) + 0.0722 * kanal(b);
+const kontrastZumGrund = rgb => (leuchtdichte(rgb) + 0.05) / (leuchtdichte(NACHT_GRUND) + 0.05);
+
+function hsl(rgb) {
+  const [r, g, b] = rgb.map(v => v / 255);
+  const hoch = Math.max(r, g, b), tief = Math.min(r, g, b);
+  const l = (hoch + tief) / 2;
+  if (hoch === tief) return [0, 0, l];
+  const d = hoch - tief;
+  const s = l > 0.5 ? d / (2 - hoch - tief) : d / (hoch + tief);
+  const h = hoch === r ? (g - b) / d + (g < b ? 6 : 0) : hoch === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+function rgbAusHsl([h, s, l]) {
+  if (!s) return [l, l, l].map(v => Math.round(v * 255));
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const ton = t => {
+    t = (t + 1) % 1;
+    return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p;
+  };
+  return [ton(h + 1 / 3), ton(h), ton(h - 1 / 3)].map(v => Math.round(v * 255));
+}
+
+/** Die Nachtstufe einer Streckenfarbe – unverändert, wenn sie schon trägt */
+export function nachtFarbe(farbe) {
+  const schluessel = String(farbe || '');
+  if (nachtFarben.has(schluessel)) return nachtFarben.get(schluessel);
+  let ziffern = schluessel.replace(/^#/, '');
+  if (ziffern.length === 3 || ziffern.length === 4) ziffern = [...ziffern].map(z => z + z).join('');
+  let ergebnis = schluessel;
+  if (/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(ziffern)) {
+    const rgb = [0, 2, 4].map(i => parseInt(ziffern.slice(i, i + 2), 16));
+    if (kontrastZumGrund(rgb) < NACHT_KONTRAST) {
+      const [h, s, l0] = hsl(rgb);
+      let l = l0, neu = rgb;
+      while (kontrastZumGrund(neu) < NACHT_KONTRAST && l < 1) {
+        l = Math.min(1, l + 0.01);
+        neu = rgbAusHsl([h, s, l]);
+      }
+      ergebnis = '#' + neu.map(v => v.toString(16).padStart(2, '0')).join('');
+    }
+  }
+  nachtFarben.set(schluessel, ergebnis);
+  return ergebnis;
+}
+
+/* Beide Stufen für ein `style`-Attribut. Leaflet-Linien tragen keine
+   Eigenschaften im Markup; für sie setzt `nachtLinie()` dasselbe am Pfad. */
+const farbStil = farbe => `--farbe:${farbe};--farbe-nacht:${nachtFarbe(farbe)}`;
+
+/* Der Pfad entsteht erst, wenn die Linie auf eine Karte kommt – vorher gibt es
+   kein Element, an das sich die Eigenschaft hängen ließe. Deshalb am `add`,
+   und für Linien, die schon liegen, gleich. */
+function nachtLinie(linie, farbe) {
+  const setze = () => {
+    if (linie._path) linie._path.style.setProperty('--farbe-nacht', nachtFarbe(farbe));
+  };
+  linie.on('add', setze);
+  setze();
+  return linie;
+}
+
 /* Grundabstand des abgerückten Streckenschildes von der Trasse, in
    Bildschirmpunkten. Gelesen wird am Bauplatz der Verlauf, nicht das Schild:
    auf eng geführten Trassen lag es bisher auf der Linie und deckte den halben
@@ -554,6 +641,17 @@ function bedarfsHerkunft(k) {
   return teile.join(' ');
 }
 
+/* Die Warnungen der Bauzeile (`bauzeile` in baudoku.js) als Kurzwort für die
+   Standmarke. Die Prüfung bleibt ausgeschrieben – sie sperrt die Übergabe und
+   soll auf der Lagekarte nicht erst übersetzt werden müssen. Die Zahl der
+   Abweichungen bleibt stehen: sie ist die Nachfrage am Funk. */
+export function standmarkeKurz(w) {
+  const abw = /^(\d+) Abweichung/.exec(w);
+  if (abw) return `${abw[1]} Abw.`;
+  if (/ abseits$/.test(w)) return 'abseits';
+  return w;
+}
+
 /**
  * Zeichnet und verwaltet alle Strecken auf einer Karte.
  * Wird sowohl für die Arbeitskarte als auch für die Druckkarte benutzt
@@ -622,13 +720,15 @@ export class StreckenLayer {
     this.aufGrobmass = opt.aufGrobmass || (() => {});
     this.aufPlanTipp = opt.aufPlanTipp || (() => {});
     /* Nach jedem Ziehen eine Meldung mit Punkt und Strecke: verschoben wurde
-       sonst still, und ein Fehlgriff fiel erst im Bauauftrag auf. */
-    this.aufGezogen = opt.aufGezogen || (() => {});
-    /* Gezogen wird ohne Rückfrage – ein Dialog mitten in der Geste wäre
-       schlimmer als keiner. Hängt an der Strecke schon ein Bau, meldet die
-       Ebene es danach: im Audit änderte das Ziehen den Auftrag des Trupps,
+       sonst still, und ein Fehlgriff fiel erst im Bauauftrag auf. Gezogen
+       wird ohne Rückfrage – ein Dialog mitten in der Geste wäre schlimmer als
+       keiner. Hängt an der Strecke schon ein Bau, sagt es dieselbe Meldung
+       (letztes Argument): im Audit änderte das Ziehen den Auftrag des Trupps,
        während das ✕ daneben längst nachfragte. */
-    this.aufGebautGeaendert = opt.aufGebautGeaendert || (() => {});
+    this.aufGezogen = opt.aufGezogen || (() => {});
+    /* Ein Punkt einer nicht gewählten Strecke wird am Finger gehalten – zu
+       ziehen ist dort nichts (`haltenOhneZiehen` in ziehen.js). */
+    this.aufHaltenUngewaehlt = opt.aufHaltenUngewaehlt || (() => {});
     this.planTipp = null;   // { sid, pid, art } – Verschieben/Einfügen per Tipp
     this.sw = !!opt.sw;                       // Schwarz-Weiß-Druck
     this.hervorheben = opt.hervorheben || null;  // diese Strecke betonen
@@ -868,10 +968,13 @@ export class StreckenLayer {
     const pfad = [[letzter.lat, letzter.lng], e.latlng];
     if (!this._vorschau) {
       this._vorschau = L.polyline(pfad, {
-        pane: 'fbp-strecken', color: s.farbe, weight: 3, opacity: 0.85, dashArray: '6 6', interactive: false
-      }).addTo(this.gruppe);
+        pane: 'fbp-strecken', color: s.farbe, weight: 3, opacity: 0.85, dashArray: '6 6', interactive: false,
+        className: 'fbp-linie'
+      });
+      nachtLinie(this._vorschau, s.farbe).addTo(this.gruppe);
     } else {
       this._vorschau.setLatLngs(pfad).setStyle({ color: s.farbe });
+      if (this._vorschau._path) this._vorschau._path.style.setProperty('--farbe-nacht', nachtFarbe(s.farbe));
     }
     const d = distanz(letzter, e.latlng);
     const html = `<span class="seg-mass vorschau">${meter(d)}</span>`;
@@ -1091,12 +1194,12 @@ export class StreckenLayer {
         }).addTo(this._ziel.gruppe);
       }
 
-      const linie = L.polyline(pfad, {
+      const linie = nachtLinie(L.polyline(pfad, {
         pane: 'fbp-strecken', color: sollSt.farbe, weight: sollSt.breite,
         opacity: sollSt.deckkraft, lineCap: sollSt.kappe || 'round', lineJoin: 'round',
         dashArray: sollSt.strich,
-        interactive: this.interaktiv, bubblingMouseEvents: false
-      }).addTo(this._ziel.gruppe);
+        interactive: this.interaktiv, bubblingMouseEvents: false, className: 'fbp-linie'
+      }), sollSt.farbe).addTo(this._ziel.gruppe);
       if (this.interaktiv) {
         linie.on('click', e => { L.DomEvent.stop(e); if (!this.zeichenModus) this.waehle(s.id); });
         linie.bindTooltip(() => this._tooltipText(s), { sticky: true, direction: 'top', className: 'fbp-tooltip' });
@@ -1122,7 +1225,7 @@ export class StreckenLayer {
         pane: 'fbp-labels', interactive: false,
         icon: L.divIcon({
           className: 'fbp-label',
-          html: `<span class="seg-mass" style="--farbe:${st.farbe}">${meter(distanz(a, b))}</span>`,
+          html: `<span class="seg-mass" style="${farbStil(st.farbe)}">${meter(distanz(a, b))}</span>`,
           iconSize: null
         })
       }).addTo(this._ziel.gruppe);
@@ -1134,7 +1237,7 @@ export class StreckenLayer {
           pane: 'fbp-labels', interactive: false,
           icon: L.divIcon({
             className: 'fbp-label',
-            html: `<span class="seg-mass" style="--farbe:${st.farbe}">${meter(laengen[i - 1])}</span>`,
+            html: `<span class="seg-mass" style="${farbStil(st.farbe)}">${meter(laengen[i - 1])}</span>`,
             iconSize: null
           })
         }).addTo(this._ziel.gruppe);
@@ -1195,8 +1298,7 @@ export class StreckenLayer {
             this._artenAktualisieren(s);
           }, 'strecke');
           this.aufAenderung();
-          this.aufGezogen('eingefuegt', idx, distanz(ll, ausgang), s);
-          if (bauBegonnen(s)) this.aufGebautGeaendert(s);
+          this.aufGezogen('eingefuegt', idx, distanz(ll, ausgang), s, bauBegonnen(s));
         } });
       }
     }
@@ -1226,22 +1328,34 @@ export class StreckenLayer {
           ? '<span class="bz-marke bz-offen">offen</span>' : '';
       /* Woran die Führung hängen bleiben muss, steht an der Standmarke und
          nicht nur in der Liste: eine durchgefallene Prüfung unter einem grünen
-         „gebaut“ las sich im Review als fertige Leitung. Ausgeschrieben wird
-         nur die Prüfung – sie sperrt die Übergabe –, Abweichungen und Punkte
-         abseits stehen als bloßes ⚠, die Zahl dazu in der Liste. */
+         „gebaut“ las sich im Review als fertige Leitung. Jede Warnung steht
+         als Kurzwort da. Ein nacktes „⚠“ mit `title` gab es vorher für
+         Abweichungen und Punkte abseits – am Tablet erscheint kein `title`,
+         und auf Papier hieß das Zeichen nur „irgendetwas“. Die Meldung an den
+         S 6 bekommt ihr eigenes „✉ S 6“: sie ist eine Auskunft an die Führung,
+         keine Warnung. Auf der Arbeitskarte geht es mit „erledigt“ weg. */
       const bz = (this.mitIst || this.mitStand) ? bauzeile(s) : null;
-      const warnung = !bz || !bz.warnungen.length ? ''
-        : bz.warnungen[0] === 'Prüfung nicht bestanden'
-          ? '<span class="bz-marke bz-warn">⚠ Prüfung nicht bestanden</span>'
-          : `<span class="bz-marke bz-warn" title="${escapeHtml(bz.warnungen.join(', '))}">⚠</span>`;
+      const warnung = !bz ? '' : bz.warnungen.map(w => {
+        const kurz = standmarkeKurz(w);
+        return `<span class="bz-marke bz-warn"${kurz === w ? '' : ` title="${escapeHtml(w)}"`}>` +
+          `⚠ ${escapeHtml(kurz)}</span>`;
+      }).join('') +
+        (bz.meldung && !signale.includes('s6erledigt')
+          ? `<span class="bz-marke bz-s6" title="${escapeHtml(bz.meldung)}">✉ S&nbsp;6</span>` : '');
       const signalSchild =
         (signale.includes('neu') ? '<span class="bz-marke bz-neu">neu</span>' : '') +
         (signale.includes('spaet') ? '<span class="bz-marke bz-warn">⚠ ohne Meldung</span>' : '');
+      const vorrang = !!(bz && bz.warnungen.length) || signale.includes('spaet');
+      /* Die Druckkarte kennt die eigene Schilderebene nicht; dort liegen die
+         Griffe ohnehin unter den Beschriftungen. */
       const marke = L.marker([anker.lat, anker.lng], {
-        pane: 'fbp-labels', interactive: false,
+        pane: this.karte.getPane('fbp-schilder') ? 'fbp-schilder' : 'fbp-labels', interactive: false,
+        /* Ein Schild mit Warnung liegt über seinen Nachbarn, falls die
+           Platzsuche keinen freien Platz findet (`_schilderSetzen`). */
+        zIndexOffset: vorrang ? 1000 : 0,
         icon: L.divIcon({
           className: 'fbp-label',
-          html: `<span class="strecken-fahne" style="--farbe:${st.farbe}">
+          html: `<span class="strecken-fahne" style="${farbStil(st.farbe)}">
                    ${abstand ? '<i class="fahnen-stiel"></i>' : ''}
                    <span class="strecken-mass${versatz}${gewaehlt ? ' aktiv' : ''}">
                      <b>${escapeHtml(s.name)}</b>
@@ -1263,7 +1377,7 @@ export class StreckenLayer {
          und – auf dem Blatt – über die Kante zurück geschoben. Die Lagekarte
          steht von Haus aus so, und dort lag im Review ein Schild halb über
          dem oberen Rand. */
-      this._ziel.schilder.push({ marke, punkte: s.punkte, abstand });
+      this._ziel.schilder.push({ marke, punkte: s.punkte, abstand, vorrang });
     }
   }
 
@@ -1304,11 +1418,11 @@ export class StreckenLayer {
         opacity: 0.9, lineCap: 'butt', lineJoin: 'round', interactive: false,
         className: 'fbp-fassung'
       }).addTo(this._ziel.gruppe);
-      L.polyline(lpfad, {
+      nachtLinie(L.polyline(lpfad, {
         pane: 'fbp-strecken', color: st.farbe, weight: 2.5 * zu, opacity: 1,
         dashArray: [12 * zu, 7 * zu].join(' '), lineCap: 'butt', lineJoin: 'round',
-        interactive: false, className: 'fbp-ist-luecke'
-      }).addTo(this._ziel.gruppe);
+        interactive: false, className: 'fbp-ist-luecke fbp-linie'
+      }), st.farbe).addTo(this._ziel.gruppe);
     }
 
     for (const stueck of verlauf.stuecke) {
@@ -1328,11 +1442,11 @@ export class StreckenLayer {
         opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false,
         className: 'fbp-fassung'
       }).addTo(this._ziel.gruppe);
-      L.polyline(pfad, {
+      nachtLinie(L.polyline(pfad, {
         pane: 'fbp-strecken', color: st.farbe, weight: st.breite + 1.5 * zu,
         opacity: 1, lineCap: 'round', lineJoin: 'round',
-        interactive: false, className: 'fbp-ist-linie'
-      }).addTo(this._ziel.gruppe);
+        interactive: false, className: 'fbp-ist-linie fbp-linie'
+      }), st.farbe).addTo(this._ziel.gruppe);
     }
 
     for (const pt of ist) {
@@ -1384,31 +1498,58 @@ export class StreckenLayer {
   }
 
   /**
-   * Ein gesetztes Schild aus der Deckung eines schon stehenden schieben und –
-   * auf dem Blatt – in den Rahmen zurückholen. Verändert `feld` und gibt die
+   * Ein gesetztes Schild aus der Deckung der schon stehenden schieben und –
+   * auf dem Blatt – in den Rahmen holen. Verändert `feld` und gibt die
    * Verschiebung zurück.
+   *
+   * Bis zur vierten Runde wurde hier dreimal senkrecht ausgewichen und danach
+   * in den Rahmen zurückgeholt. Im Review half das nicht: das Schild wich nach
+   * oben aus, stieß an die Blattkante, wurde zurück auf das Nachbarschild
+   * geschoben – und ausgerechnet „⚠ Prüfung nicht bestanden“ lag in allen vier
+   * Formaten darunter. Jetzt wird die nächste freie Stelle gesucht, in jeder
+   * Richtung und mit dem Rahmen als Bedingung statt als Nachgang: Anwärter
+   * sind die Lagen, in denen das Schild bündig an einem stehenden Schild oder
+   * an der Blattkante anliegt, je waagerecht und senkrecht kombiniert. Die
+   * nächste freie unter ihnen ist die kürzeste Verschiebung, die es gibt –
+   * eine freie Stelle, die an nichts anliegt, ließe sich näher an den Anfang
+   * rücken. Gibt es keine freie, gewinnt die geringste Deckung.
    */
   _schildSchieben(feld, belegt, ecke, gegenecke) {
-    const schub = { x: 0, y: 0 };
-    for (let n = 0; n < 3; n++) {
-      const r = belegt.find(x => ueberdeckung(feld, x));
-      if (!r) break;
-      const hoch = r.y - (feld.y + feld.hoehe);
-      const runter = r.y + r.hoehe - feld.y;
-      const v = -hoch < runter ? hoch : runter;
-      feld.y += v; schub.y += v;
+    const { breite, hoehe } = feld;
+    const start = { x: feld.x, y: feld.y };
+    const rahmen = !this.interaktiv;
+    /* Ein Schild, das breiter ist als das Blatt, kann nicht hinein – dann
+       gilt die Kante in dieser Richtung nicht. */
+    const passtX = rahmen && breite < gegenecke.x - ecke.x;
+    const passtY = rahmen && hoehe < gegenecke.y - ecke.y;
+    const klemmeX = x => passtX ? Math.min(Math.max(x, ecke.x), gegenecke.x - breite) : x;
+    const klemmeY = y => passtY ? Math.min(Math.max(y, ecke.y), gegenecke.y - hoehe) : y;
+    const xs = new Set([klemmeX(start.x)]), ys = new Set([klemmeY(start.y)]);
+    for (const r of belegt) {
+      xs.add(klemmeX(r.x - breite)); xs.add(klemmeX(r.x + r.breite));
+      ys.add(klemmeY(r.y - hoehe)); ys.add(klemmeY(r.y + r.hoehe));
     }
-    if (!this.interaktiv) {
-      if (feld.breite < gegenecke.x - ecke.x) {
-        const vx = Math.max(0, ecke.x - feld.x) - Math.max(0, feld.x + feld.breite - gegenecke.x);
-        feld.x += vx; schub.x += vx;
-      }
-      if (feld.hoehe < gegenecke.y - ecke.y) {
-        const vy = Math.max(0, ecke.y - feld.y) - Math.max(0, feld.y + feld.hoehe - gegenecke.y);
-        feld.y += vy; schub.y += vy;
-      }
+    const anwaerter = [];
+    for (const x of xs) for (const y of ys) {
+      anwaerter.push({ x, y, weg: Math.hypot(x - start.x, y - start.y) });
     }
-    return schub;
+    anwaerter.sort((a, b) => a.weg - b.weg);
+    const deckung = (x, y, grenze) => {
+      let u = 0;
+      for (const r of belegt) {
+        u += ueberdeckung({ x, y, breite, hoehe }, r);
+        if (u >= grenze) break;
+      }
+      return u;
+    };
+    let bestes = null;
+    for (const a of anwaerter) {
+      const u = deckung(a.x, a.y, bestes ? bestes.u : Infinity);
+      if (!bestes || u < bestes.u) bestes = { ...a, u };
+      if (!u) break;
+    }
+    feld.x = bestes.x; feld.y = bestes.y;
+    return { x: bestes.x - start.x, y: bestes.y - start.y };
   }
 
   _istTooltip(s, pt) {
@@ -1458,7 +1599,13 @@ export class StreckenLayer {
     const groesse = this.karte.getSize();
     const gegenecke = this.karte.containerPointToLayerPoint([groesse.x, groesse.y]);
 
-    for (const schild of this._schilder) {
+    /* Schilder mit Warnung kommen zuerst an die Reihe und stehen damit dort,
+       wo sie hingehören; die anderen weichen ihnen aus. Sonst entscheidet die
+       Zeichenreihenfolge, und im Review lag „Prüfung nicht bestanden“ unter
+       dem Schild der Nachbarstrecke, nur weil die früher gezeichnet war. Die
+       Sortierung ist stabil: untereinander bleibt es bei der Reihenfolge. */
+    const reihe = [...this._schilder].sort((a, b) => (b.vorrang ? 1 : 0) - (a.vorrang ? 1 : 0));
+    for (const schild of reihe) {
       const wurzel = schild.marke.getElement();
       const fahne = wurzel && wurzel.querySelector('.strecken-fahne');
       const kasten = fahne && fahne.querySelector('.strecken-mass');
@@ -1603,17 +1750,16 @@ export class StreckenLayer {
       }
       if (!bestes) continue;
 
-      /* Zwei Nachbesserungen nach der Suche, beide einfach und gegen das
-         Ergebnis gerechnet und nicht gegen die Anwärter. Im Review lag
-         „FFK BW-Stelle“ trotz der Kosten über dem Schild der Nachbarstrecke –
-         wenn alle Anwärter schlecht sind, gewinnt eben ein schlechter –, und
-         auf der Lagekarte stand ein Schild halb über der Blattkante, ohne
-         Namen. Erst wird ein Schild, das ein schon gesetztes deckt, senkrecht
-         daneben geschoben (nach oben oder unten, wohin es weniger weit ist),
-         dann wird es auf dem Blatt in den Rahmen zurückgeholt. Am Bildschirm
-         nicht: dort ist der Rahmen nur der Ausschnitt von eben, und ein
-         Schild, das an dessen Rand klebt, stünde nach dem Verschieben mitten
-         in der Karte, weit weg von seiner Trasse. Der Leitstrich folgt. */
+      /* Eine Nachbesserung nach der Suche, gegen das Ergebnis gerechnet und
+         nicht gegen die Anwärter. Im Review lag „FFK BW-Stelle“ trotz der
+         Kosten über dem Schild der Nachbarstrecke – wenn alle Anwärter
+         schlecht sind, gewinnt eben ein schlechter –, und auf der Lagekarte
+         stand ein Schild halb über der Blattkante, ohne Namen. Das Schild
+         rückt an die nächste freie Stelle, auf dem Blatt innerhalb des
+         Rahmens (`_schildSchieben`). Am Bildschirm gilt kein Rahmen: dort ist
+         er nur der Ausschnitt von eben, und ein Schild, das an dessen Rand
+         klebt, stünde nach dem Verschieben mitten in der Karte, weit weg von
+         seiner Trasse. Der Leitstrich folgt. */
       const feld = { ...bestes.feld };
       const schub = this._schildSchieben(feld, belegt, ecke, gegenecke);
       bestes.dx += schub.x; bestes.dy += schub.y;
@@ -1731,7 +1877,7 @@ export class StreckenLayer {
       interactive: this.interaktiv,
       icon: L.divIcon({
         className: 'fbp-punkt-icon',
-        html: `<span class="${klassen}" style="--farbe:${st.farbe}">${beschriftung}</span>`,
+        html: `<span class="${klassen}" style="${farbStil(st.farbe)}">${beschriftung}</span>`,
         /* Deckt sich mit der Kreisgröße in app.css: der Kasten trägt die
            Marke mittig, damit der gewählte, größere Kreis auf demselben
            Koordinatenpunkt wächst und nicht daneben. */
@@ -1750,7 +1896,7 @@ export class StreckenLayer {
         pane: 'fbp-labels', interactive: false, keyboard: false,
         icon: L.divIcon({
           className: 'fbp-label',
-          html: `<span class="punkt-name" style="--farbe:${st.farbe}">${escapeHtml(pt.name)}</span>`,
+          html: `<span class="punkt-name" style="${farbStil(st.farbe)}">${escapeHtml(pt.name)}</span>`,
           iconSize: null
         })
       }).addTo(this._ziel.gruppe);
@@ -1789,10 +1935,14 @@ export class StreckenLayer {
           store.aendern(() => { pt.lat = ll.lat; pt.lng = ll.lng; }, 'strecke', { undo: false });
           this.aufAenderung();
           const weg = distanz(ll, ausgang);
-          if (weg >= 0.01) this.aufGezogen('verschoben', i, weg, s);
-          if (bauBegonnen(s)) this.aufGebautGeaendert(s);
+          /* Eine Meldung, nicht zwei – die zweite ersetzte die erste, ehe sie
+             gelesen war. Ohne Weg hat sich nichts geändert, und der Trupp
+             braucht keinen neuen Link. */
+          if (weg >= 0.01) this.aufGezogen('verschoben', i, weg, s, bauBegonnen(s));
         }
       });
+    } else if (!gewaehlt && !this.zeichenModus && !this.baumodus) {
+      haltenOhneZiehen(m, () => this.aufHaltenUngewaehlt(s));
     }
     const zusatz = bauweise && bauweise.kurz ? ` · ${escapeHtml(bauweise.name)}` : '';
     m.bindTooltip(

@@ -74,7 +74,7 @@ try {
   await seite.oeffne(adresse);
   await seite.warteAuf('!!window.fbp');
   b.pruefe(await seite.sichtbar('#karte'), 'Karte steht');
-  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 18, 'Schema 18');
+  b.pruefe(await seite.auswerten('window.fbp.store.projekt.version') === 19, 'Schema 19');
   b.gleich(await seite.text('#btn-modus.modus-schalter > .modus-name'), 'Planung',
     'Der Umschalter nennt den Modus, in dem man ist');
   /* Und klein darunter, wohin er führt: das ⇄ allein las ein Erstnutzer als
@@ -100,6 +100,10 @@ try {
   await seite.taste('Enter');
   b.gleich(await seite.auswerten('window.fbp.store.projekt.strecken[0].punkte.length'), 3,
     'Drei Trassenpunkte gesetzt');
+  /* Nach „Fertig“ zeigte nichts den Weg zum Bauauftrag (Review 5). */
+  const fertigPille = await seite.text('#hinweisbox') || '';
+  b.pruefe(/^Strecke fertig – den Bauauftrag gibt es links in der Streckenkarte/.test(fertigPille),
+    `„Fertig“ zeigt den Weg zum Bauauftrag („${fertigPille}“)`);
   b.gleich(await bau('1'), null, 'Ohne Baumodus entsteht kein Bau-Block');
 
   b.abschnitt('Die offene Streckenkarte folgt den Punkten');
@@ -138,6 +142,41 @@ try {
   b.gleich(await seite.auswerten('window.fbp.store.projekt.strecken[0].punkte[0].lat'), marke1.lat,
     'Rückgängig holt den Punkt zurück');
   b.gleich((await offeneKarte()).kennung, nachZeichnen.kennung, 'Und mit ihm die Kennung');
+  /* Wird an der Strecke schon gebaut, kamen zwei Meldungen, und die zweite
+     ersetzte die erste: übrig blieb die Warnung über den neuen Link, ohne
+     Punkt, Weg und Rückweg. Jetzt steht beides in einer. Der Bau wird über
+     eine Baumeldung angedeutet, die danach wieder geht. */
+  await seite.auswerten(`
+    const bd = await import('./js/baudoku.js');
+    window.fbp.store.aendern(p => { bd.baumeldungAnlegen(p.strecken[0], 'Trommel 1 liegt'); }, 'bau');
+    return true;`);
+  await seite.ruhe();
+  const marke1b = await seite.auswerten(`
+    const r = document.querySelector('.fbp-punkt.art-start').getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };`);
+  await seite.zieheMaus(marke1b.x, marke1b.y, marke1b.x + 40, marke1b.y + 30);
+  const gebautPille = await seite.text('#hinweisbox');
+  b.pruefe(/^Punkt 1 von .* um .* verschoben – „↶“.* · .*neuen Link/.test(gebautPille),
+    `Ist der Bau begonnen, nennt EINE Meldung Punkt, Weg, Rückweg und den neuen Link („${gebautPille}“)`);
+  await seite.klick('#btn-undo');
+  await seite.klick('#btn-undo');
+  b.gleich(await seite.auswerten(`const s = window.fbp.store.projekt.strecken[0];
+    return s.punkte[0].lat === ${marke1.lat} && !(s.bau && s.bau.meldungen.length);`), true,
+    'Zweimal „↶“ holt Punkt und Planung zurück');
+
+  /* Der Link an den Bautrupp hatte „Schließen“ als Hauptknopf und kein
+     Teilen, und er hieß „Planung als Link teilen“. */
+  b.abschnitt('Der Link an den Bautrupp heißt so und schickt hinaus');
+  await taste('article.eintrag[data-sid]', 'Link an den Bautrupp');
+  await seite.warteAuf(`!document.querySelector('#tl-link').value.startsWith('wird')`, 5000);
+  b.gleich(await seite.text('#dialog-titel'), 'Link an den Bautrupp',
+    'Aus der Streckenkarte heißt der Dialog „Link an den Bautrupp“');
+  const teilenFuss = await seite.auswerten(`return [...document.querySelectorAll('#dialog-fuss .knopf')]
+    .map(k => (k.classList.contains('primaer') ? '*' : '') + k.textContent).join('|') +
+    (document.querySelector('#tl-kopieren').classList.contains('primaer') ? ' + *Kopieren' : '')`);
+  b.pruefe(!/\*Schließen/.test(teilenFuss) && /\*(Teilen|Kopieren)/.test(teilenFuss),
+    `Hauptknopf ist Teilen oder Kopieren, nicht Schließen (${teilenFuss})`);
+  await taste('#dialog-fuss', 'Schließen');
 
   // ------------------------------------------------------------ Umschalten
 
@@ -162,8 +201,19 @@ try {
     'Ohne Bauabschnitt steht der Block zugeklappt');
   b.pruefe(/keiner/.test(await seite.text('.bau-abschnitte .gruppen-titel') || ''),
     'Und seine Überschrift sagt, dass keiner da ist');
-  b.pruefe(/Plan-Kennung .+ steht auch auf dem Bauauftrag/.test(await seite.text('.bau-stand-titel .plan-kennung') || ''),
-    'Die Plan-Kennung im Reiter sagt, was sie ist');
+  b.pruefe(/Plan-Nr\. .+ steht auch auf dem Bauauftrag/.test(await seite.text('.bau-kennung .plan-kennung') || ''),
+    'Die Plan-Nr. im Reiter sagt, was sie ist');
+  b.pruefe(!(await seite.auswerten('!!document.querySelector(".bau-stand-titel .plan-kennung")')),
+    'Und steht unter dem Stand, nicht in seiner Beschriftung');
+  /* Plan-Nr. und Rückgabe-Code sind beide vier Zeichen lang und wurden im
+     Audit verwechselt. Sie heißen verschieden und stehen verschieden da; die
+     Null ist in beiden durchgestrichen, weil die Plan-Nr. 0 und O kennt. */
+  const zweiCodes = await seite.auswerten(`
+    const nr = document.querySelector('.bau-kennung .plan-nr');
+    const st = nr && getComputedStyle(nr);
+    return { null: st && st.fontVariantNumeric, rahmen: st && st.borderTopStyle };`);
+  b.pruefe(/slashed-zero/.test(zweiCodes.null || ''), 'Die Plan-Nr. setzt die Null durchgestrichen');
+  b.gleich(zweiCodes.rahmen, 'none', 'Und steht schlicht da, ohne den Rahmen des Rückgabe-Codes');
 
   b.abschnitt('Vor dem Ausrücken: Karte und Baunachweis');
   /* Wer nur über den Link arbeitet, erfuhr vom Baunachweis auf Papier nichts:
@@ -178,6 +228,42 @@ try {
     `Der Chip im Sprungstreifen heißt „Karte …“ („${chipName}“)`);
   b.pruefe(await seite.auswerten(`[...document.querySelectorAll('.bau-vorrat .bau-untertitel')]
     .some(h => h.textContent === 'Karte mitnehmen')`), 'Und findet dort „Karte mitnehmen“');
+  /* Solange an der Strecke nichts aufgenommen ist, steht der Block oben und
+     offen: am Ende und zugeklappt fand ihn ein Erstnutzer im Review nicht. */
+  const vorAb = await seite.auswerten(`
+    const v = document.querySelector('.bau-vorrat'), z = document.querySelector('#bau-liste .bp-zeile');
+    return JSON.stringify({ vorn: !!(v && z && (v.compareDocumentPosition(z) & Node.DOCUMENT_POSITION_FOLLOWING)),
+      offen: !v.classList.contains('zu') });`);
+  b.gleich(vorAb, JSON.stringify({ vorn: true, offen: true }),
+    'Vor dem ersten Punkt steht „Vor dem Ausrücken“ offen vor den Punkten');
+  b.pruefe(/Baunachweis/.test(chipName), `Und der Chip nennt Karte und Baunachweis („${chipName}“)`);
+  const dokuChip = await seite.auswerten(`const k = document.querySelector('.bau-sprung-doku');
+    return JSON.stringify({ text: k.textContent, gesperrt: k.disabled });`);
+  b.gleich(dokuChip, JSON.stringify({ text: '▤ Baudoku', gesperrt: false }),
+    'Der Chip zur Baudokumentation heißt „Baudoku“ und ist nicht ausgegraut');
+  /* „Karte holen“ war an einer Strecke ohne Punkte blau und sagte erst nach
+     dem Tipp, dass es nichts zu holen gibt. */
+  const ohnePunkte = await seite.auswerten(`
+    const bd = await import('./js/baudoku.js');
+    const zu = await import('./js/state.js');
+    const ui = await import('./js/ui.js');
+    const store = window.fbp.store;
+    const vorher = bd.baustrecke().id;
+    let sid = null;
+    store.aendern(p => { const s = zu.neueStrecke(p); sid = s.id; s.name = 'Leerprobe'; p.strecken.push(s); }, 'strecke');
+    bd.baustreckeSetzen(sid);
+    ui.zeichneBauListe();
+    const holen = [...document.querySelectorAll('.bau-vorrat .bau-tasten button')]
+      .find(k => k.textContent.includes('Karte holen'));
+    const r = { gesperrt: !!holen && holen.disabled,
+      grund: document.querySelector('.bau-vorrat .vorrat-umfang').textContent };
+    store.aendern(p => { p.strecken = p.strecken.filter(x => x.id !== sid); }, 'strecke');
+    bd.baustreckeSetzen(vorher);
+    ui.zeichneBauListe();
+    return JSON.stringify(r);`);
+  const op = JSON.parse(ohnePunkte);
+  b.pruefe(op.gesperrt && /Ohne Trassenpunkte/.test(op.grund),
+    `Ohne Trassenpunkte ist „Karte holen“ gesperrt, mit Grund („${op.grund}“)`);
   b.pruefe(await seite.auswerten(`[...document.querySelectorAll('.bau-vorrat .bau-untertitel')]
     .some(h => /^Baunachweis ausdrucken/.test(h.textContent))`),
     'Daneben steht „Baunachweis ausdrucken“');
@@ -216,6 +302,11 @@ try {
     return true;`);
   b.gleich(await bau('bau.punkte.length'), 1, 'Weiterhin ein einziger Ist-Punkt');
   b.gleich(await bau('bau.punkte[0].quelle'), 'karte', 'Die neue Aufnahme gilt');
+  await seite.ruhe();
+  b.pruefe(await seite.auswerten(`
+    const v = document.querySelector('.bau-vorrat');
+    return v.classList.contains('zu') && v === document.querySelector('#bau-liste').lastElementChild;`),
+    'Mit dem ersten Punkt rückt „Vor dem Ausrücken“ zugeklappt ans Ende');
 
   // ------------------------------------------------------------ Standort
 
@@ -430,6 +521,32 @@ try {
   b.gleich(await bau("bau.material.find(z => z.artikel === 'fkb').menge"), 1450,
     'Nach der Abweisung nimmt das Feld wieder an');
 
+  /* Eine halbe Eingabe – „1 45“, „12,“ – färbt beim Tippen nichts, weil sie
+     der Weg zu einer Zahl ist. Wer das Feld so verließ, hatte aber still den
+     letzten gültigen Anschlag gespeichert: aus „1 45“ wurde 1 m. */
+  const halbeEingabe = async text => seite.auswerten(`
+    const f = [...document.querySelectorAll('.bau-material .mat-zeile')]
+      .find(x => x.querySelector('.feld-titel').textContent === 'Feldkabel FKb');
+    const e = f.querySelector('input');
+    const setzer = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    e.focus(); e.dispatchEvent(new Event('focus'));
+    let bisher = '';
+    for (const z of ${JSON.stringify(text)}) {
+      bisher += z; setzer.call(e, bisher);
+      e.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await new Promise(r => setTimeout(r, 200));
+    e.blur(); e.dispatchEvent(new Event('blur'));
+    await new Promise(r => setTimeout(r, 250));
+    return { feld: e.value, pille: document.getElementById('hinweisbox').textContent };`);
+  for (const text of ['1 45', '12,']) {
+    const r = await halbeEingabe(text);
+    b.gleich(await bau("bau.material.find(z => z.artikel === 'fkb').menge"), 1450,
+      `„${text}“ und dann das Feld verlassen: die Menge von vorher bleibt`);
+    b.pruefe(r.feld === '1450' && /keine vollständige Zahl/.test(r.pille),
+      `Das Feld zeigt sie wieder, und die Meldung sagt warum (${r.feld} · ${r.pille.trim()})`);
+  }
+
   b.abschnitt('Bruchteile eines Meters Kabel werden hinterfragt');
   /* „1,450“ ist die Schreibweise der Anwendung für 1.450 m – nur mit Komma.
      Gespeichert wurde still 1,45 m, und keine Warnung schlug an. */
@@ -544,6 +661,20 @@ try {
     'Sie übersteht einen Neuaufbau der Liste');
   await seite.schreibe('.bm-entwurf .feld input', 'E');
   b.gleich(await bau('bau.meldungen.length'), 1, 'Mit dem ersten Zeichen wird sie eine Meldung');
+  /* Wird der Text wieder ganz gelöscht, bleibt keine leere Meldung stehen:
+     „Baumeldung ohne Text gibt es nicht“ gilt auch rückwärts. Je nachdem, ob
+     das erste Zeichen den Stand gewechselt hat, steht die Zeile noch als
+     Entwurf oder schon als Meldung da – beide Wege enden gleich. */
+  const meldungFeld = () => seite.auswerten(`return document.querySelector('.bm-entwurf .feld input')
+    ? '.bm-entwurf .feld input' : '.bm-zeile .feld input'`);
+  await seite.schreibe(await meldungFeld(), '');
+  b.gleich(await bau('bau.meldungen.length'), 0, 'Wieder geleert, ist es keine Meldung mehr');
+  if (!(await seite.anzahl('.bau-meldungen .bm-entwurf'))) {
+    await taste('.bau-meldungen', 'Meldung mitschreiben');
+  }
+  b.gleich(await seite.anzahl('.bau-meldungen .bm-entwurf'), 1, 'Die Zeile zum Schreiben steht wieder da');
+  await seite.schreibe('.bm-entwurf .feld input', 'E');
+  b.gleich(await bau('bau.meldungen.length'), 1, 'Das nächste Zeichen legt sie wieder an');
   b.pruefe(await bau('!!bau.meldungen[0].zeit') &&
     Math.abs(await bau('Date.parse(bau.meldungen[0].zeit)') - tippZeit) < 60000,
     'Die Uhrzeit ist die des Tipps – nachträglich geschätzt wäre sie keine Bauzeit');
@@ -575,6 +706,12 @@ try {
   const codeNachher = await seite.text('#bau-liste .bau-code .meldungscode');
   b.pruefe(/^[2-9A-HJ-NP-Z]{4}$/.test(codeNachher || ''),
     `Der Block nennt einen Kurzcode aus vier gut sprechbaren Zeichen (${codeNachher})`);
+  /* „Meldung WQ64“ stand im Audit neben drei anderen Dingen namens „Meldung“. */
+  b.pruefe(/Rückgabe-Code [2-9A-HJ-NP-Z]{4} – dem Planer über Funk nennen/.test(await rueckwegText()),
+    'Er heißt Rückgabe-Code und sagt, wohin er geht');
+  b.pruefe(await seite.auswerten(`const c = document.querySelector('#bau-liste .bau-code .meldungscode');
+    return getComputedStyle(c).borderTopStyle !== 'none'`),
+    'Und steht als umrandete Marke da, anders als die Plan-Nr.');
   b.pruefe(codeVorher && codeNachher !== codeVorher, 'Der Kurzcode ändert sich mit der Eintragung');
   /* Beim Planer wird er aus der Meldung nachgerechnet, nicht mitgeschickt –
      er muss nach dem Weg durch JSON derselbe sein. */
@@ -613,6 +750,46 @@ try {
   b.gleich(await seite.auswerten('return window.fbp.store.undoStapel.length'), undoVorher,
     'Der Vermerk legt keinen Rückgängig-Schritt an');
   await taste('#dialog-fuss', 'Schließen');
+
+  /* Der Vermerk hielt den Code nicht fest: nach der nächsten Eintragung stand
+     nur noch der neue da, und nannte der Planer über Funk den verschickten,
+     war am Gerät nichts zu finden. */
+  b.abschnitt('Der verschickte Rückgabe-Code bleibt lesbar');
+  b.gleich(await bau('bau.abgesetzt.code'), codeJetzt, 'Der Vermerk hält den verschickten Code fest');
+  await seite.auswerten(`window.fbp.store.aendern(() => {
+    window.fbp.store.projekt.strecken[0].bau.abweichung = 'Probe für den Code'; }, 'bau'); return true;`);
+  await seite.ruhe();
+  const nachVersand = await rueckwegText();
+  const codeNeu = await seite.text('#bau-liste .bau-code .meldungscode');
+  b.pruefe(codeNeu !== codeJetzt && nachVersand.includes(`Zuletzt verschickt: ${codeJetzt}`) &&
+    nachVersand.includes(`jetzt: ${codeNeu}`),
+    `Nach einer Eintragung stehen beide da: verschickt ${codeJetzt}, jetzt ${codeNeu}`);
+  b.pruefe(await seite.auswerten(`
+    const st = await import('./js/state.js');
+    return st.migrieren(JSON.parse(JSON.stringify(window.fbp.store.projekt))).strecken[0].bau.abgesetzt.code;`)
+    === codeJetzt, 'Der Code übersteht Speichern und Laden – ohne neues Schema');
+  await seite.auswerten('window.fbp.store.undo(); return true;');
+  await seite.ruhe();
+
+  /* Schlug das Kopieren fehl, gab der Trupp den Link von Hand weiter – und der
+     Block sagte weiter „noch nicht gemeldet“. */
+  b.abschnitt('Kopieren misslungen: der Versand lässt sich trotzdem vermerken');
+  await seite.auswerten(`window.fbp.store.aendern(() => {
+    window.fbp.store.projekt.strecken[0].bau.abgesetzt = null; }, 'bau', { undo: false });
+    navigator.clipboard.writeText = () => Promise.reject(new Error('verweigert')); return true;`);
+  await seite.ruhe();
+  await taste('#bau-liste .bau-rueckweg', 'Als Link');
+  await seite.warteAuf(`!document.querySelector('.meldung-link textarea').value.startsWith('wird')`, 5000);
+  b.pruefe(await seite.auswerten(`return [...document.querySelectorAll('.meldung-link button')]
+    .every(k => k.closest('[hidden]'))`), 'Vor dem Fehlschlag steht kein Griff „von Hand“ da');
+  await taste('#dialog-fuss', 'Kopieren');
+  await seite.warteAuf(`[...document.querySelectorAll('.meldung-link button')]
+    .some(k => /von Hand/.test(k.textContent) && !k.closest('[hidden]'))`, 3000);
+  b.pruefe(true, 'Nach dem Fehlschlag bietet der Dialog „Ich habe den Link von Hand weitergegeben“ an');
+  await taste('.meldung-link', 'von Hand weitergegeben');
+  b.pruefe(await bau('!!bau.abgesetzt && bau.abgesetzt.weg === "link"'), 'Und vermerkt den Versand');
+  await taste('#dialog-fuss', 'Schließen');
+  await seite.auswerten(`navigator.clipboard.writeText = () => Promise.resolve(); return true;`);
   await seite.auswerten(`window.fbp.store.aendern(() => {
     window.fbp.store.projekt.strecken[0].bau.abweichung = 'Probe'; }, 'bau'); return true;`);
   await seite.auswerten('window.fbp.store.undo(); return true;');
@@ -635,7 +812,7 @@ try {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
       String(d.getDate()).padStart(2, '0');`);
   const tagwahl = await seite.auswerten(`
-    const box = document.querySelector('#bau-liste .zeit-wahl:not(.knapp)');
+    const box = document.querySelector('#bau-liste .bau-punkte .zeit-wahl:not(.knapp)');
     if (!box) return JSON.stringify({ fehlt: true });
     const tag = box.querySelector('select.zw-tag');
     const datum = box.querySelector('input.zw-datum');
@@ -668,6 +845,192 @@ try {
     })`), 'Der Eintrag trägt danach den Tag vor zehn Tagen');
   // Zurück auf den Stand davor: die Prüfungen danach rechnen mit Zeiten von heute.
   await seite.auswerten('window.fbp.store.undo(); return true;');
+  await seite.ruhe();
+
+  /* Drei Wege, auf denen „anderer Tag …“ still nichts schrieb: eine Uhrzeit,
+     bevor ein Tag gewählt ist; ein Tag in der Zukunft, der auf heute
+     zurücksprang; und derselbe Tag wie vorbelegt, der kein `change` auslöste. */
+  b.abschnitt('„anderer Tag …“ verwirft nichts still');
+  const andererTag = await seite.auswerten(`
+    const box = document.querySelector('#bau-liste .bau-punkte .zeit-wahl:not(.knapp)');
+    const tag = box.querySelector('select.zw-tag');
+    const zeit = box.querySelector('input.bm-zeit');
+    const datum = box.querySelector('input.zw-datum');
+    tag.value = 'anderer';
+    tag.dispatchEvent(new Event('change', { bubbles: true }));
+    const leer = datum.value === '';
+    const morgen = new Date(); morgen.setDate(morgen.getDate() + 2);
+    datum.value = morgen.getFullYear() + '-' + String(morgen.getMonth() + 1).padStart(2, '0') + '-' +
+      String(morgen.getDate()).padStart(2, '0');
+    datum.dispatchEvent(new Event('change', { bubbles: true }));
+    const zukunft = document.getElementById('hinweisbox').textContent;
+    const offen = !datum.hidden && tag.value === 'anderer';
+    zeit.value = '03:17';
+    zeit.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 300));
+    return { leer, zukunft, offen, pille: document.getElementById('hinweisbox').textContent };`);
+  b.pruefe(andererTag.leer, 'Das Datumsfeld beginnt leer – auch der bisherige Tag ist eine Wahl');
+  b.pruefe(/in der Zukunft/.test(andererTag.zukunft) && andererTag.offen,
+    `Ein Tag in der Zukunft wird benannt, und das Feld bleibt offen (${andererTag.zukunft.trim()})`);
+  b.pruefe(await bau(`bau.punkte.some(p => p.zeit && new Date(p.zeit).getHours() === 3 &&
+      new Date(p.zeit).getMinutes() === 17)`) && /erst das Datum wählen/.test(andererTag.pille),
+    `Eine Uhrzeit ohne gewählten Tag gilt auf dem bisherigen, und die Meldung sagt das (${andererTag.pille.trim()})`);
+  await seite.auswerten('window.fbp.store.undo(); return true;');
+  await seite.ruhe();
+
+  /* Der Bogen verspricht, dass sich Uhrzeit und Datum so nachtragen lassen,
+     wie sie dort stehen. Vorher stempelte „✓ wie geplant“ die Uhrzeit des
+     Abtippens, und der Tag war an jedem Punkt einzeln zu wählen. */
+  b.abschnitt('Vom Baunachweis nachtragen: ein Tag für die ganze Abschrift');
+  const nachtragMerk = await bau('JSON.stringify(bau)');
+  await seite.auswerten(`window.fbp.store.aendern(() => {
+    const b = window.fbp.store.projekt.strecken[0].bau;
+    b.punkte = []; b.meldungen = []; b.pruefung = null; }, 'bau'); return true;`);
+  await seite.ruhe();
+  const vorDrei = await seite.auswerten(`
+    const d = new Date(); d.setDate(d.getDate() - 3);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');`);
+  const tagVon = iso => seite.auswerten(`const d = new Date(${JSON.stringify(iso)});
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' +
+      String(d.getMinutes()).padStart(2, '0');`);
+  b.gleich(await seite.anzahl('#bau-liste .bau-nachtrag'), 0, 'Ohne Wahl läuft kein Nachtrag');
+  b.pruefe(!(await seite.auswerten(`[...document.querySelectorAll('#bau-liste .bau-punkte button')]
+    .some(k => /Koordinate/.test(k.textContent))`)),
+    'Der Koordinatengriff steht nur im Nachtrag – am Bauort ist „◉ hier“ der genauere Weg');
+  await taste('#bau-liste .bau-punkte', 'Vom Baunachweis nachtragen');
+  b.gleich(await seite.anzahl('#bau-liste .bau-nachtrag'), 1, 'Der Nachtrag steht oben im Reiter');
+  const tagSetzen = async wert => {
+    await seite.auswerten(`const e = document.querySelector('#bau-liste .bau-nachtrag .bn-tag input');
+      e.value = ${JSON.stringify(wert)}; e.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;`);
+    await seite.ruhe();
+  };
+  await tagSetzen('2099-01-01');
+  b.pruefe(/in der Zukunft/.test(await seite.text('#hinweisbox') || ''),
+    'Ein Baudatum in der Zukunft wird abgewiesen und benannt');
+  await tagSetzen(vorDrei);
+  b.gleich(await seite.auswerten(`(await import('./js/baudoku.js')).nachtragTag()`), vorDrei,
+    'Der Tag vom Blatt gilt für den ganzen Nachtrag');
+  await seite.auswerten(`[...document.querySelector('#bau-liste .bp-zeile:not(.bestaetigt)')
+    .querySelectorAll('button')].find(k => k.textContent.includes('wie geplant')).click(); return true;`);
+  await seite.ruhe();
+  b.gleich(await bau('bau.punkte[0].zeit'), '',
+    '„✓ wie geplant“ stempelt keine Uhrzeit – die des Abtippens wäre keine Bauzeit');
+  b.pruefe(await bau('!!bau.punkte[0].nachgetragen'), 'Der Punkt trägt den Zeitpunkt der Abschrift');
+  b.pruefe(/Uhrzeit fehlt/.test(await seite.text('#bau-liste .bp-zeile.bestaetigt') || ''),
+    'Die Zeile sagt, dass die Uhrzeit vom Blatt noch fehlt');
+  await seite.auswerten(`const e = document.querySelector('#bau-liste .bp-zeile.bestaetigt > .zeit-wahl input.bm-zeit');
+    e.value = '14:20'; e.dispatchEvent(new Event('change', { bubbles: true })); return true;`);
+  await seite.ruhe();
+  b.gleich(await tagVon(await bau('bau.punkte[0].zeit')), `${vorDrei} 14:20`,
+    'Die Uhrzeit in der Zeile gilt auf dem Tag vom Blatt');
+
+  await taste('#bau-liste .bau-meldungen', 'Meldung mitschreiben');
+  b.pruefe(await seite.anzahl('#bau-liste .bm-entwurf select.zw-tag') === 1,
+    'Die Meldung bietet im Nachtrag den Tag zur Wahl, samt „anderer Tag …“');
+  await seite.schreibe('.bm-entwurf .feld input', 'Zweite Länge verbaut');
+  await seite.warteAuf('window.fbp.store.projekt.strecken[0].bau.meldungen.length === 1', 3000);
+  b.gleich(await bau('bau.meldungen[0].zeit'), '', 'Sie entsteht ohne Uhrzeit des Tipps');
+  await seite.auswerten(`const e = document.querySelector('#bau-liste .bm-zeile .zeit-wahl input.bm-zeit');
+    e.value = '15:05'; e.dispatchEvent(new Event('change', { bubbles: true })); return true;`);
+  await seite.ruhe();
+  b.gleich(await tagVon(await bau('bau.meldungen[0].zeit')), `${vorDrei} 15:05`,
+    'Und bekommt die Uhrzeit vom Blatt auf dessen Tag');
+
+  await taste('.bau-uebergabe', '+ Stamm');
+  b.gleich(await bau('bau.pruefung.staemme[0].zeit'), '', 'Die Prüfzeile ebenso');
+  await seite.auswerten(`const e = document.querySelector('#bau-liste .pz-zeile .zeit-wahl input.bm-zeit');
+    e.value = '16:40'; e.dispatchEvent(new Event('change', { bubbles: true })); return true;`);
+  await seite.ruhe();
+  b.gleich(await tagVon(await bau('bau.pruefung.staemme[0].zeit')), `${vorDrei} 16:40`,
+    'Die Prüfzeile hat ein Zeitfeld und nimmt den Tag vom Blatt');
+
+  b.abschnitt('Ein abweichender Punkt kommt als Koordinate vom Blatt');
+  /* Der Bogen verwies auf ein Feld „Koordinate“, das es im Baumodus nicht
+     gab. Geschrieben wird der Ist-Punkt mit Herkunft „Papier“; der geplante
+     Punkt bleibt, wo er ist. */
+  const kooDialog = async (zeile, mgrs, haken = false) => {
+    await seite.auswerten(`
+      const z = document.querySelectorAll('#bau-liste .bp-zeile')[${zeile}];
+      [...z.querySelectorAll('button')].find(k => k.textContent.includes('Koordinate')).click(); return true;`);
+    await seite.ruhe();
+    return seite.auswerten(`
+      const e = document.getElementById('ik-eingabe');
+      e.value = ${JSON.stringify(mgrs)};
+      if (${haken}) { const h = document.getElementById('ik-fern'); if (h) h.checked = true; }
+      [...document.querySelectorAll('#dialog-fuss button')].find(k => k.textContent === 'Übernehmen').click();
+      await new Promise(r => setTimeout(r, 200));
+      return { offen: !document.getElementById('dialog').hidden,
+               status: document.getElementById('ik-status')?.textContent || '' };`);
+  };
+  const soll2 = await bau('JSON.stringify([s.punkte[1].lat, s.punkte[1].lng])');
+  const neben = await seite.auswerten(`const g = await import('./js/geo.js');
+    const p = window.fbp.store.projekt.strecken[0].punkte[1];
+    return { nah: g.toMGRS(p.lat + 0.0004, p.lng, 5), fern: g.toMGRS(p.lat + 0.05, p.lng, 5) };`);
+  const fern = await kooDialog(1, neben.fern);
+  b.pruefe(fern.offen && /Zahlendreher/.test(fern.status),
+    `5 km neben dem Plan fragt der Dialog nach einem Zahlendreher (${fern.status.trim()})`);
+  await seite.auswerten(`[...document.querySelectorAll('#dialog-fuss button')]
+    .find(k => k.textContent === 'Abbrechen').click(); return true;`);
+  await seite.ruhe();
+  const nah = await kooDialog(1, neben.nah);
+  b.pruefe(!nah.offen, 'Eine Koordinate 45 m daneben wird übernommen');
+  b.gleich(await bau(`bau.punkte.find(p => p.sollPunkt === s.punkte[1].id)?.quelle`), 'papier',
+    'Der Punkt trägt die Herkunft „Papier“');
+  b.gleich(await bau('JSON.stringify([s.punkte[1].lat, s.punkte[1].lng])'), soll2,
+    'Der geplante Punkt bleibt unangetastet');
+  b.pruefe(await bau(`bau.punkte.find(p => p.sollPunkt === s.punkte[1].id).nachgetragen !== ''`),
+    'Und den Zeitpunkt der Abschrift');
+  await seite.auswerten(`[...document.querySelectorAll('#bau-liste .bau-punkte button')]
+    .find(k => k.textContent.includes('Punkt nach Koordinate')).click(); return true;`);
+  await seite.ruhe();
+  await seite.auswerten(`document.getElementById('ik-eingabe').value = ${JSON.stringify(neben.nah)};
+    [...document.querySelectorAll('#dialog-fuss button')].find(k => k.textContent === 'Übernehmen').click();
+    return true;`);
+  await seite.ruhe();
+  b.pruefe(await bau(`bau.punkte.some(p => !p.sollPunkt && p.quelle === 'papier')`),
+    'Ein zusätzlicher Punkt lässt sich ebenso nach Koordinate aufnehmen');
+
+  b.abschnitt('Bauabschnitt von Punkt bis Punkt und der Geräteausfall');
+  /* Der Bogen fragt seit der vierten Runde danach; das Gerät konnte beides
+     nicht aufnehmen. */
+  await seite.auswerten(`const s = window.fbp.store.projekt.strecken[0];
+    const w = (marke, wert) => { const e = document.querySelector('[data-bau-feld="' + marke + '"]');
+      e.value = wert; e.dispatchEvent(new Event('change', { bubbles: true })); };
+    const a = s.bau.abschnitte[0];
+    w('ba-von-' + a.id, s.punkte[0].id);
+    w('ba-bis-' + a.id, s.punkte[2].id);
+    return true;`);
+  await seite.ruhe();
+  await seite.auswerten(`const s = window.fbp.store.projekt.strecken[0];
+    const a = s.bau.abschnitte[0];
+    const e = document.querySelector('[data-bau-feld="ausfall-nach-' + a.id + '"]');
+    e.value = s.punkte[1].id; e.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;`);
+  await seite.ruhe();
+  await seite.auswerten(`const z = document.querySelector('#bau-liste .ba-eintrag .bau-ausfall input.bm-zeit');
+    z.value = '13:05'; z.dispatchEvent(new Event('change', { bubbles: true })); return true;`);
+  await seite.ruhe();
+  b.pruefe(await bau(`bau.abschnitte[0].vonPunkt === s.punkte[0].id && bau.abschnitte[0].bisPunkt === s.punkte[2].id`),
+    'Der Abschnitt trägt von und bis Punkt als Kennung');
+  b.pruefe(await bau(`bau.abschnitte[0].ausfallNach === s.punkte[1].id && !!bau.abschnitte[0].ausfallZeit`),
+    'Und den Geräteausfall mit Uhrzeit und Punkt');
+  b.gleich(await tagVon(await bau('bau.abschnitte[0].ausfallZeit')), `${vorDrei} 13:05`,
+    'Der Ausfall liegt auf dem Tag vom Blatt');
+  const nachtragStand = await bau('JSON.stringify(bau)');
+
+  /* Der Nachtrag ist Sitzungszustand: wer den Reiter verlässt, beendet ihn –
+     sonst nähme der Trupp am nächsten Morgen mit dem Tag von gestern auf. */
+  await seite.klick('.reiter button[data-reiter="strecken"]');
+  await seite.klick('.reiter button[data-reiter="bau"]');
+  await seite.ruhe();
+  b.gleich(await seite.anzahl('#bau-liste .bau-nachtrag'), 0,
+    'Wer den Bau-Reiter verlässt, beendet den Nachtrag');
+  await seite.auswerten(`window.fbp.store.aendern(() => {
+    window.fbp.store.projekt.strecken[0].bau = JSON.parse(${JSON.stringify(nachtragMerk)}); }, 'bau');
+    return true;`);
   await seite.ruhe();
 
   // ------------------------------------------------------------ Prüfen und Übergeben
@@ -977,8 +1340,13 @@ try {
   b.gleich(await sued2('bau.punkte[0].art'), 'start', 'Er trägt die Art des Plans');
   b.gleich(await seite.anzahl('#punktkarte .pk-chip-vorschlag[aria-pressed="true"]'), 1,
     'Die Wahl steht gedrückt und als Vorschlag gezeichnet');
-  b.pruefe(/vorgeschlagen: Punkt 1/.test(await seite.text('#punktkarte .pk-zuordnung') || ''),
-    'Das Blatt nennt sie „vorgeschlagen“');
+  /* „zugeordnet“ und nicht „vorgeschlagen“: Liste und Kopf zählen den Punkt
+     im selben Augenblick als bestätigt, und das Kreuz behält die Zuordnung. */
+  b.pruefe(/zugeordnet: Punkt 1.*ändern\?/.test(await seite.text('#punktkarte .pk-zuordnung') || ''),
+    'Das Blatt nennt sie „zugeordnet: Punkt 1 – ändern?“');
+  b.gleich(await seite.auswerten(
+    'document.querySelector("#punktkarte .pk-zu").getAttribute("aria-label")'),
+    'Schließen – Punkt bleibt', 'Das Kreuz sagt, dass der Punkt bleibt');
   b.gleich(await seite.anzahl('#punktkarte .pk-chip[data-wert=""]'), 1,
     '„zusätzlich“ steht einen Tipp daneben');
   b.pruefe(await seite.auswerten(`
@@ -1058,12 +1426,63 @@ try {
   b.gleich(await seite.auswerten('return (await import("./js/baudoku.js")).baustrecke().id'),
     await seite.auswerten('window.fbp.store.projekt.strecken[0].id'),
     'Die Baustrecke wechselt mit');
+  b.pruefe(/Strecke 1/.test(await seite.text('#bau-ziel') || ''),
+    'Der Merker an der Bauleiste nennt sofort die neue Strecke');
   await seite.klick('#btn-undo');
   b.gleich(await bau('bau.punkte.length'), ersteVorher, '„↶“ hängt ihn wieder ab');
-  b.pruefe(/^Zurückgenommen: /.test(
+  b.pruefe(/^Umhängen nach „Strecke 1“ zurückgenommen/.test(
     await seite.auswerten('document.getElementById("hinweisbox").textContent') || ''),
-    'Die Meldung nennt, was zurückgenommen wurde');
+    'Die Meldung nennt das Umhängen, nicht „Löschen eines Punktes“');
+  b.gleich(await seite.auswerten('return (await import("./js/baudoku.js")).baustrecke().id'),
+    sued.sid, '„↶“ stellt auch die Baustrecke zurück');
+  b.pruefe(/Strecke Süd/.test(await seite.text('#bau-ziel') || ''),
+    '… und der Merker nennt wieder die alte');
+  await seite.klick('#btn-redo');
+  b.gleich(await seite.auswerten('return (await import("./js/baudoku.js")).baustrecke().id'),
+    await seite.auswerten('window.fbp.store.projekt.strecken[0].id'),
+    '„↷“ hängt ihn samt Baustrecke wieder um');
+  await seite.klick('#btn-undo');
   await seite.taste('Escape');
+
+  b.abschnitt('Umhängen an eine Strecke, die anderen aufgetragen ist, fragt nach');
+  /* Die erste Strecke wird dafür einem anderen Trupp aufgetragen – ohne
+     Rückgängig-Schritt, damit „↶“ weiter unten an derselben Grenze hält. */
+  const umVorher = await seite.auswerten(`
+    const st = await import('./js/baudoku.js');
+    const f = window.fbp, s = f.store.projekt.strecken[0];
+    const vorher = { trupp: s.trupp || '', aktiv: st.bauabschnittAktivId() };
+    f.store.aendern(() => { s.trupp = 'Trupp Nord'; }, 'strecke', { undo: false });
+    st.bauabschnittAktivSetzen(null);
+    return vorher;`);
+  await seite.standort(s1p2.lat + 0.00005, s1p2.lng, 6);
+  await seite.klick('#wz-punkt-hier');
+  await seite.warteAuf('!!document.querySelector("#punktkarte .pk-andere")', 10000);
+  await blattTaste('Zu ');
+  b.gleich(await bau('bau.punkte.length'), ersteVorher, 'Der Tipp hängt noch nicht um');
+  b.pruefe(/Trupp Nord/.test(await seite.text('#punktkarte .pk-umhaengen') || ''),
+    'Das Blatt nennt, wem die Strecke aufgetragen ist, und fragt');
+  const umWahl = await seite.auswerten(`
+    const k = document.querySelector('#punktkarte .pk-umhaengen button');
+    if (!k) return 'keine Antwort im Blatt';
+    const s = window.fbp.store.projekt.strecken[0];
+    const a = ((s.bau && s.bau.abschnitte) || []).find(x => k.textContent.includes(x.trupp || x.name));
+    k.click();
+    return a ? a.id : '';`);
+  await seite.ruhe();
+  b.gleich(await bau('bau.punkte.length'), ersteVorher + 1, 'Erst die Antwort hängt um');
+  if (umWahl) {
+    b.pruefe(await bau(`bau.punkte.some(pt => pt.abschnitt === ${JSON.stringify(umWahl)})`),
+      'Und der Punkt trägt den gewählten Bauabschnitt');
+  }
+  await seite.klick('#btn-undo');
+  await seite.taste('Escape');
+  await seite.auswerten(`
+    const st = await import('./js/baudoku.js');
+    const f = window.fbp, s = f.store.projekt.strecken[0];
+    f.store.aendern(() => { s.trupp = ${JSON.stringify(umVorher.trupp)}; }, 'strecke', { undo: false });
+    st.bauabschnittAktivSetzen(${JSON.stringify(umVorher.aktiv)});
+    return true;`);
+  b.gleich(await bau('bau.punkte.length'), ersteVorher, '„↶“ nimmt auch dieses Umhängen zurück');
 
   b.abschnitt('Nach dem Neuladen: dieselbe Strecke, und ohne Abschnitt wird gefragt');
   const abschnittSued = await seite.auswerten(`
@@ -1108,9 +1527,12 @@ try {
   b.gleich(await sued2('JSON.stringify(s.punkte)'), sued.soll,
     'Die geplanten Punkte der Strecke sind unverändert');
   b.gleich(await sued2('s.name'), 'Strecke Süd', 'Die Umbenennung aus der Planung bleibt');
-  b.pruefe(/betrifft die Planung \(Name von „Strecke Süd“\)/.test(
-    await seite.auswerten('document.getElementById("hinweisbox").textContent') || ''),
-    'Die Meldung sagt, dass der nächste Schritt die Planung betrifft, und welcher');
+  /* Die Grenze wird benannt, der Weg darüber nicht: „im Planungsmodus
+     zurücknehmen“ lud den Trupp in die Planung ein. */
+  const grenze = await seite.auswerten('document.getElementById("hinweisbox").textContent') || '';
+  b.pruefe(/^Weiter zurück geht es hier nicht – der nächste Schritt gehört zur Planung \(Name von „Strecke Süd“\)/
+    .test(grenze), `Die Meldung nennt die Grenze und den Schritt dahinter (${grenze})`);
+  b.pruefe(!/Planungsmodus/.test(grenze), 'Und sie schickt nicht in den Planungsmodus');
   b.gleich(await sued2('bau ? bau.punkte.length : 0'), 0,
     'Die Aufnahmen an der Strecke sind zurückgenommen');
   b.gleich(await bau('bau.punkte.length'), ersteVorher,
@@ -1136,6 +1558,23 @@ try {
   b.gleich(griffe, JSON.stringify({ weiter: true, umkehren: true, loeschen: true, farbe: true,
     kachel: true, punktWeg: true, hinweis: true, bauauftrag: true }),
     'Weiterzeichnen, Umkehren, Löschen, Farbe, Leitung und Punkt-✕ sind weg, der Bauauftrag bleibt');
+  /* Name, von/nach, Trupp, Bemerkung, Punktart und Punktbezeichnung blieben in
+     der vierten Runde Felder. Name und Punktart gehen in die Plan-Nr. ein –
+     das zweite Öffnen desselben Links meldete danach „Plan hat sich geändert“.
+     Einzig die Wahl des Koordinatenformats bleibt: sie ist Anzeige. */
+  const planFelder = await seite.auswerten(`
+    const karte = [...document.querySelectorAll('#strecken-liste .eintrag')]
+      .find(e => e.querySelector('.eintrag-koerper'));
+    return JSON.stringify({
+      felder: [...karte.querySelectorAll('input, select, textarea')]
+        .filter(e => e.getClientRects().length && !e.closest('.gruppen-kopf'))
+        .map(e => (e.closest('label')?.querySelector('.feld-titel')?.textContent || e.className)),
+      art: [...karte.querySelectorAll('.pz-lesen')].filter(e => e.getClientRects().length).length,
+      punkte: karte.querySelectorAll('.punktzeile').length });`);
+  const pf = JSON.parse(planFelder);
+  b.gleich(pf.felder.join(', '), '', 'Im Baumodus ist kein Feld des Plans bedienbar');
+  b.pruefe(pf.punkte > 0 && pf.art >= pf.punkte,
+    `Die Punktart steht dort als Text (${pf.art} von ${pf.punkte} Zeilen)`);
   await seite.klick('#strecken-liste .koord-knopf');
   await seite.warteAuf('!document.getElementById("dialog").hidden');
   b.gleich(await seite.anzahl('#kd-neu'), 0, 'Die Koordinate eines Punktes ist nur abzulesen');
@@ -1212,6 +1651,252 @@ try {
   b.pruefe(await punktkarte(), 'Das Blatt steht nach dem zweiten Tipp offen');
   b.gleich(await bau('bau.punkte.length'), vorTipps + 1, 'Und es ist genau ein Punkt entstanden');
   await blattTaste('Löschen');
+
+  // ------------------------------------------------------------ Doppeltipps mit dem Finger
+
+  /* Alles hier mit echten Fingertipps (`seite.tippe`): die Sperren gelten nur
+     dem, was ein Finger auslöst, und ein `click()` aus der Prüfung ginge
+     durch jede von ihnen hindurch. */
+  const warte = ms => new Promise(r => setTimeout(r, ms));
+  const mitte = wahl => seite.auswerten(`
+    const e = ${wahl};
+    if (!e) return null;
+    const r = e.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };`);
+
+  b.abschnitt('Ein Doppeltipp auf „Fertig“ trifft nicht die Bauleiste darunter');
+  const vorFertig = await bau('bau.punkte.length');
+  const idsVorFertig = await bau('JSON.stringify(bau.punkte.map(pt => pt.id))');
+  await seite.klick('#wz-punkt-hier');
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden', 10000);
+  await warte(500);
+  /* Wo der zweite Tipp landet, hängt an der Fenstergröße: bei 360×740 lag
+     unter „Fertig“ „Punkt hier“, bei 390×844 knapp darüber. Hier trifft er
+     „Punkt hier“ selbst – der Griff, der den Phantompunkt anlegte. */
+  const fertigOrt = await mitte(`document.querySelector('#punktkarte .pk-abschluss button')`);
+  await seite.tippe(fertigOrt.x, fertigOrt.y);
+  const hierOrt = await mitte(`document.getElementById('wz-punkt-hier')`);
+  b.pruefe(!!hierOrt && hierOrt.x > 0, 'Nach dem Schließen steht „Punkt hier“ wieder da');
+  await seite.tippe(hierOrt.x, hierOrt.y);
+  await warte(600);
+  b.gleich(await bau('bau.punkte.length'), vorFertig + 1, 'Der zweite Tipp legt keinen zweiten Punkt an');
+  b.pruefe(!(await punktkarte()), 'Das Blatt bleibt zu');
+  const karteOrt = await mitte(`document.getElementById('wz-punkt-karte')`);
+  await seite.tippe(hierOrt.x, hierOrt.y);
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden', 10000);
+  b.gleich(await bau('bau.punkte.length'), vorFertig + 2, 'Nach der Frist nimmt „Punkt hier“ wieder an');
+  await warte(500);
+  const fertig2 = await mitte(`document.querySelector('#punktkarte .pk-abschluss button')`);
+  await seite.tippe(fertig2.x, fertig2.y);
+  await seite.tippe(karteOrt.x, karteOrt.y);
+  await warte(300);
+  b.pruefe(await seite.auswerten('!window.fbp.sl.istSetzModus'),
+    'Auch „Auf Karte“ startet nach „Fertig“ nicht still den Setzmodus');
+  await warte(300);
+  await seite.tippe(karteOrt.x, karteOrt.y);
+  await warte(200);
+  b.pruefe(await seite.auswerten('!!window.fbp.sl.istSetzModus'), '… und danach wieder an');
+  await seite.auswerten(`document.querySelector('#zeichen-hinweis [data-akt=abbruch]').click(); return true;`);
+  await warte(200);
+  /* Aufräumen: die zwei Punkte dieses Abschnitts gehen wieder. */
+  await seite.auswerten(`const f = window.fbp, s = f.store.projekt.strecken[0];
+    const ids = new Set(${idsVorFertig});
+    f.store.aendern(() => { s.bau.punkte = s.bau.punkte.filter(pt => ids.has(pt.id)); }, 'bau');
+    return true;`);
+  await seite.warteAuf(`window.fbp.store.projekt.strecken[0].bau.punkte.length === ${vorFertig + 0}`, 3000);
+
+  b.abschnitt('Ein zweiter „Punkt hier“ an derselben Stelle heißt „eben schon aufgenommen“');
+  await seite.klick('#wz-punkt-hier');
+  await seite.warteAuf(`window.fbp.store.projekt.strecken[0].bau.punkte.length === ${vorFertig + 1}`, 10000);
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden', 5000);
+  await blattTaste('Fertig');
+  await seite.klick('#wz-punkt-hier');
+  await seite.warteAuf(`window.fbp.store.projekt.strecken[0].bau.punkte.length === ${vorFertig + 2}`, 10000);
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden', 5000);
+  const zwilling = await seite.text('#punktkarte .pk-ist') || '';
+  b.pruefe(/Eben schon aufgenommen \((Punkt \d+|zusätzlicher Punkt), vor \d+ s\)/.test(zwilling),
+    'Das Blatt nennt den Punkt, der eben schon aufgenommen wurde, samt Sekunden');
+  b.pruefe(!/Stimmt die Ortung/.test(zwilling), 'und verdächtigt nicht die Ortung');
+  await blattTaste('Diesen wieder löschen');
+  b.gleich(await bau('bau.punkte.length'), vorFertig + 1, '„Diesen wieder löschen“ nimmt den doppelten weg');
+  b.pruefe(await punktkarte(), 'und das Blatt zeigt den ersten');
+
+  b.abschnitt('Ein Kartentipp gleich nach dem Aufschlagen schließt das Blatt nicht');
+  /* Quer und auf dem Tablet steht das Blatt seitlich, und der zweite Tipp
+     eines Doppeltipps auf „Punkt hier“ traf die Karte daneben. Hier wird das
+     Blatt aus dem Programm aufgeschlagen und gleich danach neben ihm getippt. */
+  await blattTaste('Fertig');
+  const nebenBlatt = await seite.auswerten(`
+    const m = await import('./js/baukarte.js');
+    const s = window.fbp.store.projekt.strecken[0];
+    m.punktkarteOeffnen(s, { ist: s.bau.punkte[0] });
+    /* Die Oberkante aus dem Satz und nicht aus dem Rechteck: das Blatt läuft
+       gerade von unten ein, und sein Rechteck steht noch tiefer. */
+    const pk = document.getElementById('punktkarte');
+    const oben = pk.offsetParent.getBoundingClientRect().top + pk.offsetTop;
+    for (let y = oben - 10; y > 0; y -= 6) {
+      for (let x = 30; x < innerWidth - 30; x += 15) {
+        const e = document.elementFromPoint(x, y);
+        if (e && (e.classList.contains('leaflet-tile') || e.id === 'karte' ||
+            e.classList.contains('leaflet-tile-container'))) return { x, y };
+      }
+    }
+    return null;`);
+  b.pruefe(!!nebenBlatt, `Über dem Blatt liegt freie Karte (${JSON.stringify(nebenBlatt)})`);
+  if (nebenBlatt) {
+    await seite.tippe(nebenBlatt.x, nebenBlatt.y);
+    await warte(100);
+    b.pruefe(await punktkarte(), 'Der Tipp in den ersten Augenblicken lässt das Blatt offen');
+    await warte(450);
+    await seite.tippe(nebenBlatt.x, nebenBlatt.y);
+    await warte(150);
+    b.pruefe(!(await punktkarte()), 'Danach schließt ein Kartentipp es wie bisher');
+  }
+  b.pruefe(await seite.auswerten(`const h = document.getElementById('hinweisbox');
+    return h.hidden || !/ermittelt/.test(h.textContent) || h.classList.contains('geht');`),
+    '„Position wird ermittelt …“ steht nach der Aufnahme nicht mehr');
+  /* Aufräumen: die Fälle weiter unten zählen die Punkte der ersten Strecke. */
+  await seite.auswerten(`const f = window.fbp, s = f.store.projekt.strecken[0];
+    const ids = new Set(${idsVorFertig});
+    f.store.aendern(() => { s.bau.punkte = s.bau.punkte.filter(pt => ids.has(pt.id)); }, 'bau');
+    return true;`);
+
+  b.abschnitt('Ein Dialog nimmt im ersten Augenblick keinen Fingertipp auf seine Fußknöpfe an');
+  /* Die Löschrückfrage schlug dort auf, wo eben das ✕ stand, und ein
+     Doppeltipp auf das Kreuz bestätigte sie. */
+  await seite.auswerten(`
+    const ui = await import('./js/ui.js');
+    window._probeGeloescht = 0;
+    ui.dialog({ titel: 'Probe löschen?', inhalt: '<p>Probe</p>',
+      fuss: [{ text: 'Abbrechen' }, { text: 'Löschen', gefahr: true,
+               tun: () => { window._probeGeloescht++; } }] });
+    return true;`);
+  const loeschOrt = await mitte(`document.querySelector('#dialog-fuss .knopf.gefahr')`);
+  await seite.tippe(loeschOrt.x, loeschOrt.y);
+  b.pruefe(await seite.auswerten('!document.getElementById("dialog").hidden && window._probeGeloescht === 0'),
+    'Ein Tipp gleich nach dem Öffnen bestätigt nicht');
+  await warte(450);
+  await seite.tippe(loeschOrt.x, loeschOrt.y);
+  b.pruefe(await seite.auswerten('document.getElementById("dialog").hidden && window._probeGeloescht === 1'),
+    'Danach wirkt der Knopf wie gewohnt');
+
+  b.abschnitt('Ein Doppeltipp auf „✓ wie geplant“ bestätigt genau einen Punkt');
+  /* Die Liste rollt nach der Bestätigung den nächsten offenen Punkt unter den
+     Finger. Für diesen Abschnitt sind die drei geplanten Punkte offen; was
+     vorher dastand, kommt danach zurück – beides ohne Rückgängig-Schritt. */
+  const bauGemerkt = await bau('JSON.stringify(bau)');
+  await seite.auswerten(`const f = window.fbp, s = f.store.projekt.strecken[0];
+    f.store.aendern(() => { s.bau.punkte = []; }, 'bau', { undo: false }); return true;`);
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.klick('.reiter button[data-reiter="bau"]');
+  await warte(400);
+  const wieGeplant = `[...document.querySelectorAll('#bau-liste .bp-zeile:not(.bestaetigt) button')]
+    .find(x => x.textContent.includes('wie geplant'))`;
+  await seite.auswerten(`${wieGeplant}.scrollIntoView({ block: 'center' }); return true;`);
+  await warte(300);
+  const wgOrt = await mitte(wieGeplant);
+  await seite.tippe(wgOrt.x, wgOrt.y);
+  await warte(150);
+  await seite.tippe(wgOrt.x, wgOrt.y);
+  await warte(500);
+  b.gleich(await bau('bau.punkte.filter(pt => pt.sollPunkt).length'), 1,
+    'Der zweite Tipp bestätigt nicht den nächsten Punkt');
+  /* Und wenn doch zwei kurz hintereinander kommen – aus dem Programm, also an
+     der Sperre vorbei –, nennt die Pille beide. */
+  await seite.auswerten(`${wieGeplant}.click(); return true;`);
+  b.pruefe(/^Punkte \d+ und \d+ bestätigt/.test(
+    await seite.auswerten('document.getElementById("hinweisbox").textContent') || ''),
+    'Zwei Bestätigungen kurz hintereinander nennt die Pille beide');
+
+  b.abschnitt('Eine späte Ortung reißt nicht aus dem, was inzwischen getan wird');
+  /* Die Ortung des Geräts wird hier verzögert nachgestellt: sie antwortet
+     erst nach 900 ms, und dazwischen geschieht etwas anderes. */
+  const ortungVerzoegern = (ms, lat, lng) => seite.auswerten(`
+    navigator.geolocation.getCurrentPosition = (ok) => setTimeout(() => ok({
+      coords: { latitude: ${lat}, longitude: ${lng}, accuracy: 6 } }), ${ms});
+    return true;`);
+  const offenerPunkt = await seite.auswerten(`const s = window.fbp.store.projekt.strecken[0];
+    const belegt = new Set(s.bau.punkte.map(pt => pt.sollPunkt));
+    const pt = s.punkte.find(x => !belegt.has(x.id));
+    return { id: pt.id, lat: pt.lat, lng: pt.lng };`);
+  await ortungVerzoegern(900, offenerPunkt.lat + 0.0003, offenerPunkt.lng);
+  await seite.auswerten('document.getElementById("aw-karte").click(); return true;');
+  await warte(400);
+  const vorSpaet = await bau('bau.punkte.length');
+  await seite.klick('#wz-punkt-hier');
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.warteAuf(`window.fbp.store.projekt.strecken[0].bau.punkte.length === ${vorSpaet + 1}`, 5000);
+  await warte(200);
+  b.pruefe(await seite.auswerten('!document.body.classList.contains("seite-zu")'),
+    'Wer inzwischen in die Liste gewechselt hat, bleibt dort');
+  b.pruefe(!(await punktkarte()), 'Es schlägt kein Blatt auf');
+  b.pruefe(/aufgenommen/.test(await seite.auswerten('document.getElementById("hinweisbox").textContent') || ''),
+    'Die Pille sagt still, dass der Punkt steht');
+  await seite.auswerten(`const f = window.fbp, s = f.store.projekt.strecken[0];
+    f.store.aendern(() => { s.bau.punkte = s.bau.punkte.filter(pt => pt.quelle !== 'standort'); },
+      'bau', { undo: false });
+    return true;`);
+  /* „◉ Hier“ im Blatt des geplanten Punktes, und gleich danach „✓ Wie
+     geplant“: die spätere ausdrückliche Wahl gilt. */
+  await seite.auswerten('document.getElementById("aw-karte").click(); return true;');
+  await warte(400);
+  await seite.auswerten(`const m = await import('./js/baukarte.js');
+    const s = window.fbp.store.projekt.strecken[0];
+    m.punktkarteOeffnen(s, { soll: s.punkte.find(x => x.id === ${JSON.stringify(offenerPunkt.id)}) });
+    return true;`);
+  await blattTaste('◉ Hier');
+  b.pruefe(/ortet/.test(await seite.text('#punktkarte .pk-tasten') || ''),
+    '„◉ Hier“ im Blatt zeigt „ortet …“, solange die Ortung läuft');
+  await blattTaste('Wie geplant');
+  await warte(1100);
+  b.gleich(await bau(`(bau.punkte.find(pt => pt.sollPunkt === ${JSON.stringify(offenerPunkt.id)}) || {}).quelle`),
+    'plan', 'Die Bestätigung bleibt – die späte Ortung überschreibt sie nicht');
+  b.pruefe(/verworfen/.test(await seite.auswerten('document.getElementById("hinweisbox").textContent') || ''),
+    'und die Pille sagt, dass die Ortung verworfen wurde');
+  await seite.auswerten('delete navigator.geolocation.getCurrentPosition; return true;');
+  await seite.taste('Escape');
+  await seite.auswerten(`const f = window.fbp, s = f.store.projekt.strecken[0];
+    f.store.aendern(() => { s.bau = JSON.parse(${JSON.stringify(bauGemerkt)}); }, 'bau', { undo: false });
+    return true;`);
+
+  b.abschnitt('Ein Fehlschlag der Ortung: das Blatt spricht, die Pille schweigt');
+  await seite.auswerten(`navigator.geolocation.getCurrentPosition = (ok, fehler) =>
+    setTimeout(() => fehler({ code: 2 }), 50); return true;`);
+  await seite.klick('#wz-punkt-hier');
+  await seite.warteAuf('!!document.querySelector("#punktkarte .pk-fehler")', 5000);
+  await warte(250);
+  b.pruefe(await seite.auswerten(`const h = document.getElementById('hinweisbox');
+    return h.hidden || !h.classList.contains('fehler');`),
+    'Keine rote Pille über den Auswegen des Fehlerblatts');
+  await seite.auswerten('history.back(); return true;');
+  await warte(400);
+  b.pruefe(await seite.auswerten('!!window.fbp && !document.querySelector("#punktkarte .pk-fehler")'),
+    '„Zurück“ schließt das Fehlerblatt und bleibt in der Anwendung');
+  await seite.auswerten('delete navigator.geolocation.getCurrentPosition; return true;');
+
+  b.abschnitt('„Zurück“ beendet den Setzmodus „Auf Karte“');
+  await seite.klick('#wz-punkt-karte');
+  b.pruefe(await seite.auswerten('!!window.fbp.sl.istSetzModus'), '„Auf Karte“ wartet auf den Tipp');
+  await seite.auswerten('history.back(); return true;');
+  await warte(400);
+  b.pruefe(await seite.auswerten('!!window.fbp && !window.fbp.sl.istSetzModus'),
+    '„Zurück“ beendet das Setzen und bleibt in der Anwendung');
+
+  b.abschnitt('Ein Neuladen mitten in der Ortung hinterlässt einen Hinweis');
+  await seite.auswerten('navigator.geolocation.getCurrentPosition = () => {}; return true;');
+  await seite.klick('#wz-punkt-hier');
+  b.pruefe(/ortet/.test(await seite.text('#wz-punkt-hier') || ''), 'Die Ortung läuft');
+  await seite.warteAuf('!document.querySelector("#speicherstatus").classList.contains("offen")', 5000);
+  await seite.neuLaden();
+  await seite.warteAuf('!!window.fbp');
+  await seite.warteAuf(
+    '/Aufnahme von \\d\\d:\\d\\d wurde unterbrochen/.test(document.getElementById("hinweisbox").textContent)',
+    4000);
+  b.pruefe(true, 'Nach dem Neustart steht einmal, dass die Aufnahme unterbrochen wurde');
+  /* Der Start nach dem Neuladen bleibt in der Liste; die Fälle danach
+     beginnen auf der Karte. */
+  await seite.auswerten('document.getElementById("aw-karte").click(); return true;');
+  await warte(400);
 
   b.abschnitt('Der Setzmodus endet, wenn die Karte der Liste weicht');
   await seite.klick('#wz-punkt-karte');
@@ -1386,6 +2071,19 @@ try {
   await seite.warteAuf('document.getElementById("dialog-titel").textContent === "Bauauftrag geöffnet"', 8000);
   b.pruefe(!/liegt schon im Gerät/.test(await seite.text('#dialog-inhalt') || ''),
     'Beim ersten Öffnen ist von einer vorhandenen Aufnahme keine Rede');
+  /* „Übernehmen“ und „Bau beginnen“ standen ohne ein Wort zur Folge da, und
+     schmal rutschte der Hauptknopf unter „Verwerfen“. */
+  b.gleich(await fussText(), 'Verwerfen|Nur übernehmen|*Bau beginnen',
+    'Die Knöpfe heißen nach dem, was danach kommt');
+  b.pruefe(/Nur übernehmen – nur ansehen und planen/.test((await seite.text('#dialog-inhalt') || '')
+    .replace(/\s+/g, ' ')) && /Bau beginnen – jetzt bauen und dokumentieren/.test(
+    (await seite.text('#dialog-inhalt') || '').replace(/\s+/g, ' ')),
+    'Je Knopf steht eine Zeile Folge im Dialog');
+  b.pruefe(await seite.auswerten(`const f = document.getElementById('dialog-fuss');
+    const k = [...f.querySelectorAll('.knopf')];
+    const v = k[0].getBoundingClientRect(), h = k[2].getBoundingClientRect();
+    return f.classList.contains('hauptknopf-rechts') && h.left - v.right > 100;`),
+    '„Bau beginnen“ steht weit weg von „Verwerfen“');
   await taste('#dialog-fuss', 'Bau beginnen');
   await seite.warteAuf('!!window.fbp.store.projekt.herkunft', 3000);
   /* „Wer baut?“ kann folgen – ein schon getippter Name bleibt bei „Später“. */
@@ -1402,12 +2100,17 @@ try {
     window.fbp.store.aendern(() => {
       bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng, { sollPunkt: s.punkte[0].id, quelle: 'plan' });
     }, 'bau');
+    /* Und im Planungsmodus umbenannt: der Auftrag im Link ist trotzdem
+       derselbe, verglichen wird mit dem Plan, wie er übernommen wurde. */
+    window.fbp.store.aendern(() => { s.name = s.name + ' (umbenannt)'; }, 'strecke');
     window.fbp.store.speichern();
     return window.fbp.store.projekt.id;`);
   await seite.auswerten(`location.hash = ${JSON.stringify(auftrag.link.split('#')[1])}; return true;`);
   await seite.warteAuf('/liegt schon im Gerät/.test(document.getElementById("dialog-inhalt").textContent)', 8000);
   b.pruefe(/\d+ Punkte? aufgenommen, zuletzt/.test(await seite.text('#dialog-inhalt') || ''),
     'Das zweite Öffnen sagt, dass der Auftrag schon im Gerät liegt – samt Aufnahme');
+  b.pruefe(!/Plan hat sich/.test(await seite.text('#dialog-inhalt') || ''),
+    'Eine Änderung im Gerät seit der Übernahme macht daraus keinen geänderten Plan');
   b.pruefe(/^Verwerfen\|Als neue Planung übernehmen\|\*Dort weiterbauen$/.test(await fussText()),
     `„Dort weiterbauen“ ist der Hauptknopf, „Als neue Planung“ steht daneben (${await fussText()})`);
   /* Die Zurück-Taste nahm die Adresse, während der Dialog blieb – ein Neuladen
@@ -1440,13 +2143,95 @@ try {
   b.pruefe(/\*Bau beginnen$/.test(await fussText()) && /Bisherige öffnen/.test(await fussText()),
     `Bei geändertem Plan bleibt „Bau beginnen“ vorn, die bisherige ist einen Griff weit (${await fussText()})`);
   await taste('#dialog-fuss', 'Verwerfen');
+  /* „Der Link ist damit verbraucht“ stimmte nicht. */
+  b.pruefe(/derselbe Link öffnet sie wieder/.test(await seite.text('#hinweisbox') || ''),
+    'Verwerfen sagt, dass derselbe Link den Auftrag wieder öffnet');
   await seite.auswerten(`(await import('./js/ui.js')).projektDialog(); return true;`);
   const planliste = (await seite.text('#dialog-inhalt') || '').replace(/\s+/g, ' ');
-  b.pruefe(/Plan [0-9A-Z]{4}/.test(planliste) && /\d+ Punkte? aufgenommen/.test(planliste),
-    'Die gespeicherten Planungen nennen Plan-Kennung und Aufnahme je Eintrag');
+  b.pruefe(/Plan-Nr\. [0-9A-Z]{4}/.test(planliste) && /\d+ Punkte? aufgenommen/.test(planliste),
+    'Die gespeicherten Planungen nennen Plan-Nr. und Aufnahme je Eintrag');
+  /* Zwillinge gleichen Namens, von denen einer die Aufnahme trägt: der
+     Löschdialog nannte Strecken und Zeichen, die Aufnahme nicht. */
+  b.abschnitt('Wer eine Planung mit Bauaufnahme löscht, wird gewarnt');
+  await seite.auswerten(`
+    const ui = await import('./js/ui.js');
+    const zeile = [...document.querySelectorAll('#dialog-inhalt .pl-zeile')]
+      .find(z => /Punkte? aufgenommen/.test(z.textContent) && !/0 Punkte aufgenommen/.test(z.textContent));
+    [...zeile.querySelectorAll('button')].find(k => k.textContent === 'Löschen').click();
+    return true;`);
+  await seite.ruhe();
+  const loeschText = (await seite.text('#dialog-inhalt') || '').replace(/\s+/g, ' ');
+  b.pruefe(/Darin steht eine Bauaufnahme: \d+ aufgenommene? Punkte?/.test(loeschText),
+    'Der Löschdialog nennt die Bauaufnahme ausdrücklich');
+  b.pruefe(/Plan-Nr\. [0-9A-Z]{4}/.test(loeschText), 'Samt Plan-Nr. und Baustand');
+  await taste('#dialog-fuss', 'Abbrechen');
   await seite.auswerten(`(await import('./js/ui.js')).schliesseDialog();
     window.fbp.store.loeschen(${JSON.stringify(kopie)});
     window.fbp.store.laden(${JSON.stringify(auftrag.planer)}); return true;`);
+  await seite.ruhe();
+  if (await seite.auswerten('return document.body.classList.contains("baumodus")')) {
+    await seite.klick('#btn-modus');
+  }
+
+  /* Fünfte Runde: der erste Trupp stand vorgewählt da, der zweite tippte
+     „Weiter“ und baute unter fremdem Namen. Und wer „Später“ drückte, wurde
+     nie wieder gefragt – jede Aufnahme ging ohne Abschnitt hinaus. */
+  b.abschnitt('Welcher Trupp: nichts vorgewählt, und gefragt wird bei der ersten Aufnahme wieder');
+  const truppVorher = await seite.auswerten(`return { ...(await import('./js/baudoku.js')).truppAmGeraet() }`);
+  const zweiAuftrag = await seite.auswerten(`
+    const io = await import('./js/io.js');
+    const t = await import('./js/teilen.js');
+    const s = window.fbp.store.projekt.strecken[0];
+    const alt = s.trupp;
+    window.fbp.store.aendern(() => { s.trupp = '1. FmTr und 2. FmTr'; }, 'strecke');
+    const link = await t.alsLink(io.streckeAlsProjekt(s.id));
+    window.fbp.store.aendern(() => { s.trupp = alt; }, 'strecke');
+    return link;`);
+  await seite.auswerten(`location.hash = ${JSON.stringify(zweiAuftrag.split('#')[1])}; return true;`);
+  await seite.warteAuf('document.getElementById("dialog-titel").textContent === "Bauauftrag geöffnet"', 8000);
+  await taste('#dialog-fuss', 'Bau beginnen');
+  await seite.warteAuf('document.getElementById("dialog-titel").textContent === "Welcher Trupp seid ihr?"', 5000);
+  const wahlAnfang = await seite.auswerten(`return {
+    chips: [...document.querySelectorAll('.trupp-chip')].map(c => c.textContent.trim()).join('|'),
+    gewaehlt: document.querySelectorAll('.trupp-chip[aria-checked="true"]').length,
+    weiter: [...document.querySelectorAll('#dialog-fuss .knopf')].find(k => k.textContent === 'Weiter').disabled,
+    hoehe: Math.min(...[...document.querySelectorAll('.trupp-chip')].map(c => c.getBoundingClientRect().height)) };`);
+  b.gleich(wahlAnfang.chips, '1. FmTr|2. FmTr', 'Beide Trupps stehen als Chips da – „und“ trennt');
+  b.gleich(wahlAnfang.gewaehlt, 0, 'Keiner ist vorgewählt');
+  b.pruefe(wahlAnfang.weiter, '„Weiter“ geht erst, wenn einer gewählt ist');
+  b.pruefe(wahlAnfang.hoehe >= 44, `Die Chips haben Handschuhmaß (${Math.round(wahlAnfang.hoehe)} px)`);
+  await taste('#dialog-fuss', 'Später');
+  await seite.ruhe();
+  await seite.auswerten(`(await import('./js/ui.js')).schliesseDialog(); return true;`);
+  const truppPlanung = await seite.auswerten('return window.fbp.store.projekt.id');
+  await seite.auswerten(`
+    const bd = await import('./js/baudoku.js');
+    const s = window.fbp.store.projekt.strecken[0];
+    window.fbp.store.aendern(() => bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng,
+      { sollPunkt: s.punkte[0].id, quelle: 'plan' }), 'bau');
+    return true;`);
+  await seite.warteAuf('!document.getElementById("dialog").hidden && ' +
+    'document.getElementById("dialog-titel").textContent === "Welcher Trupp seid ihr?"', 5000);
+  b.pruefe(/eben aufgenommene Punkt/.test(await seite.text('#dialog-inhalt') || ''),
+    'Nach „Später“ fragt die erste Aufnahme noch einmal');
+  await seite.auswerten(`[...document.querySelectorAll('.trupp-chip')][1].click();
+    document.querySelector('#tf-fuehrer').value = 'Schulz'; return true;`);
+  await taste('#dialog-fuss', 'Weiter');
+  const nachWahl = await seite.auswerten(`
+    const bd = await import('./js/baudoku.js');
+    const s = window.fbp.store.projekt.strecken[0];
+    const eigen = s.bau.abschnitte.find(a => a.trupp === '2. FmTr');
+    const punkt = s.bau.punkte.find(pt => pt.sollPunkt === s.punkte[0].id);
+    return { abschnitt: eigen ? eigen.name + '/' + eigen.fuehrer : '',
+             zugeordnet: !!eigen && punkt.abschnitt === eigen.id,
+             absender: bd.absenderText([s]) };`);
+  b.gleich(nachWahl.abschnitt, '2. FmTr/Schulz', 'Der gewählte Trupp bekommt seinen Bauabschnitt');
+  b.pruefe(nachWahl.zugeordnet, 'Und der eben aufgenommene Punkt kommt nachträglich hinein');
+  b.gleich(nachWahl.absender, '2. FmTr · Schulz', 'Die Meldung nennt Trupp und Truppführer');
+  await seite.auswerten(`
+    (await import('./js/baudoku.js')).truppAmGeraetSetzen(${JSON.stringify(truppVorher)});
+    window.fbp.store.laden(${JSON.stringify(auftrag.planer)});
+    window.fbp.store.loeschen(${JSON.stringify(truppPlanung)}); return true;`);
   await seite.ruhe();
   if (await seite.auswerten('return document.body.classList.contains("baumodus")')) {
     await seite.klick('#btn-modus');
@@ -1664,6 +2449,220 @@ try {
   b.gleich(staende.nachUebergeben, 'uebergeben',
     'Und eine Teilmeldung wirft einen weiter fortgeschrittenen Stand nicht zurück');
 
+  /* Fünfte Runde: Trupp 1 hatte Stamm 1 bestanden gemeldet, Trupp 2 meldete
+     ihn durchgefallen – und weil beim Planer schon eine Prüfung stand, ging
+     die Meldung still verloren. Die Baudokumentation druckte „bestanden,
+     übergeben“ über einer Leitung, die nicht ging. */
+  b.abschnitt('Ein durchgefallener Stamm des zweiten Trupps geht nicht verloren');
+  const pruefMerge = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const bm = await import('./js/baumeldung.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    const frueh = new Date(Date.now() - 3600e3).toISOString();
+    /* Beim Planer: Nord hat gemeldet, Stamm 1 bestanden, übergeben. */
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const a = bd.bauabschnittAnlegen(s); a.name = 'Nord'; a.trupp = '1. FmTr';
+      bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng,
+        { sollPunkt: s.punkte[0].id, quelle: 'plan', abschnitt: a.id });
+      const z = bd.pruefzeileAnlegen(s); z.stamm = 'Stamm 1'; z.bestanden = true; z.zeit = frueh;
+      s.bau.pruefung.uebergabeAn = 'FGr N'; s.bau.stand = 'uebergeben';
+    }, 'bau');
+    const planer = JSON.stringify(s.bau);
+    /* Süd misst denselben Stamm und findet ihn durchgefallen. */
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const a = bd.bauabschnittAnlegen(s); a.name = 'Süd'; a.trupp = '2. FmTr';
+      const letzter = s.punkte[s.punkte.length - 1];
+      bd.istPunktSetzen(s, letzter.lat, letzter.lng, { sollPunkt: letzter.id, quelle: 'plan', abschnitt: a.id });
+      const z = bd.pruefzeileAnlegen(s); z.stamm = 'Stamm 1'; z.bestanden = false;
+    }, 'bau');
+    const sued = JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s], '2. FmTr')));
+    /* Und umgekehrt: hier durchgefallen, gemeldet bestanden. */
+    const suedGut = JSON.parse(JSON.stringify(sued));
+    suedGut.strecken[0].bau.pruefung.staemme[0].bestanden = true;
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(planer); }, 'bau');
+    const vorschau = bm.befund(p, sued, [s.id])[0];
+    window.fbp.store.aendern(pr => bm.einspielen(pr, sued, [s.id]), 'meldung');
+    const nach = { stamm: s.bau.pruefung.staemme.map(z => z.stamm + ':' + z.bestanden).join(','),
+                   stand: s.bau.stand, an: s.bau.pruefung.uebergabeAn };
+    const umgekehrt = bm.befund(p, suedGut, [s.id])[0];
+    window.fbp.store.aendern(pr => bm.einspielen(pr, suedGut, [s.id]), 'meldung');
+    const nachGut = s.bau.pruefung.staemme.map(z => z.stamm + ':' + z.bestanden).join(',');
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return JSON.stringify({ hinweise: vorschau.pruefhinweise, nach, umgekehrt: umgekehrt.pruefhinweise, nachGut });`)
+    .then(x => JSON.parse(x));
+  b.pruefe(pruefMerge.hinweise.some(h => h.stamm === 'Stamm 1' && h.hier === 'bestanden' &&
+    h.gemeldet === 'durchgefallen' && h.uebernommen),
+    'Die Vorschau nennt den Stamm: hier bestanden, gemeldet durchgefallen – übernommen');
+  b.gleich(pruefMerge.nach.stamm, 'Stamm 1:false', 'Nach dem Einspielen steht der Stamm durchgefallen da');
+  b.gleich(pruefMerge.nach.stand, 'gebaut',
+    'Die Übergabe ist aufgehoben – übergeben wird nur mit bestandener Prüfung');
+  b.pruefe(pruefMerge.hinweise.some(h => h.uebergabeAufgehoben),
+    'Und die Vorschau sagt das vorher');
+  b.gleich(pruefMerge.nach.an, 'FGr N', 'Wer übernommen hatte, bleibt als Vermerk stehen');
+  b.pruefe(pruefMerge.umgekehrt.some(h => h.hier === 'durchgefallen' && h.gemeldet === 'bestanden' &&
+    !h.uebernommen), 'Ein gemeldetes „bestanden“ gegen „durchgefallen“ hier wird genannt, nicht übernommen');
+  b.gleich(pruefMerge.nachGut, 'Stamm 1:false', 'Und „durchgefallen“ bleibt stehen');
+
+  /* Ein neu verschickter Auftrag trägt den ganzen Bau-Block, also auch den
+     Abschnitt des anderen Trupps. Die nächste Meldung brachte ihn mit, nannte
+     „1. FmTr, 2. FmTr“ und überschrieb beim Planer den neueren Stand von 1. */
+  b.abschnitt('Kennt das Gerät seinen Trupp, meldet es nur dessen Abschnitte');
+  const nurEigene = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    const vorher = { ...bd.truppAmGeraet() };
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const a = bd.bauabschnittAnlegen(s); a.name = '1. FmTr'; a.trupp = '1. FmTr'; a.fuehrer = 'Krause';
+      bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng, { sollPunkt: s.punkte[0].id, quelle: 'plan', abschnitt: a.id });
+      bd.materialSetzen(s, 'fkb', a.id, 400);
+      const c = bd.bauabschnittAnlegen(s); c.name = '2. FmTr'; c.trupp = '2. FmTr';
+      const letzter = s.punkte[s.punkte.length - 1];
+      bd.istPunktSetzen(s, letzter.lat, letzter.lng, { sollPunkt: letzter.id, quelle: 'plan', abschnitt: c.id });
+      bd.istPunktSetzen(s, letzter.lat + 0.001, letzter.lng, { quelle: 'karte' });
+    }, 'bau');
+    bd.truppAmGeraetSetzen({ trupp: '2. FmTr', fuehrer: 'Schulz' });
+    const m = t.alsBaumeldung(p, [s], bd.absenderText([s]), bd.eigeneAbschnitte);
+    const voll = t.alsBaumeldung(p, [s], '');
+    const codeEigen = t.meldungsCodeVon([s], bd.eigeneAbschnitte);
+    const codeAus = t.meldungsCodeAus(JSON.parse(JSON.stringify(m)));
+    window.fbp.store.aendern(() => bd.absetzenVermerken(s, 'link', codeEigen), 'bau', { undo: false });
+    /* Der fremde Abschnitt ändert sich am Gerät – etwa durch einen neuen
+       Auftrag. Das ist keine Änderung an der eigenen Meldung. */
+    window.fbp.store.aendern(() => { s.bau.material[0].menge = 500; }, 'bau');
+    const standNachFremd = bd.absetzstand(s).stand;
+    const fremd = bd.fremderAbschnitt(s, s.bau.abschnitte[0]);
+    bd.truppAmGeraetSetzen(vorher);
+    const ohneTrupp = t.alsBaumeldung(p, [s], '', bd.eigeneAbschnitte).strecken[0].bau.abschnitte.length;
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return JSON.stringify({
+      abschnitte: m.strecken[0].bau.abschnitte.map(a => a.name).join(','),
+      punkte: (m.strecken[0].bau.punkte || []).length,
+      material: (m.strecken[0].bau.material || []).length,
+      vollAbschnitte: voll.strecken[0].bau.abschnitte.length,
+      von: m.von, gleicherCode: codeEigen === codeAus,
+      codeAnders: codeEigen !== t.meldungsCodeVon([s]), standNachFremd, fremd, ohneTrupp });`)
+    .then(x => JSON.parse(x));
+  b.gleich(nurEigene.abschnitte, '2. FmTr', 'Die Meldung trägt nur den Abschnitt des eigenen Trupps');
+  b.gleich(nurEigene.punkte, 1, 'Mit dessen Punkt – ohne den des anderen und ohne den ohne Abschnitt');
+  b.gleich(nurEigene.material, 0, 'Und ohne das Material des anderen Trupps');
+  b.gleich(nurEigene.vollAbschnitte, 2, 'Ohne diese Auswahl ginge der ganze Bogen hinaus');
+  b.gleich(nurEigene.von, '2. FmTr · Schulz', 'Der Absender nennt Trupp und Truppführer');
+  b.pruefe(nurEigene.gleicherCode, 'Der Rückgabe-Code rechnet über genau das, was hinausgeht');
+  b.gleich(nurEigene.standNachFremd, 'aktuell',
+    'Eine Änderung am fremden Abschnitt macht die eigene Meldung nicht veraltet');
+  b.pruefe(nurEigene.fremd, 'Der fremde Abschnitt gilt am Gerät als fremd');
+  b.gleich(nurEigene.ohneTrupp, 2, 'Kennt das Gerät seinen Trupp nicht, bleibt alles wie bisher');
+
+  /* „älter“ verglich die Aufnahmezeiten über die ganze Strecke – beim
+     abschnittsweisen Bau also Trupp 1 gegen Trupp 2. */
+  b.abschnitt('„Älter“ vergleicht nur, was die Meldung ersetzt');
+  const alter = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const bm = await import('./js/baumeldung.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    const vor = h => new Date(Date.now() - h * 3600e3).toISOString();
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const sued = bd.bauabschnittAnlegen(s); sued.name = 'Süd'; sued.trupp = '2. FmTr';
+      const letzter = s.punkte[s.punkte.length - 1];
+      bd.istPunktSetzen(s, letzter.lat, letzter.lng, { sollPunkt: letzter.id, quelle: 'plan', abschnitt: sued.id });
+      s.bau.punkte[0].zeit = vor(1);
+    }, 'bau');
+    const meldung = JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s], '2. FmTr')));
+    /* Beim Planer: Süd von vor zwei Stunden, Nord eben erst. */
+    window.fbp.store.aendern(() => {
+      s.bau.punkte[0].zeit = vor(2);
+      const nord = bd.bauabschnittAnlegen(s); nord.name = 'Nord'; nord.trupp = '1. FmTr';
+      bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng, { sollPunkt: s.punkte[0].id, quelle: 'plan', abschnitt: nord.id });
+    }, 'bau');
+    const mehrtrupp = bm.befund(p, meldung, [s.id])[0].aelter;
+    /* Gegenprobe: derselbe Abschnitt ist hier neuer – dann bleibt es „älter“. */
+    window.fbp.store.aendern(() => { s.bau.punkte.find(x => x.abschnitt === s.bau.abschnitte[0].id).zeit = vor(0); }, 'bau');
+    const wirklich = bm.befund(p, meldung, [s.id])[0].aelter;
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return { mehrtrupp, wirklich };`);
+  b.gleich(alter.mehrtrupp, false,
+    'Eine Meldung von Süd ist nicht „älter“, nur weil Nord zuletzt etwas eingetragen hat');
+  b.gleich(alter.wirklich, true, 'Ist Süd hier neuer als gemeldet, bleibt die Warnung');
+
+  /* Zwei Trupps ohne Bauabschnitt – in der einfachen Ansicht der Regelfall.
+     Beim Planer blieb nur entweder – oder. */
+  b.abschnitt('Zwei Trupps ohne Bauabschnitt: als eigener Abschnitt einspielen');
+  const eigener = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const bm = await import('./js/baumeldung.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const letzter = s.punkte[s.punkte.length - 1];
+      bd.istPunktSetzen(s, letzter.lat, letzter.lng, { sollPunkt: letzter.id, quelle: 'plan' });
+      s.bau.punkte[0].zeit = new Date(Date.now() - 3600e3).toISOString();
+    }, 'bau');
+    const meldungB = JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s], 'Trupp B · Lange')));
+    /* Beim Planer steht schon die Aufnahme von Trupp A, ohne Abschnitt, neuer. */
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng, { sollPunkt: s.punkte[0].id, quelle: 'plan' });
+      s.bau.gemeldetVon = 'Trupp A';
+    }, 'bau');
+    const zuordnung = [s.id];
+    const vorher = bm.befund(p, meldungB, zuordnung)[0];
+    zuordnung.eigenerAbschnitt = [true];
+    const mit = bm.befund(p, meldungB, zuordnung)[0];
+    window.fbp.store.aendern(pr => bm.einspielen(pr, meldungB, zuordnung), 'meldung');
+    const nach = {
+      abschnitte: s.bau.abschnitte.map(a => a.name + '/' + a.fuehrer).join(','),
+      ohne: s.bau.punkte.filter(x => !x.abschnitt).length,
+      imAbschnitt: s.bau.punkte.filter(x => x.abschnitt).length,
+      code: s.bau.gemeldetCode, erwartet: t.meldungsCodeAus(meldungB)
+    };
+    /* Die nächste Meldung desselben Trupps findet ihren Abschnitt wieder. */
+    const ui = await import('./js/ui.js');
+    ui.baumeldungDialog(meldungB, 'Datei');
+    const vorbelegt = !!document.querySelector('.mv-eigener input:checked');
+    const satz = (document.querySelector('.mv-eigener') || {}).textContent || '';
+    ui.schliesseDialog();
+    /* Der Inhalt bleibt nach dem Schließen stehen – die Fälle danach warten auf
+       eine neue Vorschau und fänden sonst diese. */
+    document.getElementById('dialog-inhalt').innerHTML = '';
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    return JSON.stringify({ moeglich: vorher.eigenerAbschnittMoeglich, verlorenVorher: vorher.verloren.punkte,
+      aelter: vorher.aelter, verlorenMit: mit.verloren.punkte, nach, vorbelegt, satz });`)
+    .then(x => JSON.parse(x));
+  b.pruefe(eigener.moeglich, 'Bei anderem Absender ohne Abschnitt wird der eigene Abschnitt angeboten');
+  b.gleich(eigener.aelter, false, 'Zwei verschiedene Trupps sind nicht „älter“ als einander');
+  b.pruefe(eigener.verlorenVorher >= 1 && eigener.verlorenMit === 0,
+    'Ganz eingespielt ginge die Aufnahme von A verloren, als eigener Abschnitt nicht');
+  b.gleich(eigener.nach.abschnitte, 'Trupp B/Lange', 'Danach steht der Abschnitt „Trupp B“ samt Truppführer');
+  b.gleich(eigener.nach.ohne, 1, 'Die Aufnahme von A bleibt ohne Abschnitt stehen');
+  b.gleich(eigener.nach.imAbschnitt, 1, 'Die von B steht in ihrem Abschnitt');
+  b.gleich(eigener.nach.code, eigener.nach.erwartet,
+    'Der Rückgabe-Code der Meldung steht danach an der Strecke');
+  b.pruefe(eigener.vorbelegt && /Trupp B/.test(eigener.satz),
+    'Kommt Trupp B wieder, ist „als eigenen Bauabschnitt“ schon gewählt');
+
+  b.abschnitt('„und“ trennt aufgetragene Trupps wie das Komma');
+  b.gleich(await seite.auswerten(`
+    const bd = await import('./js/baudoku.js');
+    return [bd.auftragsTrupps({ trupp: '1. FmTr und 2. FmTr' }).join('|'),
+            bd.auftragsTrupps({ trupp: 'Trupp A u. Trupp B; Trupp C' }).join('|')].join(' / ');`),
+    '1. FmTr|2. FmTr / Trupp A|Trupp B|Trupp C', '„1. FmTr und 2. FmTr“ sind zwei Trupps');
+
   b.abschnitt('Bei verschobener Punktliste wird der Planbezug gelöst, nicht geraten');
   const verschoben = await seite.auswerten(`
     const st = await import('./js/state.js');
@@ -1770,6 +2769,83 @@ try {
      sah vor und nach dem Absetzen gleich aus, und der Bau-Block war
      zeichengleich. Doppelt gemeldet ersetzt beim Planer Eintragungen, gar
      nicht gemeldet fehlt dort alles. */
+  /* Schema 19: was der Bogen abfragt, muss auch beim Planer ankommen – in der
+     Baumeldung UND im Link der ganzen Planung. Punktverweise reisen dabei als
+     Stelle, wie `vonPunkt` seit Schema 13. */
+  b.abschnitt('Abschrift, Herkunft „Papier“ und Geräteausfall reisen mit');
+  const papierReise = await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bm = await import('./js/baumeldung.js');
+    const st = await import('./js/state.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    const merk = JSON.stringify(s.bau);
+    window.fbp.store.aendern(() => {
+      s.bau = st.bauNormalisieren(JSON.parse(${JSON.stringify(nachtragStand)}));
+      s.bau.ausfallZeit = '2026-09-30T11:00:00.000Z';
+      s.bau.ausfallNach = s.punkte[2].id;
+    }, 'bau');
+    const quelle = JSON.parse(JSON.stringify(s.bau));
+    // Rückweg: Baumeldung als Link, beim Planer in eine Abschrift eingespielt
+    const link = await t.meldungAlsLink(p, [s], 'Trupp Nord');
+    const meldung = await t.baumeldungAusFragment('#' + link.split('#')[1]);
+    const ziel = JSON.parse(JSON.stringify(p));
+    ziel.strecken[0].bau = null;
+    bm.einspielen(ziel, meldung, [ziel.strecken[0].id]);
+    const an = ziel.strecken[0].bau;
+    // Hinweg: die ganze Planung als Link
+    const plink = await t.alsLink(p);
+    const zurueck = await t.planungAusFragment('#' + plink.split('#')[1]);
+    const migriert = st.migrieren(zurueck);
+    const pz = migriert.strecken[0];
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(merk); }, 'bau');
+    const nrVon = (liste, id) => liste.findIndex(x => x.id === id);
+    const zusammen = (bau, punkte) => JSON.stringify({
+      papier: bau.punkte.filter(x => x.quelle === 'papier').length,
+      nachgetragen: bau.punkte.filter(x => x.nachgetragen).length +
+        bau.meldungen.filter(x => x.nachgetragen).length +
+        (bau.pruefung ? bau.pruefung.staemme.filter(x => x.nachgetragen).length : 0),
+      von: nrVon(punkte, bau.abschnitte[0].vonPunkt), bis: nrVon(punkte, bau.abschnitte[0].bisPunkt),
+      ausfallA: [bau.abschnitte[0].ausfallZeit, nrVon(punkte, bau.abschnitte[0].ausfallNach)],
+      zeitPunkt: bau.punkte.find(x => x.nachgetragen)?.zeit || 'leer'
+    });
+    return JSON.stringify({
+      quelle: zusammen(quelle, s.punkte),
+      meldung: zusammen(an, ziel.strecken[0].punkte),
+      planung: zusammen(pz.bau, pz.punkte),
+      ausfallBauPlanung: [pz.bau.ausfallZeit, nrVon(pz.punkte, pz.bau.ausfallNach)]
+    });`).then(JSON.parse);
+  b.gleich(papierReise.meldung, papierReise.quelle,
+    'Die Baumeldung bringt Herkunft, Abschrift, von–bis und Geräteausfall zum Planer');
+  b.gleich(papierReise.planung, papierReise.quelle, 'Der Link der Planung ebenso');
+  b.gleich(JSON.stringify(papierReise.ausfallBauPlanung), JSON.stringify(['2026-09-30T11:00:00.000Z', 2]),
+    'Der Ausfall ohne Bauabschnitt reist als Stelle und kommt am selben Punkt an');
+
+  b.abschnitt('Ein Stand von Schema 18 öffnet ohne Umweg');
+  const alt18 = await seite.auswerten(`
+    const st = await import('./js/state.js');
+    const s = window.fbp.store.projekt.strecken[0];
+    const p = st.migrieren({ version: 18, name: 'Alt', kopf: {}, ansicht: {}, strecken: [{
+      name: 'A', punkte: s.punkte.map(x => ({ ...x })),
+      bau: { stand: 'laeuft', abschnitte: [{ id: 'a1', name: 'Nord', vonPunkt: s.punkte[0].id }],
+             punkte: [{ lat: s.punkte[0].lat, lng: s.punkte[0].lng, quelle: 'standort',
+                        zeit: '2026-09-01T08:00:00.000Z', sollPunkt: s.punkte[0].id },
+                      { lat: s.punkte[1].lat, lng: s.punkte[1].lng, quelle: 'unbekannt',
+                        zeit: '2026-09-01T09:00:00.000Z' }],
+             meldungen: [{ zeit: '2026-09-01T08:30:00.000Z', text: 'x' }] } }] });
+    const b = p.strecken[0].bau;
+    return JSON.stringify({ version: p.version, quellen: b.punkte.map(x => x.quelle),
+      nachgetragen: b.punkte.map(x => x.nachgetragen).concat(b.meldungen.map(x => x.nachgetragen)),
+      ausfall: [b.ausfallZeit, b.ausfallNach, b.abschnitte[0].ausfallZeit, b.abschnitte[0].ausfallNach],
+      von: b.abschnitte[0].vonPunkt === p.strecken[0].punkte[0].id,
+      zeiten: b.punkte.map(x => x.zeit) });`).then(JSON.parse);
+  b.gleich(alt18.version, 19, 'Er wird auf Schema 19 gehoben');
+  b.gleich(alt18.quellen.join(','), 'standort,karte',
+    'Die Herkunft bleibt, eine unbekannte fällt auf „Karte“ wie bisher');
+  b.pruefe(alt18.nachgetragen.every(x => x === '') && alt18.ausfall.every(x => !x),
+    'Nichts gilt nachträglich als vom Papier – das wäre geraten');
+  b.pruefe(alt18.von && alt18.zeiten.every(Boolean), 'Abschnitt und Zeiten bleiben, wie sie waren');
+
   b.abschnitt('Das Absetzen hinterlässt einen Vermerk');
   const vermerk = await seite.auswerten(`
     const bd = await import('./js/baudoku.js');
@@ -1961,7 +3037,7 @@ try {
   b.pruefe(/Bisher .* → danach /.test(neuText), 'Und eine Zeile „bisher → danach“');
   const kurz = await seite.auswerten(
     `return (await import('./js/teilen.js')).meldungsCodeAus(window.fbpVarianten.neu)`);
-  b.pruefe(neuText.includes('Meldung ' + kurz), `Der Dialog nennt den Kurzcode der Meldung (${kurz})`);
+  b.pruefe(neuText.includes('Rückgabe-Code ' + kurz), `Der Dialog nennt den Rückgabe-Code der Meldung (${kurz})`);
   /* Ein Doppeltipp ergab im Audit zwei Rückgängig-Schritte. */
   const schritte = await seite.auswerten(`
     const vor = window.fbp.store.undoStapel.length;
@@ -1969,8 +3045,12 @@ try {
     k.click(); k.click();
     return window.fbp.store.undoStapel.length - vor;`);
   b.gleich(schritte, 1, 'Ein Doppeltipp auf „Einspielen“ spielt einmal ein');
-  b.pruefe((await seite.text('#hinweisbox') || '').includes('Meldung ' + kurz),
-    'Die Meldung nach dem Einspielen nennt den Kurzcode zum Zurückfunken');
+  b.pruefe((await seite.text('#hinweisbox') || '').includes('Rückgabe-Code ' + kurz),
+    'Die Meldung nach dem Einspielen nennt den Rückgabe-Code zum Zurückfunken');
+  b.pruefe(await seite.auswerten(`(await import('./js/ui.js')).zeichneStreckenListe();
+    return [...document.querySelectorAll('#strecken-liste .bz-code')]
+    .some(e => e.textContent.includes(${JSON.stringify(kurz)}))`),
+    'Und er bleibt an der Strecke stehen, nicht nur drei Sekunden in der Pille');
 
   /* Liegt die Planung nicht hier, wird das gesagt, und eingespielt wird nichts. */
   await seite.auswerten(`const m = JSON.parse(JSON.stringify(window.fbpVoll));
@@ -1982,6 +3062,98 @@ try {
   b.pruefe(/\*Verwerfen/.test(await fussJetzt()) && /Einspielen\(gesperrt\)/.test(await fussJetzt()),
     `Und „Einspielen“ ist gesperrt, bis von Hand zugeordnet ist (${await fussJetzt()})`);
   await taste('#dialog-fuss', 'Verwerfen');
+  /* Der Code quittierte den Empfang, nicht die Übernahme: der Trupp hörte
+     „angekommen“ und hielt die Meldung für eingespielt. */
+  await seite.warteAuf('document.getElementById("dialog-titel").textContent === "Dem Trupp durchgeben"', 3000);
+  b.pruefe(/Meldung [2-9A-HJ-NP-Z]{4} nicht übernommen – Grund: Planung liegt hier nicht vor/
+    .test(await inhaltJetzt()), 'Nach „Verwerfen“ steht die Funkformel mit dem Grund da');
+  await taste('#dialog-fuss', 'Schließen');
+
+  /* Kamen mehrere Planungen in Frage, öffnete der Griff die zuletzt
+     geänderte – im Audit die Probekopie eines Bauauftrags. */
+  b.abschnitt('Kennen mehrere Planungen die Strecke, stehen alle zur Wahl');
+  const kandidat = await seite.auswerten(`
+    const st = await import('./js/state.js');
+    const kopie = (herkunft, name) => {
+      const p = JSON.parse(JSON.stringify(window.fbp.store.projekt));
+      p.id = st.id(); p.name = name; p.strecken[0].name = 'Kandidatenstrecke';
+      p.geaendert = new Date(Date.now() + (herkunft ? 60000 : 0)).toISOString();
+      if (herkunft) p.herkunft = { projekt: 'Original', strecke: 'Kandidatenstrecke' };
+      st.projektAblegen(p);
+      return p.id;
+    };
+    const ids = [kopie(false, 'Original beim Planer'), kopie(true, 'Probekopie aus dem Auftrag')];
+    const m = JSON.parse(JSON.stringify(window.fbpVoll));
+    m.strecken[0].name = 'Kandidatenstrecke';
+    window.fbpKandidaten = ids;
+    (await import('./js/ui.js')).baumeldungDialog(m, 'Datei');
+    return ids;`);
+  await seite.warteAuf('!!document.querySelector(".meldung-vorschau")', 4000);
+  b.pruefe(/In Frage kommen 2 Planungen/.test(await inhaltJetzt()) && /\*Planung wählen/.test(await fussJetzt()),
+    `Der Dialog nennt beide und bietet die Wahl an (${await fussJetzt()})`);
+  await taste('#dialog-fuss', 'Planung wählen');
+  await seite.warteAuf('document.getElementById("dialog-titel").textContent === "Welche Planung?"', 3000);
+  const wahlListe = await seite.auswerten(`return [...document.querySelectorAll('#dialog-inhalt .pl-zeile')]
+    .map(z => z.textContent.replace(/\\s+/g, ' ').trim())`);
+  b.pruefe(wahlListe.length === 2 && /^Original beim Planer/.test(wahlListe[0]) &&
+    /aus Bauauftrag übernommen/.test(wahlListe[1]) && /Plan-Nr\. /.test(wahlListe[0]),
+    `Die Planung des Planers steht vorn, die übernommene Kopie ist als solche benannt (${wahlListe.join(' / ')})`);
+  await taste('#dialog-fuss', 'Zurück zur Meldung');
+  await seite.warteAuf('document.getElementById("dialog-titel").textContent === "Baumeldung eingegangen"', 3000);
+  await taste('#dialog-fuss', 'Verwerfen');
+  await seite.auswerten(`(await import('./js/ui.js')).schliesseDialog();
+    for (const id of ${JSON.stringify(kandidat)}) window.fbp.store.loeschen(id); return true;`);
+  await seite.ruhe();
+
+  /* Folgemeldung desselben Trupps ohne Verlust: kein Gelb. Und eine
+     Teilmeldung „übergeben“ sagt, warum die Strecke im Bau bleibt. */
+  b.abschnitt('Die Folgemeldung desselben Trupps ist keine Warnung, der gedeckelte Stand wird erklärt');
+  await seite.auswerten(`
+    const t = await import('./js/teilen.js');
+    const bd = await import('./js/baudoku.js');
+    const p = window.fbp.store.projekt;
+    const s = p.strecken[0];
+    window.fbpMerk2 = JSON.stringify(s.bau);
+    window.fbp.store.aendern(() => {
+      s.bau = null;
+      const nord = bd.bauabschnittAnlegen(s); nord.name = 'Nord'; nord.trupp = '1. FmTr';
+      bd.istPunktSetzen(s, s.punkte[0].lat, s.punkte[0].lng, { sollPunkt: s.punkte[0].id, quelle: 'plan', abschnitt: nord.id });
+      const sued = bd.bauabschnittAnlegen(s); sued.name = 'Süd'; sued.trupp = '2. FmTr';
+      const letzter = s.punkte[s.punkte.length - 1];
+      bd.istPunktSetzen(s, letzter.lat, letzter.lng, { sollPunkt: letzter.id, quelle: 'plan', abschnitt: sued.id });
+      const z = bd.pruefzeileAnlegen(s); z.stamm = 'Stamm 1'; z.bestanden = true;
+      z.zeit = new Date(Date.now() - 3600e3).toISOString();
+      s.bau.gemeldetVon = '1. FmTr';
+    }, 'bau');
+    const planer = JSON.stringify(s.bau);
+    window.fbp.store.aendern(() => {
+      const nord = s.bau.abschnitte[0];
+      bd.istPunktSetzen(s, s.punkte[1].lat, s.punkte[1].lng, { sollPunkt: s.punkte[1].id, quelle: 'plan', abschnitt: nord.id });
+      s.bau.pruefung.staemme[0].bestanden = false;
+      s.bau.pruefung.staemme[0].zeit = new Date().toISOString();
+      s.bau.stand = 'uebergeben';
+    }, 'bau');
+    const nurNord = new Set([s.bau.abschnitte[0].id]);
+    window.fbpFolge = JSON.parse(JSON.stringify(t.alsBaumeldung(p, [s], '1. FmTr', () => nurNord)));
+    window.fbp.store.aendern(() => { s.bau = JSON.parse(planer); }, 'bau');
+    (await import('./js/ui.js')).baumeldungDialog(window.fbpFolge, 'Datei');
+    return true;`);
+  await seite.warteAuf('!!document.querySelector(".meldung-vorschau")', 4000);
+  const folge = await seite.auswerten(`return {
+    folge: (document.querySelector('.mv-folge') || {}).textContent || '',
+    gelb: [...document.querySelectorAll('.mv-zeile .bau-warnung')].some(e => /hängt hier schon eine Aufnahme/.test(e.textContent)),
+    gedeckelt: ((document.querySelector('.mv-gedeckelt') || {}).textContent || '').replace(/\\s+/g, ' '),
+    stamm: [...document.querySelectorAll('.mv-zeile .bau-warnung')].map(e => e.textContent.replace(/\\s+/g, ' ')).join(' | ') };`);
+  b.pruefe(/Folgemeldung von 1\. FmTr/.test(folge.folge) && !folge.gelb,
+    'Meldet derselbe Trupp ohne Verlust nach, steht eine neutrale Zeile statt Gelb');
+  b.pruefe(/Gemeldet: übergeben – die Strecke bleibt .*, weil 2\. FmTr noch offen ist/.test(folge.gedeckelt),
+    `„Übergeben“ für einen Abschnitt wird erklärt (${folge.gedeckelt})`);
+  b.pruefe(/Stamm 1: hier bestanden, gemeldet durchgefallen – übernommen/.test(folge.stamm),
+    'Und der durchgefallene Stamm steht im Dialog');
+  await taste('#dialog-fuss', 'Verwerfen');
+  await seite.auswerten(`(await import('./js/ui.js')).schliesseDialog();
+    window.fbp.store.aendern(() => {
+    window.fbp.store.projekt.strecken[0].bau = JSON.parse(window.fbpMerk2); }, 'bau'); return true;`);
   await seite.auswerten(`window.fbp.store.aendern(() => {
     window.fbp.store.projekt.strecken[0].bau = JSON.parse(window.fbpMerk); }, 'bau'); return true;`);
   await seite.ruhe();
@@ -2121,7 +3293,9 @@ try {
       alleAbstaende: Math.round(geo.streckenlaenge(s.bau.punkte)),
       stuecke: v.stuecke.length, luecken: v.luecken.length,
       linien: zaehl('#karte path.fbp-ist-linie') - linienVorher,
-      lueckenlinien: zaehl('#karte path.fbp-ist-luecke')
+      lueckenlinien: zaehl('#karte path.fbp-ist-luecke'),
+      /* Die Bauzeile der Streckenliste nennt die Lücke wie der Bau-Reiter */
+      bauzeileText: st.bauzeile(s).text, bauzeileWarn: st.bauzeile(s).warnungen.join(', ')
     };
 
     /* Bestätigen beide Trupps denselben Treffpunkt, ist das die Naht und keine
@@ -2218,6 +3392,8 @@ try {
   b.gleich(luecke.stuecke, 2, 'Zwei gebaute Stücke');
   b.gleich(luecke.linien, 2, 'Auf der Karte zwei Ist-Linien statt einer durchgezogenen');
   b.pruefe(luecke.lueckenlinien >= 1, 'Die Lücke ist als eigene, gestrichelte Linie gezeichnet');
+  b.pruefe(/Lücke [\d.,]+ k?m/.test(luecke.bauzeileText) && !/Lücke/.test(luecke.bauzeileWarn),
+    `Die Streckenliste nennt die Lücke, ohne zu warnen (${luecke.bauzeileText})`);
   b.gleich(luecke.treffStuecke, 1,
     'Ein Treffpunkt, den beide Trupps bestätigen, verbindet die beiden Stücke');
   b.gleich(luecke.einTruppStuecke, 1, 'Ein Trupp mit Zusatzpunkt baut eine durchgehende Linie');
@@ -2248,6 +3424,170 @@ try {
       return (Math.max(a, c) + .05) / (Math.min(a, c) + .05); }));`);
   b.pruefe(palette >= 1.4,
     `Aufeinanderfolgende Streckenfarben trennen sich auch in der Helligkeit (mindestens ${palette.toFixed(2)}:1)`);
+
+  // ------------------------------------------------------------ Lage der Führungsstelle
+
+  /* Das Szenario der fünften Runde: neun Strecken an der Elbe, eine
+     übergeben, eine mit durchgefallener Prüfung, eine mit zwei Trupps und
+     Lücke, eine mit Abweichung und Meldung an den S 6. Sie stehen in einem
+     eigenen Einsatzabschnitt, damit die Lagekarte nur sie zeigt – die übrigen
+     Strecken dieses Laufs liegen über halb Deutschland verteilt. */
+  const lage = await seite.auswerten(`
+    const zu = await import('./js/state.js');
+    const bd = await import('./js/baudoku.js');
+    const store = window.fbp.store;
+    const vor = min => new Date(Date.now() - min * 60000).toISOString();
+    let aid = null;
+    const sids = [];
+    store.aendern(p => {
+      const ea = zu.neuerEinsatzabschnitt(p); ea.name = 'Lageprobe Elbe'; p.einsatzabschnitte.push(ea);
+      aid = ea.id;
+      const strecke = (name, trupp, lat, lng, n = 5, dlat = 0.0025, dlng = 0.003) => {
+        const s = zu.neueStrecke(p); s.name = name; s.abschnitt = aid; s.trupp = trupp;
+        for (let i = 0; i < n; i++) s.punkte.push(zu.neuerPunkt(lat + i * dlat, lng + i * dlng + (i % 2) * 0.0008));
+        p.strecken.push(s); sids.push(s.id); return s;
+      };
+      const alle = (s, ab, bis = s.punkte.length) => s.punkte.slice(0, bis).forEach((pt, i) =>
+        bd.istPunktSetzen(s, pt.lat + 0.00003, pt.lng, { sollPunkt: pt.id, quelle: 'plan', zeit: vor(ab - i * 10) }));
+      const a = strecke('Deichwache – Sandsackplatz', '1. FmTr', 52.030, 11.700);
+      alle(a, 300); a.bau.stand = 'uebergeben';
+      bd.pruefzeileAnlegen(a); a.bau.pruefung.staemme[0].bestanden = true;
+      const b2 = strecke('Deichwache – Pegel Nord', '2. FmTr', 52.036, 11.716);
+      alle(b2, 280); b2.bau.stand = 'gebaut';
+      bd.pruefzeileAnlegen(b2); b2.bau.pruefung.staemme[0].bestanden = false;
+      const c = strecke('Deichwache – EA-Leitung 1', '1. FmTr, 3. FmTr', 52.012, 11.690, 7, 0.0022, 0.0035);
+      alle(c, 90, 2);
+      const d = strecke('Pumpwerk – Trafostation', '4. FmTr', 51.995, 11.740);
+      alle(d, 200, 2);
+      const e = strecke('Pumpwerk – EA 2 Leitung', '5. FmTr', 51.990, 11.760);
+      alle(e, 50, 2);
+      e.punkte.slice(2, 4).forEach(pt => bd.istPunktSetzen(e, pt.lat + 0.0006, pt.lng + 0.0004,
+        { sollPunkt: pt.id, quelle: 'standort', genauigkeit: 8 }));
+      e.bau.abweichung = 'Straße an der Schleuse gesperrt, Trasse über Feldweg nach Osten verlegt';
+      strecke('EA 2 Leitung – Notstrom', '6. FmTr', 51.985, 11.775, 4);
+      const g = strecke('FüSt – EA 1', '7. FmTr', 52.005, 11.720, 6);
+      alle(g, 120); g.bau.stand = 'gebaut';
+      strecke('FüSt – EA 2', '', 52.000, 11.735, 4);
+      strecke('Reserveleitung Fähre', '', 52.020, 11.760, 3);
+    }, 'strecke');
+    return { aid, sids };`);
+
+  b.abschnitt('„gesehen“ und „erledigt“ wirken ohne Neuladen');
+  /* Beides steht im Gerät und nicht in der Planung, und die Liste verglich
+     ihre Karten nur mit der Strecke: der Tipp war gespeichert, zu sehen war er
+     erst nach dem Neuladen. */
+  const quittung = await seite.auswerten(`
+    const ui = await import('./js/ui.js');
+    const sid = ${JSON.stringify(lage.sids[4])};
+    const neuVorher = localStorage.getItem('fbp.neu.v1');
+    localStorage.setItem('fbp.neu.v1', JSON.stringify({ [sid]: new Date().toISOString() }));
+    ui.zeichneStreckenListe();
+    window.fbp.sl.zeichne();
+    const karte = () => document.querySelector('#strecken-liste article.eintrag[data-sid="' + sid + '"]');
+    const schild = () => [...document.querySelectorAll('#karte .strecken-mass')]
+      .find(x => x.textContent.includes('Pumpwerk – EA 2 Leitung'));
+    const r = { neuVorher: !!karte()?.querySelector('.bz-neu') };
+    [...karte().querySelectorAll('.bz-gesehen')].find(x => /gesehen/.test(x.textContent)).click();
+    await new Promise(z => setTimeout(z, 50));
+    r.neuNachher = !!karte()?.querySelector('.bz-neu');
+    r.s6Vorher = !!schild()?.querySelector('.bz-s6');
+    karte().querySelector('.bz-meldung .bz-gesehen').click();
+    await new Promise(z => setTimeout(z, 50));
+    r.erledigt = !!karte()?.querySelector('.bz-meldung.erledigt');
+    r.knopf = karte()?.querySelector('.bz-meldung .bz-gesehen')?.textContent || '';
+    r.s6Nachher = !!schild()?.querySelector('.bz-s6');
+    karte().querySelector('.bz-meldung .bz-gesehen').click();
+    await new Promise(z => setTimeout(z, 50));
+    r.wiederOffen = !karte()?.querySelector('.bz-meldung.erledigt');
+    if (neuVorher === null) localStorage.removeItem('fbp.neu.v1');
+    else localStorage.setItem('fbp.neu.v1', neuVorher);
+    return r;`);
+  b.pruefe(quittung.neuVorher && !quittung.neuNachher, '„✓ gesehen“ nimmt „neu“ sofort aus der Zeile');
+  b.pruefe(quittung.erledigt && /wieder offen/.test(quittung.knopf),
+    `„✓ erledigt“ hakt die Meldung an den S 6 sofort ab (Knopf jetzt „${quittung.knopf}“)`);
+  b.pruefe(quittung.wiederOffen, 'Und „wieder offen“ nimmt das zurück');
+  b.pruefe(quittung.s6Vorher && !quittung.s6Nachher,
+    'Die Arbeitskarte trägt „✉ S 6“, bis die Meldung erledigt ist');
+
+  b.abschnitt('Die Standmarke sagt in Worten, was los ist');
+  const marken = await seite.auswerten(`
+    window.fbp.sl.zeichne();
+    const schild = name => [...document.querySelectorAll('#karte .strecken-mass')]
+      .find(x => x.textContent.includes(name));
+    const s = schild('Pumpwerk – EA 2 Leitung');
+    const m = s && s.querySelector('.bz-warn');
+    const pane = n => Number(getComputedStyle(window.fbp.karte.getPane(n)).zIndex);
+    return {
+      warn: [...(s ? s.querySelectorAll('.bz-warn') : [])].map(x => x.textContent.trim()),
+      groesse: m ? parseFloat(getComputedStyle(m).fontSize) : 0,
+      ebene: s ? s.closest('.leaflet-pane').classList.contains('leaflet-fbp-schilder-pane') : false,
+      ueberGriffen: pane('fbp-schilder') > Math.max(pane('fbp-griffe'), 631)
+    };`);
+  b.pruefe(marken.warn.includes('⚠ 2 Abw.'),
+    `Abweichungen stehen als Kurzwort an der Marke, nicht als nacktes ⚠ (${marken.warn.join(', ')})`);
+  b.pruefe(marken.groesse >= 11, `Die Marke ist mindestens 11 px groß (${marken.groesse} px)`);
+  b.pruefe(marken.ebene && marken.ueberGriffen,
+    'Streckenschilder liegen über den Punktmarken, auch wenn die Griffe nach vorn rücken');
+
+  b.abschnitt('Die Schilder der Lagekarte decken einander in keinem Format');
+  /* Im Review lag „⚠ Prüfung nicht bestanden“ in allen vier Formaten unter
+     dem Schild der Nachbarstrecke, und ein Schild stand über der Oberkante des
+     Rahmens. Gemessen wird am Kasten selbst, nicht am Leitstrich. */
+  await seite.auswerten(`const m = await import('./js/bauauftrag.js');
+    m.oeffneLagekarte(${JSON.stringify(lage.aid)}); return true;`);
+  await seite.warteAuf('!!document.querySelector("#druck .leaflet-container")', 20000);
+  const lageText = (await seite.text('#druck') || '').replace(/\s+/g, ' ');
+  b.pruefe(/Baustand.*Prüfung nicht bestanden/.test(lageText),
+    'Die Kennzahl „Baustand“ nennt die durchgefallene Prüfung');
+  b.pruefe(/Abw\. ?Punkte abweichend vom Plan gebaut/.test(lageText) && /S 6 ?Meldung des Trupps/.test(lageText),
+    'Die Zeichenerklärung erklärt „Abw.“ und „✉ S 6“');
+  for (const [format, ausrichtung] of [['A4', 'Quer'], ['A4', 'Hoch'], ['A3', 'Quer'], ['A3', 'Hoch']]) {
+    await seite.auswerten(`
+      const sel = [...document.querySelectorAll('.druck-steuerung select, #druck select, select')];
+      const f = sel.find(s => [...s.options].some(o => o.textContent === 'A4') &&
+        [...s.options].some(o => o.textContent === 'A3'));
+      const a = sel.find(s => [...s.options].some(o => o.textContent === 'Quer') &&
+        [...s.options].some(o => o.textContent === 'Hoch'));
+      f.value = [...f.options].find(o => o.textContent === ${JSON.stringify(format)}).value;
+      f.dispatchEvent(new Event('change', { bubbles: true }));
+      a.value = [...a.options].find(o => o.textContent === ${JSON.stringify(ausrichtung)}).value;
+      a.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;`);
+    await seite.warteAuf('!!document.querySelector("#druck .leaflet-container .strecken-mass")', 20000);
+    await new Promise(r => setTimeout(r, 2500));
+    const befund = await seite.auswerten(`
+      const rahmen = document.querySelector('#druck .leaflet-container').getBoundingClientRect();
+      const r = [...document.querySelectorAll('#druck .strecken-mass')].map(x => ({
+        n: x.querySelector('b')?.textContent || '', b: x.getBoundingClientRect(),
+        warn: !!x.querySelector('.bz-warn') }));
+      const paare = [];
+      for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+        const a = r[i].b, c = r[j].b;
+        const w = Math.min(a.right, c.right) - Math.max(a.left, c.left);
+        const h = Math.min(a.bottom, c.bottom) - Math.max(a.top, c.top);
+        if (w > 1 && h > 1) paare.push(r[i].n + ' × ' + r[j].n);
+      }
+      const draussen = r.filter(x => x.b.top < rahmen.top - 1 || x.b.left < rahmen.left - 1 ||
+        x.b.bottom > rahmen.bottom + 1 || x.b.right > rahmen.right + 1).map(x => x.n);
+      return JSON.stringify({ schilder: r.length, paare, draussen,
+        warn: r.filter(x => x.warn).length });`);
+    const ergebnis = JSON.parse(befund);
+    b.pruefe(ergebnis.schilder >= 9, `${format} ${ausrichtung}: alle Schilder stehen da (${ergebnis.schilder})`);
+    b.gleich(ergebnis.paare.length, 0,
+      `${format} ${ausrichtung}: kein Schild deckt ein anderes (${ergebnis.paare.join('; ') || 'keins'})`);
+    b.gleich(ergebnis.draussen.length, 0,
+      `${format} ${ausrichtung}: jedes Schild steht im Rahmen (${ergebnis.draussen.join('; ') || 'alle'})`);
+  }
+  await seite.auswerten(
+    `const m = await import('./js/bauauftrag.js'); m.schliesseBauauftrag(); return true;`);
+  await seite.auswerten(`
+    const ids = new Set(${JSON.stringify(lage.sids)});
+    window.fbp.store.aendern(p => {
+      p.strecken = p.strecken.filter(s => !ids.has(s.id));
+      p.einsatzabschnitte = p.einsatzabschnitte.filter(a => a.id !== ${JSON.stringify(lage.aid)});
+    }, 'strecke');
+    return true;`);
+  await seite.ruhe();
 
   // ------------------------------------------------------------ Der Druck
 
@@ -2393,8 +3733,17 @@ try {
     `Kein Kopffeld sagt nur „N Abschnitte“ (${bdKopf.Trupp} · ${bdKopf.Baubeginn} · ${bdKopf.Bauende})`);
   b.pruefe(/\d{6}[A-Z]{3}\d{2}/.test(bdKopf.Baubeginn || ''),
     'Baubeginn steht als Datum-Zeit-Gruppe da, auch ohne erklärten Beginn');
-  b.pruefe(/\d{6}[A-Z]{3}\d{2}/.test(bdKopf.Bauende || '') || /beendet/.test(bdKopf.Bauende || ''),
+  /* Solange gebaut wird, heißt das abgeleitete Ende „letzter Eintrag“ und
+     nicht „Bauende“ – die Führungsstelle las sonst das Ende eines Baus, der
+     noch läuft. */
+  const bdEnde = bdKopf.Bauende || bdKopf['letzter Eintrag'] || '';
+  b.pruefe(/\d{6}[A-Z]{3}\d{2}/.test(bdEnde) || /beendet/.test(bdEnde),
     'Bauende ebenso – oder wie viele Abschnitte beendet sind');
+  const bdStand = await bau('bau.stand');
+  b.pruefe(['gebaut', 'uebergeben'].includes(bdStand) || !('Bauende' in bdKopf) ||
+    /beendet/.test(bdKopf.Bauende) || !/\(/.test(bdKopf.Bauende),
+    `Im laufenden Bau heißt ein abgeleitetes Ende nicht „Bauende“ (${bdStand}: ` +
+    `${Object.keys(bdKopf).filter(t => /ende|Eintrag/.test(t)).join(', ')})`);
   b.pruefe((bdKopf.Trupp || '').trim().length > 0 && bdKopf.Trupp !== '–',
     'Der Trupp steht im Kopf');
   await seite.auswerten(
@@ -2426,6 +3775,71 @@ try {
     `von ${Math.round(druckstil.kastenBreit)} px)`);
   await seite.auswerten(
     `const m = await import('./js/bauauftrag.js'); m.schliesseBauauftrag(); return true;`);
+  await seite.ruhe();
+
+  /* Was vom Papier kam, sagt die Baudokumentation: Herkunft „Papier“, der
+     Vermerk der Abschrift, von–bis Punkt und der Geräteausfall. In allen vier
+     Formaten, Farbe und Schwarz-Weiß – die Tabelle der Bauabschnitte ist um
+     zwei Spalten breiter geworden. */
+  b.abschnitt('Die Baudokumentation nennt Abschrift und Geräteausfall');
+  await seite.auswerten(`window.fbp.store.aendern(() => {
+    const s = window.fbp.store.projekt.strecken[0];
+    const b = s.bau;
+    b.punkte[0].quelle = 'papier';
+    b.punkte[0].nachgetragen = new Date().toISOString();
+    if (b.meldungen[0]) b.meldungen[0].nachgetragen = new Date().toISOString();
+    const a = b.abschnitte[0];
+    a.vonPunkt = s.punkte[0].id; a.bisPunkt = s.punkte[s.punkte.length - 1].id;
+    a.ausfallZeit = new Date().toISOString(); a.ausfallNach = s.punkte[1].id;
+  }, 'bau'); return true;`);
+  for (const [format, ausrichtung, farbe] of [
+    ['a4', 'hoch', 'farbe'], ['a4', 'quer', 'sw'], ['a3', 'hoch', 'sw'], ['a3', 'quer', 'farbe']
+  ]) {
+    const doku = await seite.auswerten(`
+      localStorage.setItem('fbp.baudoku.v1', JSON.stringify({
+        ...JSON.parse(localStorage.getItem('fbp.baudoku.v1') || '{}'),
+        format: ${JSON.stringify(format)}, ausrichtung: ${JSON.stringify(ausrichtung)},
+        farbe: ${JSON.stringify(farbe)} }));
+      const m = await import('./js/bauauftrag.js');
+      m.schliesseBauauftrag();
+      m.oeffneBaudoku(window.fbp.store.projekt.strecken[0].id);
+      for (let i = 0; i < 100 && !document.querySelector('#druck .tab-ist'); i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+      const blaetter = [...document.querySelectorAll('#druck .blatt')];
+      const ueber = blaetter.map((b, i) => {
+        const inh = b.querySelector('.bl-inhalt');
+        return inh && inh.scrollHeight > inh.clientHeight + 1 ? i + 1 : 0;
+      }).filter(Boolean);
+      const tabellen = [...document.querySelectorAll('#druck table')]
+        .filter(t => t.scrollWidth > t.parentElement.clientWidth + 1).map(t => t.className);
+      const gekappt = [...document.querySelectorAll('#druck .st-wert')]
+        .filter(w => w.scrollWidth > w.clientWidth + 1).map(w => w.textContent.trim());
+      const ab = document.querySelector('#druck .tab-bauabschnitte');
+      return JSON.stringify({
+        ueber, tabellen, gekappt,
+        sw: document.querySelector('.druck-doku').classList.contains('sw'),
+        herkunft: [...document.querySelectorAll('#druck .tab-ist tbody tr')]
+          .map(z => z.cells[4]?.textContent.replace(/\\s+/g, ' ').trim()).join(' | '),
+        meldung: !!document.querySelector('#druck .tab-meldung .bd-nachtrag'),
+        abschnitte: ab ? ab.textContent.replace(/\\s+/g, ' ') : '' });`).then(JSON.parse);
+    const name = `${format.toUpperCase()} ${ausrichtung} ${farbe}`;
+    b.gleich(doku.sw, farbe === 'sw', `${name}: im richtigen Satz`);
+    b.gleich(doku.ueber.join(', '), '', `${name}: kein Blatt der Baudokumentation läuft über`);
+    b.gleich(doku.tabellen.join(', '), '', `${name}: keine Tabelle ragt aus dem Satzspiegel`);
+    b.gleich(doku.gekappt.join(' | '), '', `${name}: im Kopf wird nichts abgeschnitten`);
+    if (format === 'a4' && ausrichtung === 'hoch') {
+      b.pruefe(/Papier/.test(doku.herkunft) && /nachgetragen/.test(doku.herkunft),
+        `Die Herkunft nennt „Papier“ und die Abschrift (${doku.herkunft.slice(0, 80)})`);
+      b.pruefe(doku.meldung, 'Eine abgeschriebene Meldung trägt den Vermerk ebenso');
+      b.pruefe(/Pkt\. 1–\d/.test(doku.abschnitte) && /nach Pkt\. 2/.test(doku.abschnitte),
+        `Die Bauabschnitte nennen von–bis Punkt und den Geräteausfall (${doku.abschnitte.slice(0, 160)})`);
+      b.pruefe(/\(aus Aufnahmen\)/.test(doku.abschnitte),
+        'Ohne erklärte Zeit stehen Beginn und Ende aus den Aufnahmen da, gekennzeichnet');
+    }
+  }
+  await seite.auswerten(`const m = await import('./js/bauauftrag.js'); m.schliesseBauauftrag();
+    window.fbp.store.undo(); return true;`);
   await seite.ruhe();
 
   b.abschnitt('Der Baunachweis bildet den Bau-Reiter ab, je Trupp ein Bogen');
@@ -2478,7 +3892,35 @@ try {
       pruefKopf: [...pruef.querySelectorAll('th')].map(t => t.textContent.trim()).join('|'),
       kaestenJeStamm: [...pruef.querySelectorAll('tbody tr')].map(z => z.querySelectorAll('.kasten').length),
       freitextMM: freitext.map(f => f.offsetHeight / (96 / 25.4)),
+      /* Jede Schreibzeile mit zwei Feldern nebeneinander trägt den Strich
+         dazwischen – im Review fehlte er überall außer unter „Sonstiges“. */
+      ohneTrenner: [...document.querySelectorAll('#druck .tab-ausfuellen td.ausfuellen + td.ausfuellen')]
+        .filter(t => parseFloat(getComputedStyle(t).borderLeftWidth) < 0.5).length,
+      kopfSpalten: [...document.querySelector('#druck .tab-nachweis-kopf').querySelectorAll('th')]
+        .map(t => t.textContent.trim()).join('|'),
+      punktSpalten: [...[...document.querySelectorAll('#druck .bl-baunachweis table')]
+        .find(t => /wie geplant/.test(t.textContent)).querySelectorAll('th')].map(t => t.textContent.trim()).join('|'),
+      meldSpalten: [...document.querySelector('#druck .tab-nachweis-meldungen').querySelectorAll('th')]
+        .map(t => t.textContent.trim()).join('|'),
+      blattnr: blaetter.slice(erstes).map(b => b.querySelector('.bl-blattnr').textContent.trim()),
+      nachtragText: [...document.querySelectorAll('#druck .bl-baunachweis .tab-fussnote')]
+        .map(f => f.textContent).join(' ').replace(/\\s+/g, ' '),
       kopftext });`).then(JSON.parse);
+  b.gleich(nw.ohneTrenner, 0, 'Zwei Schreibfelder nebeneinander trennt ein Strich');
+  b.pruefe(/\|Baudatum\|/.test(nw.kopfSpalten) && !/\|Datum\|/.test(nw.kopfSpalten),
+    `Der Trupp trägt das Baudatum ein, nicht „Datum“ wie im Blattkopf (${nw.kopfSpalten})`);
+  b.pruefe(/\|Datum\|Uhrzeit$/.test(nw.punktSpalten),
+    `Abweichende und zusätzliche Punkte haben eine Datumsspalte (${nw.punktSpalten})`);
+  b.pruefe(/^Datum\|Uhrzeit\|/.test(nw.meldSpalten), `Die Meldungen ebenso (${nw.meldSpalten})`);
+  b.pruefe(/\|Datum\|Uhrzeit\|Prüfer$/.test(nw.pruefKopf), `Die Prüfung ebenso (${nw.pruefKopf})`);
+  const bogenNord = nw.blattnr.filter(t => /Trupp Nord/.test(t));
+  const bogenSued = nw.blattnr.filter(t => /Trupp Süd/.test(t));
+  b.pruefe(bogenNord.length > 0 && bogenNord.length + bogenSued.length === nw.blattnr.length &&
+    bogenNord.every((t, i) => t.endsWith(`${i + 1}/${bogenNord.length}`)) &&
+    bogenSued.every((t, i) => t.endsWith(`${i + 1}/${bogenSued.length}`)),
+    `Jeder Bogen zählt seine Blätter selbst (${nw.blattnr.join(' · ')})`);
+  b.pruefe(/Vom Baunachweis nachtragen/.test(nw.nachtragText) && /⌖ Koordinate/.test(nw.nachtragText),
+    'Die Fußnoten verweisen auf die Griffe, die es im Baumodus gibt');
   b.gleich(nw.kopfe, 2, 'Zwei Trupps im Auftrag, zwei Bögen');
   b.gleich(nw.vorgedruckt.join(', '), 'Trupp Nord, Trupp Süd', 'Jeder Bogen trägt seinen Trupp vorgedruckt');
   b.pruefe(nw.folgekoepfe.length > 1 && nw.folgekoepfe.every(t => t === 'Baunachweis Fernmeldebau'),
@@ -2575,6 +4017,19 @@ try {
   b.gleich(fassung.druck, 'rgb(255, 255, 255)', 'Die Fassung der Linien bleibt auf dem Blatt weiß');
   b.gleich(fassung.karte, 'rgb(13, 18, 24)', 'Auf der Arbeitskarte wird sie nachts dunkel');
   b.gleich(fassungTag, 'rgb(255, 255, 255)', 'Bei Tag ist sie dort weiß');
+  /* Das Blatt selbst war hell, aber um es herum stand im Chromium-PDF eine
+     schwarze Fläche: `html:has(body.nacht)` und `body.nacht` schlugen die
+     Druckregel `html, body { background: #fff }`. Gemessen wird unter den
+     Druckregeln, nicht am Bildschirm. */
+  await seite.auswerten(`document.body.classList.add('nacht'); return true;`);
+  await seite.medium('print');
+  const druckGrund = await seite.auswerten(`return {
+    html: getComputedStyle(document.documentElement).backgroundColor,
+    body: getComputedStyle(document.body).backgroundColor };`);
+  await seite.medium('');
+  await seite.auswerten(`document.body.classList.remove('nacht'); return true;`);
+  b.gleich(druckGrund.html, 'rgb(255, 255, 255)', 'Aus der Nacht gedruckt ist die Seite um das Blatt weiß');
+  b.gleich(druckGrund.body, 'rgb(255, 255, 255)', 'Und ebenso der Grund darunter');
   await nachweisZu();
 
   b.abschnitt('Schild und Hauptknopf halten ihren Kontrast in jeder Streckenfarbe');
@@ -2634,6 +4089,140 @@ try {
     `Der Hauptknopf steht nachts mit ${schildKontrast.knopf.umriss.toFixed(2)}:1 auf der Fläche`);
   b.pruefe(schildKontrast.knopf.schrift >= 4.5,
     `Seine Schrift hält ${schildKontrast.knopf.schrift.toFixed(1)}:1`);
+
+  b.abschnitt('Nachts trägt jede Streckenfarbe auf der dunklen Karte');
+  /* Die Farbfolge der vierten Runde brachte Lila (2,29:1) und Braun (2,02:1)
+     an die zweite und fünfte Stelle – gegen die dunkle Fassung der
+     Nachtdarstellung fast unsichtbar. Durchgespielt wird jede Farbe der
+     Palette an einer echten Strecke: Linien und Farbbalken des Schildes,
+     gegen den Grund und gegen die Fassung über der hellsten abgedunkelten
+     Kachel. Am Tag bleibt die gespeicherte Farbe stehen. */
+  const nachtLinien = await seite.auswerten(`
+    const zu = await import('./js/state.js');
+    const store = window.fbp.store;
+    const vorher = store.projekt.strecken[0].farbe;
+    const lum = c => {
+      const [r, g, b] = c.match(/\\d+(\\.\\d+)?/g).slice(0, 3).map(Number).map(v => {
+        v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+      return .2126 * r + .7152 * g + .0722 * b;
+    };
+    const verh = (a, b) => { const x = lum(a), y = lum(b);
+      return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+    const rgb = h => 'rgb(' + [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)).join(', ') + ')';
+    /* Die Fassung deckt zu 85 %; darunter liegt die Kachel, die
+       brightness(.45) contrast(1.15) aus Weiß zu #717171 macht. */
+    const grund = 'rgb(13, 18, 24)', fassung = 'rgb(28, 32, 37)';
+    const bild = () => new Promise(f => requestAnimationFrame(() => requestAnimationFrame(f)));
+    const r = { grund: Infinity, fassung: Infinity, schild: Infinity, linien: 0, schilder: 0,
+                schlechteste: '', tagFalsch: [] };
+    for (const f of zu.FARBEN) {
+      store.aendern(p => { p.strecken[0].farbe = f; }, 'strecke');
+      await bild();
+      const pfade = () => [...document.querySelectorAll('#karte path')]
+        .filter(p => p.getAttribute('stroke') === f);
+      for (const p of pfade()) {
+        if (getComputedStyle(p).stroke !== rgb(f)) r.tagFalsch.push(f);
+      }
+      document.body.classList.add('nacht');
+      for (const p of pfade()) {
+        const c = getComputedStyle(p).stroke;
+        r.linien++;
+        const g = verh(c, grund), h = verh(c, fassung);
+        if (Math.min(g, h) < Math.min(r.grund, r.fassung)) r.schlechteste = f + ' → ' + c;
+        r.grund = Math.min(r.grund, g); r.fassung = Math.min(r.fassung, h);
+      }
+      for (const m of document.querySelectorAll('#karte .strecken-fahne')) {
+        if (!m.style.getPropertyValue('--farbe').includes(f)) continue;
+        r.schilder++;
+        const balken = getComputedStyle(m.querySelector('.strecken-mass')).borderLeftColor;
+        r.schild = Math.min(r.schild, verh(balken, getComputedStyle(m.querySelector('.strecken-mass')).backgroundColor));
+      }
+      document.body.classList.remove('nacht');
+    }
+    store.aendern(p => { p.strecken[0].farbe = vorher; }, 'strecke');
+    await bild();
+    return JSON.stringify(r);`).then(JSON.parse);
+  b.pruefe(nachtLinien.linien >= 10, `Gemessen an ${nachtLinien.linien} Linien und ${nachtLinien.schilder} Schildern`);
+  b.pruefe(nachtLinien.grund >= 3,
+    `Jede Palettenfarbe hält nachts ${nachtLinien.grund.toFixed(2)}:1 gegen den Grund (schwächste ${nachtLinien.schlechteste})`);
+  b.pruefe(nachtLinien.fassung >= 3,
+    `Und ${nachtLinien.fassung.toFixed(2)}:1 gegen die Fassung`);
+  b.pruefe(nachtLinien.schilder === 0 || nachtLinien.schild >= 3,
+    `Der Farbbalken im Schild hält nachts ${nachtLinien.schild.toFixed(2)}:1`);
+  b.gleich(nachtLinien.tagFalsch.join(', '), '', 'Am Tag zeichnet die Karte die gespeicherte Farbe');
+
+  b.abschnitt('Fehler- und Warnpille sind bei Tag und Nacht lesbar');
+  /* Weiß auf dem Nachtrot hielt 2,51:1, auf dem Nachtorange 2,23:1, und tags
+     Weiß auf dem Mahnton 4,24:1. */
+  const pillen = await seite.auswerten(`
+    const ui = await import('./js/ui.js');
+    const lum = c => {
+      const [r, g, b] = c.match(/\\d+(\\.\\d+)?/g).slice(0, 3).map(Number).map(v => {
+        v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+      return .2126 * r + .7152 * g + .0722 * b;
+    };
+    const verh = (a, b) => { const x = lum(a), y = lum(b);
+      return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+    const box = document.getElementById('hinweisbox');
+    const r = {};
+    for (const nacht of [false, true]) {
+      document.body.classList.toggle('nacht', nacht);
+      for (const art of ['fehler', 'warnung']) {
+        ui.hinweis('Probe', art);
+        const st = getComputedStyle(box);
+        r[(nacht ? 'nacht-' : 'tag-') + art] = verh(st.color, st.backgroundColor);
+      }
+    }
+    document.body.classList.remove('nacht');
+    ui.hinweisAus();
+    return JSON.stringify(r);`).then(JSON.parse);
+  for (const [fall, wert] of Object.entries(pillen)) {
+    b.pruefe(wert >= 4.5, `${fall}: die Schrift hält ${wert.toFixed(2)}:1`);
+  }
+
+  b.abschnitt('Der Haltering ist nachts zu sehen');
+  /* Der Ring stand nachts im dunklen THW-Blau, 1,32:1 gegen die Karte – wer
+     eine Marke hielt, sah nicht, dass sie gegriffen war. */
+  const ring = await seite.auswerten(`
+    const lum = c => {
+      const [r, g, b] = c.match(/\\d+(\\.\\d+)?/g).slice(0, 3).map(Number).map(v => {
+        v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+      return .2126 * r + .7152 * g + .0722 * b;
+    };
+    const verh = (a, b) => { const x = lum(a), y = lum(b);
+      return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+    const m = [...document.querySelectorAll('#karte .leaflet-marker-icon')]
+      .find(x => x.querySelector(':scope > .fbp-punkt:not(.art-start):not(.art-ziel)'));
+    if (!m) return JSON.stringify({ gefunden: false });
+    document.body.classList.add('nacht');
+    m.classList.add('gehalten');
+    /* Der Ring ist seit der fünften Runde ein eigenes Element am Kasten der
+       Marke (72 px statt einer Kontur von außen 38 px), sein Hof ein Schatten
+       zu beiden Seiten. */
+    const st = getComputedStyle(m, '::after');
+    const kind = getComputedStyle(m.firstElementChild);
+    const hof = (st.boxShadow.match(/rgba?\\([^)]*\\)/) || [''])[0];
+    const breiten = [...st.boxShadow.matchAll(/0px 0px 0px ([\\d.]+)px/g)].map(x => parseFloat(x[1]));
+    const r = { gefunden: true, grund: verh(st.borderTopColor, 'rgb(13, 18, 24)'),
+                hof: hof ? verh(st.borderTopColor, hof) : 0,
+                marke: verh(st.borderTopColor, kind.backgroundColor),
+                durchmesser: parseFloat(st.width),
+                /* Start und Ende tragen die Streckenfarbe als Fläche – gegen
+                   jede davon hält kein einzelner Ton. Der Hof muss deshalb
+                   den Ring zu beiden Seiten säumen, damit er nie an eine Marke
+                   oder Kachel stößt, sondern immer an Dunkel. */
+                hofReicht: breiten.length === 2 && /inset/.test(st.boxShadow) &&
+                  Math.min(...breiten) >= 3 };
+    m.classList.remove('gehalten');
+    document.body.classList.remove('nacht');
+    return JSON.stringify(r);`).then(JSON.parse);
+  b.pruefe(ring.gefunden, 'Eine geplante Marke ist auf der Karte');
+  b.pruefe(ring.grund >= 3, `Der Ring hält nachts ${(ring.grund || 0).toFixed(2)}:1 gegen den Grund`);
+  b.pruefe(ring.hof >= 3, `Und ${(ring.hof || 0).toFixed(2)}:1 gegen seinen dunklen Hof`);
+  b.pruefe(ring.marke >= 3, `Und ${(ring.marke || 0).toFixed(2)}:1 gegen die Marke`);
+  b.pruefe(ring.hofReicht, 'Der Hof säumt den Ring zu beiden Seiten – auch an Start und Ende steht er auf Dunkel');
+  b.pruefe(ring.durchmesser >= 64,
+    `Der Ring misst ${ring.durchmesser} px und steht damit um die Handschuhkuppe herum, nicht unter ihr`);
 
   b.abschnitt('Die Lagekarte nennt den Lagestand mit Uhrzeit');
   /* Zwei Lagekarten desselben Tages waren an der Wand nicht zu unterscheiden:

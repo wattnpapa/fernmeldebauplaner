@@ -314,6 +314,12 @@
       <div id="karte" role="region" aria-label="Planungskarte"></div>
 
       <div class="werkzeuge" role="toolbar" aria-label="Werkzeuge">
+        <!-- Klappgriff wie bei den Kartenoptionen, nur in der Breitansicht
+             der Planung: auf dem Tablet hochkant deckte die Spalte knapp die
+             halbe Kartenbreite (siehe app.js). -->
+        <button type="button" class="wz-kopf" id="wz-kopf" aria-expanded="true" aria-label="Werkzeuge ein- und ausklappen">
+          <span>Werkzeuge</span><span class="ko-pfeil" aria-hidden="true">▾</span>
+        </button>
         <!-- Das Tastenkürzel steht sichtbar in der Beschriftung, nicht nur im
              title: den zeigt kein Touchgerät, und wer am Schreibtisch plant,
              lernt es nur, wenn es dasteht. -->

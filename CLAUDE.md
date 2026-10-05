@@ -231,15 +231,18 @@ Einstellungsfelder ganz im Bild, das vergrößerte Blatt übersteht eine
 geänderte Einstellung); die Tabelle am Ende des Laufs zeigt alles je Fenster
 nebeneinander. Außerhalb des Durchlaufs stehen die Grenze zur Breitansicht
 (bei 768 und 820 px Liste und Karte nebeneinander und kein Umschalter, bei
-759 px wieder abgelöst), die Reiterreihe bei 320 px und der Strecken-Reiter
+759 px wieder abgelöst; das Telefon quer – wenig Höhe und Finger – gilt als
+Schmalansicht mit Umschalter), die Reiterreihe bei 320 px und der Strecken-Reiter
 mit zwölf Strecken in vier Einsatzabschnitten – dort muss die erste Strecke
 ohne Rollen im Blatt stehen. Die Schwellen für die freie Kartenfläche sind die
-Abnahme für die Pakete nach dem Audit und dürfen so lange rot sein. Drei
+Abnahme für die Pakete nach dem Audit und dürfen so lange rot sein. Vier
 Regeln dieser Prüfung sind aus Fehlern entstanden und stehen dort kommentiert:
 `offsetParent` taugt in der Schmalansicht nicht als Sichtbarkeitsprobe, seit
 CSS-Nesting trägt jede Stilregel eine – leere, also wahre – `cssRules`-Liste,
 und ein Fall, der kein einziges Element findet, gilt als durchgefallen, nicht
-als bestanden.
+als bestanden; dazu drückt sie nur Umschalter, die zu sehen sind – ein
+ausgeblendeter, per Skript gedrückt, maß einen Zustand, den am Gerät niemand
+erreicht.
 
 Nach jeder Änderung am Offline-Weg (`sw.js`, `js/kacheln.js`, die Kachelebene in
 `js/map.js`, die Registrierung in `js/app.js`):

@@ -467,6 +467,12 @@ async function neueSeite(befehl, horcher) {
       await an('Emulation.setGeolocationOverride', {});
     },
 
+    /** Die Druckregeln anlegen (`print`) oder zurücknehmen (leer) – ohne
+     *  Drucken: gemessen wird am gerechneten Stil, nicht am PDF */
+    async medium(art = '') {
+      await an('Emulation.setEmulatedMedia', { media: art });
+    },
+
     /** Schmalansicht mit Berührung – die Bedienung am Bauort */
     async schmal(breite = 390, hoehe = 844) {
       await an('Emulation.setDeviceMetricsOverride',

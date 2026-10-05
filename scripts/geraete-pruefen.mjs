@@ -902,14 +902,65 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   b.pruefe(nachWisch.lat === vorWisch.lat && nachWisch.lng === vorWisch.lng,
     'Der Wisch ändert keine Koordinate');
   b.pruefe(nachWisch.mitte !== vorWisch.mitte, 'Er verschiebt stattdessen die Karte');
-  await seite.wische(nachWisch.x, nachWisch.y, nachWisch.x + 50, nachWisch.y + 40, { halten: 700 });
+  /* Der Ring um eine gehaltene Marke steht um die Handschuhkuppe herum und
+     nicht unter ihr: außen maß er 38 px. */
+  const ring = await seite.auswerten(`
+    const m = document.querySelector('.fbp-punkt.art-start').closest('.leaflet-marker-icon');
+    m.classList.add('gehalten');
+    const w = parseFloat(getComputedStyle(m, '::after').width);
+    m.classList.remove('gehalten');
+    return Math.round(w);`);
+  b.pruefe(ring >= 64, `Der Haltering misst ${ring} px im Durchmesser (mindestens 64)`);
+  await seite.wische(nachWisch.x, nachWisch.y, nachWisch.x + 50, nachWisch.y + 80, { halten: 700 });
   const nachHalten = await punktLage();
   b.pruefe(nachHalten.lat !== vorWisch.lat, 'Gehalten und dann gezogen, folgt der Punkt dem Finger');
+  /* Und zwar über ihm: unter der Kuppe war der Ort, an dem er landet, nicht zu
+     sehen. Der Finger endet 80 px tiefer, der Punkt 40 px darüber. */
+  const ueberFinger = nachWisch.y + 80 - nachHalten.y;
+  b.pruefe(Math.abs(ueberFinger - 40) <= 3 && Math.abs(nachHalten.x - (nachWisch.x + 50)) <= 3,
+    `Der Punkt steht beim Ziehen ${ueberFinger} px über dem Finger (40 verlangt)`);
   const pille = await seite.text('#hinweisbox');
   b.pruefe(/^Punkt 1 von .* um .* verschoben – „↶“/.test(pille),
     `Danach nennt eine Meldung Punkt, Weg und Rückweg („${pille}“)`);
+  /* Die Pille steht über der Werkzeugleiste und nicht auf ihr – nach dem
+     Ziehen deckte sie „Ort suchen“. */
+  const pillenLage = await seite.auswerten(`
+    const p = window._g.muss('#hinweisbox').getBoundingClientRect();
+    const w = window._g.muss('.werkzeuge').getBoundingClientRect();
+    return { pille: Math.round(p.bottom), leiste: Math.round(w.top) };`);
+  b.pruefe(pillenLage.pille <= pillenLage.leiste,
+    `Die Meldung endet bei ${pillenLage.pille}, die Werkzeugleiste beginnt bei ${pillenLage.leiste}`);
   await seite.klick('#btn-undo');
   b.gleich((await punktLage()).lat, vorWisch.lat, 'Rückgängig holt ihn zurück');
+  /* Ein Halten, das abrutscht, bevor die Marke greift, endete still. Jetzt
+     sagt es eine Meldung – einmal. */
+  const vorFehlstart = await punktLage();
+  /* Zwei grobe Schritte statt zehn feiner: jeder Schritt über das
+     DevTools-Protokoll dauert hier rund 50 ms, und mit zehn wäre die Haltezeit
+     um, bevor der Finger die Ruheschwelle verlässt – gemessen würde dann ein
+     gelungenes Ziehen statt eines Fehlstarts. */
+  await seite.wische(vorFehlstart.x, vorFehlstart.y, vorFehlstart.x + 60, vorFehlstart.y + 30,
+    { halten: 250, schritte: 2 });
+  const fehlstart = await seite.text('#hinweisbox');
+  b.pruefe(/ruhig halten/.test(fehlstart) && (await punktLage()).lat === vorWisch.lat,
+    `Rutscht der Finger nach 250 ms ab, bleibt der Punkt und es heißt „${fehlstart}“`);
+
+  b.abschnitt('Wer einen Punkt einer nicht gewählten Strecke hält, erfährt warum nichts folgt');
+  /* Gezogen wird nur an der gewählten Strecke. Im Review hielt ein
+     Erstnutzer einen Punkt einer anderen, und nichts geschah – kein Ring,
+     keine Meldung. */
+  await seite.auswerten('window.fbp.sl.waehle(null); return true;');
+  await seite.ruhe();
+  const ungewaehlt = await punktLage();
+  await seite.wische(ungewaehlt.x, ungewaehlt.y, ungewaehlt.x, ungewaehlt.y, { halten: 700, schritte: 1 });
+  const haltPille = await seite.text('#hinweisbox') || '';
+  b.pruefe(/^Erst die Strecke antippen, dann halten/.test(haltPille),
+    `Die Meldung sagt, was zu tun ist („${haltPille}“)`);
+  b.gleich((await punktLage()).lat, ungewaehlt.lat, 'Und der Punkt bleibt, wo er war');
+  /* Der Tipp nach dem Halten wählt den Punkt; die Fälle danach messen mit
+     gewählter Strecke ohne aktiven Punkt, wie vor diesem Abschnitt. */
+  await seite.auswerten('window.fbp.sl.waehle(window.fbp.store.projekt.strecken[0].id); return true;');
+  await seite.ruhe();
 
   b.abschnitt('Aus der Übersicht wird in Stufen herangeholt, Suche und Standort stehen bereit');
   /* Aus Zoom 6 sprang der erste Tipp gleich auf 15, dorthin, wo der Finger
@@ -1017,11 +1068,23 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     return { gerollt: feld.scrollTop, oben: Math.round(oben),
              tasten: ['Rücktaste', 'Doppelklick', 'Enter', 'linken Leiste']
                .filter(w => text.includes(w)).join(', '),
-             kbd: feld.querySelectorAll('kbd').length };`);
+             kbd: feld.querySelectorAll('kbd').length,
+             /* Nachts sind Lücke und geplante Punktreihe in derselben
+                Streckenfarbe nur am Muster zu trennen, und die Arbeitskarte
+                hat keine Zeichenerklärung. Jede Zeile muss ihr Muster neben
+                dem Wort tragen – bei 320 px auf einer Höhe. */
+             linien: [...feld.querySelectorAll('.hilfe-linien > span')].map(z => {
+               const m = z.querySelector('svg').getBoundingClientRect();
+               const w = z.querySelector('b').getBoundingClientRect();
+               const versatz = Math.abs((m.top + m.bottom) - (w.top + w.bottom)) / 2;
+               return z.querySelector('b').textContent + (versatz <= 6 ? '' : ' (versetzt)');
+             }).join(', ') };`);
   b.pruefe(hilfe.gerollt > 0 && Math.abs(hilfe.oben) <= 8,
     `„Baumodus“ steht oben im Dialog (gerollt ${hilfe.gerollt} px, Abstand ${hilfe.oben} px)`);
   b.gleich(hilfe.tasten, '', 'Keine Tasten und kein Doppelklick, die es am Telefon nicht gibt');
   b.gleich(hilfe.kbd, 0, 'Kein Tastenkürzel im Text');
+  b.gleich(hilfe.linien, 'gebaut, geplant, Lücke (offen)',
+    'Sie erklärt die drei Linienmuster der Karte, jedes neben seinem Namen');
   await seite.taste('Escape');
   await seite.ruhe();
 
@@ -1092,12 +1155,40 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     if (istZu !== zu) await seite.klick('#ko-kopf');
     await seite.ruhe();
   };
-  const karteVorn = async () => {
-    await seite.auswerten('document.getElementById("aw-karte").click(); return true;');
+  /* Liste oder Karte nach vorn – aber nur über einen Griff, den es gibt.
+     Vorher drückte die Prüfung den Umschalter per Skript, auch wo er gar nicht
+     zu sehen war: bei 844×390 stand er ausgeblendet, die Prüfung holte die
+     Karte trotzdem nach vorn und maß einen Zustand, den am Gerät niemand
+     erreicht – sie war grün, während das Blatt der Punktkarte dort 215 px
+     schmal war. Steht der Umschalter nicht da, muss die Ansicht schon zu sehen
+     sein (breit nebeneinander); sonst ist sie nicht erreichbar, und das ist
+     ein Befund und kein Überspringen. */
+  const ansichtVorn = async (fenster, welche) => {
+    const l = await seite.auswerten(`
+      const knopf = document.getElementById(${JSON.stringify(welche === 'karte' ? 'aw-karte' : 'aw-liste')});
+      const r = window._g.kasten(knopf);
+      if (r) {
+        const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2);
+        const p = document.elementFromPoint(x, y);
+        if (!p || !(p === knopf || knopf.contains(p))) return { knopf: true, frei: false, was: window._g.name(p) };
+        knopf.click();
+        return { knopf: true, frei: true };
+      }
+      const ziel = document.querySelector(${JSON.stringify(welche === 'karte' ? '#karte' : '#seite')});
+      const z = window._g.kasten(ziel);
+      const sichtbar = !!z && z.left >= 0 && z.right <= innerWidth + 1 &&
+        getComputedStyle(ziel.closest('.kartenbereich, .seite')).visibility !== 'hidden';
+      return { knopf: false, frei: sichtbar };`);
+    if (!l.frei) {
+      b.pruefe(false, `${fenster}: ${welche === 'karte' ? 'die Karte' : 'die Liste'} ist nicht erreichbar – ` +
+        (l.knopf ? `der Umschalter ist verdeckt von ${l.was}` : 'kein Umschalter, und sie steht nicht im Bild'));
+    }
     /* Die Liste schiebt sich in 280 ms zur Seite – gemessen wird, wo alles
        stehen bleibt. */
-    await new Promise(r => setTimeout(r, 450));
+    if (l.knopf) await new Promise(r => setTimeout(r, 450));
   };
+  let fensterJetzt = '';
+  const karteVorn = () => ansichtVorn(fensterJetzt, 'karte');
   const griffText = (name, l) => !l.imBild
     ? `${name} nicht ohne Rollen im Bild (${l.oben}–${l.unten}, ${l.rahmen})`
     : l.verdeckt ? `${name} im Bild, zu ${prozent(l.verdeckt)} verdeckt von ${l.durch.join(', ')}`
@@ -1123,12 +1214,30 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     if (!b) throw new Error('Kein Fußknopf ' + ${JSON.stringify(text)});
     b.click();
     return true;`);
+  /* Der Bauauftrag, wie ihn der Trupp über den Link bekommt. Verworfen wird
+     er danach wieder – gemessen wird nur der Dialog. */
+  const auftragOeffnen = async () => {
+    const link = await seite.auswerten(`
+      const io = await import('./js/io.js');
+      const t = await import('./js/teilen.js');
+      return await t.alsLink(io.streckeAlsProjekt(window.fbp.store.projekt.strecken[0].id));`);
+    await seite.auswerten(`location.hash = ${JSON.stringify(link.split('#')[1])}; return true;`);
+  };
+  /* Nach „Verwerfen“ einer Baumeldung steht die Funkformel für den Trupp da;
+     sie geht wie jeder gewöhnliche Dialog mit Esc zu. */
+  const meldungVerwerfen = async () => {
+    await fussKnopfDruecken('Verwerfen');
+    await seite.warteAuf('!document.getElementById("dialog").hidden && ' +
+      'document.getElementById("dialog-titel").textContent === "Dem Trupp durchgeben"', 5000);
+    await seite.taste('Escape');
+  };
   /* Der Gerätestandort für „Punkt hier“ – ohne ihn gäbe es keine Punktkarte
      zu messen. */
   await seite.standort(51.802, 10.618, 7);
 
   for (const [breite, hoehe] of FENSTER) {
     const fenster = fensterName(breite, hoehe);
+    fensterJetzt = fenster;
     b.abschnitt(`Fenster ${fenster}: Planung mit Werkzeugleiste`);
     await stelleEin(breite, hoehe);
     await karteVorn();
@@ -1277,16 +1386,20 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                        '; ' + griffText('„Schließen“', g.zuLage) };
       });
 
-    /* Die drei Dialoge, an denen das Querformat gemessen wird: einer mit
-       Eingabefeld, einer mit Liste, einer mit Entscheidung. Der letzte geht
-       nicht per Esc zu – er verlangt eine Antwort, seit eine eingegangene
-       Meldung an einem Fehlgriff verloren ging. */
+    /* Die Dialoge, an denen das Querformat gemessen wird: einer mit
+       Eingabefeld, einer mit Liste, zwei mit Entscheidung. Diese gehen nicht
+       per Esc zu – sie verlangen eine Antwort, seit eine eingegangene Meldung
+       an einem Fehlgriff verloren ging. Bei ihnen steht der Hauptknopf
+       außerdem nicht unmittelbar bei „Verwerfen“. */
     for (const [zeile, titel, oeffne, schliesse] of [
       ['Neue Planung', 'Neue Planung', () => menueWaehlen('neu'), () => seite.taste('Escape')],
       ['Gespeicherte Planungen', 'Gespeicherte Planungen',
         () => menueWaehlen('oeffnen'), () => seite.taste('Escape')],
       ['Baumeldung einspielen', 'Baumeldung eingegangen',
-        () => meldungsDialog(), () => fussKnopfDruecken('Verwerfen')]
+        () => meldungsDialog(), meldungVerwerfen],
+      /* Drei Knöpfe, und schmal brach „Bau beginnen“ unter „Verwerfen“ um. */
+      ['Bauauftrag geöffnet', 'Bauauftrag geöffnet',
+        auftragOeffnen, () => fussKnopfDruecken('Verwerfen')]
     ]) {
       await fall(fenster, `Dialog „${zeile}“: Kopf und Fuß im Bild`,
         `Dialog „${zeile}“: Kopf und Fuß stehen ohne Rollen im Bild, ` +
@@ -1298,12 +1411,21 @@ const seitenGriffe = await zuKleineGriffe('.seite',
           const d = await seite.auswerten('window._g.dialogRahmen()');
           if (d.titel !== titel) throw new Error(`Offen ist „${d.titel}“`);
           const schlecht = d.knoepfe.filter(k => !griffGut(k));
-          const gut = d.kopfImBild && d.fussImBild && schlecht.length === 0;
+          /* Der Hauptknopf steht nicht unmittelbar unter oder neben dem Knopf,
+             der das Gegenteil tut – gemessen am Abstand der Mitten. */
+          const nah = await seite.auswerten(`
+            const k = [...document.querySelectorAll('#dialog-fuss .knopf')];
+            const v = k.find(x => x.textContent.trim() === 'Verwerfen');
+            const h = k.find(x => x.classList.contains('primaer'));
+            if (!v || !h || v === h) return false;
+            const a = v.getBoundingClientRect(), c = h.getBoundingClientRect();
+            return Math.abs((a.left + a.right) / 2 - (c.left + c.right) / 2) < 100;`);
+          const gut = d.kopfImBild && d.fussImBild && schlecht.length === 0 && !nah;
           await schliesse();
           await seite.warteAuf('document.getElementById("dialog").hidden', 5000);
           await hinweisWeg();
           return { gut, kurz: gut ? d.inhaltHoch + ' px' : !d.kopfImBild ? 'Kopf weg'
-                     : !d.fussImBild ? 'Fuß weg' : 'Knopf zu',
+                     : !d.fussImBild ? 'Fuß weg' : nah ? 'Haupt unter Verwerfen' : 'Knopf zu',
                    text: `Kopf ${d.kopfHoch} px, Fuß ${d.fussHoch} px, ` +
                          `Inhalt ${d.inhaltHoch} px im ${d.schirm} hohen Fenster` +
                          (schlecht.length
@@ -1333,6 +1455,11 @@ const seitenGriffe = await zuKleineGriffe('.seite',
         await seite.klick('#btn-hilfe');
         await seite.warteAuf('!document.getElementById("dialog").hidden');
         await seite.auswerten(`return await window._g.pilleZeigen('Planungsmodus.');`);
+        /* Ein Fußknopf nimmt in den ersten 400 ms keinen Fingertipp an – ein
+           Doppeltipp auf das ✕ bestätigte sonst die Löschrückfrage darunter
+           (`dialog()` in js/ui.js). Gemessen wird hier die Pille, nicht die
+           Sperre: also erst danach tippen. */
+        await new Promise(r => setTimeout(r, 450));
         const k = await seite.auswerten(`
           const f = [...document.querySelectorAll('.dialog-fuss button')]
             .filter(window._g.kasten).pop() || window._g.muss('.dialog-kopf button');
@@ -1353,8 +1480,7 @@ const seitenGriffe = await zuKleineGriffe('.seite',
 
     b.abschnitt(`Fenster ${fenster}: Bau-Reiter`);
     await seite.klick('#btn-modus');
-    await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
-    await new Promise(r => setTimeout(r, 450));
+    await ansichtVorn(fenster, 'liste');
     await fall(fenster, 'Bau-Reiter bleibt unter 2500 px',
       'Mit drei bestätigten Punkten bleibt der Reiter unter 2500 px Rollhöhe',
       async () => {
@@ -1622,6 +1748,76 @@ const seitenGriffe = await zuKleineGriffe('.seite',
         });
     };
     await punktkarteFaelle(false);
+    /* Quer stand im seitlichen Blatt kein einziger Art-Chip ohne Rollen im
+       Bild – vor ihnen lagen Befund, Warnung und Zuordnung, und bei 844×390
+       war das Blatt 215 px schmal. „Was ist hier?“ ist die Frage, wegen der es
+       aufschlägt: quer steht sie jetzt zuerst, und alle ihre Chips stehen über
+       „Fertig“, mit Abstand zu ihm. Hochkant bleibt die Zuordnung vorn
+       (Begründung in css/app.css), dort gilt der Fall nicht. */
+    if (hoehe < breite) {
+      await fall(fenster, 'Punktkarte quer: Art-Chips ohne Rollen',
+        'Quer stehen nach „Punkt hier“ alle Art-Chips ungerollt über „Fertig“, und das Blatt läuft nicht waagerecht über',
+        async () => {
+          const m = await seite.auswerten(`
+            const b = window._g.muss('#punktkarte');
+            const fertig = window._g.muss('#punktkarte .pk-abschluss .knopf').getBoundingClientRect();
+            const kante = window._g.muss('#punktkarte .pk-abschluss').getBoundingClientRect().top;
+            const chips = [...b.querySelectorAll('.pk-chips.pk-art .pk-chip')];
+            if (!chips.length) throw new Error('keine Art-Chips im Blatt');
+            const weg = chips.filter(c => !window._g.imBild(c) || c.getBoundingClientRect().bottom > kante + 0.5)
+              .map(c => c.textContent.trim());
+            const abstand = Math.min(...chips.map(c => fertig.top - c.getBoundingClientRect().bottom));
+            return { n: chips.length, weg, gerollt: Math.round(b.scrollTop),
+                     ueber: b.scrollWidth - b.clientWidth, abstand: Math.round(abstand),
+                     breite: Math.round(b.getBoundingClientRect().width) };`);
+          const gut = !m.weg.length && m.gerollt === 0 && m.ueber <= 0 && m.abstand >= 8;
+          return { gut, kurz: gut ? m.breite + ' px' : m.weg.length ? m.weg.length + ' weg' : 'nein',
+                   text: `Blatt ${m.breite} px breit, ${m.n - m.weg.length} von ${m.n} Chips im Bild` +
+                         (m.weg.length ? ` (unter der Kante: ${m.weg.join(', ')})` : '') +
+                         `, ${m.abstand} px bis „Fertig“, gerollt ${m.gerollt} px, ` +
+                         `waagerechter Überlauf ${m.ueber} px` };
+        });
+    }
+    /* Das Blatt fragt „Was ist hier?“ – und „hier“ lag im Review bei 390×844
+       unter ihm: es reicht dort von 196 bis 709 px, und das Nachrücken galt
+       nur einem Blatt, dessen Oberkante unter einem Drittel der Karte lag.
+       Gemessen wird, was am Ort des Punktes obenauf liegt. */
+    await fall(fenster, 'Punktkarte: der Punkt steht frei',
+      'Der eben aufgenommene Punkt liegt frei neben oder über dem Blatt',
+      async () => {
+        const m = await seite.auswerten(`
+          const s = window.fbp.store.projekt.strecken[0];
+          const pt = s.bau.punkte.slice().sort((a, b) => a.zeit < b.zeit ? -1 : 1).pop();
+          const k = window.fbp.karte, r = k.getContainer().getBoundingClientRect();
+          const p = k.latLngToContainerPoint([pt.lat, pt.lng]);
+          const x = Math.round(r.left + p.x), y = Math.round(r.top + p.y);
+          const e = document.elementFromPoint(x, y);
+          const deckel = e && e.closest('#punktkarte, .leaflet-control, .kartenoptionen, .werkzeuge, ' +
+            '#ansicht-wechsel, .statusleiste, .kopf, header');
+          return { x, y, imBild: x >= 0 && y >= 0 && x <= innerWidth && y <= innerHeight && !!e,
+                   deckel: deckel ? window._g.name(deckel) : '' };`);
+        const gut = m.imBild && !m.deckel;
+        return { gut, kurz: gut ? '' : m.deckel || 'außerhalb',
+                 text: `Punkt bei (${m.x}, ${m.y})` +
+                       (m.deckel ? `, verdeckt von ${m.deckel}` : m.imBild ? ', frei' : ', außerhalb') };
+      });
+    /* Ein Feld halb unter der festgehaltenen Abschlusszeile ist halb zu
+       treffen, und der Rest des Tipps trifft „Fertig“ – im Review die
+       Bemerkung mit 28 von 44 px. */
+    await fall(fenster, 'Punktkarte: kein Feld halb unter „Fertig“',
+      'Kein Eingabefeld des Blattes steht halb unter der Abschlusszeile',
+      async () => {
+        const m = await seite.auswerten(`
+          const b = window._g.muss('#punktkarte');
+          const kante = window._g.muss('#punktkarte .pk-abschluss').getBoundingClientRect().top;
+          const felder = [...b.querySelectorAll('.pk-felder input')];
+          const halb = felder.filter(f => { const r = f.getBoundingClientRect();
+            return r.top < kante - 1 && r.bottom > kante + 1; });
+          return { n: felder.length, halb: halb.map(f => f.placeholder.split(/[,–]/)[0].trim()) };`);
+        if (!m.n) throw new Error('kein Eingabefeld im Blatt');
+        return { gut: m.halb.length === 0, kurz: m.halb.length ? m.halb.join(', ') : '',
+                 text: m.halb.length ? 'halb verdeckt: ' + m.halb.join(', ') : `${m.n} Felder, keines halb` };
+      });
     /* Erst die Meldung abwarten: sie zählt als Aufsatz mit, und ob sie beim
        Messen noch steht, hinge sonst daran, wie lange die Fälle davor
        gebraucht haben. Die freie Fläche ist eine Aussage über die Aufteilung,
@@ -1763,11 +1959,73 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     b.pruefe(!neben.wechsel, `${breite}×${hoehe}: der Umschalter unten fehlt`);
     b.pruefe(neben.karte >= 380, `${breite}×${hoehe}: der Karte bleiben ${neben.karte} px`);
   }
+  /* Neben der Liste bleiben der Karte hochkant 448 px, und die Werkzeugspalte
+     nahm davon im Review 200 × 500 px – über den Streckenschildern. Sie klappt
+     wie die Kartenoptionen, und das Gerät merkt sich die Wahl. */
+  b.abschnitt('Tablet hochkant: die Werkzeugleiste klappt weg und bleibt so');
+  await stelleEin(820, 1180);
+  const wzMass = () => seite.auswerten(`
+    const w = document.querySelector('.werkzeuge').getBoundingClientRect();
+    const k = document.getElementById('wz-kopf');
+    const kr = k.getBoundingClientRect();
+    return JSON.stringify({ hoch: Math.round(w.height), breit: Math.round(w.width),
+      kopf: k.getClientRects().length ? Math.round(kr.height) : 0,
+      werkzeuge: [...document.querySelectorAll('.werkzeuge .wz')].filter(x => x.getClientRects().length).length });`);
+  const wzAuf = JSON.parse(await wzMass());
+  b.pruefe(wzAuf.kopf >= 44, `Der Klappgriff steht da und trägt ${wzAuf.kopf} px`);
+  await seite.klick('#wz-kopf');
+  const wzZu = JSON.parse(await wzMass());
+  b.pruefe(wzZu.werkzeuge === 0 && wzZu.hoch <= 60,
+    `Zugeklappt bleibt nur der Griff: ${wzZu.hoch} px statt ${wzAuf.hoch} px hoch`);
+  await seite.neuLaden();
+  await seite.warteAuf('!!window.fbp');
+  await stelleEin(820, 1180);
+  b.gleich(JSON.parse(await wzMass()).werkzeuge, 0, 'Nach dem Neuladen bleibt sie zu');
+  await seite.klick('#wz-kopf');
+  b.gleich(JSON.parse(await wzMass()).werkzeuge, wzAuf.werkzeuge, 'Ein Tipp klappt sie wieder auf');
+  await stelleEin(390, 844);
+  b.gleich(JSON.parse(await wzMass()).kopf, 0,
+    'Schmal gibt es den Griff nicht – dort ist die Leiste ein Band');
+
   /* Und die Grenze selbst: einen Bildpunkt darunter löst wieder ab. */
   await stelleEin(759, 1024);
   b.pruefe(await seite.auswerten(
     'document.getElementById("ansicht-wechsel").getClientRects().length > 0'),
     '759 px: darunter lösen Liste und Karte einander wieder ab');
+
+  b.abschnitt('Telefon quer: Liste ODER Karte, der Umschalter als Spalte');
+  /* Die Grenze von 760 px gilt für Fenster mit Höhe. Das Telefon quer ist
+     breiter und hatte deshalb Liste und Karte nebeneinander – 372 px Liste,
+     472 px Karte, und das seitliche Blatt der Punktkarte bekam 215 px davon.
+     Es gehört zur Schmalansicht, erkannt an geringer Höhe UND grobem Zeiger.
+     Der Umschalter steht dort links als Spalte: quer fehlt Höhe, nicht Breite. */
+  for (const [breite, hoehe] of [[844, 390], [932, 430]]) {
+    await stelleEin(breite, hoehe);
+    const q = await seite.auswerten(`
+      const w = window._g.kasten(document.getElementById('ansicht-wechsel'));
+      const s = window._g.muss('.seite').getBoundingClientRect();
+      const k = window._g.muss('#karte').getBoundingClientRect();
+      return { wechsel: !!w, spalte: !!w && w.height >= innerHeight / 2 && w.width <= 64,
+               wechselBreite: w ? Math.round(w.width) : 0,
+               karte: Math.round(k.width), kartenHoehe: Math.round(k.bottom),
+               liste: Math.round(s.width) };`);
+    b.pruefe(q.wechsel, `${breite}×${hoehe}: der Umschalter Liste/Karte steht`);
+    b.pruefe(q.spalte, `${breite}×${hoehe}: als Spalte am Rand (${q.wechselBreite} px breit), ` +
+      'nicht als Band, das der Karte Höhe nimmt');
+    b.pruefe(q.liste >= breite - 64 && q.karte >= breite - 64,
+      `${breite}×${hoehe}: Liste (${q.liste} px) und Karte (${q.karte} px) haben je die ganze Breite`);
+  }
+  /* Ein Rechnerfenster, das jemand flach zieht, bleibt nebeneinander: dort
+     ist die Maus genau, und die Liste ist das Werkzeug. */
+  await seite.breit(1000, 450);
+  await seite.auswerten(MESSHILFEN);
+  const flach = await seite.auswerten(`
+    const s = window._g.muss('.seite').getBoundingClientRect();
+    const k = window._g.muss('#karte').getBoundingClientRect();
+    return { neben: s.right <= k.left + 1 && s.width > 0 && k.width > 0,
+             wechsel: document.getElementById('ansicht-wechsel').getClientRects().length > 0 };`);
+  b.pruefe(flach.neben && !flach.wechsel,
+    '1000×450 mit Maus: Liste und Karte bleiben nebeneinander, ohne Umschalter');
 
   b.abschnitt('Bei 320 px passen alle sechs Reiter nebeneinander');
   await stelleEin(320, 568);

@@ -22,7 +22,7 @@
    einer fremden Cloud liegt, räumt ihr Eigentümer auf, nicht dieses Programm. */
 
 import {
-  store, ladeAlle, migrieren, projektAblegen, id as neueKennung
+  store, ladeAlle, migrieren, projektAblegen, id as neueKennung, planKennung
 } from './state.js';
 import { holen as bildHolen, ablegen as bildAblegen } from './bildspeicher.js';
 import {
@@ -408,15 +408,35 @@ async function uebernehmen(rs, projekt, ordner, fern, z) {
     zuletzt: new Date().toISOString()
   };
 
-  if (store.projekt && store.projekt.id === projekt.id) {
+  /* Entschieden wurde VOR dem Lesen und dem Holen der Bilder – beides wartet
+     auf das Netz, am Bauort Sekunden. Wer in dieser Zeit einen Punkt aufnahm,
+     verlor ihn an den Stand vom Speicher, denn „hier unverändert“ galt da
+     schon nicht mehr. Unmittelbar vor dem Ersetzen wird deshalb noch einmal
+     nachgesehen; ist hier inzwischen etwas geschehen, stehen sich zwei Stände
+     gegenüber, und darüber entscheidet der Nutzer. */
+  const offen = store.projekt && store.projekt.id === projekt.id;
+  const jetztHier = offen ? store.projekt.geaendert
+    : ((ladeAlle()[projekt.id] || {}).geaendert);
+  if ((jetztHier || '') !== (z.lokalGeaendert || '')) {
+    return konfliktStellen(offen ? store.projekt : projekt, ordner, fern, z);
+  }
+
+  if (offen) {
     /* Die offene Planung wechselt unter der Hand, und `store.uebernehmen`
        leert dabei den Rückgängig-Verlauf. Im Audit geschah beides still: der
        Nutzer sah eine andere Karte und ein graues „↶“, und niemand sagte ihm,
        warum. Gemeldet wird es über die Lage – die Oberfläche (`cloud-ui.js`)
        sagt es in der Pille. */
     const verlaufWeg = store.undoStapel.length > 0;
+    /* Hat sich mit dem neuen Stand der Plan geändert, baut ein Trupp im
+       Baumodus nach einem anderen Plan als dem auf seinem Papier. Das sagt die
+       Oberfläche ausdrücklich, mit beiden Plan-Nummern. */
+    let planAlt = '', planNeu = '';
+    try { planAlt = planKennung(store.projekt.strecken); planNeu = planKennung(fremd.strecken); }
+    catch (e) { planAlt = planNeu = ''; }
     store.uebernehmen(fremd);
-    setzen({ fernstand: { zeit: fremd.geaendert || '', verlaufWeg, nr: ++fernstandZaehler } });
+    setzen({ fernstand: { zeit: fremd.geaendert || '', verlaufWeg, nr: ++fernstandZaehler,
+      planAlt, planNeu } });
   } else {
     /* Eine Planung, die gerade nicht offen ist, wird still im Browserspeicher
        ersetzt. Sie über den Store zu laden hieße, dem Nutzer mitten in der
