@@ -303,6 +303,26 @@ body.druckansicht { overflow: hidden; }
 }
 .druck-doku.a3 .blatt { font-size: 10pt; }
 
+/* Das Blatt ist Papier und kennt keine Nacht. Die Nachtdarstellung legt die
+   Oberflächenvariablen an `body.nacht` dunkel aus, ohne Medienbedingung – und
+   was auf der Druckkarte über sie läuft (Gitterangabe, Kartenschilder, Maße),
+   erbte sie: die Gitterangabe stand im Audit hellblau auf weißem Blatt,
+   1,49:1. Eine Bedingung `@media screen` an der Nacht hülfe nur dem Druck,
+   nicht der Vorschau, nach der gedruckt wird. Deshalb setzt das Blatt alle
+   Farbvariablen auf die Tageswerte aus `:root` in `css/app.css` zurück; wer
+   dort einen Tageswert ändert, ändert ihn hier mit. */
+.blatt {
+  --thw: #003399; --thw-hell: #0a4fbf; --thw-blass: #e8eefb; --thw-text: #003399;
+  --grund: #eef1f6; --flaeche: #ffffff; --flaeche-2: #f7f9fc;
+  --linie: #d5dce6; --linie-stark: #75849d;
+  --text: #16202e; --text-schwach: #5c6879; --text-blau: #24344f;
+  --gefahr: #c62828; --gefahr-linie: #bd7676; --gefahr-flaeche: #fdf2f2; --gefahr-matt: #a35252;
+  --warnung: #b26a00; --warnung-flaeche: #fdf3e0; --warnung-linie: #e6c893;
+  --warnung-tief: #7a4b00; --warnung-linie-stark: #a67b30;
+  --gut: #1b7a3d;
+  color-scheme: light;
+}
+
 .blatt h2 {
   font-size: 1.06em; margin: 3.4mm 0 1.4mm; padding-bottom: .8mm;
   border-bottom: .5pt solid #111; text-transform: uppercase; letter-spacing: .4pt;
@@ -363,6 +383,11 @@ body.druckansicht { overflow: hidden; }
 .st-feld { display: flex; flex-direction: column; min-width: 0; }
 .st-titel { font-size: .72em; text-transform: uppercase; letter-spacing: .4pt; color: #666; }
 .st-wert { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A3 hoch ist das schmalste Raster: sechs Spalten auf 273 mm bei 10 pt. Dort
+   wurde die Leitungsart zu „Feldfernkabel (FFK, au…“ – die eine Angabe, nach
+   der die Trommeln geladen werden. Umbrechen statt abschneiden; die Zeile
+   wird dann höher, und die Karte darunter gibt das her. */
+.druck-doku.a3.hoch .st-wert { white-space: normal; overflow-wrap: break-word; }
 
 /* -- Karte */
 
@@ -487,6 +512,10 @@ body.druckansicht { overflow: hidden; }
 .lg-linie.lg-ist { border-top-width: 1.8pt; }
 .lg-linie.lg-soll { border-top: 1pt dotted var(--farbe, #111); }
 .lg-linie.lg-abw { border-top: 1pt dashed #b45309; }
+/* Die Lücke zwischen zwei gebauten Stücken: lang gestrichelt auf der Karte,
+   hier so nah daran, wie `border-style` es hergibt – breiter als die Abweichung,
+   in der Streckenfarbe statt in Braun. */
+.lg-linie.lg-luecke { border-top: 1.2pt dashed var(--farbe, #111); }
 /* Die Marke des aufgenommenen Punktes in der Zeichenerklärung – derselbe Kreis
    mit weißem Rand wie auf der Karte. Die Punktarten haben für das Ist keine
    eigene Form: der Trupp nimmt einen Ort auf, keine Bauform. Die Art steht
@@ -571,13 +600,46 @@ body.druckansicht { overflow: hidden; }
 .tab-ausfuellen td { height: 7mm; vertical-align: middle; }
 .tab-ausfuellen tbody tr:nth-child(even) { background: none; }
 .tab-ausfuellen td.ausfuellen { border-bottom: .6pt solid #444; }
-.tab-ausfuellen:not(.tab-nachweis-kopf, .tab-nachweis-material, .tab-nachweis-pruefung) th:nth-child(5) { width: 40%; }
-.tab-nachweis-material th:first-child { width: 50%; }
-.tab-nachweis-pruefung th:nth-child(3) { width: 30%; }
-.tab-nachweis-pruefung th:nth-child(4) { width: 10%; }
-.bl-freitext-hoch { min-height: 34mm; }
+.tab-ausfuellen:not(.tab-nachweis-kopf, .tab-nachweis-katalog, .tab-nachweis-pruefung) th:nth-child(5) { width: 40%; }
+.tab-nachweis-pruefung th:nth-child(3) { width: 28%; }
+.tab-nachweis-pruefung th:nth-child(4), .tab-nachweis-pruefung th:nth-child(5) { width: 9%; }
+/* Was der Planer schon weiß, steht vorgedruckt in der Schreibzeile – der
+   Trupp eines Bogens bei mehreren Trupps. Kräftig, damit der Bogen auf dem
+   Klemmbrett nicht mit dem des anderen Trupps verwechselt wird. */
+.tab-ausfuellen td.vorgedruckt { font-weight: 700; }
+
+/* Der Materialkatalog in Spalten, hoch zwei, quer vier. Die Zeilen sind
+   etwas flacher als die übrigen Schreibzeilen: hineingeschrieben wird eine
+   Zahl, kein Satz, und mit 25 Zeilen in 7 mm stand der Katalog im Querformat
+   auf einem Blatt für sich. */
+.bl-katalog {
+  display: grid; grid-template-columns: repeat(var(--spalten, 2), 1fr); gap: 6mm; align-items: start;
+}
+.tab-nachweis-katalog td { height: 5.6mm; }
+/* Quer noch einmal flacher – 5 mm ist das Karomaß des Schulhefts, eine Ziffer
+   passt hinein. Erst damit steht der Katalog neben den Baumeldungen auf
+   demselben Blatt. */
+.druck-doku.quer .tab-nachweis-katalog td { height: 5mm; }
+.tab-nachweis-katalog th:nth-child(2) { width: 24%; }
+.tab-nachweis-katalog th:nth-child(3) { width: 9%; }
+.tab-nachweis-katalog td.einheit { color: #444; padding-left: .6mm; }
+/* Die Spalten stehen nebeneinander und nicht untereinander – der
+   Abstand für aufeinanderfolgende Schreibtabellen setzte jede weitere sonst um
+   3 mm tiefer, und die Zeilen fluchteten nicht mehr. */
+.bl-katalog .tab-ausfuellen + .tab-ausfuellen { margin-top: 0; }
+/* Unter „Sonstiges“ sind Bezeichnung und Menge beide zu schreiben; ohne
+   Trennstrich liefen die zwei Schreiblinien zu einer zusammen. */
+.tab-nachweis-katalog td.ausfuellen + td.ausfuellen { border-left: .6pt solid #444; }
+.tab-nachweis-katalog .gruppenzeile td {
+  height: auto; padding-top: 1.6mm; font-size: .8em; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .3pt; color: #333; border-bottom: .4pt solid #999;
+}
+/* Doppelte Klasse mit Absicht: `.bl-freitext` steht weiter unten und setzte
+   bei gleicher Spezifität seine 16 mm durch – das Feld für die Meldung an den
+   S 6 war im Audit halb so hoch wie gedacht, zwei Zeilen Handschrift. */
+.bl-freitext.bl-freitext-hoch { min-height: 34mm; }
 .bl-nachweis-kopf { display: flex; gap: 4mm; align-items: flex-start; }
-.bl-nachweis-kopf .tab-nachweis-kopf { flex: 1; }
+.bl-nachweis-felder { flex: 1; min-width: 0; }
 .bl-qr-rahmen { margin: 0; width: 34mm; flex-shrink: 0; text-align: center; }
 .bl-qr { width: 32mm; height: 32mm; margin: 0 auto; }
 .bl-qr svg { display: block; width: 100%; height: 100%; }
@@ -1121,6 +1183,7 @@ body.druckansicht { overflow: hidden; }
    die übrige Kartenbeschriftung. */
 .karten-inner .strecken-mass {
   border-width: calc(1px * var(--karten-schrift));
+  border-left-width: calc(2.5px * var(--karten-schrift));
   border-radius: calc(3px * var(--karten-schrift));
   padding: calc(2px * var(--karten-schrift)) calc(5px * var(--karten-schrift));
 }

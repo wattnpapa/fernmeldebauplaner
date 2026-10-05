@@ -6,6 +6,8 @@ import {
 import { symbolSVG, symbolMasse, symbolById, GRUNDBREITE } from './symbols.js';
 import { escapeHtml } from './strecken.js';
 import { signatur } from './signatur.js';
+import { ziehbar } from './ziehen.js';
+import { distanz } from './geo.js';
 
 /**
  * Welche Zeichen eine Ebene mit diesen Einstellungen zeichnen würde.
@@ -45,6 +47,7 @@ export class ZeichenLayer {
     this.setzZuteilung = null;  // {abschnitt, gruppe} für das neue Zeichen
     this.aufAuswahl = opt.aufAuswahl || (() => {});
     this.aufAenderung = opt.aufAenderung || (() => {});
+    this.aufGezogen = opt.aufGezogen || (() => {});
     this.sw = !!opt.sw;
     /* Auf einen Abschnitt eingeschränkt zeigt die Karte dessen eigene Zeichen
        und die nicht zugeteilten: die gehören zum gemeinsamen Lagebild und
@@ -135,9 +138,10 @@ export class ZeichenLayer {
         `<div class="tz-wrap${gewaehlt ? ' gewaehlt' : ''}">${svg}` +
         (z.label ? `<span class="tz-label">${escapeHtml(z.label)}</span>` : '') + `</div>`;
 
+      /* Gezogen wird über `ziehen.js`: am Finger erst nach Halten, sonst
+         verschob ein Wisch über die Karte jedes Zeichen, das im Weg lag. */
       const m = L.marker([z.lat, z.lng], {
         pane: 'fbp-zeichen',
-        draggable: this.interaktiv,
         interactive: this.interaktiv,
         keyboard: false,
         icon: L.divIcon({
@@ -151,11 +155,14 @@ export class ZeichenLayer {
       if (!this.interaktiv) continue;
 
       m.on('click', e => { L.DomEvent.stop(e); this.waehle(z.id); });
-      m.on('dragstart', () => store.schnappschuss());
-      m.on('dragend', ev => {
-        const ll = ev.target.getLatLng();
-        store.aendern(() => { z.lat = ll.lat; z.lng = ll.lng; }, 'zeichen', { undo: false });
-        this.aufAenderung();
+      ziehbar(this.karte, m, {
+        start: () => store.schnappschuss(),
+        ende: (ll, ausgang) => {
+          store.aendern(() => { z.lat = ll.lat; z.lng = ll.lng; }, 'zeichen', { undo: false });
+          this.aufAenderung();
+          const weg = distanz(ll, ausgang);
+          if (weg >= 0.01) this.aufGezogen(z, weg);
+        }
       });
       m.bindTooltip(
         `<b>${escapeHtml(z.label || basis.name)}</b>` +

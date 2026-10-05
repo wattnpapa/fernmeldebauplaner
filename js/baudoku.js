@@ -162,6 +162,19 @@ export function istArtSetzen(pt, art) {
 export function istSollZuordnen(strecke, ist, pid) {
   const bau = bauSichern(strecke);
   if (!bau.punkte.includes(ist)) return ist;
+  /* Was vom bisher zugeordneten Punkt stammt, geht mit der Zuordnung. Ob eine
+     Art „vom Plan“ ist, steht nirgends – erkannt wird es daran, dass sie der
+     Art dieses Plans gleicht. Wer am Plan-Punkt „Muffe“ selbst angetippt hat,
+     verliert dadurch nichts, was er nicht eben dort abgelesen hätte. */
+  const bisher = sollZuIst(strecke, ist);
+  if (bisher) {
+    if (ist.art === bisher.art &&
+        (ist.art !== 'querung' || (ist.bauweise || null) === (bisher.bauweise || null))) {
+      ist.art = 'offen';
+      ist.bauweise = null;
+    }
+    if (ist.name && ist.name === bisher.name) ist.name = '';
+  }
   if (pid) {
     const soll = strecke.punkte.find(pt => pt.id === pid);
     if (!soll) return ist;
@@ -171,6 +184,15 @@ export function istSollZuordnen(strecke, ist, pid) {
        Bauort gesucht. Was der Trupp selbst eingetragen hat, bleibt: er stand
        davor und hat den Namen mit Absicht vergeben. */
     if (!ist.name) ist.name = soll.name || '';
+    /* Und er trägt die Art des Plans, solange der Trupp keine gesetzt hat –
+       wie bei „◉ Hier“ am geplanten Punkt. Vorher waren das zwei Wege zu
+       derselben Bestätigung mit verschiedenem Ergebnis: über die Punktkarte
+       zugeordnet blieb die geplante Muffe „Art noch offen“, und am Ende stand
+       sie als Lücke in der Nachfrage an den Trupp. */
+    if (ist.art === 'offen') {
+      ist.art = soll.art;
+      ist.bauweise = soll.art === 'querung' ? (soll.bauweise || null) : null;
+    }
   } else {
     ist.sollPunkt = null;
   }
@@ -194,6 +216,77 @@ export function offeneSollPunkte(strecke, bei = null) {
     .filter(e => !belegt.has(e.punkt.id));
   if (bei) offen.sort((a, b) => a.weg - b.weg);
   return offen;
+}
+
+/**
+ * Der offene geplante Punkt, den eine Ortung an dieser Stelle meint – oder
+ * `null`, wenn das nicht ohne Raten feststeht.
+ *
+ * Vorgeschlagen wird nur, was innerhalb der Abweichungsschwelle liegt, also
+ * dort, wo die Ortung selbst nicht genauer ist. Im Audit stand der Trupp 6 bis
+ * 11 m neben Punkt 2, tippte „Fertig“, und es blieb „0 von 3 geplanten
+ * bestätigt“ mit einem Zusatzpunkt ohne Art. Liegen ZWEI offene Punkte so nah,
+ * bleibt es beim Fragen: dort wüsste auch die Entfernung nicht, welcher
+ * gemeint ist – das ist der Fall, für den „geraten wird nichts“ steht.
+ */
+export function sollVorschlag(strecke, bei) {
+  const nahe = offeneSollPunkte(strecke, bei).filter(e => e.weg < ABWEICHUNG_SCHWELLE);
+  return nahe.length === 1 ? nahe[0] : null;
+}
+
+/**
+ * Eine ANDERE Strecke, an der die Ortung liegt – der nächste geplante Punkt
+ * dort, mit Nummer und Entfernung, oder `null`.
+ *
+ * Genannt wird sie, wenn sie näher liegt als die gewählte Strecke und dabei
+ * entweder in Ortungsnähe (Abweichungsschwelle) oder die gewählte jenseits
+ * jeder Umgehung (Abseitsschwelle). Im Audit landete „Punkt hier“ nach dem
+ * Neuladen an Strecke 1, und das Blatt fragte „5,86 km … Stimmt die
+ * Ortung?“ – die Ortung stimmte, die Strecke nicht. `offen` sagt, ob der
+ * Punkt dort noch eine Aufnahme braucht.
+ */
+export function andereStreckeNahe(projekt, strecke, bei) {
+  const eigene = strecke && strecke.punkte.length
+    ? Math.min(...strecke.punkte.map(pt => distanz(pt, bei))) : Infinity;
+  let best = null;
+  for (const s of (projekt && projekt.strecken) || []) {
+    if (s === strecke) continue;
+    const belegt = new Set(istPunkte(s).map(pt => pt.sollPunkt).filter(Boolean));
+    s.punkte.forEach((pt, i) => {
+      const weg = distanz(pt, bei);
+      if (!best || weg < best.weg) {
+        best = { strecke: s, punkt: pt, nr: i + 1, weg, offen: !belegt.has(pt.id) };
+      }
+    });
+  }
+  if (!best || best.weg >= eigene || best.weg >= ABSEITS_SCHWELLE) return null;
+  return best.weg < ABWEICHUNG_SCHWELLE || eigene >= ABSEITS_SCHWELLE ? best : null;
+}
+
+/**
+ * Einen aufgenommenen Punkt an eine andere Strecke hängen – samt allem, was
+ * der Trupp an ihm eingetragen hat. Ein offener geplanter Punkt dort wird ihm
+ * zugeordnet, sonst steht er dort als zusätzlicher.
+ *
+ * Gelöscht und neu angelegt statt verschoben: die Stelle in der Liste folgt
+ * der Ordnung der Zielstrecke, und der Bauabschnitt der alten gilt dort nicht.
+ * Nur innerhalb von `store.aendern` aufrufen.
+ */
+export function istPunktUmhaengen(von, nach, ist, sollPid, abschnittId) {
+  if (!von.bau || !von.bau.punkte.includes(ist)) return null;
+  von.bau.punkte = von.bau.punkte.filter(pt => pt !== ist);
+  const soll = sollPid ? nach.punkte.find(pt => pt.id === sollPid) : null;
+  const frei = soll && !istPunkte(nach).some(pt => pt.sollPunkt === soll.id);
+  /* Die Zuordnung erst danach und über denselben Weg wie in der Punktkarte –
+     so bekommt der Punkt dort die Art des Plans, wenn er noch keine hat. */
+  const neu = istPunktSetzen(nach, ist.lat, ist.lng, {
+    quelle: ist.quelle, genauigkeit: ist.genauigkeit, zeit: ist.zeit,
+    art: ist.art, bauweise: ist.bauweise, name: ist.name,
+    abschnitt: abschnittId || null
+  });
+  neu.bemerkung = ist.bemerkung || '';
+  if (frei) istSollZuordnen(nach, neu, soll.id);
+  return neu;
 }
 
 /** Wohin der neue Ist-Punkt in der Liste gehört (Index) */
@@ -644,7 +737,7 @@ function lotMeter(b, a, c) {
   return Math.hypot(ax + t * dx, ay + t * dy);
 }
 
-function abstandZurLinie(b, punkte) {
+export function abstandZurLinie(b, punkte) {
   if (!punkte.length) return Infinity;
   if (punkte.length === 1) return distanz(punkte[0], b);
   let min = Infinity;
@@ -701,6 +794,88 @@ function ortZurTrasse(b, punkte, nurIst) {
 // ---------------------------------------------------------------- Kennzahlen
 
 /**
+ * Die gebaute Trasse, zerlegt in die Stücke, die zusammenhängend gebaut sind,
+ * und die Lücken dazwischen.
+ *
+ * Vorher wurde jeder Ist-Punkt mit dem nächsten verbunden. Beim
+ * abschnittsweisen Bau (Hdb Feldfernkabelbau, 3.6) zog das die kräftige Linie
+ * von Trupp 1 quer über die noch offenen Punkte bis zu Trupp 2 – auf der Karte
+ * und im Nachweis gebaut, was niemand gebaut hat, und in der Länge mitgezählt.
+ *
+ * Getrennt wird zwischen zwei Punkten, die einen Planbezug haben, wenn
+ *  - zwischen ihren geplanten Stellen ein Planpunkt liegt, den niemand
+ *    bestätigt hat – dort ist entweder nichts gebaut oder nichts aufgenommen,
+ *    und beides ist dieselbe Nachfrage wie „fehlend“ im Zähler; oder
+ *  - sie verschiedenen Bauabschnitten angehören und keinen gemeinsamen Punkt
+ *    haben. Bestätigen beide Trupps denselben Treffpunkt, stehen zwei Punkte an
+ *    derselben Planstelle, und das Stück zwischen ihnen ist die Naht und keine
+ *    Lücke. Ohne gemeinsamen Punkt weiß niemand, wer das Stück dazwischen
+ *    gebaut hat. Ein Punkt OHNE Bauabschnitt erhebt keinen Anspruch und trennt
+ *    nichts: wer ohne Abschnitt aufnimmt, baut allein.
+ *
+ * Ein Punkt ohne Planbezug trennt nie: er hängt an seinem Vorgänger, wie in
+ * `istPunkteOrdnen()` (baumeldung.js). Deshalb bleibt ein Bau mit
+ * Zusatzpunkten eine Linie, solange die geplanten Punkte davor und dahinter
+ * bestätigt sind. Fällt eine Trennung in eine Folge von Zusatzpunkten, liegt
+ * sie dort, wo der Bauabschnitt wechselt, sonst vor dem nächsten bestätigten
+ * Punkt.
+ *
+ * Die Lücke läuft über die offenen Planpunkte und nicht als Luftlinie: sie ist
+ * das, was nach dem Auftrag noch zu bauen ist, und so lang ist sie auch.
+ *
+ * @returns {{stuecke: object[][], luecken: {von:object, bis:object,
+ *   punkte:object[], laenge:number}[], laenge:number, lueckeLaenge:number}}
+ */
+export function istVerlauf(strecke) {
+  const ist = istPunkte(strecke);
+  const soll = strecke.punkte || [];
+  const ordnung = new Map(soll.map((pt, i) => [pt.id, i]));
+  const rang = pt => (pt.sollPunkt && ordnung.has(pt.sollPunkt)) ? ordnung.get(pt.sollPunkt) : null;
+  const bestaetigt = new Set(ist.map(rang).filter(r => r !== null));
+
+  /* Nach welchem Punkt der Liste getrennt wird – und über welche Planpunkte */
+  const trennung = new Map();
+  let vorher = -1;
+  for (let i = 0; i < ist.length; i++) {
+    const r = rang(ist[i]);
+    if (r === null) continue;
+    if (vorher >= 0) {
+      const a = ist[vorher], b = ist[i], ra = rang(a);
+      const schritt = r >= ra ? 1 : -1;
+      const zwischen = [];
+      if (r !== ra) for (let j = ra + schritt; j !== r; j += schritt) zwischen.push(j);
+      const offen = zwischen.some(j => !bestaetigt.has(j));
+      const naht = r !== ra && a.abschnitt && b.abschnitt && a.abschnitt !== b.abschnitt;
+      if (offen || naht) {
+        let k = i - 1;
+        for (let j = vorher; j < i; j++) {
+          if ((ist[j].abschnitt || null) !== (ist[j + 1].abschnitt || null)) { k = j; break; }
+        }
+        trennung.set(k, zwischen.map(j => soll[j]));
+      }
+    }
+    vorher = i;
+  }
+
+  const stuecke = [];
+  const luecken = [];
+  let stueck = [];
+  ist.forEach((pt, i) => {
+    stueck.push(pt);
+    if (!trennung.has(i)) return;
+    stuecke.push(stueck);
+    stueck = [];
+    const punkte = [pt, ...trennung.get(i), ist[i + 1]];
+    luecken.push({ von: pt, bis: ist[i + 1], punkte, laenge: streckenlaenge(punkte) });
+  });
+  if (stueck.length) stuecke.push(stueck);
+
+  const laenge = stuecke.reduce((n, st) => n + (st.length >= 2 ? streckenlaenge(st) : 0), 0);
+  const lueckeLaenge = luecken.reduce((n, l) => n + l.laenge, 0);
+  return { stuecke, luecken, laenge, lueckeLaenge };
+}
+
+/**
  * Was die Baudokumentation dieser Strecke hergibt.
  *
  * `laenge` ist die Länge der gebauten Trasse – sie wird wie die geplante aus
@@ -712,7 +887,10 @@ function ortZurTrasse(b, punkte, nurIst) {
 export function baukennzahlen(strecke) {
   const ist = istPunkte(strecke);
   const soll = strecke.punkte || [];
-  const laenge = ist.length >= 2 ? streckenlaenge(ist) : 0;
+  /* Gezählt wird, was zusammenhängend gebaut ist – die Lücke zwischen zwei
+     Bauabschnitten ist keine Trasse (siehe `istVerlauf`). */
+  const verlauf = istVerlauf(strecke);
+  const laenge = verlauf.laenge;
   const sollLaenge = soll.length >= 2 ? streckenlaenge(soll) : 0;
 
   const bestaetigt = soll.filter(pt => istZuSoll(strecke, pt.id)).length;
@@ -767,6 +945,11 @@ export function baukennzahlen(strecke) {
     fehlend: Math.max(0, soll.length - bestaetigt),
     laenge,
     sollLaenge,
+    /* Was zwischen den gebauten Stücken offen ist, entlang der Planung. Steht
+       neben „gebaut“, damit beide zusammen erklären, warum die gebaute Länge
+       kleiner ist als die geplante. */
+    bauluecken: verlauf.luecken,
+    lueckeLaenge: verlauf.lueckeLaenge,
     /* Der Unterschied der Trassenlängen – die Zahl, die im Bauauftrag neben der
        geplanten steht. Ohne Vorzeichenspiel: kürzer ist so wenig „besser“ wie
        länger „schlechter“, beides ist eine Abweichung vom Auftrag. */
@@ -882,19 +1065,49 @@ export function bauzeile(strecke) {
   if (k.abseits.length) {
     warnungen.push(`${k.abseits.length} ${k.abseits.length === 1 ? 'Punkt' : 'Punkte'} abseits`);
   }
+  /* Vorne, weil sie schwerer wiegt als jede Abweichung: eine Leitung, die
+     die Übernahmemessung nicht bestanden hat, ist nicht zu übergeben (Hdb
+     Feldfernkabelbau, 3.5).
+     Im Review stand eine solche Strecke in Liste, Summenband und Lagekarte
+     als grünes „gebaut“ – der Baustand sagt, was der Trupp gemeldet hat, nicht
+     ob es trägt. */
+  if (k.uebergabe.durchgefallen) warnungen.unshift('Prüfung nicht bestanden');
   const meldung = ((strecke.bau && strecke.bau.abweichung) || '').trim();
   return { stand: k.stand, text: teile.join(' · '), warnungen, meldung, zuletzt };
 }
 
+/* Die Strecke, die im Baumodus gerade bearbeitet wird – am Gerät gemerkt wie
+   „Wer baut?“ und aus demselben Grund: am Bauort wird neu geladen. Vorher war
+   sie Sitzungszustand, und nach dem Neuladen nahm `baustrecke()` die zuletzt
+   gebaute – im Audit landete „Punkt hier“ damit an Strecke 1, während der
+   Trupp an Strecke 2 stand. Nicht in der Planung: sie sagt, woran dieses
+   Gerät gerade baut, und reiste sonst mit jeder weitergereichten Datei. */
+const BAUSTRECKE_SCHLUESSEL = 'fbp.baustrecke.v1';
+let gewaehlteStrecke;
+function gemerkteBaustrecke() {
+  if (gewaehlteStrecke === undefined) {
+    try { gewaehlteStrecke = localStorage.getItem(BAUSTRECKE_SCHLUESSEL) || null; }
+    catch { gewaehlteStrecke = null; }
+  }
+  return gewaehlteStrecke;
+}
 /** Die Strecke, die im Baumodus gerade bearbeitet wird – merkt sich die Wahl */
-let gewaehlteStrecke = null;
 export function baustrecke() {
   const p = store.projekt;
   if (!p) return null;
-  const gemerkt = gewaehlteStrecke && p.strecken.find(s => s.id === gewaehlteStrecke);
+  const sid = gemerkteBaustrecke();
+  const gemerkt = sid && p.strecken.find(s => s.id === sid);
   return gemerkt || zuletztGebaut(p) || p.strecken[0] || null;
 }
-export function baustreckeSetzen(sid) { gewaehlteStrecke = sid; }
+export function baustreckeSetzen(sid) {
+  gewaehlteStrecke = sid || null;
+  /* Ein privates Fenster oder ein voller Speicher hält den Baumodus nicht
+     auf – dann gilt die Wahl eben nur bis zum Neuladen, wie vorher. */
+  try {
+    if (gewaehlteStrecke) localStorage.setItem(BAUSTRECKE_SCHLUESSEL, gewaehlteStrecke);
+    else localStorage.removeItem(BAUSTRECKE_SCHLUESSEL);
+  } catch { /* siehe oben */ }
+}
 
 /* Welcher Bauabschnitt neue Eintragungen aufnimmt. Sitzungszustand wie die
    gewählte Strecke – er überlebt das Neuladen bewusst nicht und liegt nicht in

@@ -211,7 +211,8 @@ Trefferzonen (die `::after`-Aufweitungen also eingerechnet, getastet mit
 höher ist als der Schirm, überhaupt rollt, und ob eine Ansicht waagerecht
 überläuft. In jedem der acht Fenster kommt dazu die freie Kartenfläche als
 Anteil der Fensterhöhe (Planung mit Werkzeugleiste, Baumodus mit Bauleiste,
-Baumodus mit offener Punktkarte), die Punktkarte nach „Punkt hier“ mit und
+Baumodus mit offener Punktkarte; ein Blatt an der Seite, wie quer die Punktkarte, zählt
+nach der freien Breite statt als Band), die Punktkarte nach „Punkt hier“ mit und
 ohne Querung, die Meldungspille (sie darf keinen Tipp abfangen und nach einer
 Aufnahme keine Leiste zudecken), die Modusleiste nach „Auf Karte“ (nur
 wirksame Knöpfe, höchstens 64 px hoch), der Bau-Reiter (mit drei bestätigten

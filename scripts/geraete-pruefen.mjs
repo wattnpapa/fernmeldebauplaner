@@ -259,10 +259,27 @@ const MESSHILFEN = `
                               r.right > karte.left && r.left < karte.right;
       const belegt = [];
       let oben = karte.top, unten = karte.bottom;
+      let links = karte.left, rechts = karte.right;
       const mitte = karte.top + karte.height / 2;
       for (const wahl of AUFSAETZE) for (const el of document.querySelectorAll(wahl)) {
         const r = window._g.kasten(el);
         if (!r || !ueberlappt(r)) continue;
+        /* Ein Blatt an der Seite – die Punktkarte quer – nimmt kein Band,
+           sondern eine Spalte: daneben steht die Karte in voller Höhe, und
+           dort liegt der Punkt, den das Blatt benennt. Es zählt deshalb mit
+           seiner Breite. Als Band gerechnet, hieße ein Blatt über 46 % der
+           Breite „null frei“ wie eines über der ganzen Karte, und der Befund
+           sagte nicht mehr, was der Trupp sieht. Als Seite gilt nur, was
+           mindestens zwei Drittel der Höhe steht, höchstens drei Fünftel der
+           Breite und an einer Kante anliegt. */
+        const seitlich = r.height >= karte.height * 2 / 3 && r.width <= karte.width * 0.6 &&
+          (r.left - karte.left < 24 || karte.right - r.right < 24);
+        if (seitlich) {
+          if (karte.right - r.right < 24) rechts = Math.min(rechts, r.left);
+          else links = Math.max(links, r.right);
+          belegt.push(wahl + ' seitlich ' + Math.round(r.left) + '–' + Math.round(r.right));
+          continue;
+        }
         if (r.top + r.height / 2 < mitte) {
           oben = Math.max(oben, Math.min(r.bottom, karte.bottom));
           belegt.push(wahl + ' bis ' + Math.round(r.bottom));
@@ -271,7 +288,10 @@ const MESSHILFEN = `
           belegt.push(wahl + ' ab ' + Math.round(r.top));
         }
       }
-      const frei = Math.max(0, unten - oben);
+      /* Neben einem seitlichen Blatt zählt das Band nur mit dem Anteil der
+         Breite, der frei bleibt – gerechnet als Fläche, umgelegt auf Höhe. */
+      const breiteFrei = Math.max(0, rechts - links) / karte.width;
+      const frei = Math.max(0, unten - oben) * breiteFrei;
       return { frei: Math.round(frei), karte: Math.round(karte.height),
                oben: Math.round(oben), unten: Math.round(unten),
                anteil: frei / innerHeight, belegt };
@@ -854,6 +874,77 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     `${menueFrei.anzahl} Einträge im Bild, ${menueFrei.verdeckt} davon verdeckt`);
   await seite.taste('Escape');
 
+  // ------------------------------------------------------------ Wischen und Ziehen
+
+  b.abschnitt('Ein Wisch über die gewählte Strecke verschiebt die Karte, nicht den Punkt');
+  /* Im Review verschob ein 80-px-Wisch, 6 px neben Punkt 1 begonnen, den
+     Punkt um rund 200 m – still. Am Finger zieht eine Marke jetzt erst nach
+     Halten (`js/ziehen.js`). Gewischt wird mit echten Berührungsereignissen:
+     Leaflet und der Browser entscheiden, was die Geste trifft. */
+  await seite.auswerten('document.getElementById("aw-karte").click(); return true;');
+  await new Promise(r => setTimeout(r, 450));
+  /* Die Ansicht wird gemerkt und am Ende des nächsten Abschnitts wieder
+     gesetzt: die Fälle danach messen auf ihr. */
+  const ansicht = await seite.auswerten(`
+    const k = window.fbp.karte, c = k.getCenter();
+    return { lat: c.lat, lng: c.lng, zoom: k.getZoom() };`);
+  await seite.auswerten('window.fbp.sl.waehle(window.fbp.store.projekt.strecken[0].id); return true;');
+  await seite.ruhe();
+  const punktLage = () => seite.auswerten(`
+    const r = document.querySelector('.fbp-punkt.art-start').getBoundingClientRect();
+    const c = window.fbp.karte.getCenter();
+    const pt = window.fbp.store.projekt.strecken[0].punkte[0];
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+             lat: pt.lat, lng: pt.lng, mitte: c.lat + ',' + c.lng };`);
+  const vorWisch = await punktLage();
+  await seite.wische(vorWisch.x + 6, vorWisch.y, vorWisch.x + 86, vorWisch.y + 30);
+  const nachWisch = await punktLage();
+  b.pruefe(nachWisch.lat === vorWisch.lat && nachWisch.lng === vorWisch.lng,
+    'Der Wisch ändert keine Koordinate');
+  b.pruefe(nachWisch.mitte !== vorWisch.mitte, 'Er verschiebt stattdessen die Karte');
+  await seite.wische(nachWisch.x, nachWisch.y, nachWisch.x + 50, nachWisch.y + 40, { halten: 700 });
+  const nachHalten = await punktLage();
+  b.pruefe(nachHalten.lat !== vorWisch.lat, 'Gehalten und dann gezogen, folgt der Punkt dem Finger');
+  const pille = await seite.text('#hinweisbox');
+  b.pruefe(/^Punkt 1 von .* um .* verschoben – „↶“/.test(pille),
+    `Danach nennt eine Meldung Punkt, Weg und Rückweg („${pille}“)`);
+  await seite.klick('#btn-undo');
+  b.gleich((await punktLage()).lat, vorWisch.lat, 'Rückgängig holt ihn zurück');
+
+  b.abschnitt('Aus der Übersicht wird in Stufen herangeholt, Suche und Standort stehen bereit');
+  /* Aus Zoom 6 sprang der erste Tipp gleich auf 15, dorthin, wo der Finger
+     zufällig lag. */
+  await seite.auswerten('window.fbp.karte.setZoom(6, { animate: false }); return true;');
+  await seite.klick('#wz-strecke');
+  const grobLeiste = await seite.auswerten(`
+    const box = document.getElementById('zeichen-hinweis');
+    return [...box.querySelectorAll('button')].filter(x => !x.hidden).map(x => x.dataset.akt).join(',');`);
+  b.gleich(grobLeiste, 'suche,standort,abbruch',
+    'In der Übersicht trägt die Modusleiste „Ort suchen“, „Mein Standort“ und „Abbrechen“');
+  const grobGriffe = await zuKleineGriffe('#zeichen-hinweis', 'button');
+  b.gleich(grobGriffe.length, 0, 'Jeder davon trägt 44 px' +
+    (grobGriffe.length ? ' – zu klein: ' + grobGriffe.join(', ') : ''));
+  const karteMitte = await seite.auswerten(`
+    const r = document.getElementById('karte').getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 3) };`);
+  await seite.tippe(karteMitte.x, karteMitte.y);
+  await new Promise(r => setTimeout(r, 400));
+  b.gleich(await seite.auswerten('window.fbp.karte.getZoom()'), 11, 'Der erste Tipp holt auf Stufe 11');
+  await seite.tippe(karteMitte.x, karteMitte.y);
+  await new Promise(r => setTimeout(r, 400));
+  b.gleich(await seite.auswerten('window.fbp.karte.getZoom()'), 15, 'Der zweite auf Stufe 15');
+  b.gleich(await seite.auswerten('window.fbp.store.projekt.strecken.at(-1).punkte.length'), 0,
+    'Gesetzt ist dabei noch kein Punkt');
+  await seite.auswerten(
+    'document.querySelector("#zeichen-hinweis [data-akt=abbruch]").click(); return true;');
+  await seite.ruhe();
+  b.gleich(await seite.auswerten('window.fbp.store.projekt.strecken.length'), 1,
+    'Abbrechen lässt keine leere Strecke zurück');
+  await seite.auswerten(`window.fbp.karte.setView([${ansicht.lat}, ${ansicht.lng}], ${ansicht.zoom},
+    { animate: false }); return true;`);
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.ruhe();
+
   // ------------------------------------------------------------ Baumodus auf dem Telefon
 
   b.abschnitt('Baumodus auf dem Telefon: die Karte bleibt frei');
@@ -885,12 +976,54 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   const bauGriffe = await zuKleineGriffe('.werkzeuge', 'button');
   b.gleich(bauGriffe.length, 0, 'Bauleiste: jeder Griff trägt 44 px' +
     (bauGriffe.length ? ' – zu klein: ' + bauGriffe.join(', ') : ''));
+  /* Der Merker mit der Zielstrecke sitzt auf der Oberkante der Bauleiste und
+     reicht über „Punkt hier“. Er muss im Fenster stehen und darf keinen Tipp
+     abfangen: getastet wird die obere Kante des Griffs, genau unter ihm. */
+  const bauZiel = await seite.auswerten(`
+    const z = document.getElementById('bau-ziel'), k = document.getElementById('wz-punkt-hier');
+    const r = z.getBoundingClientRect(), kr = k.getBoundingClientRect();
+    const x = Math.round(Math.min(Math.max(r.left + 12, kr.left + 4), kr.right - 4));
+    const y = Math.round(Math.max(kr.top + 2, r.bottom - 2));
+    const p = document.elementFromPoint(x, y);
+    return { text: z.textContent, hoehe: Math.round(r.height),
+             imBild: r.height > 0 && r.top >= 0 && r.left >= 0 && r.right <= innerWidth,
+             ueber: r.bottom > kr.top, trifft: !!p && (p === k || k.contains(p)) };`);
+  b.pruefe(bauZiel.imBild && !!bauZiel.text && bauZiel.trifft,
+    `Die Bauleiste nennt die Zielstrecke („${bauZiel.text}“, ${bauZiel.hoehe} px) und ` +
+    (bauZiel.trifft ? 'lässt den Tipp auf „Punkt hier“ durch'
+      : 'fängt den Tipp auf „Punkt hier“ ab'));
   await seite.klick('#ko-kopf');
   await seite.ruhe();
   const koZeilen = await seite.auswerten(
     '[...document.querySelectorAll(".ko-zeile")].filter(z => z.getClientRects().length).length');
   b.gleich(koZeilen, 4, `Die Kartenoptionen zeigen im Baumodus vier Zeilen (${koZeilen})`);
   await seite.klick('#ko-kopf');
+
+  b.abschnitt('Die Kurzanleitung schlägt im Baumodus beim Baumodus auf, in Fingersprache');
+  /* Sie begann auch hier mit „Einfache und erweiterte Ansicht“ und nannte am
+     Telefon Enter, Doppelklick, Rücktaste und K. */
+  await seite.klick('#btn-hilfe');
+  await seite.warteAuf('!document.getElementById("dialog").hidden');
+  /* Gemessen wird, wo der Dialog stehen bleibt: er wächst beim Öffnen aus
+     einer Verkleinerung heran. Ein paar Bildpunkte Spiel für den Rand der
+     Überschrift. */
+  const hilfe = await seite.auswerten(`
+    const dlg = document.querySelector('#dialog .dialog');
+    await Promise.all(dlg.getAnimations().map(a => a.finished.catch(() => {})));
+    const feld = document.getElementById('dialog-inhalt');
+    const h = [...feld.querySelectorAll('.hilfe h3')].find(x => x.textContent.trim() === 'Baumodus');
+    const oben = h.getBoundingClientRect().top - feld.getBoundingClientRect().top;
+    const text = feld.textContent;
+    return { gerollt: feld.scrollTop, oben: Math.round(oben),
+             tasten: ['Rücktaste', 'Doppelklick', 'Enter', 'linken Leiste']
+               .filter(w => text.includes(w)).join(', '),
+             kbd: feld.querySelectorAll('kbd').length };`);
+  b.pruefe(hilfe.gerollt > 0 && Math.abs(hilfe.oben) <= 8,
+    `„Baumodus“ steht oben im Dialog (gerollt ${hilfe.gerollt} px, Abstand ${hilfe.oben} px)`);
+  b.gleich(hilfe.tasten, '', 'Keine Tasten und kein Doppelklick, die es am Telefon nicht gibt');
+  b.gleich(hilfe.kbd, 0, 'Kein Tastenkürzel im Text');
+  await seite.taste('Escape');
+  await seite.ruhe();
 
   b.abschnitt('Die Punktkarte ist mit dem Finger zu bedienen');
   await seite.auswerten('document.querySelector(".fbp-punkt").click(); return true;');
@@ -1019,6 +1152,45 @@ const seitenGriffe = await zuKleineGriffe('.seite',
         return { gut: z.kleinste >= GRIFF - TASTFEHLER, kurz: z.kleinste + ' px',
                  text: z.griffe.join(', ') };
       });
+    /* „↶“ lag 4 px unter dem Namensfeld: wer zurücknehmen wollte, öffnete die
+       Tastatur. Gemessen wird der Abstand zwischen Feld und jedem Kopfknopf. */
+    await fall(fenster, 'Kopfzeile: 8 px zwischen Namensfeld und Knöpfen',
+      'Zwischen dem Namensfeld der Planung und den Kopfknöpfen liegen mindestens 8 px',
+      async () => {
+        const m = await seite.auswerten(`
+          const f = window._g.muss('#projektname').getBoundingClientRect();
+          const a = [...document.querySelectorAll('.kopf-tasten .knopf')]
+            .filter(k => window._g.kasten(k))
+            .map(k => { const o = k.getBoundingClientRect();
+              return Math.max(0, f.left - o.right, o.left - f.right, f.top - o.bottom, o.top - f.bottom); });
+          return Math.round(Math.min(...a));`);
+        return { gut: m >= 8, kurz: m + ' px', text: `${m} px` };
+      });
+    /* Quer: Sicherungsband weg, Koordinatenleiste in einer Zeile, und der
+       Mahnton steht als Merker in der Kopfzeile. Die Planung hier ist nie als
+       Datei gesichert, der Merker muss also stehen. */
+    if (hoehe <= 450) {
+      await fall(fenster, 'Quer: kein Band, Leiste einzeilig, Merker oben',
+        'Quer weicht das Sicherungsband einem Merker in der Kopfzeile, und die Koordinatenleiste steht einzeilig',
+        async () => {
+          const m = await seite.auswerten(`
+            const band = window._g.kasten(document.getElementById('speicherband'));
+            const leiste = window._g.muss('.statusleiste').getBoundingClientRect();
+            const merker = document.getElementById('speicherstatus');
+            const kopf = window._g.muss('.kopf').getBoundingClientRect();
+            return { band: !!band, leiste: Math.round(leiste.height),
+                     merker: !!window._g.kasten(merker) && merker.classList.contains('mahnung'),
+                     merkerHoehe: Math.round(merker.getBoundingClientRect().height),
+                     ueberlauf: Math.round(document.documentElement.scrollWidth - innerWidth),
+                     kopf: Math.round(kopf.height) };`);
+          const gut = !m.band && m.leiste <= 40 && m.merker && m.merkerHoehe >= GRIFF - TASTFEHLER &&
+            m.ueberlauf <= 0;
+          return { gut, kurz: gut ? m.leiste + ' px' : 'nein',
+                   text: `Band ${m.band ? 'steht' : 'weg'}, Leiste ${m.leiste} px, ` +
+                         `Merker ${m.merker ? m.merkerHoehe + ' px' : 'fehlt'}, Kopf ${m.kopf} px, ` +
+                         `waagerechter Überlauf ${m.ueberlauf} px` };
+        });
+    }
     await kartenoptionenZu(false);
     await fall(fenster, 'Kartenoptionen (Planung) im Fenster oder rollbar',
       'Kartenoptionen aufgeklappt: ganz im Fenster oder innen rollbar',
@@ -1199,6 +1371,78 @@ const seitenGriffe = await zuKleineGriffe('.seite',
         return { gut: klein.length === 0, kurz: klein.length ? klein.length + ' zu klein' : '',
                  text: klein.length ? 'zu klein: ' + klein.join(', ') : 'alle ≥ 44 px' };
       });
+    /* Drei Abstände aus dem vierten Review: „✓ wie geplant“ stand 8 px neben
+       „◉ hier“, die Sprungchips 6 px auseinander, und die Zeitwahl eines
+       zusätzlichen Punktes ragte bei 390 px rechts aus der Liste. Gemessen
+       wird an einem eigens aufgenommenen Zusatzpunkt, der danach wieder geht. */
+    await fall(fenster, 'Bau-Reiter: Abstände und kein Überlauf',
+      '„✓ wie geplant“ hält 12 px, die Sprungchips 8 px, und kein Feld eines zusätzlichen Punktes ragt aus der Liste',
+      async () => {
+        const m = await seite.auswerten(`
+          const s = window.fbp.store.projekt.strecken[0];
+          const bd = await import('./js/baudoku.js');
+          window.fbp.store.aendern(() => {
+            bd.istPunktSetzen(s, s.punkte[0].lat + 0.001, s.punkte[0].lng + 0.001,
+              { sollPunkt: null, art: 'mast', quelle: 'karte' });
+          }, 'bau');
+          await new Promise(f => requestAnimationFrame(f));
+          const abstand = (a, o) => Math.max(0, a.left - o.right, o.left - a.right,
+                                                a.top - o.bottom, o.top - a.bottom);
+          const plan = [...document.querySelectorAll('#bau-liste .bau-tasten .knopf.primaer')]
+            .find(k => /wie geplant/.test(k.textContent));
+          const nachbarn = plan ? [...plan.parentElement.querySelectorAll('.knopf')].filter(k => k !== plan) : [];
+          const planAbstand = plan && nachbarn.length
+            ? Math.min(...nachbarn.map(k => abstand(plan.getBoundingClientRect(), k.getBoundingClientRect())))
+            : null;
+          const chips = [...document.querySelectorAll('#bau-liste .bau-sprung .knopf')].map(k => k.getBoundingClientRect());
+          let chipAbstand = Infinity;
+          chips.forEach((a, i) => chips.forEach((o, j) => { if (i < j) chipAbstand = Math.min(chipAbstand, abstand(a, o)); }));
+          const liste = window._g.muss('#bau-liste').getBoundingClientRect();
+          const zusatz = document.querySelector('#bau-liste .bp-zusatz');
+          const raus = zusatz ? [...zusatz.querySelectorAll('input, select, .zeit-wahl')]
+            .filter(e => e.getClientRects().length && e.getBoundingClientRect().right > liste.right + 1)
+            .map(e => (e.className || e.tagName).toString().slice(0, 24)) : ['kein Zusatzpunkt'];
+          window.fbp.store.aendern(() => { s.bau.punkte = s.bau.punkte.filter(p => p.sollPunkt); }, 'bau');
+          await new Promise(f => requestAnimationFrame(f));
+          return { planAbstand, chipAbstand: Math.round(chipAbstand), raus };`);
+        const gut = m.planAbstand !== null && m.planAbstand >= 12 && m.chipAbstand >= 8 && !m.raus.length;
+        return { gut, kurz: gut ? '' : 'zu eng',
+                 text: `„✓ wie geplant“ ${m.planAbstand ?? '–'} px, Chips ${m.chipAbstand} px` +
+                       (m.raus.length ? `; ragt hinaus: ${m.raus.join(', ')}` : ', nichts ragt hinaus') };
+      });
+    /* Die Meldung nach „Bau beginnen“ lag im Audit unten über „Trupp“,
+       „Truppführer“ und „Baubeginn“ – den Feldern, die als Nächstes dran
+       sind. Gemessen wird am Kopf des Reiters, wo der Trupp danach steht, mit
+       dem längsten Wortlaut, den sie haben kann. */
+    await fall(fenster, 'Pille nach „Bau beginnen“ deckt kein Feld',
+      'Die Meldung nach „Bau beginnen“ liegt über keinem Feld und keinem Griff des Bau-Reiters',
+      async () => {
+        const m = await seite.auswerten(`
+          const liste = window._g.muss('#bau-liste');
+          let rolle = liste;
+          while (rolle && !(rolle.scrollHeight > rolle.clientHeight &&
+                 getComputedStyle(rolle).overflowY !== 'visible')) rolle = rolle.parentElement;
+          if (rolle) rolle.scrollTop = 0;
+          const ui = await import('./js/ui.js');
+          ui.hinweis('Bauauftrag übernommen. Solange Netz da ist: „Karte mitnehmen“. Kam der ' +
+            'Link im Messenger: ihn im eigenen Browser öffnen, solange Netz da ist.', 'info oben');
+          const box = window._g.muss('#hinweisbox');
+          await Promise.all(box.getAnimations().map(a => a.finished.catch(() => {})));
+          const r = box.getBoundingClientRect();
+          const gedeckt = [...liste.querySelectorAll('input, select, textarea, button')]
+            .filter(e => {
+              const q = e.getBoundingClientRect();
+              return q.width && q.height && q.bottom > r.top && q.top < r.bottom &&
+                q.right > r.left && q.left < r.right;
+            })
+            .map(e => (e.closest('label')?.querySelector('.feld-titel')?.textContent ||
+              e.textContent || e.tagName).trim().slice(0, 24));
+          return { gedeckt, oben: Math.round(r.top), unten: Math.round(r.bottom) };`);
+        return { gut: m.gedeckt.length === 0, kurz: m.gedeckt.length ? m.gedeckt.length + ' gedeckt' : '',
+                 text: `Pille ${m.oben}–${m.unten} px` +
+                       (m.gedeckt.length ? '; deckt ' + m.gedeckt.join(', ') : ', deckt nichts') };
+      });
+    await hinweisWeg();
 
     b.abschnitt(`Fenster ${fenster}: Baumodus mit Bauleiste`);
     await karteVorn();

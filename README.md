@@ -316,8 +316,13 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   Trupp, Truppführer, Baubeginn und Bauende; an jedem aufgenommenen Punkt steht dann, wer
   ihn gebaut hat
 - Die gebaute Trasse liegt auf der Karte neben der geplanten: durchgezogen und kräftig,
-  während die Planung zur feinen Punktreihe zurücktritt. Weicht ein Punkt um mehr als 25 m
-  ab, zieht eine Linie zum geplanten Ort
+  während die Planung zur Punktreihe zurücktritt. Weicht ein Punkt um mehr als 25 m
+  ab, zieht eine Linie zum geplanten Ort. Was zwischen zwei Bauabschnitten noch offen
+  ist, steht gestrichelt als Lücke da und zählt nicht zur gebauten Länge
+- **Punkt hier** schlägt einen offenen Planpunkt vor, wenn genau einer näher als 25 m
+  liegt; die Bauleiste nennt die Strecke, an der gebaut wird, und das Gerät merkt sie
+  sich über das Neuladen. Im Baumodus nimmt „↶“ nur Schritte des Baus zurück – was die
+  Planung betrifft, wird im Planungsmodus geändert
 - **Materialnachweis** nach festem Katalog – Kabel, Anschluss, Hochbau, Blitzschutz,
   Erdung, dazu freie Zeilen für das, was der Katalog nicht kennt. Gebucht wird auf den
   Bauabschnitt, der gerade aufnimmt, und über alle Abschnitte wird addiert. An der
@@ -344,8 +349,10 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   weiterhin den Auftrag
 - **Baunachweis zum Ausfüllen:** ein eigenes, abschaltbares Blatt im Bauauftrag mit
   denselben Feldern wie der Baumodus – Trupp, Punkte abhaken, Baumeldungen mit Uhrzeit,
-  Kabel und übriges Material, Abweichungen und Meldung an den S 6, Prüfung je Stamm und
-  Übergabe. Fällt das Telefon aus, wird dort mitgeschrieben und später nachgetragen;
+  der Materialkatalog vorgedruckt, Abweichungen und Meldung an den S 6, Prüfung je Stamm
+  mit „bestanden“ und „nicht bestanden“ und Übergabe; dazu Bauabschnitt, Bauende und der
+  Zeitpunkt, zu dem das Gerät ausfiel. Stehen mehrere Trupps im Auftrag, bekommt jeder
+  seinen Bogen. Fällt das Telefon aus, wird dort mitgeschrieben und später nachgetragen;
   Tag und Uhrzeit von Punkten und Meldungen lassen sich dabei vom Blatt übernehmen. Ein
   QR-Code auf dem Blatt öffnet den Auftrag im FMBauplaner, und jeder Blattkopf trägt die
   Plan-Kennung, die auch im Bau-Reiter steht
@@ -442,7 +449,8 @@ hat, behält nach der Aktualisierung die erweiterte Ansicht.
 **Strecke zeichnen:** „Neue Strecke zeichnen“ wählen, dann die Trasse Punkt für Punkt
 anklicken, mit Doppelklick oder `Enter` abschließen. Punkte lassen sich anschließend
 verschieben; die gestrichelten Griffe zwischen zwei Punkten fügen beim Ziehen einen
-Zwischenpunkt ein.
+Zwischenpunkt ein. Am Finger folgt eine Marke erst nach kurzem Halten – ein Wisch
+verschiebt die Karte, nicht den Punkt.
 
 **Baudokumentation drucken:** Im Baumodus ganz unten unter „Baumeldung an den
 Planer“ steht „▤ Baudokumentation (PDF)“. Sie gilt der oben gewählten Strecke –
@@ -453,7 +461,11 @@ von ihm: sie wird am Bauort ausgefüllt, der Bauauftrag geht an die Führung.
 Planer“ – als Link oder als Datei. Sie geht über alle Strecken, an denen dieser
 Trupp gearbeitet hat, nicht nur über die gerade gewählte. Der Planer öffnet sie
 wie einen geteilten Link oder über „Datei → Planung oder KML laden“ und bekommt
-die Vorschau.
+die Vorschau: die neuen Baumeldungen im Wortlaut, was sich am Stand ändert, und was
+dabei verloren ginge – dann steht „Verwerfen“ vorn. Beide Seiten zeigen einen
+vierstelligen Kurzcode der Meldung, der sich über Funk als Quittung zurückgeben lässt.
+Wer einen Bauauftrag ein zweites Mal öffnet, baut in der vorhandenen Aufnahme weiter
+statt in einer leeren Kopie.
 
 **Baudokumentation:** In der Kopfzeile auf „Baumodus“ schalten. Am Bauort geht es über
 die Karte: unten **Punkt hier** (Standort des Geräts) oder **Auf Karte** antippen, oder
@@ -463,11 +475,13 @@ Verteiler oder Sonstiges genügt, an der Querung noch einer auf die Bauweise. Im
 „Bau“ steht dasselbe als Liste: oben die Strecke wählen, an der gebaut wird; darunter
 jeder geplante Punkt mit seinen drei Griffen, ein Sprungstreifen führt zu Meldungen,
 Material und Übergabe. Weiter unten stehen Materialnachweis, Baumeldungen, die Meldung
-an den S 6 und die Übergabe, ganz am Ende die Karte zum Mitnehmen. Der Modus bleibt über das Neuladen erhalten – am Bauort bricht
+an den S 6 und die Übergabe, ganz am Ende „Vor dem Ausrücken“: die Karte zum Mitnehmen
+und der Bauauftrag mit dem Baunachweis zum Ausdrucken. Der Modus bleibt über das Neuladen erhalten – am Bauort bricht
 die Verbindung ab, und wer danach wieder in der Planung landete, sucht erst einmal.
 Welcher Bauabschnitt gerade aufnimmt, überlebt das Neuladen dagegen bewusst nicht:
 nach dem Neustart gelten Eintragungen wieder für die ganze Strecke, und der Bogen sagt
-das auch. Zurück geht es über denselben Knopf, der dann „Planung“ heißt.
+das auch – die Bauleiste nennt dann „kein Bauabschnitt gewählt“. Zurück geht es über
+denselben Knopf, der dann „Planung“ heißt; klein darunter steht, wohin er führt.
 
 **Einsatzabschnitte:** Im Reiter „Strecken“ über „+ Einsatzabschnitt“ einen anlegen.
 Die Zuteilung steht in jeder geöffneten Strecke, in jedem geöffneten taktischen Zeichen

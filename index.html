@@ -103,10 +103,16 @@
            sich ebenso gut als Zustandsanzeige. Dass gewechselt wird, sagt das
            Zeichen ⇄ daneben; dass es kein Zustandsknopf mehr ist, sagt das
            fehlende `aria-pressed` – Beschriftung und Druckzustand widersprachen
-           sich sonst, sobald die Beschriftung den Modus nennt. -->
+           sich sonst, sobald die Beschriftung den Modus nennt.
+           Wohin gewechselt wird, steht klein darunter („⇄ zum Bau“). Das
+           Zeichen allein las ein Erstnutzer im Review als „Planung tauschen“
+           und landete ohne Ahnung im Baumodus. Darunter und nicht daneben:
+           die Kopfzeile hat bei 320 px keine Breite übrig, wohl aber Höhe im
+           44-px-Griff. Der Modus bleibt das große Wort. -->
       <button class="knopf modus-schalter" id="btn-modus"
               title="Zum Baumodus wechseln"><span class="modus-name">Planung</span><span
-              class="modus-pfeil" aria-hidden="true">⇄</span></button>
+              class="modus-ziel" aria-hidden="true"><span class="modus-pfeil">⇄</span>
+              <span class="modus-wohin">zum Bau</span></span></button>
       <button class="knopf" id="btn-hilfe" title="Kurzanleitung" aria-label="Kurzanleitung">?</button>
       <button class="knopf" id="btn-undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">↶</button>
       <button class="knopf" id="btn-redo" title="Wiederholen (Strg+Umschalt+Z)" aria-label="Wiederholen">↷</button>
@@ -322,6 +328,9 @@
              sie danach im Kopf. -->
         <button class="wz nur-bau primaer" id="wz-punkt-hier" title="Gebauten Punkt aus dem Standort des Geräts aufnehmen"><span class="wz-icon">◉</span><span>Punkt hier</span></button>
         <button class="wz nur-bau" id="wz-punkt-karte" title="Gebauten Punkt auf der Karte antippen"><span class="wz-icon">✛</span><span>Auf Karte</span></button>
+        <!-- An welcher Strecke die beiden Griffe aufnehmen, VOR dem Tipp:
+             nach dem Neuladen galt sonst unsichtbar die zuletzt gebaute. -->
+        <span class="bau-ziel" id="bau-ziel" aria-live="polite" hidden></span>
         <!-- „Ort suchen“ und nicht „Koordinate“: der Dialog nimmt beides, aber
              wer einen Ortsnamen hat, sucht nach einer Lupe und nicht nach dem
              Wort Koordinate – im Audit fand ein Erstnutzer die Ortssuche nicht. -->
@@ -331,6 +340,13 @@
 
       <div class="zeichen-hinweis" id="zeichen-hinweis" hidden>
         <span class="zh-text"></span>
+        <!-- Im Übersichtsmaßstab holt ein Tipp nur heran, und Fertig und
+             Zurück haben noch nichts zu tun. An ihrer Stelle stehen dann die
+             zwei Wege, die Baustelle zu finden, ohne zu raten, wo der Finger
+             landet: die Werkzeugleiste mit Suche und Standort weicht schmal
+             dieser Leiste (`modusAnzeigen` in app.js). -->
+        <button class="knopf klein" data-akt="suche" hidden>Ort suchen</button>
+        <button class="knopf klein" data-akt="standort" hidden>Mein Standort</button>
         <button class="knopf klein" data-akt="zurueck">Letzten Punkt zurück</button>
         <button class="knopf klein primaer" data-akt="fertig">Fertig<i class="zh-taste">Enter</i></button>
         <!-- Beschriftung und Kürzel setzt `modusAnzeigen` in app.js: der Griff
@@ -351,7 +367,7 @@
            Zeichengröße sind Fragen der Planung, und am Bauort deckt die offene
            Tafel sonst die halbe Karte. -->
       <div class="kartenoptionen" id="kartenoptionen">
-        <button type="button" class="ko-kopf" id="ko-kopf" aria-expanded="true">
+        <button type="button" class="ko-kopf" id="ko-kopf" aria-expanded="true" aria-label="Kartenoptionen">
           <span>Kartenoptionen</span><span class="ko-pfeil" aria-hidden="true">▾</span>
         </button>
         <div class="ko-koerper">

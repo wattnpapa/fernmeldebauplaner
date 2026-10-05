@@ -108,9 +108,11 @@ export async function kachelHolen(url) {
 }
 
 async function kachelAblegen(url, blob, karte) {
+  /* Erst nach dem Schreiben als geändert melden: eine Abdeckung, die
+     dazwischen gezählt wird, sähe die Kachel noch nicht und bliebe so gemerkt. */
   return imLager('readwrite', lager => {
     lager.put({ url, blob, karte, zeit: Date.now(), groesse: blob.size });
-  });
+  }).finally(vorratGeaendert);
 }
 
 /** Was im Vorrat liegt: Anzahl und belegter Platz in Bytes */
@@ -136,7 +138,82 @@ export async function bestand() {
 
 /** Den ganzen Vorrat wegräumen */
 export async function leeren() {
-  return imLager('readwrite', lager => { lager.clear(); });
+  return imLager('readwrite', lager => { lager.clear(); }).finally(vorratGeaendert);
+}
+
+// ---------------------------------------------------------------- Abdeckung
+
+/* Ob die Karte einer Strecke dabei ist, sagt nicht die Zahl der Kacheln im
+   Gerät. Im Audit stand „Karte dabei ✓“, weil eine einzige Kachel weit
+   abseits lag oder ein abgebrochener Lauf 10 von 300 geholt hatte – und am
+   Bauort war die Karte grau. Gefragt wird deshalb mit derselben Kachelliste,
+   die „Karte holen“ abarbeitet: liegt jede davon im Gerät?
+
+   Eine Abfrage je Kachel wären bei jedem Neuaufbau des Bau-Reiters einige
+   hundert Vorgänge. Gelesen werden stattdessen einmal alle Schlüssel, und
+   zwar nur, wenn sich der Vorrat seitdem geändert haben kann; das Ergebnis je
+   Strecke und Karte bleibt stehen, bis Vorrat, Trasse oder Kartenwahl sich
+   ändern – das sind die Eingaben dieser Rechnung, und jede steht in ihrem
+   Schlüssel. */
+let vorratStand = 0;
+let adressenLauf = null;
+const abdeckungen = new Map();
+
+function vorratGeaendert() {
+  vorratStand++;
+  adressenLauf = null;
+  abdeckungen.clear();
+}
+
+/* Ein zweites Fenster der Anwendung kann den Vorrat gefüllt oder geleert
+   haben, ohne dass dieses es merkt – IndexedDB meldet fremde Schreibvorgänge
+   nicht. Wer zurück ins Fenster kommt, bekommt deshalb frisch gezählt. */
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') vorratGeaendert();
+  });
+}
+
+function alleAdressen() {
+  if (adressenLauf) return adressenLauf;
+  const stand = vorratStand;
+  const lauf = imLager('readonly', (lager, setze) => {
+    const a = lager.getAllKeys();
+    a.onsuccess = () => setze(new Set(a.result));
+  });
+  adressenLauf = lauf;
+  /* Ändert sich der Vorrat, während gelesen wird, gilt die Antwort nur für
+     diesen einen Aufruf und wird nicht für den nächsten gemerkt. */
+  lauf.then(() => { if (stand !== vorratStand && adressenLauf === lauf) adressenLauf = null; },
+            () => { if (adressenLauf === lauf) adressenLauf = null; });
+  return lauf;
+}
+
+/**
+ * Wie viel der Kachelliste einer Trasse im Gerät liegt.
+ *
+ * `linien` wie bei `vorladen()`. Gezählt wird gegen genau die Liste, die
+ * „Karte holen“ mit denselben Angaben holen würde, Deckel eingeschlossen –
+ * eine Karte, deren feine Stufen der Deckel abgeschnitten hat, ist nicht
+ * vollständig, und das soll die Anzeige nicht verschweigen.
+ *
+ * @returns {Promise<{gesamt:number, da:number}>} – ohne Kachelspeicher `da` 0
+ */
+export async function abdeckung(vorlage, linien, o = {}) {
+  const liste = kachellisteLinien(linien, o).slice(0, o.hoechstens || HOECHSTENS);
+  if (!liste.length) return { gesamt: 0, da: 0 };
+  const schluessel = JSON.stringify([vorlage, o.zoomVon, o.zoomBis, o.puffer, o.hoechstens,
+    linienVon(linien).map(l => l.map(p => [p.lat, p.lng]))]);
+  const gemerkt = abdeckungen.get(schluessel);
+  if (gemerkt && gemerkt.stand === vorratStand) return gemerkt.wert;
+  const stand = vorratStand;
+  let adressen;
+  try { adressen = await alleAdressen(); } catch (e) { return { gesamt: liste.length, da: 0 }; }
+  let da = 0;
+  for (const kachel of liste) if (adressen.has(kacheladresse(vorlage, kachel))) da++;
+  const wert = { gesamt: liste.length, da };
+  if (stand === vorratStand) abdeckungen.set(schluessel, { stand, wert });
+  return wert;
 }
 
 // ---------------------------------------------------------------- Kachelrechnung
@@ -190,6 +267,33 @@ export function kachelliste(punkte, { zoomVon = ZOOM_VON, zoomBis = ZOOM_BIS, pu
   return liste;
 }
 
+/* Eine Punktfolge oder mehrere. Mehrere Linien – Plan und Ist einer Strecke,
+   oder alle Strecken einer Planung – wurden früher zu einem einzigen Zug
+   aneinandergehängt, und der Korridor lief dann auch über den Sprung vom
+   Ende der einen zur nächsten: Kacheln, die keine Trasse berührt. Für die
+   Abdeckung wäre das schlimmer als teuer: die Liste der Planung hinge davon
+   ab, ob schon Ist-Punkte da sind, und eine vollständig mitgenommene Karte
+   hieße nach dem ersten Punkt am Bauort „unvollständig“. Jede Linie für sich
+   gerechnet gibt für die Planung immer dieselbe Liste. */
+const linienVon = x => (x && x.length && Array.isArray(x[0]) ? x : [x || []]).filter(l => l.length);
+
+/** Die Kacheln mehrerer Linien, ohne Doppel, von grob nach fein */
+export function kachellisteLinien(linien, o = {}) {
+  const gesehen = new Set();
+  const liste = [];
+  for (const linie of linienVon(linien)) {
+    for (const k of kachelliste(linie, o)) {
+      const schluessel = `${k.z}/${k.x}/${k.y}`;
+      if (gesehen.has(schluessel)) continue;
+      gesehen.add(schluessel);
+      liste.push(k);
+    }
+  }
+  /* Nach Zoom geordnet, BEVOR gedeckelt wird: der Deckel soll die feinsten
+     Stufen kappen und nicht die Übersicht der letzten Linie. */
+  return liste.sort((a, b) => a.z - b.z);
+}
+
 /** Stützpunkte längs des Linienzuges, höchstens `schritt` Meter auseinander */
 function* abtasten(punkte, schritt) {
   if (punkte.length === 1) { yield punkte[0]; return; }
@@ -223,6 +327,8 @@ export function kacheladresse(vorlage, { z, x, y }) {
 /**
  * Den Kachelvorrat für eine Trasse anlegen.
  *
+ * `linien` ist eine Punktfolge oder eine Liste davon (`kachellisteLinien`).
+ *
  * `beiFortschritt(fertig, gesamt, stand)` wird nach jeder Kachel gerufen;
  * `stand` trägt `geholt`, `vorhanden` und `fehler`. Ohne diese Zahlen wüsste
  * die Anzeige nur, wie viele Abrufe durch sind – und ein Lauf ohne Netz lief
@@ -233,8 +339,8 @@ export function kacheladresse(vorlage, { z, x, y }) {
  * Kacheln, die schon im Vorrat liegen, werden nicht noch einmal geholt. Wer
  * denselben Ausschnitt zweimal mitnimmt, kostet den Anbieter nichts.
  */
-export function vorladen(vorlage, kartenId, punkte, o = {}) {
-  const alle = kachelliste(punkte, o);
+export function vorladen(vorlage, kartenId, linien, o = {}) {
+  const alle = kachellisteLinien(linien, o);
   const gedeckelt = alle.slice(0, o.hoechstens || HOECHSTENS);
   const beiFortschritt = o.beiFortschritt || (() => {});
   const abbruch = new AbortController();
@@ -314,8 +420,8 @@ export function vorladen(vorlage, kartenId, punkte, o = {}) {
 }
 
 /** Grober Umfang eines Vorrats, bevor er geholt wird */
-export function umfang(punkte, o = {}) {
-  const alle = kachelliste(punkte, o);
+export function umfang(linien, o = {}) {
+  const alle = kachellisteLinien(linien, o);
   const anzahl = Math.min(alle.length, o.hoechstens || HOECHSTENS);
   /* Mit dem Mittelwert aus dem Kopf dieser Datei. Die Zahl ist eine Schätzung
      und wird als solche angezeigt. */

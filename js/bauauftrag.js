@@ -21,7 +21,8 @@ import {
   bauBegonnen, baukennzahlen, istPunkte, bauabschnitte, bauabschnittById, sollZuIst,
   punktartText, istKurz,
   materialzeilen, materialSumme, materialSoll, meldungenNachZeit, pruefzeilen,
-  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE, bilderAnStrecke, BILD_KORRIDOR, truppAmGeraet
+  quelleText, uhrzeit, ABWEICHUNG_SCHWELLE, bilderAnStrecke, BILD_KORRIDOR, truppAmGeraet,
+  auftragsTrupps, baumeldungen
 } from './baudoku.js';
 import { bildUrl } from './bildspeicher.js';
 import { MATERIALKATALOG, MATERIALGRUPPEN, pruefartById, dtg, PRUEFART_JE_KABEL } from './vorschrift.js';
@@ -1244,7 +1245,7 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
     (opt.kopf
       ? blattkopfHTML(p, {
           titel: auftragTitel(blattauftrag), unter: umfangText(blattauftrag),
-          doktyp: doktyp(blattauftrag)
+          doktyp: doktyp(blattauftrag), lagestand: new Date()
         })
       : '') +
     (opt.stammdaten ? sammelStammHTML(p, blattauftrag, opt) : '') +
@@ -1714,8 +1715,17 @@ function blattfluss(ziel, opt, kopf, fuss) {
     return el;
   };
 
+  /* Ein neues Blatt mit anderem Kopf – für einen Teil, der abgetrennt wird
+     und sich dann selbst ausweisen muss. Ein noch leeres Blatt wird dabei
+     ersetzt und nicht stehen gelassen. */
+  const kopfWechseln = neuerKopf => {
+    kopf = neuerKopf;
+    if (!inhalt.children.length) inhalt.parentElement.remove();
+    neuBlatt();
+  };
+
   neuBlatt();
-  return { setze, neuBlatt, passt, anhaengen: el => (inhalt.appendChild(el), el),
+  return { setze, neuBlatt, kopfWechseln, passt, anhaengen: el => (inhalt.appendChild(el), el),
            leer: () => !inhalt.children.length };
 }
 
@@ -1807,16 +1817,31 @@ function datenblaetter(ziel, p, strecke, k, opt) {
      abtrennen hieß dann, der Führung ihr Unterschriftsfeld mitzunehmen. Bei
      der Funkstrecke nicht – dort gibt es keine Trasse abzuhaken, und die
      Prüfanweisung ist ihr Nachweis. */
+  /* Der Kopf der Nachweisblätter nennt den Baunachweis und nicht den
+     Bauauftrag: abgetrennt auf dem Klemmbrett trugen die Folgeblätter im
+     Audit „Bauauftrag Fernmeldebau“, und wer sie zurück in den Stapel legte,
+     sortierte sie zum Auftrag.
+
+     Bauen mehrere Trupps an der Strecke („Auftrag an“ mit Komma), bekommt
+     jeder einen eigenen Bogen mit seinem Namen. Ein gemeinsamer Bogen mit
+     einem Kopfblock je Trupp wäre kürzer – aber beim abschnittsweisen Bau
+     stehen die Trupps zur selben Zeit an den beiden Enden der Trasse, und ein
+     Blatt kann nur an einem davon sein. Der zweite Trupp schriebe dann
+     abends aus dem Gedächtnis nach. Die Punktliste steht auf jedem Bogen
+     ganz: wo sich die Trupps treffen, entscheidet sich erst am Bauort. */
   if (opt.baunachweis && !k.kabel.funk && strecke.punkte.length) {
-    if (!fluss.leer()) fluss.neuBlatt();
-    const kopfEl = elementAus(baunachweisKopfHTML());
-    fluss.setze(kopfEl);
-    qrFuellen(kopfEl.querySelector('.bl-qr'), strecke.id);
-    tabelleFliessen(fluss, baunachweisRahmenHTML, baunachweisZeilenHTML(strecke));
-    fluss.setze(elementAus(baunachweisMeldungenHTML(k)));
-    fluss.setze(elementAus(baunachweisMaterialHTML()));
-    fluss.setze(elementAus(baunachweisAbweichungHTML()));
-    fluss.setze(elementAus(baunachweisPruefungHTML(strecke)));
+    const trupps = auftragsTrupps(strecke);
+    for (const trupp of trupps.length > 1 ? trupps : [null]) {
+      fluss.kopfWechseln(baunachweisBlattkopfHTML(p, strecke, trupp));
+      const kopfEl = elementAus(baunachweisKopfHTML(trupp));
+      fluss.setze(kopfEl);
+      qrFuellen(kopfEl.querySelector('.bl-qr'), strecke.id);
+      tabelleFliessen(fluss, baunachweisRahmenHTML, baunachweisZeilenHTML(strecke));
+      fluss.setze(elementAus(baunachweisMeldungenHTML(k, opt)));
+      fluss.setze(elementAus(baunachweisMaterialHTML(strecke, opt)));
+      fluss.setze(elementAus(baunachweisAbweichungHTML()));
+      fluss.setze(elementAus(baunachweisPruefungHTML(strecke)));
+    }
   }
 }
 
@@ -1864,7 +1889,12 @@ function kopfHTML(p, angaben) {
   return einstufungHTML(p) + blattkopfHTML(p, angaben);
 }
 
-function blattkopfHTML(p, { titel, unter = '', doktyp: typ, strecken = null }) {
+/* `lagestand` setzt unter das Datum eine Datum-Zeit-Gruppe – nur die
+   Lagekarte trägt eine: sie gilt für einen Zeitpunkt und nicht für einen Tag.
+   Im Audit stand die Uhrzeit nur klein in der Fußzeile, und zwei Lagekarten
+   desselben Tages waren an der Wand nicht auseinanderzuhalten. Geschrieben
+   wie in der Baudokumentation (`dtg()`), so wird sie auch durchgegeben. */
+function blattkopfHTML(p, { titel, unter = '', doktyp: typ, strecken = null, lagestand = null }) {
   const k = p.kopf;
   const kennung = planKennung(strecken || p.strecken);
   return `<header class="bl-kopf">
@@ -1876,6 +1906,7 @@ function blattkopfHTML(p, { titel, unter = '', doktyp: typ, strecken = null }) {
     <table class="bl-kennung">
       <tr><th>Auftrag-Nr.</th><td>${escapeHtml(k.auftragNr || '–')}</td></tr>
       <tr><th>Datum</th><td>${datumDE(k.datum)}</td></tr>
+      ${lagestand ? `<tr><th>Lagestand</th><td class="mono bl-lagestand">${dtg(lagestand)}</td></tr>` : ''}
       <tr><th>Stand</th><td class="mono">${k.stand ? escapeHtml(k.stand) + ' · ' : ''}Plan ${escapeHtml(kennung)}</td></tr>
       <tr><th>Blatt</th><td class="bl-blattnr">–</td></tr>
     </table>
@@ -2709,18 +2740,57 @@ function regelnHTML(k) {
    reserviert, damit der Blattumbruch nicht davon abhängt, wann der Code
    fertig ist. Übertragen wird dabei nichts: der Link entsteht hier und steht
    nur auf dem Papier. */
-function baunachweisKopfHTML() {
+function baunachweisKopfHTML(trupp = null) {
+  const leer = '<td class="ausfuellen"></td>';
   return `<section class="bl-abschnitt bl-baunachweis bl-nachweis-kopf">
-    <table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
-      <thead><tr><th>Trupp</th><th>Truppführer</th><th>Datum</th><th>Bau begonnen (Uhrzeit)</th></tr></thead>
-      <tbody><tr>${'<td class="ausfuellen"></td>'.repeat(4)}</tr></tbody>
-    </table>
+    <div class="bl-nachweis-felder">
+      <table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
+        <thead><tr><th>Trupp</th><th>Truppführer</th><th>Datum</th><th>Bau begonnen (Uhrzeit)</th></tr></thead>
+        <tbody><tr>${trupp ? `<td class="ausfuellen vorgedruckt">${escapeHtml(trupp)}</td>` : leer}${leer.repeat(3)}</tr></tbody>
+      </table>
+      ${baunachweisAbschnittHTML()}
+    </div>
     <figure class="bl-qr-rahmen">
       <div class="bl-qr" aria-hidden="true"></div>
       <figcaption>Scannen öffnet diesen Auftrag im FMBauplaner – dort „Bau beginnen“ und
         vor der Abfahrt „Karte mitnehmen“.</figcaption>
     </figure>
   </section>`;
+}
+
+/* Was der Baumodus am Bauabschnitt führt – von Punkt bis Punkt, Beginn und
+   Ende –, steht auch hier: der Bogen kannte im Audit weder Abschnitt noch
+   Bauende, und beim Nachtragen blieben genau die Felder leer, an denen das
+   Einspielen mehrerer Trupps hängt.
+
+   Dazu die Zeile für den Fall, für den es dieses Blatt überhaupt gibt: das
+   Gerät fällt mitten im Bau aus. Ohne sie ist später nicht zu sagen, was vor
+   dem Ausfall im Gerät steht und was ab da nur auf dem Papier – und beim
+   Nachtragen wird beides doppelt oder gar nicht übernommen. */
+function baunachweisAbschnittHTML() {
+  const leer = '<td class="ausfuellen"></td>';
+  return `<table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
+      <thead><tr><th>Bauabschnitt von Punkt</th><th>bis Punkt</th><th>Bau beendet (Uhrzeit)</th></tr></thead>
+      <tbody><tr>${leer.repeat(3)}</tr></tbody>
+    </table>
+    <table class="tab-punkte tab-ausfuellen tab-nachweis-kopf tab-nachweis-ausfall">
+      <thead><tr><th>Gerät ausgefallen um (Uhrzeit)</th><th>nach Punkt</th></tr></thead>
+      <tbody><tr>${leer.repeat(2)}</tr></tbody>
+    </table>
+    <p class="tab-fussnote">Ab dem Ausfall gilt dieses Blatt; was davor aufgenommen wurde, steht
+      im Gerät und wird nicht noch einmal nachgetragen.</p>`;
+}
+
+/* Der Blattkopf des Baunachweises. Bei mehreren Trupps steht der Name im
+   Untertitel – auf jedem Blatt des Bogens, nicht nur auf dem ersten. */
+function baunachweisBlattkopfHTML(p, s, trupp) {
+  const strecke = (s.von || s.nach) ? `${s.von || '?'} → ${s.nach || '?'}` : '';
+  return kopfHTML(p, {
+    strecken: [s],
+    titel: s.name,
+    unter: [strecke, trupp].filter(Boolean).join(' · '),
+    doktyp: 'Baunachweis Fernmeldebau'
+  });
 }
 
 /* Bis zu dieser Länge wird der Link zum Code. Darüber wird das Raster so
@@ -2758,14 +2828,70 @@ async function qrFuellen(ziel, sid) {
   }
 }
 
-function baunachweisMaterialHTML() {
-  const zeile = '<tr><td class="ausfuellen"></td><td class="ausfuellen"></td><td class="ausfuellen"></td></tr>';
+/* Der Katalog des Bau-Reiters steht vorgedruckt, in derselben Reihenfolge und
+   Gruppierung, mit Einheit und leerem Mengenfeld. Im Audit waren es fünf freie
+   Zeilen, und beim Nachtragen musste jemand „3 Haken, 1 Ring“ den 25
+   Katalogzeilen zuordnen – mit der Frage, ob „Haken“ der für FKb oder für
+   FFKb war. Eine Mengenspalte, nicht drei: die Spalten des Papierbogens für
+   drei Baustrecken entfallen (BAUDOKU.md, Festlegungen) – dieser Bogen gehört
+   zu genau einer Strecke.
+
+   Die Kabelart dieser Strecke fehlt hier: sie steht mit Bedarf darüber unter
+   „Kabelverbrauch“, und zweimal dasselbe Feld wird zweimal verschieden
+   ausgefüllt. Die übrigen Kabelarten bleiben – ein Anschlusskabel am Ende einer
+   Feldfernkabelstrecke ist Alltag.
+
+   Mehrspaltig als Raster aus Tabellen, nicht als Spaltensatz: `columns`
+   kommt aus dem Firefox-Druck nicht verlässlich heraus (siehe `.rg-liste`). Die
+   Gruppen werden so auf die Spalten verteilt, dass sie gleich lang werden;
+   eine Gruppe bricht nicht über die Spalte. Eine Fundstelle steht nicht dabei –
+   der Katalog hat keine (siehe `vorschrift.js`). */
+function baunachweisMaterialHTML(s, opt) {
+  const eigenesKabel = kabelById(s.kabeltyp).id;
+  const gruppen = MATERIALGRUPPEN
+    .map(g => ({
+      name: g.name,
+      zeilen: MATERIALKATALOG.filter(m => m.gruppe === g.id && !m.mehrfach && m.kabel !== eigenesKabel)
+        .map(m => `<tr><td>${escapeHtml(m.name)}</td><td class="ausfuellen"></td>` +
+          `<td class="einheit">${escapeHtml(m.einheit)}</td></tr>`)
+    }))
+    .filter(g => g.zeilen.length);
+  /* „Sonstiges“ wie im Reiter am Ende: frei, mit Bezeichnung. Drei Zeilen –
+     wer mehr braucht, hat den Katalog nicht gelesen oder etwas zu melden. */
+  gruppen.push({
+    name: 'Sonstiges (Bezeichnung)',
+    zeilen: Array.from({ length: 3 }, () =>
+      '<tr><td class="ausfuellen"></td><td class="ausfuellen"></td><td class="einheit"></td></tr>')
+  });
+  /* Im Querformat vier Spalten: zweispaltig war der Katalog dort zu hoch, um
+     mit den Baumeldungen auf ein Blatt zu passen, und der Bogen stand auf
+     vier Blättern, zwei davon halb leer (gemessen: 165 mm Satzspiegel auf
+     A4 quer). */
+  const anzahl = opt.ausrichtung === 'quer' ? 4 : 2;
+  const laenge = g => g.zeilen.length + 1;
+  const ziel = gruppen.reduce((n, g) => n + laenge(g), 0) / anzahl;
+  const spalten = [[]];
+  let hoehe = 0;
+  for (const g of gruppen) {
+    /* Eine neue Spalte, sobald die Gruppe mehr als zur Hälfte über das Ziel
+       hinausragte – so werden die Spalten gleich lang, ohne eine Gruppe zu
+       teilen. */
+    if (spalten.length < anzahl && hoehe && hoehe + laenge(g) / 2 > ziel * spalten.length) {
+      spalten.push([]);
+    }
+    spalten[spalten.length - 1].push(g);
+    hoehe += laenge(g);
+  }
+  const spalte = teil => `<table class="tab-punkte tab-ausfuellen tab-nachweis-katalog">
+      <thead><tr><th>Material</th><th>Menge</th><th></th></tr></thead>
+      <tbody>${teil.map(g => `<tr class="gruppenzeile"><td colspan="3">${escapeHtml(g.name)}</td></tr>` +
+        g.zeilen.join('')).join('')}</tbody>
+    </table>`;
   return `<section class="bl-abschnitt bl-baunachweis">
     <h2>Übriges Material</h2>
-    <table class="tab-punkte tab-ausfuellen tab-nachweis-material">
-      <thead><tr><th>Material (Muffe, Bauhaken, Ankerpfahl, Erdung …)</th><th>Menge</th><th>Bemerkung</th></tr></thead>
-      <tbody>${zeile.repeat(5)}</tbody>
-    </table>
+    <div class="bl-katalog" style="--spalten: ${spalten.length}">${spalten.map(spalte).join('')}</div>
+    <p class="tab-fussnote">Nur ausfüllen, was verbaut wurde. Im Baumodus unter
+      „Materialnachweis“ in derselben Reihenfolge übernehmen.</p>
   </section>`;
 }
 
@@ -2788,23 +2914,27 @@ function baunachweisPruefungHTML(s) {
      Wo die Bezeichnung nichts sagt, bleiben es vier. */
   const paare = /(\d+)×2/.exec(kabelById(s.kabeltyp).name);
   const staemme = paare ? Math.min(Number(paare[1]), 10) : 4;
+  /* Zwei Kästchen, nicht eines: der Baumodus kennt bestanden, nicht bestanden
+     und offen, und ein leeres einzelnes Kästchen hieß auf dem Papier beides –
+     durchgefallen oder nicht geprüft. Leer lassen heißt jetzt „offen“. */
+  const kasten = '<td class="ankreuzen"><span class="kasten" aria-hidden="true"></span></td>';
   const zeile = n => `<tr><td>Stamm ${n}</td><td>${escapeHtml(art.name)}</td>
-      <td class="ausfuellen"></td>
-      <td class="ankreuzen"><span class="kasten" aria-hidden="true"></span></td>
+      <td class="ausfuellen"></td>${kasten}${kasten}
       <td class="ausfuellen"></td><td class="ausfuellen"></td></tr>`;
   return `<section class="bl-abschnitt bl-baunachweis">
     <h2>Prüfung und Übergabe</h2>
     <table class="tab-punkte tab-ausfuellen tab-nachweis-pruefung">
       <thead><tr><th>Stamm</th><th>Art</th><th>Messwert / Ergebnis</th><th>bestanden</th>
-        <th>Uhrzeit</th><th>Prüfer</th></tr></thead>
+        <th>nicht bestanden</th><th>Uhrzeit</th><th>Prüfer</th></tr></thead>
       <tbody>${Array.from({ length: staemme }, (_, i) => zeile(i + 1)).join('')}</tbody>
     </table>
     <table class="tab-punkte tab-ausfuellen tab-nachweis-kopf">
       <thead><tr><th>Übergeben an</th><th>Datum / Uhrzeit</th><th>Name, Unterschrift</th></tr></thead>
       <tbody><tr>${'<td class="ausfuellen"></td>'.repeat(3)}</tr></tbody>
     </table>
-    <p class="tab-fussnote">${escapeHtml(art.name)} nach ${escapeHtml(fundstelleText(art))}. Im
-      Baumodus unter „Übergabe“ in derselben Reihenfolge übernehmen.</p>
+    <p class="tab-fussnote">${escapeHtml(art.name)} nach ${escapeHtml(fundstelleText(art))}. Ohne
+      Kreuz gilt der Stamm als nicht geprüft. Im Baumodus unter „Übergabe“ in derselben
+      Reihenfolge übernehmen.</p>
   </section>`;
 }
 
@@ -2841,14 +2971,19 @@ function baunachweisZeilenHTML(s) {
   return zeilen.join('');
 }
 
-function baunachweisMeldungenHTML(k) {
+function baunachweisMeldungenHTML(k, opt) {
   const regel = BAUREGELN.find(r => /^Baumeldung/.test(r.text));
+  /* Quer sechs Zeilen statt acht – sonst passt der Materialkatalog nicht mehr
+     mit auf das Blatt, und ein ganzes Blatt mehr kostet mehr Platz, als zwei
+     Zeilen bringen. Sechs Meldungen sind drei Stunden Bau im
+     Halbstundentakt. */
+  const zeilen = opt.ausrichtung === 'quer' ? 6 : 8;
   const zeile = '<tr><td class="ausfuellen"></td><td class="ausfuellen"></td><td class="ausfuellen"></td></tr>';
   return `<section class="bl-abschnitt bl-baunachweis">
     <h2>Baumeldungen und Kabelverbrauch</h2>
     <table class="tab-punkte tab-ausfuellen">
       <thead><tr><th>Uhrzeit</th><th>Stand (Kabellänge, Punkt)</th><th>gemeldet an</th></tr></thead>
-      <tbody>${zeile.repeat(8)}</tbody>
+      <tbody>${zeile.repeat(zeilen)}</tbody>
     </table>
     <table class="tab-punkte tab-ausfuellen">
       <thead><tr><th>Kabel</th><th>Bedarf laut Planung</th><th>verbraucht</th><th>Trommeln verbaut</th></tr></thead>
@@ -3112,11 +3247,6 @@ function baudokuKopfHTML(p, s) {
   });
 }
 
-/* Kopfangaben des Trupps. Trupp, Truppführer, Baubeginn und Bauende hängen am
-   BAUABSCHNITT und nicht an der Strecke – baut nur einer, steht seine Angabe
-   hier oben; bauen mehrere aufeinander zu, steht hier „mehrere“ und die
-   Aufstellung folgt weiter unten. Eine Zusammenfassung wäre an dieser Stelle
-   eine Behauptung: „1. und 2. FmTr“ sagt nicht, wer welchen Teil gebaut hat. */
 /* Eine Zeit auf dem Blatt: mit Tag, sobald er nicht der des Blattkopfs ist.
    Die Baudokumentation druckte nur „23:50“, auch für einen Punkt vom Vortag –
    nach Mitternacht oder bei einem Bau über zwei Tage stimmte dann die
@@ -3132,35 +3262,85 @@ function zeitDruck(iso) {
     : `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${uhrzeit(iso)}`;
 }
 
+/* Kopfangaben des Trupps. Trupp, Truppführer, Baubeginn und Bauende hängen am
+   BAUABSCHNITT und nicht an der Strecke – baut nur einer, steht seine Angabe
+   hier oben; bauen mehrere aufeinander zu, stehen hier alle Trupps und die
+   äußeren Zeiten, die Aufstellung je Abschnitt folgt weiter unten. Im Audit
+   stand in jedem der vier Felder „2 Abschnitte“, auch wo nichts dahinter war –
+   eine Angabe, die keine ist.
+
+   Fehlt am Abschnitt eine Angabe, wird zurückgegriffen, und zwar sichtbar:
+   der Trupp auf „Wer baut?“, den Absender der letzten Meldung und den
+   Auftrag, die Zeiten auf den frühesten und spätesten Eintrag vom Bauort.
+   Eine abgeleitete Zeit trägt den Zusatz „(aus Aufnahmen)“ – sie ist die Zeit
+   des ersten aufgenommenen Punktes und nicht der Beginn der Arbeit, und wer
+   die Dokumentation prüft, muss das eine vom anderen trennen können. Ist die
+   Strecke noch nicht gebaut, heißt der späteste Eintrag „letzter Eintrag“ und
+   nicht Bauende.
+
+   Ganz ohne Angabe bleibt das Feld bei einer Strecke ohne Abschnitt LEER und
+   nicht „–“: ein leeres Feld auf einem Vordruck sagt „hier gehört etwas hin“,
+   und der Truppführer trägt es am Bauplatz mit der Hand nach. Bei mehreren
+   Abschnitten steht dagegen „–“ – dort sammelt das Feld nur, was die Tabelle
+   darunter je Abschnitt führt. */
 function baudokuStammHTML(p, s, k) {
   const abs = bauabschnitte(s);
   const eins = abs.length === 1 ? abs[0] : null;
-  const mehrere = abs.length > 1 ? `${abs.length} Abschnitte` : '';
-  /* Ohne Bauabschnitt weiß das Gerät weder Trupp noch Zeiten – dann bleibt das
-     Feld LEER und nicht „–“. Ein Strich sagt „hier steht nichts“, ein leeres
-     Feld auf einem Vordruck sagt „hier gehört etwas hin“, und genau das ist der
-     Fall: der Truppführer trägt es am Bauplatz mit der Hand nach.
-
-     Es sei denn, „Wer baut?“ wurde beantwortet: auf dem Gerät des Trupps steht
-     es dort, beim Planer als Absender der letzten Meldung. Im Audit war beides
-     bekannt und das Blatt trotzdem leer. */
+  const leer = abs.length > 1 ? '–' : '\u00a0';
   const geraet = truppAmGeraet();
-  const offen = abs.length ? null : '\u00a0';
-  const truppOhne = geraet.trupp || (s.bau && s.bau.gemeldetVon) || offen;
-  const fuehrerOhne = geraet.fuehrer || offen;
+  const auftrag = (s.trupp || '').trim();
+  const rueckfall = geraet.trupp || (s.bau && s.bau.gemeldetVon) || auftrag;
+
+  const einmal = liste => [...new Set(liste.map(x => (x || '').trim()).filter(Boolean))];
+  const trupp = abs.length > 1
+    ? einmal(abs.map(a => a.trupp || a.name)).join(', ')
+    : (eins && eins.trupp) || rueckfall;
+  const fuehrer = abs.length > 1
+    ? einmal(abs.map(a => a.fuehrer)).join(', ')
+    : (eins && eins.fuehrer) || geraet.fuehrer;
+
+  /* Erklärte Zeiten gehen vor; nur wo keine steht, zählen die Einträge. Bei
+     mehreren Abschnitten endet der Bau erst mit dem letzten – fehlt einem
+     das Ende, steht keins da. */
+  const zeiten = nachZeit(abs.map(a => a.beginn));
+  const enden = nachZeit(abs.map(a => a.ende));
+  const alleZu = abs.length > 0 && enden.length === abs.length;
+  const eintraege = (eins && eintragszeiten(s, eins.id).length)
+    ? eintragszeiten(s, eins.id) : eintragszeiten(s);
+  const gebaut = ['gebaut', 'uebergeben'].includes(s.bau && s.bau.stand);
+  const beginn = zeiten.length ? dtgOderStrich(zeiten[0])
+    : eintraege.length ? `${dtgOderStrich(eintraege[0])} (aus Aufnahmen)` : '';
+  const ende = alleZu ? dtgOderStrich(enden[enden.length - 1])
+    : abs.length > 1 && enden.length ? `${enden.length} von ${abs.length} beendet`
+    : eintraege.length ? `${dtgOderStrich(eintraege[eintraege.length - 1])} ` +
+        (gebaut ? '(aus Aufnahmen)' : '(letzter Eintrag)') : '';
+
   return stammFelderHTML([
     ['Auftrag / Einsatz', p.kopf.einsatz],
     ['Einheit', p.kopf.einheit],
     ['Auftrags-Nr.', p.kopf.auftragNr],
-    ['Trupp', eins ? eins.trupp : (abs.length ? mehrere : truppOhne)],
-    ['Truppführer', eins ? eins.fuehrer : (abs.length ? mehrere : fuehrerOhne)],
-    ['Baubeginn', eins ? dtgOderStrich(eins.beginn) : (offen ?? mehrere)],
-    ['Bauende', eins ? dtgOderStrich(eins.ende) : (offen ?? mehrere)],
+    ['Trupp', trupp || leer],
+    ['Truppführer', fuehrer || leer],
+    ['Baubeginn', beginn || leer],
+    ['Bauende', ende || leer],
     /* „Baustand“ und nicht „Stand“: im Kopf darüber steht schon der
        Planungsstand als Datum-Zeit-Gruppe, und zwei Angaben gleichen Namens auf
        einem Blatt sind eine zu viel. */
     ['Baustand', k.stand.name]
   ]);
+}
+
+const gueltigeZeit = z => !!z && !Number.isNaN(Date.parse(z));
+/* Nach dem Zeitpunkt und nicht nach der Zeichenkette: eine von Hand gesetzte
+   Zeit kann eine andere Zone tragen als eine aufgenommene. */
+const nachZeit = liste => liste.filter(gueltigeZeit).sort((a, b) => Date.parse(a) - Date.parse(b));
+
+/** Die Zeitstempel der Einträge vom Bauort, aufsteigend – mit `abschnitt` nur
+ *  die dieses Bauabschnitts. Punkte und Meldungen, denn beides entsteht beim
+ *  Bauen; eine Prüfzeile entsteht danach. */
+function eintragszeiten(s, abschnitt = null) {
+  const passt = x => !abschnitt || x.abschnitt === abschnitt;
+  return nachZeit([...istPunkte(s).filter(passt), ...baumeldungen(s).filter(passt)].map(x => x.zeit));
 }
 
 /* Datum-Zeit-Gruppe statt eines Datums: so steht es in der Fernmeldeskizze und
@@ -3180,7 +3360,8 @@ function dtgOderStrich(wert) {
 function baudokuLegendeHTML(s, sw, opt) {
   const farbe = sw ? '#000' : s.farbe;
   const ist = istPunkte(s);
-  const abweichung = baukennzahlen(s).abweichungen.length;
+  const kz = baukennzahlen(s);
+  const abweichung = kz.abweichungen.length;
 
   /* Erklärt wird, was auf DIESER Karte steht, und nichts sonst. Zwei Fallen
      liegen hier nahe: Punktarten aufzuzählen, die kein aufgenommener Punkt
@@ -3218,6 +3399,10 @@ function baudokuLegendeHTML(s, sw, opt) {
         `${pa.kurz === '·' ? '' : pa.kurz}</i>${pa.name} (geplant)</span>`);
     }
   }
+  if (kz.bauluecken.length) {
+    zeilen.push(`<span class="lg-eintrag"><i class="lg-linie lg-luecke" style="--farbe:${farbe}">` +
+      `</i>Lücke – zwischen den gebauten Stücken nicht aufgenommen</span>`);
+  }
   if (abweichung) {
     zeilen.push(`<span class="lg-eintrag"><i class="lg-linie lg-abw"></i>` +
       `Abweichung ab ${ABWEICHUNG_SCHWELLE} m</span>`);
@@ -3251,7 +3436,12 @@ function baudokuKennzahlenHTML(k, strecke) {
   const geplant = strecke.punkte.length >= 2 ? kennzahlen(strecke).trasse : 0;
   const kacheln = [
     ['geplant', geplant ? formatLaenge(geplant) : '–', 'Trasse laut Auftrag'],
-    ['gebaut', k.laenge ? formatLaenge(k.laenge) : '–', 'Trasse nach Aufnahme'],
+    /* Die Lücke zwischen zwei Bauabschnitten steht unter der gebauten Länge
+       und nicht als eigene Kachel: die Kachelreihe ist auf das Querformat
+       ausgemessen, und eine sechste bräche dort um. Gezählt ist sie in
+       „gebaut“ nicht (`istVerlauf` in baudoku.js). */
+    ['gebaut', k.laenge ? formatLaenge(k.laenge) : '–',
+      k.lueckeLaenge ? `Lücke ${formatLaenge(k.lueckeLaenge)} offen` : 'Trasse nach Aufnahme'],
     ['Unterschied', (geplant && k.laenge)
       ? ((k.laenge - geplant) > 0 ? '+' : '−') + formatLaenge(Math.abs(k.laenge - geplant))
       : '–', 'gebaut gegen geplant'],
@@ -3699,7 +3889,7 @@ function baudokuAbweichungHTML(s, k) {
            Aufnahme prüfen.</p>`
         : `<p class="tab-fussnote">Kein aufgenommener Punkt liegt mehr als
            ${ABWEICHUNG_SCHWELLE} m vom geplanten entfernt.</p>`}
-    <div class="bl-freitext">
+    <div class="bl-freitext bl-freitext-hoch">
       <div class="bl-linien" aria-hidden="true">${'<i></i>'.repeat(12)}</div>
       <div class="bl-text">${text ? escapeHtml(text).replace(/\n/g, '<br>') : ''}</div>
     </div>

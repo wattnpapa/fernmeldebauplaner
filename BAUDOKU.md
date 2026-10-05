@@ -461,8 +461,9 @@ und die Chipreihe stand nicht darin – „Querung“ war quer nicht zu beantwor
 Drei Handgriffe zusammen: die Kopfzeile der Anwendung steht quer einreihig
 (ohne Wortmarke, das Namensfeld gibt nach) und gibt 46 px frei, der Kopf des
 Blattes steht einzeilig, und der Inhalt teilt sich in zwei Spalten – links, was
-angetippt wird, rechts, was geschrieben wird. An die Seite gelegt wäre es der
-falsche Tausch: die schmale Spalte bricht die Chipreihe wieder um.
+angetippt wird, rechts, was geschrieben wird. An die Seite gelegt wäre es bei
+dieser Höhe der falsche Tausch gewesen: die schmale Spalte bricht die Chipreihe
+wieder um. Seit der vierten Runde steht es quer doch an der Seite – siehe dort.
 
 **Kopf und Abschluss bleiben stehen, der Rest rollt.** Das Blatt war höher als
 die Karte und rollte als Ganzes: bei 390×690 lag „Fertig“ 56 px unter der
@@ -799,6 +800,282 @@ wie im Hinweis „Karte mitnehmen“ und nennt „kein Netz“ selbst. Eine
 nachgetragene Meldungszeit wird von heute aus gerechnet, nicht vom bisherigen
 Tag der Meldung.
 
+## Nach der vierten Runde der THW-Reviewer
+
+Die elf Prüfungen ein viertes Mal, diesmal mit Planungs- und Baumodus
+gleichermaßen. Neu war vor allem, was an den Übergängen geschieht: ein zweites
+Mal geöffneter Auftrag, eine Unterbrechung mitten in der Aufnahme, ein
+Rückgängig über den Moduswechsel hinweg. Ein Befund war P0: nach dem Zeichnen
+blieb der Bauauftrag gesperrt, mit einer Begründung, die nicht stimmte.
+
+**Ein Wisch verschiebt die Karte, kein Trassenpunkt.** Die Trefferfläche eines
+Punktes misst 44 px, und Leaflets Ziehen begann mit der ersten Bewegung,
+gleich womit. Ein Wisch, 6 px neben Punkt 1 begonnen, verschob ihn im Review
+still um rund 200 m. Am Finger folgt eine Marke – Trassenpunkt, Einfügegriff,
+taktisches Zeichen – jetzt erst nach kurzem Halten, und ein Ring um sie zeigt,
+wann es so weit ist (`js/ziehen.js`). Die Maus zieht wie bisher sofort. Nach
+jedem Ziehen nennt eine Meldung Punkt, Weg und Rückweg. Die Planung im
+Planungsmodus bleibt ziehbar; die Festlegung „angetippt, nicht gezogen“ gilt
+weiter nur für den Plan im Baumodus.
+
+**Die offene Streckenkarte folgt den Punkten.** Bauauftrag-Knopf und
+Plan-Kennung werden bei jedem Punkt nachgeführt; vorher blieb der Bauauftrag
+nach drei Punkten gesperrt, mit der Begründung, es fehlten zwei. Die Kennung
+rechnet auf den Koordinaten, die der Link trägt. Sonst trugen Planer und Trupp
+beim selben Plan zwei Kennungen, sobald die sechste Nachkommastelle über die
+Rundungsgrenze kippte. Aus der Deutschlandkarte holt das Zeichnen in zwei
+Stufen heran und bietet davor „Ort suchen“ und „Mein Standort“ an. Die
+Kurzanleitung schlägt im Baumodus beim Baumodus auf und nennt am Telefon Tipps
+statt Tasten. Der Modusschalter nennt weiter den Modus, in dem man ist,
+darunter klein, wohin er führt: das Zeichen ⇄ allein las ein Erstnutzer als
+„Planung tauschen“.
+
+**„Punkt hier“ schlägt vor, statt „zusätzlich“ vorzuwählen.** Stand der Trupp
+6 bis 11 m neben Punkt 2 und tippte gleich „Fertig“, blieb ein Zusatzpunkt
+ohne Art und „0 von 3 geplanten bestätigt“. Liegt jetzt genau ein offener
+Planpunkt innerhalb der Abweichungsschwelle (25 m), wird er zugeordnet und im
+Blatt als „vorgeschlagen“ gezeichnet – gedrückt, gestrichelt, „zusätzlich“
+einen Tipp daneben (`sollVorschlag`). Das bricht „geraten wird nichts“ nicht:
+geraten hieße still zuordnen, was der Trupp nicht sieht; hier steht die Wahl
+benannt in dem Blatt, das ohnehin aufschlägt, und liegen zwei Punkte so nah,
+wird weiter gefragt – dann nennt „Fertig“ die fehlende Zuordnung. Zuordnen
+über die Punktkarte bringt die Art des Plans mit wie „◉ Hier“; wer die
+Zuordnung wieder löst, verliert sie mit.
+
+**Ein Griff, eine Ortung, eine frische Position.** Bei langsamer Ortung legte
+ein zweiter Tipp einen zweiten, deckungsgleichen Punkt an; der Knopf heißt
+jetzt „ortet …“, und ein weiterer Tipp startet nichts. Bei schneller Ortung
+schlug das Blatt dort auf, wo „Punkt hier“ stand, und der zweite Tipp eines
+Doppeltipps traf „Fertig“ – das Blatt nimmt die ersten 400 ms keinen
+Fingertipp an. Und `maximumAge` ist 0: mit 10 s lag der zweite Punkt 60 m
+weiter auf dem ersten, und das Blatt sagte „±6 m“.
+
+**Die Baustrecke wird gemerkt und genannt, bevor aufgenommen wird.** Sie war
+Sitzungszustand; nach dem Neuladen nahm `baustrecke()` die zuletzt gebaute,
+und „Punkt hier“ landete an Strecke 1 mit dem Satz „5,86 km … Stimmt die
+Ortung?“. Jetzt liegt sie im Gerätespeicher wie „Wer baut?“, der Wechsel aus
+der Planung übernimmt die dort gewählte, und ein Merker auf der Oberkante der
+Bauleiste nennt sie – samt „kein Bauabschnitt gewählt“, wenn die Strecke
+Abschnitte hat und nach dem Neuladen keiner aufnimmt. Die Punktkarte fragt
+dann danach. Liegt der Standort an einer anderen Strecke, sagt das Blatt das
+und bietet „Zu Strecke 2 · Punkt 1“ an.
+
+**Ändern heißt umschalten – auch im Strecken-Reiter und für „↶“.** Dort
+standen im Baumodus Weiterzeichnen (dessen „Letzten Punkt zurück“ geplante
+Punkte ohne Rückfrage nahm), Richtung umkehren, Löschen, das ✕ am Punkt, Farbe
+und Leitung. Sie tragen jetzt `nur-planung`; an ihrer Stelle steht der Auftrag
+als Satz und der Knopf in den Planungsmodus. „↶“ hält im Baumodus an der
+Grenze: jeder Schritt merkt sich den Modus, in dem er getan wurde (parallel
+zum Verlauf, nicht in der Planung), und ein Schritt der Planung wird dort
+nicht zurückgenommen, sondern benannt. Gehalten wird nach der Herkunft und
+nicht nach dem Inhalt – was der Trupp im Baumodus selbst geändert hat, nimmt
+er dort auch zurück.
+
+**Kleineres:** Der neue Punkt rückt nach der Aufnahme ins Bild, wenn er
+außerhalb lag. Der Setzmodus „Auf Karte“ endet, wenn schmal die Liste vor die
+Karte kommt. „N ohne Angabe“ im Kopf des Bau-Reiters führt zum ersten solchen
+Punkt. Der Start nach dem Neuladen bleibt in der Liste: nach einer
+Unterbrechung ist der Überblick gefragt, und die Bauleiste ist einen Tipp
+entfernt.
+
+**Ein zweites Mal geöffneter Bauauftrag führt zur vorhandenen Aufnahme.** Er
+legte still eine leere Kopie an: „Bau beginnen“ öffnete „0 von 4 bestätigt“,
+und unter „Gespeicherte Planungen“ standen zwei gleiche Einträge. Erkannt wird
+der Auftrag an seiner Herkunft – Planung, Einsatzabschnitt, Strecke –, ob es
+derselbe Plan ist, an der Plan-Kennung. Dann ist „Dort weiterbauen“ der
+Hauptknopf; bei geändertem Plan bleibt „Bau beginnen“ vorn, und die bisherige
+Aufnahme ist einen Griff weit. Die Planungsliste nennt je Eintrag
+Plan-Kennung, Baustand und aufgenommene Punkte.
+
+**Jeder Verlust stellt „Verwerfen“ nach vorn, nicht nur der eines anderen
+Absenders.** Meldete derselbe Trupp weniger, als beim Planer stand, blieb
+„Einspielen“ blau. Der Dialog sagt jetzt „Diese Meldung kennt 2 Punkte nicht,
+die hier schon stehen – beim Trupp nachfragen“. Ein nur nachträglich benannter
+Punkt ist geändert und nicht verloren; erkannt wird er an der Aufnahmezeit.
+Liegt schon der nächste gemeldete Punkt weiter als `ABSEITS_SCHWELLE` neben
+der Trasse, ist es die Meldung eines anderen Auftrags gleichen Namens;
+einzelne Ausreißer sind eine Nachfrage. Eine Übergabe ohne oder mit
+durchgefallener Prüfung wird genannt. Findet keine Strecke eine Entsprechung,
+sagt der Dialog, dass die Planung nicht in diesem Browser liegt, und sperrt
+„Einspielen“, bis von Hand zugeordnet ist. Die Adresse wird trotzdem mit der
+Entscheidung geräumt – die Zusage, dass sie die Meldung nur trägt, solange der
+Dialog offen steht, gilt weiter.
+
+**Der Empfangsdialog zeigt, was kommt:** die neuen Baumeldungen im Wortlaut
+und eine Zeile „bisher → danach“. Die Streckenliste trägt die jüngste
+Baumeldung als eine Zeile. Jeder Fußknopf eines Dialogs wirkt genau einmal;
+ein Doppeltipp ergab zwei Undo-Schritte.
+
+**Ein Kurzcode quittiert über Funk.** Vier Zeichen ohne 0/O und 1/I, eine
+Prüfsumme über genau das, was hinausgeht. Der Trupp sieht ihn im
+Rückmeldeblock und im Link-Dialog, der Planer im Empfangsdialog und in der
+Meldung nach dem Einspielen. Er wird aus dem Inhalt nachgerechnet und reist
+nicht als eigenes Feld.
+
+**Der Versandvermerk ist kein Rückgängig-Schritt.** „↶“ machte aus „Link
+erzeugt“ wieder „noch nicht gemeldet“. Er entsteht ohne Undo-Schritt, und
+Rückgängig wie Wiederherstellen tragen ihn in den zurückgeholten Stand
+hinüber. Die Pillen heißen „Link kopiert – jetzt verschicken“; der Satz, dass
+das Gerät den Empfang nicht kennt, steht nicht mehr in Erfolgsgrün. Im
+Link-Dialog ist „Teilen“ oder „Kopieren“ der Hauptknopf und nicht „Schließen“.
+
+**„Meldung mitschreiben“ legt erst mit dem ersten Zeichen eine Meldung an.**
+Die Uhrzeit des Tipps steht in der Zeile fest; eine Unterbrechung hinterlässt
+keine leere Meldung mehr. Eine Zeit ohne Wortlaut sagt nicht, was gemeldet
+wurde – das hebt die frühere Regel „der Text kommt danach – oder gar nicht“
+auf.
+
+**Die Adresse bleibt, solange entschieden wird.** Die Zurück-Taste nahm die
+Meldung aus der Adresse, während der Dialog stehen blieb. Bei offenem
+Empfangsdialog wird sie per `replaceState` zurückgeschrieben. „Später“ in „Wer
+baut?“ behält getippte Namen. Der Rückmeldeblock folgt Material und
+Meldungstexten ohne Neuladen. Die Pille nach „Bau beginnen“ steht oben und
+deckt die Felder nicht mehr, die als Nächstes dran sind; kam der Link ohne
+eingerichteten Wächter an, rät sie, ihn im eigenen Browser zu öffnen. Ein
+neuerer Stand vom Speicher, der die offene Planung ersetzt, wird samt
+geleertem „↶“ gemeldet.
+
+**Eine Lücke zwischen zwei Bauabschnitten ist keine gebaute Trasse.** Die
+Ist-Linie verband jeden aufgenommenen Punkt mit dem nächsten. Bauten zwei
+Trupps von beiden Enden aufeinander zu, zog sie sich über die noch offenen
+Planpunkte von Trupp 1 bis Trupp 2 – auf der Karte, auf der Baudokumentation
+und in der Länge: „gebaut 1,56 km“ bei 1,57 km geplant, wo ein Drittel fehlte.
+Jetzt wird zwischen zwei Punkten getrennt, wenn dazwischen ein Planpunkt
+liegt, den niemand bestätigt hat, oder wenn sie zu verschiedenen
+Bauabschnitten gehören und keinen gemeinsamen Punkt haben (`istVerlauf` in
+`baudoku.js`). Bestätigen beide Trupps denselben Treffpunkt, ist das die Naht.
+Ein Zusatzpunkt trennt nie, er hängt an seinem Vorgänger wie beim Einspielen.
+Die Lücke steht gestrichelt über den offenen Planpunkten, und ihre Länge steht
+neben der gebauten, nicht darin. Eine Regel „verbunden ist, was derselbe Trupp
+aufgenommen hat“ lag näher und ist verworfen: ein Trupp, der Punkt 3 auslässt,
+hätte dort eine Trasse behauptet, die niemand aufgenommen hat – „fehlend“ und
+„Lücke“ sind dieselbe Nachfrage.
+
+**Was die Führung wissen muss, steht an der Standmarke.** Eine durchgefallene
+Prüfung stand in Liste, Summenband und Lagekarte unter einem grünen „gebaut“.
+Sie führt jetzt die Warnungen der Streckenzeile an, wird im Summenband gezählt
+und steht ausgeschrieben an der Standmarke. Die Arbeitskarte trägt dort auch
+„neu“ und „ohne Meldung“. In der Liste stehen Strecken mit Handlungsbedarf
+oben in ihrem Abschnitt. Eine Sammelzeile darüber hätte dasselbe gesagt, aber
+eine Zeile Höhe gekostet, die der Strecken-Reiter am Telefon nicht hat.
+Überdeckte Streckenschilder rücken beiseite, auf Druckkarten auch zurück in
+den Rahmen; in der Übersicht unter Zoomstufe 13 fallen Teillängen und
+„?“-Marken weg.
+
+**Nachts blendet die Karte nicht mehr an den Linien.** Die weißen Fassungen
+unter den Trassen waren nachts das Hellste auf dem Schirm. Auf der
+Arbeitskarte tragen sie nachts den Grund der Oberfläche; die Druckkarten
+bleiben weiß. Die Soll-Linie neben dem Ist hat volle Deckkraft und eine eigene
+Fassung – unterschieden wird am Muster, nicht an der Blässe. Die Länge im
+Kartenschild steht in Schriftfarbe, die Streckenfarbe trägt der Balken. Der
+Hauptknopf ist nachts heller als das THW-Blau. Die Farbfolge neuer Strecken
+ist so geordnet, dass zwei aufeinanderfolgende sich auch in der Helligkeit
+trennen; bestehende Strecken behalten ihre gespeicherte Farbe.
+
+**„Karte dabei“ heißt, dass die ganze Trasse im Gerät liegt.** Der Chip zählte
+jede Kachel im Gerät: eine einzige weit abseits oder 10 von 300 nach einem
+abgebrochenen Lauf ergaben „Karte dabei ✓“, und am Bauort blieb die Karte
+grau. Gleichzeitig sagte die Pille nach „Bau beginnen“ ohne Netz „die Karte
+ist nicht im Gerät“. Jetzt misst `abdeckung()` in `js/kacheln.js` die
+Kachelliste der geplanten Trasse in der eingestellten Karte gegen den Vorrat,
+mit einem einzigen Lesen aller Schlüssel. Das Ergebnis bleibt stehen, bis sich
+Vorrat, Trasse oder Kartenwahl ändern. Chip, Bestandszeile und Pille richten
+sich nach demselben Befund und nennen eine halbe Karte mit ihrer Zahl („Karte
+unvollständig 280/300“). Ist-Punkte zählen nicht mit: sie entstehen ohne Netz,
+und eine vollständige Karte hieße sonst nach dem ersten Punkt „unvollständig“.
+Damit die Planliste immer ein Teil dessen ist, was „Karte holen“ holt, rechnet
+`kachellisteLinien()` jede Linie für sich. Vorher wurden Plan, Ist und alle
+Strecken zu einem Zug aneinandergehängt, und der Korridor lief über die
+Sprünge dazwischen.
+
+**„Vorrat löschen“ fragt nach, und zwar nach allem.** Der Knopf stand 16 px
+neben „Karte holen“ und leerte auf einen Tipp den ganzen Speicher, unter
+„Umfang: nur diese Strecke“. Er steht jetzt unter dem Bestand, fehlt bei
+leerem Vorrat und fragt nach, mit der Zahl der Kacheln und dem Satz, dass ohne
+Netz kein Ersatz zu holen ist. Nur eine Strecke zu löschen ist verworfen: der
+Speicher kennt Kacheln nach Adresse und nicht nach Strecke, und es risse still
+Löcher in die Karte der Nachbarstrecke. „Abbrechen“ ist ein eigener Knopf mit
+einer Sekunde Sperre – an der Stelle von „Karte holen“ brach ein Doppeltipp
+mit Handschuh den Abruf sofort ab.
+
+**Der Block heißt „Vor dem Ausrücken“** und trägt neben der Karte den Weg zum
+Baunachweis auf Papier. Wer nur über den Link arbeitet, fand das Wort im
+Bau-Reiter nicht, und der Bauauftrag war im Baumodus nur über den
+Strecken-Reiter zu erreichen. Grenzen und Datenschutz stehen eingeklappt, aber
+vor dem Knopf: was der Kartenanbieter sieht, soll vor dem Drücken erreichbar
+sein, nur nicht mehr vor dem Nutzen stehen.
+
+**Der Baunachweis ist der Bau-Reiter auf Papier, je Trupp ein Bogen.** Statt
+fünf freier Zeilen steht der Materialkatalog vorgedruckt da, in Reihenfolge
+und Gruppen des Reiters, mit Einheit und einer einzigen Mengenspalte – die
+drei Spalten des Papierbogens entfallen weiter. Beim Nachtragen musste sonst
+jemand „3 Haken“ einer von 25 Zeilen zuordnen. Die Kabelart der Strecke fehlt
+dort, sie steht mit Bedarf unter „Kabelverbrauch“. Der Kopf fragt nach
+Bauabschnitt (von Punkt bis Punkt), Bauende und dem Zeitpunkt, zu dem das
+Gerät ausfiel – ab da gilt das Papier, und davor Aufgenommenes wird nicht
+doppelt nachgetragen. Die Prüfung kennt je Stamm „bestanden“ und „nicht
+bestanden“, leer heißt „offen“. Stehen unter „Auftrag an“ mehrere Trupps,
+bekommt jeder einen eigenen Bogen mit seinem Namen: beim abschnittsweisen Bau
+stehen sie zur selben Zeit an beiden Enden der Trasse, und ein gemeinsames
+Blatt kann nur an einem sein. Die Folgeblätter nennen sich Baunachweis statt
+Bauauftrag, das Feld für die Meldung an den S 6 ist wieder 34 mm hoch – eine
+spätere CSS-Regel gleicher Spezifität hatte es auf 16 mm gedrückt. Die
+Baudokumentation füllt Trupp, Baubeginn und Bauende aus Auftrag und Aufnahmen
+und kennzeichnet abgeleitete Zeiten „(aus Aufnahmen)“, statt in jedes Feld „2
+Abschnitte“ zu schreiben. Die Lagekarte trägt den Lagestand als
+Datum-Zeit-Gruppe im Kopf. Ein aus der Nachtdarstellung gedrucktes Blatt erbt
+deren Farben nicht mehr: das Blatt setzt die Oberflächenvariablen auf die
+Tageswerte zurück, die Gitterangabe stand vorher mit 1,49:1 auf weißem Papier.
+Nachgetragen wird auch eine Woche später – „anderer Tag …“ öffnet ein
+Datumsfeld.
+
+**Quer auf dem Telefon bleibt die Karte frei.** Bei 844×390 und 667×375 stand
+von der Karte nichts zur Verfügung: Kopfzeile und Sicherungsband nahmen 115
+px, die Koordinatenleiste brach in zwei bis drei Zeilen um, die Werkzeuge
+standen als Spalte über die ganze Höhe neben 88 px Zoom, und die Punktkarte
+deckte alles zu – auch den Punkt, den sie benennt. Bei geringer Höhe wird das
+Sicherungsband jetzt zum Merker „⚠ keine Datei“ in der Kopfzeile, die
+Koordinatenleiste nennt nur MGRS, und Werkzeuge, Kartenoptionen (als Sinnbild)
+und die nebeneinander gestellte Zoomsteuerung teilen sich ein Band an der
+oberen Kante: frei sind 36 bis 50 % statt 0. Die Punktkarte steht quer als
+Blatt an der rechten Seite. Das nimmt den Satz zurück, die Seite sei der
+falsche Tausch: er galt bei 161 px Höhe, jetzt misst das Blatt rund 300 px –
+so viel wie hochkant bei 320×568, wo dieselbe Chipreihe längst geprüft
+umbricht –, und daneben bleibt der Punkt zu sehen. Die Geräteprüfung zählt ein
+solches Blatt deshalb nach der freien Breite und nicht als Band.
+
+**Was gefüllt ist, geht nicht mit einem Tipp.** Ein Bauabschnitt mit Trupp,
+Zeiten oder zugeordneten Einträgen und ein Stamm mit Ergebnis, Messwert oder
+Prüfer fragen vor dem Löschen nach und nennen, was verloren ginge – beim
+Abschnitt, wie viele Punkte, Materialzeilen und Meldungen ihre Zuordnung
+verlieren. Leere Einträge gehen weiter mit einem Tipp; sie sind meist ein
+Doppeltipp. Zeichen, Flächen, Relaisstellen und Lichtbilder nennen beim
+Löschen den Rückweg. Ein „↶“ in der Bauleiste ist verworfen: neben „Punkt
+hier“ nähme der Fehlgriff mit dem Handschuh genau die eben gemachte Aufnahme
+zurück.
+
+**Eine Kabelmenge in Bruchteilen eines Meters wird hinterfragt.** „1,450“
+wurde still zu 1,45 m neben einem Bedarf von 8.653 m. Nachkommastellen unter
+10 m oder eine Menge unter einem Hundertstel des Bedarfs lösen eine Warnung
+aus; stehen genau drei Stellen hinter dem Komma, bietet sie „1.450 m
+übernehmen“ an. Ob das Tausendfache gemeint ist, sagt die Schreibweise, nicht
+der Bedarf – mit mehreren Bauabschnitten trägt jeder nur einen Teil davon.
+
+**Die letzte Eingabe übersteht das sofortige Neuladen.** Formulare sammeln 100
+bis 150 ms, bevor sie schreiben, und beim Verlassen der Seite lief dieser
+Zeitgeber nicht mehr ab: gesichert wurde der Stand vor dem letzten Wort. Beim
+Verlassen wird jetzt zuerst die Warteschlange geschrieben.
+
+**Der Bau-Reiter beginnt näher an den Punkten.** Die Bauabschnitte stehen
+zugeklappt, solange es keinen oder einen aufnehmenden gibt, und nennen in der
+Überschrift, was darin steht; bei 390×844 steht die erste Trassenpunktzeile
+damit im Bild. Die Plan-Kennung sagt dort, was sie ist. „✓ wie geplant“ hält
+12 px zu „◉ hier“, die Sprungchips halten 10 px, und Zeitwahl und Zuordnung
+eines zusätzlichen Punktes nehmen die ganze Breite, statt rechts aus der Liste
+zu ragen. Die Meldungspille bleibt, wo sie ist: sie fängt keinen Tipp ab und
+steht drei Sekunden, und in einer Liste, die den Schirm füllt, deckte sie an
+jedem anderen Ort ebenso etwas.
+
 ## Verworfene Wege
 
 **Eine eigene Leiste für den Ist-Setzmodus, oder die beiden abgeschalteten
@@ -950,9 +1227,19 @@ Leere laufen lässt.
 | Nach dem Absetzen | Vermerk mit Zeit, Weg und Abdruck im `bau`-Block; bleibt am Gerät |
 | Wer meldet | Trupp und Truppführer im Gerätespeicher, als `von` in der Meldung |
 | Der Plan im Baumodus | angetippt, nicht gezogen – ändern heißt umschalten |
+| Rückgängig im Baumodus | hält an der Grenze zur Planung, nach Herkunft des Schritts |
+| „Punkt hier“ am Planpunkt | genau ein offener Punkt unter 25 m wird sichtbar vorgeschlagen, sonst gefragt |
+| Baumeldung ohne Text | gibt es nicht, angelegt wird mit dem ersten Zeichen |
 | Lichtbilder | vertagt in Stufe 6 |
 
 ## Offen
+
+- **„gesehen“ und „S 6 erledigt“ gelten nur am Gerät.** Beides läge mit einem
+  optionalen Feld im Datei-Export ohne Schemaänderung auf einem zweiten Gerät.
+  Es sagt aber, was an diesem Platz gesehen wurde, und hakte dort Meldungen
+  ab, die niemand gelesen hat. Ob die Führungsstelle einen gemeinsamen
+  Bearbeitungsstand braucht – und dann als Teil der Planung mit Schema –,
+  entscheidet der Planer.
 
 - **Die Fundstelle des Materialblattes.** Für `js/vorschrift.js` fehlen
   genauer Titel und Stand der im THW-Extranet veröffentlichten Fassung. Der

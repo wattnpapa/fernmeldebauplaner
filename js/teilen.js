@@ -239,6 +239,36 @@ export function bauAbdruck(strecke) {
   return h.toString(36);
 }
 
+/* Ein Kurzcode der Meldung, zum Gegenlesen über Funk: „Meldung 7KQ2
+   eingespielt“. Ob eine Baumeldung beim Planer angekommen ist, weiß das Gerät
+   des Trupps nicht – im Audit blieb dafür nur der Anruf, und der fragte nach
+   Uhrzeit und Punktzahl, zwei Angaben, die zwei Meldungen gemeinsam haben
+   können. Vier Zeichen aus einer Prüfsumme über genau das, was hinausgeht,
+   ändern sich mit jeder neuen Aufnahme und lassen sich beim Planer aus der
+   Meldung selbst nachrechnen – der Link braucht dafür kein neues Feld.
+
+   Ohne 0/O und 1/I: der Code wird gesprochen und mitgeschrieben, und dort sind
+   genau diese vier verwechselbar. */
+const CODE_ZEICHEN = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+export function meldungsCode(bloecke) {
+  const text = JSON.stringify((bloecke || []).map(b => b || null));
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = (((h << 5) + h) ^ text.charCodeAt(i)) >>> 0;
+  let code = '';
+  for (let i = 0; i < 4; i++) { code += CODE_ZEICHEN[h % 32]; h = Math.floor(h / 32); }
+  return code;
+}
+
+/** Der Kurzcode beim Trupp – über dieselben Strecken, die `alsBaumeldung` nimmt */
+export const meldungsCodeVon = strecken =>
+  meldungsCode((strecken || []).filter(bauBegonnen).map(bauVerschlanken));
+
+/** Und beim Planer, aus der angekommenen Meldung nachgerechnet. Die Bögen
+ *  sind dort genau das, was `bauVerschlanken` geliefert hat, durch JSON
+ *  gegangen – und das ändert an ihrer Schreibung nichts. */
+export const meldungsCodeAus = meldung =>
+  meldungsCode(((meldung && meldung.strecken) || []).map(m => m && m.bau));
+
 /* Die Gegenrichtung, vor `migrieren()`: die Stellen werden wieder Kennungen.
    Dafür bekommen Trassenpunkte und Bauabschnitte hier schon ihre Kennung –
    `migrieren()` übernimmt sie dann (`id: pt.id || id()`), statt eine zweite zu

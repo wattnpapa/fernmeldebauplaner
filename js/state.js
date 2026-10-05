@@ -86,9 +86,19 @@ export const PUNKTARTEN = [
 /** Die Arten, die ein GEPLANTER Punkt annehmen kann – ohne die des Bauorts */
 export const PLANPUNKTARTEN = PUNKTARTEN.filter(a => !a.nurIst);
 
+/* Die Reihenfolge, in der neue Strecken ihre Farbe bekommen. Zwei aufeinander
+   folgende Farben unterscheiden sich im Farbton um mindestens 75° UND in der
+   Helligkeit um mindestens 1,45:1. Vorher folgte auf Rot das Blau und dann das
+   Grün – Rot und Grün liegen in der Helligkeit bei 1,21:1 und sind bei
+   Rot-Grün-Schwäche, in Graustufen und bei Sonne auf dem Schirm dieselbe
+   Linie. Gespeichert wird die Farbe an jeder Strecke selbst; die Reihenfolge
+   gilt also nur für neu angelegte, eine bestehende Planung behält ihr Bild.
+   Die Nummer der Strecke entlang der Linie zu wiederholen hätte dasselbe
+   erreicht, aber eine weitere Schicht Beschriftung über Teillängen,
+   Kabelzeichen und Schilder gelegt, die schon um Platz ringen. */
 export const FARBEN = [
-  '#d32f2f', '#1976d2', '#388e3c', '#f57c00', '#7b1fa2',
-  '#0097a7', '#c2185b', '#5d4037', '#455a64', '#afb42b'
+  '#d32f2f', '#7b1fa2', '#f57c00', '#388e3c', '#5d4037',
+  '#1976d2', '#afb42b', '#c2185b', '#0097a7', '#455a64'
 ];
 
 /* Wie weit der Bau dieser Strecke ist. Die vier Stufen folgen dem Ablauf des
@@ -140,10 +150,20 @@ export const baustandById = id => BAUSTAENDE.find(b => b.id === id) || BAUSTAEND
    Trupp am Bauort, ob Papier und Gerät denselben Plan tragen, und der Planer,
    ob der Trupp noch nach dem alten baut. Im Audit war eine Planänderung nach
    dem Druck am Papier unsichtbar („Stand –“ auf allen Blättern).
-   Eine Prüfsumme (djb2), keine Sicherung: sie soll eine Änderung bemerken. */
+   Eine Prüfsumme (djb2), keine Sicherung: sie soll eine Änderung bemerken.
+
+   Gerechnet wird auf den Koordinaten, die der Link trägt – erst auf sechs
+   Stellen gerundet wie `rund` in teilen.js, dann auf fünf. Direkt auf fünf
+   gerundet lag die Kennung beim Trupp neben der des Planers, sobald die
+   sechste Stelle über die Rundungsgrenze kippte: 51,80375474 gab beim Planer
+   51,80375, über den Link 51,803755 und damit 51,80376 – derselbe Plan mit
+   zwei Kennungen, und der Trupp hielt seinen Auftrag für veraltet. Die zweite
+   Rundung ändert die Kennung nur in genau diesen Fällen; alle anderen
+   gedruckten Blätter behalten ihre. */
+const wieImLink = n => (Math.round(n * 1e6) / 1e6).toFixed(5);
 export function planKennung(strecken) {
   const text = JSON.stringify((strecken || []).map(s => [
-    s.name, s.kabeltyp, (s.punkte || []).map(pt => [pt.lat.toFixed(5), pt.lng.toFixed(5), pt.art])
+    s.name, s.kabeltyp, (s.punkte || []).map(pt => [wieImLink(pt.lat), wieImLink(pt.lng), pt.art])
   ]));
   let h = 5381;
   for (let i = 0; i < text.length; i++) h = (((h << 5) + h) ^ text.charCodeAt(i)) >>> 0;
@@ -759,12 +779,43 @@ export const bilderBelegung = p => (p.bilder || []).reduce((n, b) => n + (b.groe
 
 // ---------------------------------------------------------------- Store
 
+/* Der Vermerk, dass eine Baumeldung hinausging (`bau.abgesetzt`), ist eine
+   Tatsache über das Gerät und keine Eintragung. Er entsteht ohne eigenen
+   Rückgängig-Schritt (`aendern(…, { undo: false })`) – aber ein Schritt, der
+   eine FRÜHERE Eintragung zurücknimmt, stellte einen Stand von vor dem
+   Versand wieder her, und mit ihm „noch nicht gemeldet“, während der Link
+   längst im Messenger lag. Rückgängig und Wiederherstellen tragen ihn deshalb
+   je Strecke in den zurückgeholten Stand hinüber; der Abdruck darin sagt dann
+   richtig, dass sich seit dem Versand etwas geändert hat. */
+function absetzVermerke(projekt) {
+  const m = new Map();
+  for (const s of (projekt && projekt.strecken) || []) {
+    if (s && s.bau && s.bau.abgesetzt) m.set(s.id, s.bau.abgesetzt);
+  }
+  return m;
+}
+function absetzVermerkeZurueck(projekt, vermerke) {
+  for (const s of (projekt && projekt.strecken) || []) {
+    if (s && s.bau && vermerke.has(s.id)) s.bau.abgesetzt = vermerke.get(s.id);
+  }
+}
+
 class Store {
   constructor() {
     this.projekt = null;
     this.horcher = new Set();
     this.undoStapel = [];
     this.redoStapel = [];
+    /* Zu jedem Schritt im Verlauf, in welchem Modus er getan wurde – parallel
+       zu den Stapeln, nicht in den Ständen: ein Stand ist die Planung selbst
+       und ginge so mit jeder Datei hinaus. Gebraucht wird das, weil „↶“ im
+       Baumodus an der Grenze zur Planung halten muss (`rueckgaengig` in
+       app.js); vorher nahm es nach zwei Aufnahmen beim dritten Tipp still den
+       letzten geplanten Trassenpunkt weg. `herkunft` setzt app.js beim
+       Umschalten; `null` heißt: unbekannt, etwa aus einem älteren Verlauf. */
+    this.herkunft = null;
+    this.undoHerkunft = [];
+    this.redoHerkunft = [];
     this._speicherTimer = null;
     this._letzterSchnappschuss = null;
   }
@@ -792,17 +843,42 @@ class Store {
 
   schnappschuss() {
     const s = JSON.stringify(this.projekt);
-    if (s === this._letzterSchnappschuss) return;
+    /* Kein neuer Stand, aber ein neuer Schritt: der oberste Stand ist der, von
+       dem die kommende Änderung ausgeht – also gehört er ihrem Modus. */
+    if (s === this._letzterSchnappschuss) {
+      if (this.undoHerkunft.length) this.undoHerkunft[this.undoHerkunft.length - 1] = this.herkunft;
+      return;
+    }
     this._letzterSchnappschuss = s;
     this.undoStapel.push(s);
-    if (this.undoStapel.length > 60) this.undoStapel.shift();
+    this.undoHerkunft.push(this.herkunft);
+    if (this.undoStapel.length > 60) { this.undoStapel.shift(); this.undoHerkunft.shift(); }
     this.redoStapel.length = 0;
+    this.redoHerkunft.length = 0;
+  }
+
+  /** In welchem Modus der Schritt getan wurde, den `undo()` bzw. `redo()` als
+   *  Nächstes zurücknimmt oder wiederholt – `null`, wenn unbekannt */
+  naechsterSchritt(richtung = 'undo') {
+    const marken = richtung === 'redo' ? this.redoHerkunft : this.undoHerkunft;
+    return marken.length ? marken[marken.length - 1] : null;
+  }
+
+  /** Der Stand, den `undo()` bzw. `redo()` als Nächstes herstellte – als
+   *  Objekt, oder `null` */
+  naechsterStand(richtung = 'undo') {
+    const stapel = richtung === 'redo' ? this.redoStapel : this.undoStapel;
+    try { return stapel.length ? JSON.parse(stapel[stapel.length - 1]) : null; }
+    catch (e) { return null; }
   }
 
   undo() {
     if (!this.undoStapel.length) return false;
     this.redoStapel.push(JSON.stringify(this.projekt));
+    this.redoHerkunft.push(this.undoHerkunft.length ? this.undoHerkunft.pop() : null);
+    const vermerke = absetzVermerke(this.projekt);
     this.projekt = JSON.parse(this.undoStapel.pop());
+    absetzVermerkeZurueck(this.projekt, vermerke);
     this._letzterSchnappschuss = null;
     this.speichernVerzoegert();
     this.melden('undo');
@@ -812,7 +888,10 @@ class Store {
   redo() {
     if (!this.redoStapel.length) return false;
     this.undoStapel.push(JSON.stringify(this.projekt));
+    this.undoHerkunft.push(this.redoHerkunft.length ? this.redoHerkunft.pop() : null);
+    const vermerke = absetzVermerke(this.projekt);
     this.projekt = JSON.parse(this.redoStapel.pop());
+    absetzVermerkeZurueck(this.projekt, vermerke);
     this._letzterSchnappschuss = null;
     this.speichernVerzoegert();
     this.melden('redo');
@@ -831,7 +910,9 @@ class Store {
     let stapel = this.undoStapel.slice(-VERLAUF_SICHERN);
     while (true) {
       try {
-        sessionStorage.setItem(KEY_VERLAUF, JSON.stringify({ pid: this.projekt.id, stapel }));
+        const herkunft = this.undoHerkunft.slice(-stapel.length);
+        sessionStorage.setItem(KEY_VERLAUF,
+          JSON.stringify({ pid: this.projekt.id, stapel, herkunft }));
         return;
       } catch (e) {
         if (!stapel.length) return;
@@ -845,6 +926,13 @@ class Store {
       const roh = JSON.parse(sessionStorage.getItem(KEY_VERLAUF) || 'null');
       if (roh && roh.pid === this.projekt.id && Array.isArray(roh.stapel)) {
         this.undoStapel = roh.stapel.filter(x => typeof x === 'string');
+        /* Von hinten angeglichen: ein Verlauf von vor dieser Marke kennt sie
+           nicht, und seine Schritte gelten dann als unbekannt. */
+        const h = Array.isArray(roh.herkunft) ? roh.herkunft : [];
+        this.undoHerkunft = this.undoStapel.map((_, i) => {
+          const m = h[h.length - this.undoStapel.length + i];
+          return m === 'bau' || m === 'planung' ? m : null;
+        });
       }
     } catch (e) { /* ohne Verlauf beginnt „↶“ leer, wie vorher */ }
   }
@@ -885,6 +973,7 @@ class Store {
     if (!p) return false;
     this.projekt = migrieren(p);
     this.undoStapel.length = 0; this.redoStapel.length = 0;
+    this.undoHerkunft.length = 0; this.redoHerkunft.length = 0;
     localStorage.setItem(KEY_AKTIV, pid);
     this.melden('geladen');
     return true;
@@ -893,6 +982,7 @@ class Store {
   neu(name) {
     this.projekt = neuesProjekt(name);
     this.undoStapel.length = 0; this.redoStapel.length = 0;
+    this.undoHerkunft.length = 0; this.redoHerkunft.length = 0;
     this.speichern();
     this.melden('geladen');
   }
@@ -901,6 +991,7 @@ class Store {
     this.projekt = migrieren(projekt);
     this.projekt.id = this.projekt.id || id();
     this.undoStapel.length = 0; this.redoStapel.length = 0;
+    this.undoHerkunft.length = 0; this.redoHerkunft.length = 0;
     this.speichern();
     this.melden('geladen');
   }
@@ -982,12 +1073,36 @@ export function projektAblegen(projekt) {
   }
 }
 
+/* Was einen Eintrag der Planungsliste von einem gleichnamigen unterscheidet.
+   Ein zweimal geöffneter Bauauftrag stand im Audit zweimal als „Neue Planung
+   – Strecke 1“ in der Liste, gleich lang, gleich alt – welche die Aufnahme
+   trug, war nur durch Öffnen herauszufinden. Plan-Kennung, Baustand und die
+   Zahl der aufgenommenen Punkte sagen es ohne. */
+export function baustandDerPlanung(p) {
+  const strecken = Array.isArray(p.strecken) ? p.strecken : [];
+  let istPunkte = 0, zuletzt = '';
+  const staende = {};
+  for (const s of strecken) {
+    if (!bauBegonnen(s)) continue;
+    const stand = typeof s.bau.stand === 'string' ? s.bau.stand : 'offen';
+    staende[stand] = (staende[stand] || 0) + 1;
+    for (const x of [...(s.bau.punkte || []), ...(s.bau.meldungen || [])]) {
+      if (x && typeof x.zeit === 'string' && x.zeit > zuletzt) zuletzt = x.zeit;
+    }
+    istPunkte += (s.bau.punkte || []).length;
+  }
+  let kennung = '';
+  try { kennung = planKennung(strecken); } catch (e) { /* ein unlesbarer Stand bleibt ohne */ }
+  return { istPunkte, zuletzt, staende, kennung };
+}
+
 export function projektListe() {
   return Object.values(ladeAlle())
     .map(p => ({
       id: p.id, name: p.name, geaendert: p.geaendert,
       strecken: (p.strecken || []).length, zeichen: (p.zeichen || []).length,
-      bilder: (p.bilder || []).length
+      bilder: (p.bilder || []).length,
+      ...baustandDerPlanung(p)
     }))
     .sort((a, b) => (b.geaendert || '').localeCompare(a.geaendert || ''));
 }

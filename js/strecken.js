@@ -4,13 +4,14 @@ import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText }
 import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar, bauBegonnen, baustandById } from './state.js';
 import {
   istPunkte, sollZuIst, istPunktSetzen, sollPunktGeloescht, ABWEICHUNG_SCHWELLE,
-  istKurz, punktartText
+  istKurz, punktartText, istVerlauf, bauzeile
 } from './baudoku.js';
 import { auslegung, querschnittText } from './strom.js';
 import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf,
          kabelreserve } from './vorschrift.js';
 import { symbolSVG, GRUNDBREITE } from './symbols.js';
 import { signatur } from './signatur.js';
+import { ziehbar } from './ziehen.js';
 
 /* Eine rechnerische Trommelstelle so dicht an einer geplanten Muffe ist
    dieselbe Verbindung und wird nicht zusätzlich aufgeführt. */
@@ -27,6 +28,12 @@ const MAX_STOESSE = 500;
    gerade noch zu grob. Stufe 15 legt denselben Finger auf wenige Meter. */
 export const ZEICHNEN_AB_ZOOM = 12;
 const ZEICHNEN_ZIELZOOM = 15;
+/* Aus der Deutschlandkarte (Stufe 6) sprang der erste Tipp gleich auf Stufe
+   15 – an die Stelle, an der der Finger zufällig lag, und ein Fingerbreit
+   sind dort dreißig Kilometer. Darunter holt der Tipp deshalb erst auf Stufe
+   11: der Landkreis, in dem man die Baustelle wiedererkennt. Der zweite Tipp
+   liegt dann auf dem Ort und holt auf 15. */
+const ZEICHNEN_ZWISCHENZOOM = 11;
 
 /* Kartografische Zeichen der Kabelarten (KatS-Dv 861): das Kabel wird nicht als
    nackte Linie geführt, sondern trägt in Abständen sein Zeichen – Querstrich,
@@ -432,6 +439,11 @@ const SCHILD_WEITEN = [1, 1.5, 2.1, 2.9, 4, 5.4];
    liest niemand als zwei. */
 const SCHILD_LUFT = 5;
 
+/* Unterhalb dieser Zoomstufe gilt die Arbeitskarte als Übersicht (siehe
+   `_fernSetzen`). Bei 13 ist ein Kilometer gut 120 Bildpunkte lang – darunter
+   steht eine Teillänge von einigen hundert Metern breiter da als ihr Abschnitt. */
+const FERN_ZOOM = 13;
+
 /* Was ein Fehler kostet. Am teuersten ist der Blattrand: ein Schild, das halb
    über die Kante steht, ist im Ausdruck abgeschnitten und damit ganz weg. Eine
    verdeckte Trasse wiegt schwerer als ein überlapptes Schild – das Schild lässt
@@ -584,6 +596,16 @@ export class StreckenLayer {
        `bauauftrag.js`). */
     this.mitIst = !!opt.mitIst;
     this.mitStand = !!opt.mitStand;
+    /* Was die Standmarke außer dem Bau noch trägt – „neu“, „ohne Meldung“.
+       Beides weiß nur die Oberfläche (`kartenSignale` in ui.js); die
+       Druckkarten bekommen es nicht, ein Blatt kennt kein „seit dem letzten
+       Hinsehen“. Geht in beide Signaturen ein. */
+    this.signale = opt.signale || null;
+    /* Ob die einfache Ansicht gilt (`istEinfach` in sicht.js). Dort fehlt der
+       Schalter „Schild abgerückt“, und das Schild über dem Ankerpunkt lag auf
+       der ersten Teillänge – wer nur diese Ansicht kennt, kam an die Zahl
+       nicht heran. Geht in die Signaturen ein. */
+    this.einfach = opt.einfach || (() => false);
     this.istSetzModus = null;   // { sid, sollPunkt, art, … } während „Punkt setzen“
     this.aufIstPunkt = opt.aufIstPunkt || (() => {});
     /* Im Baumodus ist die Karte eine andere: der geplante Punkt wird nicht
@@ -599,6 +621,9 @@ export class StreckenLayer {
     this.aufAenderung = opt.aufAenderung || (() => {});
     this.aufGrobmass = opt.aufGrobmass || (() => {});
     this.aufPlanTipp = opt.aufPlanTipp || (() => {});
+    /* Nach jedem Ziehen eine Meldung mit Punkt und Strecke: verschoben wurde
+       sonst still, und ein Fehlgriff fiel erst im Bauauftrag auf. */
+    this.aufGezogen = opt.aufGezogen || (() => {});
     /* Gezogen wird ohne Rückfrage – ein Dialog mitten in der Geste wäre
        schlimmer als keiner. Hängt an der Strecke schon ein Bau, meldet die
        Ebene es danach: im Audit änderte das Ziehen den Auftrag des Trupps,
@@ -630,13 +655,29 @@ export class StreckenLayer {
        wegen ihres Abstandes, die Schilder wegen der Platzsuche. Verschieben
        ändert daran nichts – gerechnet wird in Kartenpunkten, die beim Ziehen
        stehen bleiben. */
-    this._zoomWaechter = () => { this._kabelzeichenSetzen(); this._schilderSetzen(); };
+    this._zoomWaechter = () => {
+      this._fernSetzen(); this._kabelzeichenSetzen(); this._schilderSetzen();
+    };
     this.karte.on('zoomend', this._zoomWaechter);
     /* Die Druckkarte setzt ihren Ausschnitt mit `fitBounds`, und das ändert
        nicht immer die Zoomstufe – ohne `moveend` bliebe dort jedes Schild an
        seinem vorläufigen Platz stehen. */
     this.karte.on('moveend', this._zoomWaechter);
     this._bind();
+    this._fernSetzen();
+  }
+
+  /* Aus der Ferne – eine Übersicht über mehrere Strecken – sind Teillängen
+     und die Fragezeichen offener Punktarten nur noch Kästchen auf Kästchen:
+     im Review lagen sie über den Standmarken der Schilder. Ausgeblendet wird
+     über eine Klasse am Kartenrahmen und nicht durch Neuzeichnen, denn die
+     Zoomstufe steht in keiner Signatur. Nur auf der Arbeitskarte: ein
+     Druckblatt zeigt, was der Druckdialog bestellt hat. */
+  _fernSetzen() {
+    if (!this.interaktiv) return;
+    const zoom = this.karte.getZoom();
+    if (zoom === undefined) return;
+    this.karte.getContainer().classList.toggle('fbp-fern', zoom < FERN_ZOOM);
   }
 
   _bind() {
@@ -802,8 +843,9 @@ export class StreckenLayer {
        Koordinateneingabe (`punktAnfuegen`) bleibt jeder Maßstab erlaubt – dort
        ist die Stelle genau. */
     if (this.karte.getZoom() < ZEICHNEN_AB_ZOOM) {
-      this.karte.setView(e.latlng, ZEICHNEN_ZIELZOOM);
-      this.aufGrobmass();
+      const zwischen = this.karte.getZoom() < ZEICHNEN_ZWISCHENZOOM - 1;
+      this.karte.setView(e.latlng, zwischen ? ZEICHNEN_ZWISCHENZOOM : ZEICHNEN_ZIELZOOM);
+      this.aufGrobmass(!zwischen);
       return;
     }
     /* Zwei Tipps an dieselbe Stelle binnen eines Augenblicks sind einer: ein
@@ -879,9 +921,11 @@ export class StreckenLayer {
        der Zoomwächter nach, nicht dieser Lauf. Die Horcher halten die
        Strecken und ihre Punkte, geplante wie gebaute; die gehen mit ihrer
        Identität ein. */
+    const signale = new Map(this.signale ? p.strecken.map(s => [s.id, this.signale(s)]) : []);
+    this._einfach = !!this.einfach();
     const stand = signatur(
       [p.strecken, p.einsatzabschnitte, o, this.auswahl, this.aktiverPunkt,
-       this.zeichenModus, this.baumodus, this.istSetzModus],
+       this.zeichenModus, this.baumodus, this.istSetzModus, [...signale], this._einfach],
       p.strecken.flatMap(s => [s, ...s.punkte, ...istPunkte(s)]));
     if (stand === this._stand) return;
     this._stand = stand;
@@ -907,7 +951,8 @@ export class StreckenLayer {
          zeichnete er sonst bei jedem Wechsel alles neu. Vom Zeichenmodus geht
          nur ein, OB gezeichnet wird: die Griffe hängen daran. */
       const eigen = signatur(
-        [s, o, gewaehlt, gewaehlt ? this.aktiverPunkt : null, !!this.zeichenModus, this.baumodus],
+        [s, o, gewaehlt, gewaehlt ? this.aktiverPunkt : null, !!this.zeichenModus, this.baumodus,
+         signale.get(s.id) || null, this._einfach],
         [s, ...s.punkte, ...istPunkte(s)]);
       let r = this._strecken.get(s.id);
       if (r && r.stand === eigen) continue;
@@ -919,7 +964,7 @@ export class StreckenLayer {
       r.stand = eigen;
       r.zeichenAuftraege = []; r.schilder = []; r.linienzuege = []; r.punktmarken = [];
       this._ziel = r;
-      this._zeichneStrecke(s, o);
+      this._zeichneStrecke(s, o, signale.get(s.id) || []);
     }
     this._ziel = null;
     for (const [sid, r] of this._strecken) {
@@ -997,7 +1042,7 @@ export class StreckenLayer {
     };
   }
 
-  _zeichneStrecke(s, o) {
+  _zeichneStrecke(s, o, signale = []) {
     const gewaehlt = s.id === this.auswahl;
     const st = this._stil(s);
     const nebensache = this.hervorheben && s.id !== this.hervorheben;
@@ -1018,20 +1063,31 @@ export class StreckenLayer {
        `lineCap: 'butt'` für diese eine Linie, aus demselben Grund: eine runde
        Kappe frisst die Lücke, an der die Punktreihe hängt. Die durchgezogene
        Ist-Linie behält ihre runde Kappe – sie hat keine Lücken zu verlieren. */
+    /* Die Punktreihe hatte 60 % Deckkraft und keine Fassung. Nachts lag sie
+       damit bei 1,9:1 gegen die Karte, tags bei 2,4:1 – neben der kräftigen
+       Ist-Linie war der Auftrag kaum noch zu finden, und genau gegen ihn wird
+       die Abweichung gelesen. Unterschieden wird jetzt allein am Muster:
+       volle Deckkraft, quadratische Punkte und eine eigene Fassung darunter,
+       die nachts dunkel wird wie die übrigen (`.fbp-fassung` in app.css). */
     const f = this.strichFaktor * this.strichbreite;
+    const sollBreite = Math.max(3 * f, st.breite - 1.5 * f);
     const sollSt = gebaut
-      ? { ...st, breite: Math.max(2, st.breite - 1.5 * f), deckkraft: st.deckkraft * 0.6,
-          strich: [1 * f, 7 * f].join(' '), fassung: 0, kappe: 'butt' }
+      ? { ...st, breite: sollBreite, strich: [sollBreite, 2 * sollBreite].join(' '),
+          fassung: st.fassung ? sollBreite + 4 * f : 0, kappe: 'butt' }
       : st;
     if (pfad.length >= 2) {
       /* Für die Platzsuche der Schilder: jede gezeichnete Trasse zählt, auch
          die blasse Nebenstrecke – verdeckt ist verdeckt. */
       this._ziel.linienzuege.push(s.punkte);
-      // weiße Kontrastfassung darunter
+      /* Weiße Kontrastfassung darunter. Die Klasse trägt sie, damit die
+         Nachtdarstellung sie abdunkeln kann: weiß war sie dort das Hellste auf
+         der ganzen Karte. Die Druckkarten liegen außerhalb von `#karte` und
+         behalten sie weiß. */
       if (sollSt.fassung) {
         L.polyline(pfad, {
           pane: 'fbp-strecken', color: '#ffffff', weight: sollSt.fassung,
-          opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false
+          opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false,
+          className: 'fbp-fassung'
         }).addTo(this._ziel.gruppe);
       }
 
@@ -1116,14 +1172,22 @@ export class StreckenLayer {
     // gebaute Trasse antippt.
     if (this.interaktiv && gewaehlt && !this.zeichenModus && !this.baumodus && s.punkte.length >= 2) {
       for (let i = 1; i < s.punkte.length; i++) {
-        const m = mitte(s.punkte[i - 1], s.punkte[i]);
+        /* Nicht auf der Mitte: dort steht die Teillänge, und der Griff lag im
+           Review mitten in der Zahl („46◌ m“). Bei einem Drittel bleibt er auf
+           der Trasse, frei von Teillänge und Punktmarke. */
+        const a = s.punkte[i - 1], b = s.punkte[i];
+        const m = o.teillaengen
+          ? L.latLng(a.lat + (b.lat - a.lat) / 3, a.lng + (b.lng - a.lng) / 3)
+          : mitte(a, b);
         const griff = L.marker(m, {
-          pane: 'fbp-griffe', draggable: true, title: 'Ziehen: Zwischenpunkt einfügen',
+          pane: 'fbp-griffe', title: 'Ziehen: Zwischenpunkt einfügen',
           icon: L.divIcon({ className: 'fbp-einfuegen', html: '<i></i>', iconSize: [14, 14], iconAnchor: [7, 7] })
         }).addTo(this._ziel.gruppe);
         const idx = i;
-        griff.on('dragend', ev => {
-          const ll = ev.target.getLatLng();
+        /* Am Finger erst nach Halten (`ziehen.js`) – ein Wisch über die Trasse
+           legte sonst still einen Punkt ein. */
+        ziehbar(this.karte, griff, { ende: (ll, ausgang) => {
+          if (distanz(ll, ausgang) < 0.01) return;
           store.aendern(() => {
             const np = neuerPunkt(ll.lat, ll.lng);
             np._manuell = false;
@@ -1131,8 +1195,9 @@ export class StreckenLayer {
             this._artenAktualisieren(s);
           }, 'strecke');
           this.aufAenderung();
+          this.aufGezogen('eingefuegt', idx, distanz(ll, ausgang), s);
           if (bauBegonnen(s)) this.aufGebautGeaendert(s);
-        });
+        } });
       }
     }
 
@@ -1143,7 +1208,8 @@ export class StreckenLayer {
       /* Abgerückt wird nur, wo es eine Trasse gibt, an der entlang gerückt
          werden kann: der einzelne Punkt hat keine Richtung, sein Schild bleibt
          über ihm stehen. */
-      const abstand = s.punkte.length >= 2 ? schildAbstand(o) : 0;
+      const abstand = s.punkte.length < 2 ? 0
+        : schildAbstand(o) || (this._einfach && o.teillaengen ? SCHILD_ABSTAND[1] : 0);
       const anker = s.punkte[Math.floor((s.punkte.length - 1) / 2)];
       /* Der Baustand steht auch auf der Karte, im Schild der Strecke und mit
          derselben Marke wie in der Liste. Im Audit sahen auf der Arbeitskarte
@@ -1158,6 +1224,19 @@ export class StreckenLayer {
         ? `<span class="bz-marke bz-${escapeHtml(s.bau.stand)}">${escapeHtml(baustandById(s.bau.stand).kurz)}</span>`
         : this.mitStand && store.projekt.strecken.some(bauBegonnen)
           ? '<span class="bz-marke bz-offen">offen</span>' : '';
+      /* Woran die Führung hängen bleiben muss, steht an der Standmarke und
+         nicht nur in der Liste: eine durchgefallene Prüfung unter einem grünen
+         „gebaut“ las sich im Review als fertige Leitung. Ausgeschrieben wird
+         nur die Prüfung – sie sperrt die Übergabe –, Abweichungen und Punkte
+         abseits stehen als bloßes ⚠, die Zahl dazu in der Liste. */
+      const bz = (this.mitIst || this.mitStand) ? bauzeile(s) : null;
+      const warnung = !bz || !bz.warnungen.length ? ''
+        : bz.warnungen[0] === 'Prüfung nicht bestanden'
+          ? '<span class="bz-marke bz-warn">⚠ Prüfung nicht bestanden</span>'
+          : `<span class="bz-marke bz-warn" title="${escapeHtml(bz.warnungen.join(', '))}">⚠</span>`;
+      const signalSchild =
+        (signale.includes('neu') ? '<span class="bz-marke bz-neu">neu</span>' : '') +
+        (signale.includes('spaet') ? '<span class="bz-marke bz-warn">⚠ ohne Meldung</span>' : '');
       const marke = L.marker([anker.lat, anker.lng], {
         pane: 'fbp-labels', interactive: false,
         icon: L.divIcon({
@@ -1168,7 +1247,8 @@ export class StreckenLayer {
                      <b>${escapeHtml(s.name)}</b>
                      <span class="wert">${formatLaenge(k.trasse)}</span>
                      ${k.zuschlag || k.reserve ? `<span class="zus">${bedarfsHerkunft(k)} → ${formatLaenge(k.bedarf)}</span>` : ''}
-                     ${standSchild}
+                     ${standSchild || warnung || signalSchild
+                       ? `<span class="schild-stand">${standSchild}${warnung}${signalSchild}</span>` : ''}
                    </span>
                  </span>`,
           iconSize: null
@@ -1178,7 +1258,12 @@ export class StreckenLayer {
          gezeichnet sind und die Karte einen Maßstab hat – die Platzsuche läuft
          deshalb hinterher über den ganzen Bestand. Bis dahin und ohne Abstand
          bleibt es über seinem Ankerpunkt stehen. */
-      if (abstand) this._ziel.schilder.push({ marke, punkte: s.punkte, abstand });
+      /* Auch das Schild „an der Strecke“ geht in die Platzsuche, nur ohne
+         Suche: es bleibt über seinem Punkt und wird allein aus der Deckung
+         und – auf dem Blatt – über die Kante zurück geschoben. Die Lagekarte
+         steht von Haus aus so, und dort lag im Review ein Schild halb über
+         dem oberen Rand. */
+      this._ziel.schilder.push({ marke, punkte: s.punkte, abstand });
     }
   }
 
@@ -1199,22 +1284,49 @@ export class StreckenLayer {
     if (!this.mitIst) return;
     const ist = istPunkte(s);
     if (!ist.length) return;
-    const pfad = ist.map(pt => [pt.lat, pt.lng]);
+    /* Gezeichnet wird Stück für Stück, wie es zusammenhängend gebaut ist
+       (`istVerlauf` in baudoku.js). Eine einzige Linie über alle Punkte zog
+       sich zwischen zwei Bauabschnitten über Planpunkte, die niemand gebaut
+       hatte – auf der Karte wie auf der Baudokumentation. */
+    const verlauf = istVerlauf(s);
+    const zu = this.strichFaktor * this.strichbreite;
 
-    if (pfad.length >= 2) {
+    /* Die Lücke liegt UNTER der gebauten Trasse und über den offenen
+       Planpunkten: sie sagt „hier fehlt noch“, und das gehört an die Stelle,
+       an der es fehlt. Unterschieden wird am Strich – lang gestrichelt und
+       schmal, zwischen der Punktreihe der Planung und der durchgezogenen
+       Ist-Linie und weit genug vom kurzen `3 4` der Abweichung, um auch im
+       Schwarz-Weiß-Druck für sich zu stehen. */
+    for (const l of verlauf.luecken) {
+      const lpfad = l.punkte.map(pt => [pt.lat, pt.lng]);
+      L.polyline(lpfad, {
+        pane: 'fbp-strecken', color: '#ffffff', weight: 2.5 * zu + 4 * zu,
+        opacity: 0.9, lineCap: 'butt', lineJoin: 'round', interactive: false,
+        className: 'fbp-fassung'
+      }).addTo(this._ziel.gruppe);
+      L.polyline(lpfad, {
+        pane: 'fbp-strecken', color: st.farbe, weight: 2.5 * zu, opacity: 1,
+        dashArray: [12 * zu, 7 * zu].join(' '), lineCap: 'butt', lineJoin: 'round',
+        interactive: false, className: 'fbp-ist-luecke'
+      }).addTo(this._ziel.gruppe);
+    }
+
+    for (const stueck of verlauf.stuecke) {
+      if (stueck.length < 2) continue;
+      const pfad = stueck.map(pt => [pt.lat, pt.lng]);
       /* Nur die gebauten Trassen kommen in die Platzsuche der Streckenschilder.
          Das hält die Rechnung klein – gebaut ist immer nur ein Teil der
          Planung – und deckt trotzdem den Fall ab, für den sie da ist: ein
          Schild, das quer über der Linie liegt, die der Trupp aufgenommen hat. */
-      this._ziel.linienzuege.push(ist);
+      this._ziel.linienzuege.push(stueck);
       /* Die Zuschläge wachsen mit dem Strichfaktor wie alles andere. Fest
          gesetzt wäre die gebaute Trasse auf einem A3-Blatt kaum noch kräftiger
          als die geplante – und genau der Unterschied ist die Aussage des
          Blattes. */
-      const zu = this.strichFaktor * this.strichbreite;
       L.polyline(pfad, {
         pane: 'fbp-strecken', color: '#ffffff', weight: (st.fassung || 8 * zu) + 1 * zu,
-        opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false
+        opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false,
+        className: 'fbp-fassung'
       }).addTo(this._ziel.gruppe);
       L.polyline(pfad, {
         pane: 'fbp-strecken', color: st.farbe, weight: st.breite + 1.5 * zu,
@@ -1252,7 +1364,8 @@ export class StreckenLayer {
         pane: 'fbp-griffe', interactive: this.interaktiv, keyboard: false,
         icon: L.divIcon({
           className: 'fbp-punkt-icon',
-          html: `<span class="fbp-istpunkt${kurz ? ' mit-kurz' : ''}" style="--farbe:${st.farbe}">` +
+          html: `<span class="fbp-istpunkt${kurz ? ' mit-kurz' : ''}` +
+                `${pt.art === 'offen' ? ' kurz-offen' : ''}" style="--farbe:${st.farbe}">` +
                 `${escapeHtml(kurz)}</span>`,
           iconSize: [18, 18], iconAnchor: [9, 9]
         })
@@ -1268,6 +1381,34 @@ export class StreckenLayer {
         });
       }
     }
+  }
+
+  /**
+   * Ein gesetztes Schild aus der Deckung eines schon stehenden schieben und –
+   * auf dem Blatt – in den Rahmen zurückholen. Verändert `feld` und gibt die
+   * Verschiebung zurück.
+   */
+  _schildSchieben(feld, belegt, ecke, gegenecke) {
+    const schub = { x: 0, y: 0 };
+    for (let n = 0; n < 3; n++) {
+      const r = belegt.find(x => ueberdeckung(feld, x));
+      if (!r) break;
+      const hoch = r.y - (feld.y + feld.hoehe);
+      const runter = r.y + r.hoehe - feld.y;
+      const v = -hoch < runter ? hoch : runter;
+      feld.y += v; schub.y += v;
+    }
+    if (!this.interaktiv) {
+      if (feld.breite < gegenecke.x - ecke.x) {
+        const vx = Math.max(0, ecke.x - feld.x) - Math.max(0, feld.x + feld.breite - gegenecke.x);
+        feld.x += vx; schub.x += vx;
+      }
+      if (feld.hoehe < gegenecke.y - ecke.y) {
+        const vy = Math.max(0, ecke.y - feld.y) - Math.max(0, feld.y + feld.hoehe - gegenecke.y);
+        feld.y += vy; schub.y += vy;
+      }
+    }
+    return schub;
   }
 
   _istTooltip(s, pt) {
@@ -1324,6 +1465,34 @@ export class StreckenLayer {
       if (!kasten) continue;
       const breite = kasten.offsetWidth, hoehe = kasten.offsetHeight;
       if (!breite || !hoehe) continue;
+      if (!schild.abstand) {
+        /* Wo das Schild steht, wird gemessen und nicht aus `translate(-50%,
+           -168%)` gerechnet: der Kasten steht in einer Zeile und sitzt auf
+           deren Grundlinie, die Rechnung lag damit um eine halbe Höhe daneben.
+           Gemessen am Bildschirm und auf Kartenpunkte zurückgerechnet – die
+           Druckkarte ist verkleinert eingesetzt. Geschoben wird über `left`
+           und `top` – die Verschiebung des Stilbogens bleibt davon unberührt,
+           und anders als ein Rand verschiebt das die Zeile nicht mit. */
+        kasten.style.position = kasten.style.left = kasten.style.top = '';
+        const rahmen = this.karte.getContainer().getBoundingClientRect();
+        const mass = rahmen.width / (this.karte.getContainer().offsetWidth || rahmen.width || 1);
+        const k = kasten.getBoundingClientRect();
+        const lo = this.karte.containerPointToLayerPoint(
+          [(k.left - rahmen.left) / mass, (k.top - rahmen.top) / mass]);
+        const feld = {
+          x: lo.x - SCHILD_LUFT, y: lo.y - SCHILD_LUFT,
+          breite: breite + 2 * SCHILD_LUFT, hoehe: hoehe + 2 * SCHILD_LUFT
+        };
+        const schub = this._schildSchieben(feld, belegt, ecke, gegenecke);
+        if (schub.x || schub.y) {
+          kasten.style.position = 'relative';
+          kasten.style.left = `${schub.x.toFixed(1)}px`;
+          kasten.style.top = `${schub.y.toFixed(1)}px`;
+        }
+        belegt.push(feld);
+        gesetzt++;
+        continue;
+      }
       const zug = schild.punkte.map(pkt);
       const grund = schild.abstand * faktor;
       const reichweite = grund * 3.2 + Math.hypot(breite, hoehe);
@@ -1434,6 +1603,27 @@ export class StreckenLayer {
       }
       if (!bestes) continue;
 
+      /* Zwei Nachbesserungen nach der Suche, beide einfach und gegen das
+         Ergebnis gerechnet und nicht gegen die Anwärter. Im Review lag
+         „FFK BW-Stelle“ trotz der Kosten über dem Schild der Nachbarstrecke –
+         wenn alle Anwärter schlecht sind, gewinnt eben ein schlechter –, und
+         auf der Lagekarte stand ein Schild halb über der Blattkante, ohne
+         Namen. Erst wird ein Schild, das ein schon gesetztes deckt, senkrecht
+         daneben geschoben (nach oben oder unten, wohin es weniger weit ist),
+         dann wird es auf dem Blatt in den Rahmen zurückgeholt. Am Bildschirm
+         nicht: dort ist der Rahmen nur der Ausschnitt von eben, und ein
+         Schild, das an dessen Rand klebt, stünde nach dem Verschieben mitten
+         in der Karte, weit weg von seiner Trasse. Der Leitstrich folgt. */
+      const feld = { ...bestes.feld };
+      const schub = this._schildSchieben(feld, belegt, ecke, gegenecke);
+      bestes.dx += schub.x; bestes.dy += schub.y;
+      bestes.feld = feld;
+      const weg = Math.hypot(bestes.dx, bestes.dy);
+      if ((schub.x || schub.y) && weg > 0) {
+        bestes.vx = bestes.dx / weg; bestes.vy = bestes.dy / weg;
+        bestes.stiel = weg - randAbstand(bestes.vx, bestes.vy, breite, hoehe);
+      }
+
       /* Das Schild hängt an seiner Marke, die Marke wandert auf die gewählte
          Stelle der Trasse: so sitzt die Pfeilspitze auf der Linie, und Schild
          und Strich rechnen von derselben Stelle aus. */
@@ -1531,9 +1721,12 @@ export class StreckenLayer {
       gewaehlt ? 'gewaehlt' : '', aktiv ? 'aktiv' : ''].join(' ');
     const beschriftung = o.punktnummern === false ? '' : (art.kurz === '·' ? nr : `${nr}${art.kurz}`);
 
+    /* Gezogen wird über `ziehen.js` und nicht über Leaflets `draggable`: am
+       Finger erst nach Halten, damit ein Wisch über die gewählte Strecke die
+       Karte verschiebt und nicht den Punkt. */
+    const ziehbarHier = this.interaktiv && gewaehlt && !this.zeichenModus && !this.baumodus;
     const m = L.marker([pt.lat, pt.lng], {
       pane: 'fbp-griffe',
-      draggable: this.interaktiv && gewaehlt && !this.zeichenModus && !this.baumodus,
       keyboard: false,
       interactive: this.interaktiv,
       icon: L.divIcon({
@@ -1588,17 +1781,19 @@ export class StreckenLayer {
       this.waehle(s.id, pt.id);
       if (this.baumodus) this.aufSollPunkt(s, pt);
     });
-    m.on('drag', ev => {
-      const ll = ev.target.getLatLng();
-      pt.lat = ll.lat; pt.lng = ll.lng;
-    });
-    m.on('dragstart', () => store.schnappschuss());
-    m.on('dragend', ev => {
-      const ll = ev.target.getLatLng();
-      store.aendern(() => { pt.lat = ll.lat; pt.lng = ll.lng; }, 'strecke', { undo: false });
-      this.aufAenderung();
-      if (bauBegonnen(s)) this.aufGebautGeaendert(s);
-    });
+    if (ziehbarHier) {
+      ziehbar(this.karte, m, {
+        start: () => store.schnappschuss(),
+        ziehen: ll => { pt.lat = ll.lat; pt.lng = ll.lng; },
+        ende: (ll, ausgang) => {
+          store.aendern(() => { pt.lat = ll.lat; pt.lng = ll.lng; }, 'strecke', { undo: false });
+          this.aufAenderung();
+          const weg = distanz(ll, ausgang);
+          if (weg >= 0.01) this.aufGezogen('verschoben', i, weg, s);
+          if (bauBegonnen(s)) this.aufGebautGeaendert(s);
+        }
+      });
+    }
     const zusatz = bauweise && bauweise.kurz ? ` · ${escapeHtml(bauweise.name)}` : '';
     m.bindTooltip(
       `<b>Punkt ${nr}</b> – ${art.name}${zusatz}${pt.name ? '<br>' + escapeHtml(pt.name) : ''}`,

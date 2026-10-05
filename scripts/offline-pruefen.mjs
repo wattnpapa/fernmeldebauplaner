@@ -428,6 +428,146 @@ try {
   b.pruefe(true, 'Die Oberfläche warnt, wenn der Vorrat zur eingestellten Karte nicht passt');
   await seite.auswerten('return (await import("./js/kacheln.js")).leeren();');
 
+  b.abschnitt('Der Kartenchip misst die Trasse, nicht den Bestand');
+  /* Der Chip sagte „Karte dabei ✓“, sobald irgendeine Kachel im Gerät lag –
+     eine einzige weit abseits, oder 10 von 300 nach einem abgebrochenen Lauf –,
+     und am Bauort blieb die Karte grau. Gelegt wird hier unmittelbar in die
+     Datenbank, an `kacheln.js` vorbei; dessen Zwischenspeicher der Abdeckung
+     erfährt davon nur über `visibilitychange`, so wie von einem zweiten
+     Fenster der Anwendung. Ohne dieses Ereignis prüfte der Abschnitt den
+     Zwischenspeicher statt der Messung. */
+  const legeKacheln = async welche => seite.auswerten(`
+    const k = await import('./js/kacheln.js');
+    const m = await import('./js/map.js');
+    const basis = m.basiskarteById(window.fbp.store.projekt.ansicht.basemap);
+    const s = window.fbp.store.projekt.strecken[0];
+    const liste = ${welche === 'fern'
+      ? '[{ z: 17, x: 1000, y: 1000 }]'
+      : `k.kachellisteLinien([s.punkte]).slice(${welche === 'halb' ? '10' : '0'})`};
+    const blob = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' });
+    const db = await new Promise((f, r) => {
+      const a = indexedDB.open('fbp.kacheln', 1);
+      a.onsuccess = () => f(a.result); a.onerror = () => r(a.error);
+    });
+    await new Promise((f, r) => {
+      const v = db.transaction('kacheln', 'readwrite');
+      for (const kachel of liste) {
+        v.objectStore('kacheln').put({ url: k.kacheladresse(basis.url, kachel), blob,
+          karte: basis.id, zeit: Date.now(), groesse: 4 });
+      }
+      v.oncomplete = f; v.onerror = () => r(v.error);
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+    (await import('./js/ui.js')).zeichneBauListe();
+    return k.kachellisteLinien([s.punkte]).length;`);
+  const chip = () => seite.auswerten('document.querySelector(".vorrat-chip").textContent');
+  /* Chip und Bestandszeile schreiben jeder für sich, sobald ihre Abfrage
+     zurück ist – gewartet wird deshalb auf jede einzeln. */
+  const bald = ausdruck => seite.warteAuf(ausdruck, 5000).then(() => true, () => false);
+  const gesamt = await legeKacheln('fern');
+  await seite.warteAuf('(await import("./js/kacheln.js")).bestand().then(b => b.anzahl === 1)');
+  await seite.ruhe();
+  b.gleich(await chip(), 'Karte mitnehmen',
+    'Eine einzige Kachel weit abseits macht keine „Karte dabei“');
+  b.pruefe(await seite.auswerten('document.querySelector(".vorrat-chip").classList.contains("vorrat-leer")'),
+    'Der Chip steht im Mahnton');
+  await legeKacheln('halb');
+  await seite.warteAuf(`/unvollständig/.test(document.querySelector(".vorrat-chip").textContent)`, 5000);
+  b.gleich(await chip(), `Karte unvollständig ${gesamt - 10}/${gesamt}`,
+    'Eine halbe Karte nennt ihre Zahl');
+  b.pruefe(await bald('/fehlen 10 von/.test(document.querySelector(".vorrat-stand").textContent)'),
+    'Der Bestand im Block nennt, was der Trasse fehlt');
+  await legeKacheln('alle');
+  await seite.warteAuf(`/dabei ✓/.test(document.querySelector(".vorrat-chip").textContent)`, 5000);
+  b.gleich(await chip(), 'Karte dabei ✓', 'Erst die vollständige Trasse heißt „Karte dabei ✓“');
+  b.pruefe(await bald('/vollständig/.test(document.querySelector(".vorrat-stand").textContent)'),
+    'Und der Bestand sagt dasselbe');
+
+  b.abschnitt('„Vorrat löschen“ fragt nach und sagt, dass es alle Karten sind');
+  /* Ein Tipp leerte den ganzen Speicher, 16 px neben „Karte holen“, ohne
+     Rückfrage – und „Rückgängig“ holt Kacheln nicht zurück. */
+  const loeschKnopf = `[...document.querySelectorAll('.bau-vorrat button')]
+    .find(k => k.textContent.includes('Vorrat löschen'))`;
+  b.pruefe(await bald(`!!${loeschKnopf} && !${loeschKnopf}.hidden`),
+    'Mit Vorrat steht der Knopf da');
+  b.pruefe(await seite.auswerten(`!${loeschKnopf}.closest('.bau-tasten')`),
+    'Er steht nicht in der Reihe von „Karte holen“');
+  await seite.auswerten(`${loeschKnopf}.click(); return true;`);
+  await seite.warteAuf('!document.getElementById("dialog").hidden', 5000);
+  const frage = (await seite.text('#dialog-inhalt') || '').replace(/\s+/g, ' ');
+  b.pruefe(/\d+ Kacheln/.test(frage), `Die Rückfrage nennt die Zahl („${frage.slice(0, 60)}…“)`);
+  b.pruefe(/alle/.test(frage) && /anderer Strecken/.test(frage),
+    'Und dass alle Karten im Gerät gehen, nicht nur die dieser Strecke');
+  b.pruefe(/Ohne Netz ist kein Ersatz/.test(frage), 'Und dass ohne Netz kein Ersatz zu holen ist');
+  b.gleich(await seite.auswerten('document.activeElement && document.activeElement.textContent'),
+    'Behalten', 'Der Fokus liegt auf „Behalten“, nicht auf dem Löschen');
+  await seite.auswerten(`[...document.querySelectorAll('#dialog-fuss button')]
+    .find(k => k.textContent === 'Behalten').click(); return true;`);
+  await seite.ruhe();
+  b.gleich(await seite.auswerten('(await import("./js/kacheln.js")).bestand().then(b => b.anzahl)'),
+    gesamt + 1, '„Behalten“ lässt den Vorrat stehen');
+  await seite.auswerten(`${loeschKnopf}.click(); return true;`);
+  await seite.warteAuf('!document.getElementById("dialog").hidden', 5000);
+  await seite.auswerten(`[...document.querySelectorAll('#dialog-fuss button')]
+    .find(k => k.textContent === 'Alle löschen').click(); return true;`);
+  await seite.warteAuf('(await import("./js/kacheln.js")).bestand().then(b => b.anzahl === 0)', 5000);
+  await seite.warteAuf(`/Karte mitnehmen/.test(document.querySelector(".vorrat-chip").textContent)`, 5000);
+  b.pruefe(true, '„Alle löschen“ leert ihn, und der Chip sagt es sofort');
+  b.pruefe(await bald(`!${loeschKnopf} || ${loeschKnopf}.hidden`),
+    'Bei leerem Vorrat fehlt der Knopf');
+
+  b.abschnitt('„Abbrechen“ fängt den zweiten Tipp auf „Karte holen“ nicht ab');
+  /* „Karte holen“ wurde an derselben Stelle zu „Abbrechen“, und ein Doppeltipp
+     mit Handschuh brach den Abruf ab, kaum dass er lief. Geholt wird von
+     diesem Server, wie unten bei „ohne Netz“; die Feinheit 18 macht den Lauf
+     lang genug, dass er die Sperre überdauert. */
+  const abbruch = await seite.auswerten(`
+    const m = await import('./js/map.js');
+    const basis = m.BASISKARTEN.find(k => k.id === window.fbp.store.projekt.ansicht.basemap);
+    const echt = basis.url;
+    basis.url = location.origin + '/gibt-es-nicht/{z}/{x}/{y}.png';
+    const warte = n => new Promise(f => setTimeout(f, n));
+    const knoepfe = () => [...document.querySelectorAll('.bau-vorrat .bau-tasten button')];
+    try {
+      (await import('./js/ui.js')).zeichneBauListe();
+      const fein = [...document.querySelectorAll('.bau-vorrat select')]
+        .find(x => [...x.options].some(o => o.value === '18'));
+      fein.value = '18'; fein.dispatchEvent(new Event('change'));
+      const [holen] = knoepfe();
+      const vorher = holen.getBoundingClientRect();
+      holen.click();
+      const [h2, ab] = knoepfe();
+      const r = {
+        holenGesperrt: h2.disabled, abbrechenDa: !ab.hidden, abbrechenGesperrt: ab.disabled,
+        eigenerKnopf: ab !== h2
+      };
+      /* Der zweite Tipp eines Doppeltipps: auf die Stelle, an der „Karte
+         holen“ eben noch stand, und auf „Abbrechen“ selbst. */
+      document.elementFromPoint(vorher.right - 4, vorher.top + vorher.height / 2)?.click();
+      ab.click();
+      await warte(300);
+      r.laeuftNachDoppeltipp = knoepfe()[0].disabled;
+      await warte(900);
+      r.abbrechenFrei = !knoepfe()[1].disabled;
+      knoepfe()[1].click();
+      const box = document.getElementById('hinweisbox');
+      const ende = Date.now() + 10000;
+      while (Date.now() < ende && !/Abgebrochen/.test(box.textContent || '')) await warte(100);
+      r.meldung = box.textContent || '';
+      r.danach = knoepfe()[0].textContent;
+      return r;
+    } finally {
+      basis.url = echt;
+    }`);
+  b.pruefe(abbruch.eigenerKnopf && abbruch.abbrechenDa, 'Abbrechen ist ein eigener Knopf');
+  b.pruefe(abbruch.holenGesperrt, '„Karte holen“ nimmt während des Abrufs keinen Tipp an');
+  b.pruefe(abbruch.abbrechenGesperrt, '„Abbrechen“ ist in der ersten Sekunde gesperrt');
+  b.pruefe(abbruch.laeuftNachDoppeltipp, 'Ein Doppeltipp bricht den Abruf nicht ab');
+  b.pruefe(abbruch.abbrechenFrei, 'Nach der Sperre lässt er sich abbrechen');
+  b.pruefe(/Abgebrochen/.test(abbruch.meldung), `Und meldet es („${abbruch.meldung.slice(0, 50)}“)`);
+  b.gleich(abbruch.danach, '↓ Karte holen', 'Danach steht wieder „Karte holen“ da');
+  await seite.auswerten('return (await import("./js/kacheln.js")).leeren();');
+
   b.abschnitt('Ohne Netz sagt die Statusleiste, dass die Kacheln ausbleiben');
   /* Der Browser gilt weiter als online – geprüft wird gerade der Fall, in dem
      `navigator.onLine` nichts merkt und nur die Kacheln ausbleiben: schwaches

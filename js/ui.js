@@ -10,7 +10,7 @@ import {
   unterabschnitte, abschnitteGeordnet, abschnittTiefe, abschnittEltern, abschnittBaum,
   astHoehe, ABSCHNITT_EBENEN,
   projektListe, speicherBelegung, SPEICHER_KONTINGENT, dateisicherung, id, neuerPunkt,
-  BAUSTAENDE, baustandById, mengeOderNichts, PLANPUNKTARTEN, planKennung
+  BAUSTAENDE, baustandById, mengeOderNichts, PLANPUNKTARTEN, planKennung, ladeAlle
 } from './state.js';
 import { kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml } from './strecken.js';
 import { signatur } from './signatur.js';
@@ -62,7 +62,8 @@ import {
 import { zeichneFunksicht, zeichneZwischenraum, basiskarteById } from './map.js';
 import {
   umfang as kachelUmfang, vorladen as kachelVorladen, bestand as kachelBestand,
-  leeren as kachelVorratLeeren, HOECHSTENS as KACHEL_HOECHSTENS, PUFFER, ZOOM_VON, ZOOM_BIS
+  leeren as kachelVorratLeeren, abdeckung as kachelAbdeckung,
+  HOECHSTENS as KACHEL_HOECHSTENS, PUFFER, ZOOM_VON, ZOOM_BIS
 } from './kacheln.js';
 import {
   BOS_BAENDER, GEGENSTELLEN, bosBandById, gegenstelleById, gegenstellenhoehe,
@@ -88,12 +89,12 @@ import {
 import {
   vorschlag, truppText, befund, einspielen, berichtText
 } from './baumeldung.js';
-import { meldungAlsLink, laengenUrteil } from './teilen.js';
+import { meldungAlsLink, laengenUrteil, meldungsCodeVon, meldungsCodeAus } from './teilen.js';
 /* Die Ortung liegt bei der Karte des Baumodus und wird von dort eingeführt –
    nicht umgekehrt: `baukarte.js` braucht nichts aus dieser Datei, was es nicht
    beim Start hereingereicht bekommt, und ein Ring zwischen beiden liefe beim
    Laden ins Leere. */
-import { istPunktAusStandort, punktkarteOeffnen } from './baukarte.js';
+import { istPunktAusStandort, punktkarteOeffnen, bauzielNachfuehren } from './baukarte.js';
 import { VERSION } from './version.js';
 
 let ctx = null;   // { karte, sl, zl, aufAenderung }
@@ -228,11 +229,25 @@ export function dialog({ titel, inhalt, fuss = [], breit = false, geteilt = fals
   const fussEl = document.getElementById('dialog-fuss');
   fussEl.className = 'dialog-fuss' + (geteilt ? ' geteilt' : '');
   fussEl.innerHTML = '';
+  /* Ein Fußknopf, der den Dialog schließt, wirkt genau einmal. Im Audit
+     ergab ein Doppeltipp auf „Einspielen“ zwei Undo-Schritte, und ebenso
+     „Trotzdem übergeben“: der zweite Tipp kam an, bevor die Hülle verschwand.
+     Gesperrt werden die Knöpfe DIESES Aufbaus – öffnet der Griff einen
+     Folgedialog, gehören die neuen Knöpfe dem und bleiben frei. */
+  const knoepfe = [];
+  let entschieden = false;
   for (const f of fuss) {
     const b = document.createElement('button');
     b.className = 'knopf' + (f.primaer ? ' primaer' : '') + (f.gefahr ? ' gefahr' : '');
     b.textContent = f.text;
-    b.onclick = () => { if (f.tun ? f.tun() !== false : true) schliesseDialog(); };
+    b.onclick = () => {
+      if (entschieden) return;
+      if (f.tun ? f.tun() === false : false) return;
+      entschieden = true;
+      for (const k of knoepfe) k.disabled = true;
+      schliesseDialog();
+    };
+    knoepfe.push(b);
     fussEl.appendChild(b);
   }
   /* aria-modal verspricht Abschottung – inert löst sie ein: die Anwendung
@@ -312,6 +327,14 @@ function el(tag, klasse, inhalt) {
   if (klasse) e.className = klasse;
   if (inhalt !== undefined) e.innerHTML = inhalt;
   return e;
+}
+
+/* Ein Wortlaut für eine Zeile, die nicht wachsen darf: Umbrüche werden zu
+   Leerzeichen, und was über `max` geht, endet mit „…“ statt mitten im Wort
+   abgeschnitten im Kasten zu stehen. */
+function kuerzen(text, max) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  return t.length > max ? t.slice(0, max - 1).trimEnd() + '…' : t;
 }
 
 /* Eine Zahl, wie sie hier getippt wird: Komma als Trenner, und der Punkt
@@ -490,15 +513,23 @@ function debounceAendern(fn, danach) {
   _debounceQueue.push(fn);
   if (danach) _debounceDanach.push(danach);
   if (_debounceTimer) clearTimeout(_debounceTimer);
-  _debounceTimer = setTimeout(() => {
-    const combined = () => { _debounceQueue.forEach(f => f()); };
-    store.aendern(combined, 'formular');
-    const nachlauf = _debounceDanach;
-    _debounceQueue = [];
-    _debounceDanach = [];
-    _debounceTimer = null;
-    nachlauf.forEach(f => f());
-  }, 100);
+  _debounceTimer = setTimeout(formularSchreiben, 100);
+}
+/* Schreibt, was noch in der Warteschlange steht – sofort. Beim Verlassen der
+   Seite (`pagehide` in js/app.js) läuft der Zeitgeber nicht mehr ab: wer ein
+   Wort tippte und in derselben Zehntelsekunde neu lud oder die App wechselte,
+   fand das Feld danach leer, obwohl `store.speichern()` dort ausdrücklich
+   gerufen wird – es sicherte den Stand OHNE die letzte Eingabe. */
+export function formularSchreiben() {
+  if (!_debounceTimer) return;
+  clearTimeout(_debounceTimer);
+  const warteschlange = _debounceQueue;
+  const nachlauf = _debounceDanach;
+  _debounceQueue = [];
+  _debounceDanach = [];
+  _debounceTimer = null;
+  store.aendern(() => { warteschlange.forEach(f => f()); }, 'formular');
+  nachlauf.forEach(f => f());
 }
 function schreib(fn, danach) {
   debounceAendern(fn, danach);
@@ -554,6 +585,25 @@ const alphabetisch = (liste, titel) => liste.slice().sort((a, b) =>
 
 /** Strecken, Einsatzabschnitte und Zeichengruppen tragen ihren Namen unmittelbar */
 const nachName = x => x.name || '';
+
+/**
+ * Die Strecken eines Abschnitts: zuerst die, die eine Entscheidung brauchen –
+ * neu eingegangen, ohne Meldung seit zwei Stunden, Prüfung nicht bestanden,
+ * abgewichen –, darunter der Rest. Beide Gruppen nach dem Namen.
+ *
+ * Im Review stand eine durchgefallene Strecke an siebter Stelle unter sechs
+ * fertigen, weil „Pumpwerk“ hinter „Deich“ kommt. Die Führungsstelle liest
+ * die Liste von oben und hört auf, wenn oben alles grün ist. Eine Sammelzeile
+ * über der Liste hätte dasselbe gesagt, aber eine Zeile Höhe gekostet, die der
+ * Strecken-Reiter am Telefon nicht hat (zwölf Strecken, erste ohne Rollen).
+ * Ohne Bau gibt es keinen Bedarf, und die Liste steht wie bisher.
+ */
+function streckenGeordnet(liste) {
+  const bedarf = s => meldungNeu(s.id) || meldungUeberfaellig(s) ||
+    !!(bauzeile(s) || { warnungen: [] }).warnungen.length;
+  const sortiert = alphabetisch(liste, nachName);
+  return [...sortiert.filter(bedarf), ...sortiert.filter(s => !bedarf(s))];
+}
 /** Beschriftung eines Zeichens in der Liste – ohne eigene der Name des Symbols */
 const zeichenTitel = z => z.label || symbolById(z.symbol).name;
 
@@ -601,8 +651,8 @@ export function zeichneStreckenListe() {
     abschnitte.map(a => [a.id, a.sichtbar !== false, a.uebergeordnet || null]),
     abschnitte.length
       ? [...abschnitte.map(a => a.id), null]
-          .map(aid => alphabetisch(streckenIm(p, aid), nachName).map(s => s.id))
-      : alphabetisch(p.strecken, nachName).map(s => s.id),
+          .map(aid => streckenGeordnet(streckenIm(p, aid)).map(s => s.id))
+      : streckenGeordnet(p.strecken).map(s => s.id),
     [...zugeklappt], ctx.sl.auswahl, p.strecken.length > 0
   ]);
   if (gliederung === streckenListeStand && liste.children.length) {
@@ -628,7 +678,7 @@ export function zeichneStreckenListe() {
   /* Ohne Einsatzabschnitte bleibt die Liste, was sie war: eine Reihe Strecken.
      Erst wenn welche gebildet sind, tritt die Gliederung dazwischen. */
   if (!abschnitte.length) {
-    for (const s of alphabetisch(p.strecken, nachName)) liste.appendChild(streckenKarte(s));
+    for (const s of streckenGeordnet(p.strecken)) liste.appendChild(streckenKarte(s));
     return;
   }
 
@@ -660,14 +710,14 @@ function baustandZaehlung(strecken) {
      Trupp, der seit fast drei Stunden nicht gemeldet hatte, im Überblick
      unsichtbar, weil beides nur in der aufgeklappten Zeile stand. */
   const neu = strecken.filter(s => meldungNeu(s.id)).length;
-  const spaet = strecken.filter(s => {
-    if (!bauBegonnen(s) || !['offen', 'laeuft'].includes(s.bau.stand)) return false;
-    const z = (bauzeile(s) || {}).zuletzt;
-    return z && (Date.now() - Date.parse(z)) / 60000 >= MELDUNG_UEBERFAELLIG_MIN;
-  }).length;
+  const spaet = strecken.filter(meldungUeberfaellig).length;
+  /* Die durchgefallene Prüfung zählt mit, aus demselben Grund: zugeklappt
+     stand die Strecke sonst nur als eine der „gebaut“ da. */
+  const durch = strecken.filter(s => bauBegonnen(s) && uebergabestand(s).durchgefallen).length;
   return [
     ...[...BAUSTAENDE].reverse().filter(b => zahl[b.id]).map(b => `${zahl[b.id]} ${b.kurz}`),
     ...(neu ? [`${neu} neu`] : []),
+    ...(durch ? [`⚠ ${durch} Prüfung nicht bestanden`] : []),
     ...(spaet ? [`⚠ ${spaet} ohne Meldung seit 2 h`] : [])
   ].join(', ');
 }
@@ -757,6 +807,13 @@ function offeneKarteNachfuehren(karte, s) {
   if (o.querung) o.querung.remove();
   o.querung = !kabelById(s.kabeltyp).funk && s.punkte.length >= 2 ? querungsGruppe(s) : null;
   if (o.querung) o.tabelle.after(o.querung);
+  /* Kennung und Ausgabezeile hängen ebenso an den Punkten. Sie standen hier
+     nicht: die Karte entsteht beim ersten Punkt, und danach blieb der
+     Bauauftrag gesperrt – „mindestens zwei Trassenpunkte“ unter einer Trasse
+     mit dreien –, bis jemand die Karte zu- und wieder aufklappte. Ebenso
+     zeigte die Kennung nach dem Verschieben eines Punktes den alten Plan. */
+  o.kennung.innerHTML = kennungHTML(s);
+  o.ausgabeNachfuehren();
 }
 
 /* Zugeklappte Abschnitte sind Ansichtssache und keine Planungsdaten: sie
@@ -776,6 +833,11 @@ const bpOffen = new Set();
    maßen sie 2.370 der 4.337 px des Reiters. Wer sie braucht, hat den Sprung
    dorthin oben im Streifen, und der klappt sie mit auf. */
 const bauZu = new Set(['material', 'uebergabe', 'vorrat']);
+/* Blöcke, deren Klappzustand jemand selbst gewählt hat. Nur die Bauabschnitte
+   fragen danach: sie wählen ihren Vorgabezustand bei jedem Aufbau neu, und
+   ohne diesen Merker klappte ein eben geöffneter Block beim nächsten Tipp
+   wieder zu. */
+const bauKlappGewaehlt = new Set();
 
 /**
  * Einen Block des Bau-Reiters auf seine Überschrift zusammenfalten. Die
@@ -796,6 +858,7 @@ function klappbar(box, schluessel) {
   griff.type = 'button';
   griff.setAttribute('aria-expanded', String(!zu));
   griff.onclick = () => {
+    bauKlappGewaehlt.add(schluessel);
     bauZu.has(schluessel) ? bauZu.delete(schluessel) : bauZu.add(schluessel);
     const jetztZu = box.classList.toggle('zu');
     griff.setAttribute('aria-expanded', String(!jetztZu));
@@ -882,7 +945,7 @@ function klammerBox(o) {
    Art Fehler, die niemand beim Lesen sieht. */
 const LISTENARTEN = {
   strecken: {
-    eintraege: (p, aid) => alphabetisch(streckenIm(p, aid), nachName),
+    eintraege: (p, aid) => streckenGeordnet(streckenIm(p, aid)),
     unter: streckenUnter,
     wert: e => `${e.length} · ${formatLaenge(gesamtKennzahlen(e).trasse)}`,
     /* Der Baustand steht in einer eigenen Zeile unter dem Namen: neben dem
@@ -1040,9 +1103,14 @@ function leitungswahl(s, setzen) {
 /* Die Kennung des Plans (`planKennung` in state.js) – dieselbe steht im Kopf
    des gedruckten Bauauftrags. Weicht sie ab, baut der Trupp nach einem
    anderen Stand als dem auf dem Papier. */
-function kennungHTML(s) {
-  return `<span class="plan-kennung" title="Steht auch im Kopf des gedruckten Bauauftrags">` +
-    `Plan <b class="mono">${escapeHtml(planKennung([s]))}</b></span>`;
+function kennungHTML(s, erklaert = false) {
+  /* Im Bau-Reiter steht dazu, was die Kennung ist: „Plan Z7NG“ blieb dort im
+     Review unerklärt, und der `title` erscheint am Finger nie. In den Listen
+     der Planung bleibt sie kurz – dort kennt der Planer sie. */
+  return `<span class="plan-kennung${erklaert ? ' erklaert' : ''}" ` +
+    `title="Steht auch im Kopf des gedruckten Bauauftrags">` +
+    `${erklaert ? 'Plan-Kennung' : 'Plan'} <b class="mono">${escapeHtml(planKennung([s]))}</b>` +
+    `${erklaert ? '<span class="kennung-zusatz"> – steht auch auf dem Bauauftrag</span>' : ''}</span>`;
 }
 
 /* Wie lange die letzte Meldung her ist. Die Spanne steht neben der Uhrzeit,
@@ -1072,6 +1140,15 @@ setInterval(() => {
     s.classList.toggle('spaet', s.dataset.laeuft === '1' &&
       (Date.now() - Date.parse(iso)) / 60000 >= MELDUNG_UEBERFAELLIG_MIN);
   }
+  /* Die Arbeitskarte trägt „ohne Meldung“ an der Standmarke (`kartenSignale`).
+     Ihre Signatur sieht nur, was sich geändert hat – das Überschreiten der
+     zwei Stunden ist keine Änderung an der Planung, also wird hier gefragt.
+     Steht nichts anders, bleibt die Karte stehen. */
+  ctx?.sl?.zeichne();
+  /* Aus demselben Grund die Streckenliste: eine überfällige Strecke rückt nach
+     oben (`streckenGeordnet`). Neu gebaut wird sie nur, wenn sich ihre
+     Gliederung damit ändert. */
+  if (ctx && document.getElementById('strecken-liste')) zeichneStreckenListe();
 }, 60000);
 
 const KEY_NEU = 'fbp.neu.v1';
@@ -1093,6 +1170,28 @@ function s6Merken(sid, text) {
   if (text) l[sid] = text; else delete l[sid];
   try { localStorage.setItem(KEY_S6, JSON.stringify(l)); } catch (e) { /* gilt dann nur jetzt */ }
 }
+/** Ist die letzte Meldung einer Strecke im Bau älter als zwei Stunden? */
+function meldungUeberfaellig(s) {
+  if (!bauBegonnen(s) || !['offen', 'laeuft'].includes(s.bau.stand)) return false;
+  const z = (bauzeile(s) || {}).zuletzt;
+  return !!z && (Date.now() - Date.parse(z)) / 60000 >= MELDUNG_UEBERFAELLIG_MIN;
+}
+
+/**
+ * Was die Standmarke einer Strecke auf der Arbeitskarte zusätzlich trägt:
+ * „neu“ und „ohne Meldung“. Beides stand bisher nur in der Liste, und wer auf
+ * die Karte sah, sah sechs gleiche Marken. Beides ist Gerätewissen (siehe
+ * `meldungNeu`) und keine Planung – deshalb fragt die Karte hier nach und liest
+ * es nicht aus der Strecke. Die Warnungen aus dem Bau selbst (Prüfung,
+ * Abweichung) setzt die Kartenebene aus `bauzeile()`.
+ */
+export function kartenSignale(s) {
+  const signale = [];
+  if (meldungNeu(s.id)) signale.push('neu');
+  if (meldungUeberfaellig(s)) signale.push('spaet');
+  return signale;
+}
+
 function meldungenNeuMerken(sids) {
   const l = neuListe();
   for (const sid of sids) if (sid) l[sid] = new Date().toISOString();
@@ -1149,7 +1248,9 @@ function streckenKarte(s) {
     if (neu) {
       const gesehen = el('button', 'mini-knopf bz-gesehen', '✓ gesehen');
       gesehen.title = 'Als gesehen markieren';
-      gesehen.onclick = e => { e.stopPropagation(); meldungGesehen(s.id); zeichneStreckenListe(); };
+      gesehen.onclick = e => {
+        e.stopPropagation(); meldungGesehen(s.id); zeichneStreckenListe(); ctx.sl.zeichne();
+      };
       zeile.appendChild(gesehen);
     }
     karte.appendChild(zeile);
@@ -1170,6 +1271,18 @@ function streckenKarte(s) {
       griff.onclick = e => { e.stopPropagation(); s6Merken(s.id, erledigt ? null : bz.meldung); zeichneStreckenListe(); };
       m.appendChild(griff);
       karte.appendChild(m);
+    }
+    /* Die jüngste Baumeldung als eine Zeile. Was der Trupp unterwegs
+       durchgegeben hat, stand bisher nur im Baumodus; in der Liste der
+       Führungsstelle hieß es „2 Baumeldungen“, und wer wissen wollte, ob eine
+       davon „Kabel gerissen“ lautete, musste umschalten. Eine Zeile und
+       gekürzt, damit zwölf Strecken weiter in ein Blatt passen. Sie hängt an
+       `s.bau.meldungen` und damit an der Signatur der Karte. */
+    const letzte = meldungenNachZeit(s).filter(x => String(x.text || '').trim()).pop();
+    if (letzte) {
+      karte.appendChild(el('div', 'eintrag-zeile bz-letzte',
+        `<span class="bz-letzte-zeit">${escapeHtml(uhrzeit(letzte.zeit) || '')}</span>` +
+        `<span class="bz-letzte-text">„${escapeHtml(kuerzen(letzte.text, 120))}“</span>`));
     }
   }
 
@@ -1254,7 +1367,13 @@ function streckenKarte(s) {
       werte: abschnittWerte(store.projekt)
     }));
   }
-  g1.appendChild(farbwahl(s, karte));
+  /* `nur-planung`: im Baumodus vom Schirm. Der Strecken-Reiter dient dort dem
+     Nachschlagen des Auftrags, und was den Plan ändert, gehört in die Planung
+     (Festlegung „ändern heißt umschalten“). Ausgeblendet statt nicht gebaut,
+     damit ein Moduswechsel die Karte nicht neu aufbauen muss. */
+  const farben = farbwahl(s, karte);
+  farben.classList.add('nur-planung');
+  g1.appendChild(farben);
   koerper.appendChild(g1);
 
   // -- Technik
@@ -1307,18 +1426,32 @@ function streckenKarte(s) {
      Kacheln in der einfachen Ansicht, die volle Liste in der erweiterten.
      Beide schreiben über denselben Weg, und beide stehen im Blatt – so
      braucht ein Wechsel der Sicht keinen Neuaufbau der Karte. */
-  g2.appendChild(leitungswahl(s, leitungSetzen));
+  /* Im Baumodus steht der Auftrag als Satz da statt als Wahl: die Kacheln
+     ließen sich dort antippen, und ein Tipp machte aus dem Feldkabel, das der
+     Trupp verlegt, im Plan ein anderes – samt Trommellänge und Bedarf. */
+  const va = VERLEGEARTEN.find(v => v.id === s.verlegeart);
+  g2.appendChild(el('p', 'klein nur-baumodus bau-auftragszeile',
+    `<b>${escapeHtml(kabelById(s.kabeltyp).name)}</b>` +
+    (!kabelById(s.kabeltyp).funk && va ? ` · ${escapeHtml(va.name)}` : '') +
+    (!kabelById(s.kabeltyp).funk
+      ? ` · Bauzuschlag ${escapeHtml(String(s.zuschlag))}&nbsp;% · Trommellänge ` +
+        escapeHtml(meter(s.trommellaenge)) : '')));
+  const kacheln = leitungswahl(s, leitungSetzen);
+  kacheln.classList.add('nur-planung');
+  g2.appendChild(kacheln);
   g2.appendChild(feld('Leitungsart', s.kabeltyp, leitungSetzen,
-    { typ: 'select', klasse: 'nur-erweitert', werte: KABELTYPEN.map(k => [k.id, k.name]) }));
+    { typ: 'select', klasse: 'nur-erweitert nur-planung',
+      werte: KABELTYPEN.map(k => [k.id, k.name]) }));
   /* Eine Funkstrecke wird nicht verlegt – Verlegeart und Bauansatz hätten
      dort nichts zu sagen und blieben doch als Zahlen im Weg. */
   if (!k.kabel.funk) {
     g2.appendChild(feld('Verlegeart', s.verlegeart, v => {
       // Hoch- oder Tiefbau entscheidet über die Sprechreichweite
       schreib(() => { s.verlegeart = v; }, () => { frisch(); ctx.aufAenderung(); });
-    }, { typ: 'select', klasse: 'nur-erweitert', werte: VERLEGEARTEN.map(v => [v.id, v.name]) }));
+    }, { typ: 'select', klasse: 'nur-erweitert nur-planung',
+      werte: VERLEGEARTEN.map(v => [v.id, v.name]) }));
 
-    const zahlen = el('div', 'feld-dreier nur-erweitert');
+    const zahlen = el('div', 'feld-dreier nur-erweitert nur-planung');
     zahlen.append(
       feld('Bauzuschlag', s.zuschlag, v => schreib(() => { s.zuschlag = v; }, () => { frisch(); ctx.aufAenderung(); }),
         { typ: 'number', min: 0, max: 100, step: 1, einheit: '%' }),
@@ -1341,8 +1474,8 @@ function streckenKarte(s) {
       schreib(() => {
         s.trommelnVorgabe = v === '' ? null : Math.max(0, Math.round(Number(v) || 0));
       }, frisch);
-    }, { typ: 'number', min: 0, step: 1, klasse: 'nur-erweitert' });
-    const trommelHinweis = el('p', 'klein nur-erweitert');
+    }, { typ: 'number', min: 0, step: 1, klasse: 'nur-erweitert nur-planung' });
+    const trommelHinweis = el('p', 'klein nur-erweitert nur-planung');
     g2.append(trommelFeld, trommelHinweis);
     const trommelEingabe = trommelFeld.querySelector('input');
     trommelFrisch = kz2 => {
@@ -1406,7 +1539,7 @@ function streckenKarte(s) {
     stand: offeneKarteStand(s),
     punkteStand: signatur(
       [s.punkte, ctx.sl.aktiverPunkt, store.projekt.optionen.koordformat], s.punkte),
-    frisch, tabelle, querung
+    frisch, tabelle, querung, kennung: null, ausgabeNachfuehren: null
   };
 
   /* -- Aktionen, gestaffelt statt gleich laut:
@@ -1416,10 +1549,12 @@ function streckenKarte(s) {
   /* Dieselbe Kennung steht im Kopf des gedruckten Bauauftrags und im
      Bau-Reiter des Trupps (`planKennung` in state.js): meldet der Trupp eine
      andere, baut er nach einem älteren Stand. */
-  koerper.appendChild(el('p', 'klein', kennungHTML(s)));
+  const kennung = el('p', 'klein', kennungHTML(s));
+  karte._fbpOffen.kennung = kennung;
+  koerper.appendChild(kennung);
   const tasten = el('div', 'tastenreihe');
   tasten.append(
-    knopf('Weiterzeichnen', () => ctx.weiterzeichnen(s.id)),
+    knopf('Weiterzeichnen', () => ctx.weiterzeichnen(s.id), 'nur-planung'),
     knopf('Auf Karte zeigen', () => { ctx.sl.zeigeStrecke(s.id); ctx.zurKarte?.(); }),
     /* Der kurze Weg zum Bautrupp: der Teilen-Dialog öffnet mit dieser Strecke
        vorgewählt. Er steht hier und nicht nur im Dateimenü, weil dort die
@@ -1437,7 +1572,7 @@ function streckenKarte(s) {
         });
         const h = s.von; s.von = s.nach; s.nach = h;
       }, 'strecke');
-    }, 'nur-erweitert'),
+    }, 'nur-erweitert nur-planung'),
     knopf('Duplizieren', () => {
       store.aendern(p => {
         const kopie = JSON.parse(JSON.stringify(s));
@@ -1456,6 +1591,19 @@ function streckenKarte(s) {
     }, 'nur-erweitert')
   );
   koerper.appendChild(tasten);
+  /* Statt der Griffe, die im Baumodus fehlen, der Weg zu ihnen. Im Audit stand
+     hier „Weiterzeichnen“, und dessen „Letzten Punkt zurück“ nahm geplante
+     Punkte ohne Rückfrage weg, während die Moduserklärung „Die Planung bleibt
+     unangetastet“ sagte. Ein Knopf und kein bloßer Satz: der Schalter sitzt
+     oben in der Kopfzeile, und wer hier ändern will, sucht ihn. */
+  const planHinweis = el('div', 'nur-baumodus bau-planhinweis');
+  planHinweis.appendChild(el('p', 'klein',
+    'Planung ändern – Trasse, Leitung, Farbe, Punkte löschen – geht im Planungsmodus. ' +
+    'Hier steht der Auftrag zum Nachschlagen.'));
+  planHinweis.appendChild(knopf('In den Planungsmodus umschalten', () => {
+    document.getElementById('btn-modus').click();
+  }, 'klein'));
+  koerper.appendChild(planHinweis);
 
   const daten = el('div', 'feldgruppe rohdaten nur-erweitert');
   daten.appendChild(el('h3', 'gruppen-titel', 'Daten für andere Programme'));
@@ -1471,7 +1619,7 @@ function streckenKarte(s) {
 
   /* Löschen ist selten und endgültig. Es bekommt die leiseste Stufe und
      Abstand nach oben – nicht die volle Breite neben dem Bauauftrag. */
-  const entfernen = el('div', 'streckenfuss');
+  const entfernen = el('div', 'streckenfuss nur-planung');
   entfernen.appendChild(knopf('Strecke löschen', () => {
     dialog({
       titel: 'Strecke löschen',
@@ -1496,12 +1644,14 @@ function streckenKarte(s) {
 
   const ausgabe = el('div', 'tastenreihe ausgabe');
   const bauKnopf = knopf('▤ Bauauftrag (PDF)', () => oeffneBauauftrag(s.id), 'primaer breit');
-  ausgabe.appendChild(bauKnopf);
-  if (s.punkte.length < 2) {
-    bauKnopf.disabled = true;
-    ausgabe.appendChild(el('p', 'ausgabe-grund',
-      'Für den Bauauftrag werden mindestens zwei Trassenpunkte gebraucht.'));
-  }
+  const grund = el('p', 'ausgabe-grund',
+    'Für den Bauauftrag werden mindestens zwei Trassenpunkte gebraucht.');
+  ausgabe.append(bauKnopf, grund);
+  karte._fbpOffen.ausgabeNachfuehren = () => {
+    bauKnopf.disabled = s.punkte.length < 2;
+    grund.hidden = !bauKnopf.disabled;
+  };
+  karte._fbpOffen.ausgabeNachfuehren();
   koerper.appendChild(ausgabe);
 
   karte.appendChild(koerper);
@@ -2929,7 +3079,9 @@ function punktZeile(s, pt, i, aktiv, seg, kum) {
 
   /* Löschen sitzt am rechten Rand hinter der Koordinatenzeile, nicht neben
      „auf Karte zeigen“ – mit Handschuhen waren die beiden nicht zu trennen. */
-  const weg = el('button', 'mini-knopf gefahr pz-weg', '✕');
+  /* `nur-planung`: im Baumodus ändert der Trupp den Plan nicht (siehe die
+     Streckenkarte); gelesen wird die Tabelle dort weiter. */
+  const weg = el('button', 'mini-knopf gefahr pz-weg nur-planung', '✕');
   weg.title = `Punkt ${i + 1} löschen`;
   weg.setAttribute('aria-label', `Punkt ${i + 1} löschen`);
   const loeschen = () => {
@@ -3043,6 +3195,10 @@ function koordText(pt) {
 
 function koordinatenDialog(s, pt, i) {
   const f = alleFormate(pt.lat, pt.lng);
+  /* Im Baumodus nur ablesen und kopieren: das Feld darunter verschob den
+     geplanten Punkt, und die Baustelle bekam einen anderen Auftrag als den,
+     der gedruckt in der Hand liegt. */
+  const planen = !document.body.classList.contains('baumodus');
   const box = el('div', 'koord-dialog');
   box.innerHTML =
     `<div class="koord-liste">
@@ -3051,12 +3207,13 @@ function koordinatenDialog(s, pt, i) {
          ['Dezimalgrad', f.dez], ['Roh (lat, lon)', f.latlng]]
         .map(([t, w]) => `<div class="kd-zeile"><span>${t}</span><code>${escapeHtml(w)}</code>
           <button class="mini-knopf" data-kopie="${escapeHtml(w)}" title="Kopieren">⧉</button></div>`).join('')}
-     </div>
+     </div>` + (planen ? `
      <label class="feld"><span class="feld-titel">Punkt auf neue Koordinate setzen</span>
        <input type="text" id="kd-neu" placeholder="MGRS, Dezimalgrad oder Grad/Minuten">
      </label>
      <p class="klein" id="kd-status">Erkannt werden z. B. <code>32U LB 56560 45282</code>,
-       <code>50.9413, 6.9583</code> oder <code>N 50 56.478 O 006 57.498</code>.</p>`;
+       <code>50.9413, 6.9583</code> oder <code>N 50 56.478 O 006 57.498</code>.</p>`
+     : `<p class="klein">Den Punkt verschieben geht im Planungsmodus.</p>`);
 
   /* Die beiden Wege per Tipp stehen hier, am Punkt, und nicht als weitere
      Griffe in jeder Tabellenzeile: dort stehen schon Art, Zeigen und Löschen,
@@ -3091,7 +3248,7 @@ function koordinatenDialog(s, pt, i) {
   dialog({
     titel: `Punkt ${i + 1} – ${punktartById(pt.art).name}`,
     inhalt: box,
-    fuss: [
+    fuss: !planen ? [{ text: 'Schließen', primaer: true }] : [
       { text: 'Schließen' },
       { text: 'Übernehmen', primaer: true, tun: () => {
           const wert = box.querySelector('#kd-neu').value.trim();
@@ -3753,7 +3910,7 @@ function zeichenFormular(z, basis) {
     knopf('Löschen', () => {
       store.aendern(p => { p.zeichen = p.zeichen.filter(x => x.id !== z.id); }, 'zeichen');
       ctx.zl.auswahl = null;
-      hinweis('Zeichen gelöscht');
+      hinweis(`Zeichen gelöscht – ${RUECKGAENGIG_TEXT}`);
     }, 'gefahr')
   );
   koerper.appendChild(tasten);
@@ -3999,7 +4156,7 @@ function flaecheFormular(f) {
   tasten.append(knopf('Löschen', () => {
     store.aendern(p => { p.flaechen = p.flaechen.filter(x => x.id !== f.id); }, 'flaeche');
     ctx.fl.auswahl = null;
-    hinweis('Fläche gelöscht');
+    hinweis(`Fläche gelöscht – ${RUECKGAENGIG_TEXT}`);
   }, 'gefahr'));
   koerper.appendChild(tasten);
   return koerper;
@@ -4369,7 +4526,7 @@ function relaisFormular(r) {
       ctx.rl.gezeigt.delete(r.id);
       ctx.rl.flaechenZeichnen();
       ctx.rl.zeichne();
-      hinweis('Relaisstelle gelöscht');
+      hinweis(`Relaisstelle gelöscht – ${RUECKGAENGIG_TEXT}`);
     }, 'gefahr')
   );
   koerper.appendChild(weiter);
@@ -4614,7 +4771,7 @@ function bildFormular(b) {
   tasten.append(knopf('Löschen', () => {
     store.aendern(p => { p.bilder = p.bilder.filter(x => x.id !== b.id); }, 'bild');
     ctx.bl.auswahl = null;
-    hinweis('Bild gelöscht');
+    hinweis(`Bild gelöscht – ${RUECKGAENGIG_TEXT}`);
   }, 'gefahr'));
   koerper.appendChild(tasten);
   return koerper;
@@ -4719,6 +4876,8 @@ export function zeichneBauListe() {
   const summe = document.getElementById('bau-summe');
   const wahl = document.getElementById('bau-strecke');
   if (!liste || !wahl) return;
+  /* Wahl von Strecke und Abschnitt geschieht hier – die Bauleiste nennt sie. */
+  bauzielNachfuehren();
 
   /* Die Liste wird bei jeder Änderung neu gebaut, und ein Auswahlfeld, das
      dabei den Fokus verliert, ist mit der Tastatur nicht in einem Zug zu
@@ -4799,6 +4958,11 @@ export function zeichneBauListe() {
     (k.laenge ? ((k.laengeFraglich || k.abseits.length)
       ? `<span class="bau-abw">gebaut <b>⚠ ${escapeHtml(formatLaenge(k.laenge))} – prüfen</b></span>`
       : `<span>gebaut <b>${escapeHtml(formatLaenge(k.laenge))}</b></span>`) : '') +
+    /* Die Lücke steht neben der gebauten Länge und nicht in ihr: zwischen zwei
+       Bauabschnitten liegt noch Trasse, und wer „gebaut 1,56 km“ bei
+       1,57 km geplant liest, meldet fertig. */
+    (k.lueckeLaenge
+      ? `<span class="bau-abw">Lücke <b>${escapeHtml(formatLaenge(k.lueckeLaenge))}</b></span>` : '') +
     (k.abweichungen.length
       ? `<span class="bau-abw"><b>${k.abweichungen.length}</b> ${k.abweichungen.length === 1 ? 'Abweichung' : 'Abweichungen'}</span>`
       : '') +
@@ -4808,8 +4972,15 @@ export function zeichneBauListe() {
     /* Was aufgenommen, aber nicht ausgesagt ist, steht neben den Abweichungen
        und nicht darunter: beides ist eine Nachfrage an den Trupp, und diese
        hier lässt sich am Bauort noch beantworten. */
+    /* Als Griff und nicht als Satz: er schlägt den ersten Punkt auf, dem die
+       Angabe fehlt, auf der Karte und mit dem Blatt, das danach fragt. Nach
+       dem Neuladen stand die Anwendung hier, und „1 ohne Angabe“ sagte nicht,
+       wo – gesucht wurde in einer Liste von Schirmlängen. */
     (k.luecken
-      ? `<span class="bau-abw"><b>${k.luecken}</b> ohne Angabe</span>` : '');
+      ? `<button type="button" class="bau-abw bau-luecke">` +
+        `<b>${k.luecken}</b> ohne Angabe ›</button>` : '');
+  const lueckenGriff = summe.querySelector('.bau-luecke');
+  if (lueckenGriff) lueckenGriff.onclick = () => ersteLueckeZeigen(s);
 
   const bloecke = {
     punkte: bauPunktBlock(s),
@@ -4831,7 +5002,18 @@ export function zeichneBauListe() {
      dort ist. */
   liste.appendChild(sprungstreifen(bloecke, s));
   liste.appendChild(baukopfBlock(s, k));
-  liste.appendChild(bauabschnittBlock(s));
+  /* Die Bauabschnitte klappen zu, solange es keinen oder einen gibt und
+     keiner nach Aufmerksamkeit verlangt: bei 390×844 begann die erste
+     Trassenpunktzeile sonst am unteren Bildrand, und ein einzelner Abschnitt,
+     der aufnimmt, ist keine Frage mehr. Die Überschrift sagt, was darin steht.
+     Wer selbst auf- oder zuklappt, behält seine Wahl. */
+  if (!bauKlappGewaehlt.has('abschnitte')) {
+    const abschnitte = bauabschnitte(s);
+    const ruhig = abschnitte.length === 0 ||
+      (abschnitte.length === 1 && aktiverBauabschnitt(s)?.id === abschnitte[0].id);
+    if (ruhig) bauZu.add('abschnitte'); else bauZu.delete('abschnitte');
+  }
+  liste.appendChild(klappbar(bauabschnittBlock(s), 'abschnitte'));
   liste.appendChild(bloecke.punkte);
   /* Die Baumeldungen stehen VOR dem Materialnachweis, obwohl der Ablauf
      andersherum liest. Der Grund ist der Daumen: gemeldet wird laufend, nach
@@ -4855,6 +5037,82 @@ export function zeichneBauListe() {
   }
 }
 
+window.addEventListener('online', () => vorratAuffrischen());
+window.addEventListener('offline', () => vorratAuffrischen());
+
+/**
+ * Ob die Karte einer Strecke im Gerät liegt, in der eingestellten Karte.
+ *
+ * Gemessen wird die GEPLANTE Trasse und nicht der Bestand: im Audit sagte der
+ * Chip „Karte dabei ✓“, sobald irgendeine Kachel im Gerät lag – eine einzige
+ * weit abseits, oder 10 von 300 nach einem abgebrochenen Lauf –, und am
+ * Bauort blieb die Karte grau. Die Ist-Punkte zählen hier nicht mit, obwohl
+ * „Karte holen“ sie mitnimmt: sie entstehen erst am Bauort, ohne Netz, und
+ * eine vollständig mitgenommene Karte hieße sonst nach dem ersten Punkt
+ * „unvollständig“, ohne dass sich daran noch etwas ändern ließe. Die Liste
+ * der Planung ist ein Teil dessen, was „Karte holen“ abarbeitet
+ * (`kachellisteLinien` rechnet jede Linie für sich), die Antwort also ehrlich.
+ */
+export async function karteDabei(s) {
+  const basis = basiskarteById(store.projekt.ansicht.basemap);
+  const { gesamt, da } = s && s.punkte?.length
+    ? await kachelAbdeckung(basis.url, [s.punkte])
+    : { gesamt: 0, da: 0 };
+  return { gesamt, da, vollstaendig: gesamt > 0 && da === gesamt, basis };
+}
+
+/* Chips und Vorratsblöcke, die gerade stehen, nach einer Änderung am Vorrat
+   oder am Netz neu beschriften. Die Liste wird dafür nicht neu gebaut: sie
+   trägt Eingaben, und ein Abruf, der im Hintergrund fertig wird, soll dem
+   Trupp nicht den Fokus aus dem Feld nehmen. */
+function vorratAuffrischen() {
+  document.querySelectorAll('.vorrat-chip').forEach(chip => vorratChip(chip));
+  document.querySelectorAll('.bau-vorrat').forEach(box => box._vorratZeigen?.());
+}
+
+function vorratChip(chip, s) {
+  chip.classList.add('vorrat-chip');
+  if (s) chip.dataset.strecke = s.id;
+  const strecke = s || store.strecke(chip.dataset.strecke);
+  karteDabei(strecke).then(b => {
+    const netz = navigator.onLine !== false;
+    const teil = b.da > 0 && !b.vollstaendig;
+    /* Der Mahnton gilt allem, was nicht vollständig ist – eine halbe Karte
+       lässt den Trupp am Bauort ebenso im Grauen stehen wie keine. Ohne
+       Trassenpunkte gibt es nichts mitzunehmen und nichts zu mahnen. */
+    chip.classList.toggle('vorrat-leer', b.gesamt > 0 && !b.vollstaendig);
+    /* Kurz, denn der Streifen soll in wenigen Zeilen stehen: die Marke sagt
+       den Zustand, der Mahnton den Handlungsbedarf. */
+    /* Derselbe Name wie im Hinweis nach „Bau beginnen“ („oben ‚Karte
+       mitnehmen‘“) – im Audit suchten vier Prüfer einen Knopf, der auf dem
+       Schirm „Karte fehlt“ hieß. Ohne Netz steht das im Chip selbst: der
+       Titel erscheint am Finger nie, und die Statusleiste liegt in der
+       Listenansicht unter dem Umschalter. Die halbe Karte nennt ihre Zahl:
+       „unvollständig“ allein ließe offen, ob drei Kacheln fehlen oder alle
+       bis auf drei. */
+    chip.textContent = (b.vollstaendig ? 'Karte dabei ✓'
+      : teil ? `Karte unvollständig ${b.da}/${b.gesamt}` : 'Karte mitnehmen') +
+      (netz ? '' : ' · kein Netz');
+    chip.title = b.vollstaendig
+      ? `Die Karte „${b.basis.name}“ liegt entlang der ganzen Trasse im Gerät` +
+        (netz ? '' : ' · kein Netz')
+      : teil
+        ? `${b.da} von ${b.gesamt} Kacheln der Trasse im Gerät – ` +
+          (netz ? 'noch einmal holen, solange Netz da ist' : 'ohne Netz nicht nachzuholen')
+        : netz ? 'Die Karte dieser Strecke ist nicht im Gerät – mitnehmen, solange Netz da ist'
+          : 'Die Karte dieser Strecke ist nicht im Gerät, und es ist kein Netz da';
+  }).catch(() => { /* dann bleibt die Beschriftung */ });
+}
+
+/** Den ersten aufgenommenen Punkt, dem Art oder Bauweise fehlt, auf der Karte
+ *  zeigen und sein Blatt aufschlagen */
+function ersteLueckeZeigen(s) {
+  const pt = istPunkte(s).find(x => x.art === 'offen' || (x.art === 'querung' && !x.bauweise));
+  if (!pt) return;
+  ctx.karte.setView([pt.lat, pt.lng], Math.max(ctx.karte.getZoom(), 16), { animate: false });
+  punktkarteOeffnen(s, { ist: pt });
+}
+
 /* Der Sprungstreifen: die Liste des Bau-Reiters ist tausende Bildpunkte lang,
    und am Bauort wird darin nach einer Stelle gesucht, nicht gelesen. Die Chips
    springen an die Blöcke, die dort gebraucht werden; gerollt wird im
@@ -4873,26 +5131,6 @@ export function zeichneBauListe() {
    letzten Chip nichts zu sehen, bei 390 px zwei Buchstaben. Wer den Chip nicht
    sieht, rollt doch – dann verfehlt die Leiste ihren Zweck, ohne dass es
    auffällt. */
-window.addEventListener('online', () => document.querySelectorAll('.vorrat-chip').forEach(vorratChip));
-window.addEventListener('offline', () => document.querySelectorAll('.vorrat-chip').forEach(vorratChip));
-function vorratChip(chip) {
-  chip.classList.add('vorrat-chip');
-  kachelBestand().then(b => {
-    const netz = navigator.onLine !== false;
-    chip.classList.toggle('vorrat-leer', !b.anzahl);
-    /* Kurz, denn der Streifen soll in wenigen Zeilen stehen: die Marke sagt
-       den Zustand, der Mahnton den Handlungsbedarf. */
-    /* Derselbe Name wie im Hinweis nach „Bau beginnen“ („oben ‚Karte
-       mitnehmen‘“) – im Audit suchten vier Prüfer einen Knopf, der auf dem
-       Schirm „Karte fehlt“ hieß. Ohne Netz steht das im Chip selbst: der
-       Titel erscheint am Finger nie, und die Statusleiste liegt in der
-       Listenansicht unter dem Umschalter. */
-    chip.textContent = (b.anzahl ? 'Karte dabei ✓' : 'Karte mitnehmen') + (netz ? '' : ' · kein Netz');
-    chip.title = b.anzahl ? `${b.anzahl} Kacheln im Gerät${netz ? '' : ' · kein Netz'}`
-      : netz ? 'Noch keine Karte im Gerät – mitnehmen, solange Netz da ist' : 'Keine Karte im Gerät und kein Netz';
-  }).catch(() => { /* dann bleibt die Beschriftung */ });
-}
-
 function sprungstreifen(bloecke, s) {
   const streifen = el('nav', 'bau-sprung');
   streifen.setAttribute('aria-label', 'Im Bau-Reiter springen');
@@ -4924,7 +5162,7 @@ function sprungstreifen(bloecke, s) {
     /* Der Chip der Karte sagt, was im Gerät liegt – und ob gerade Netz da ist.
        Im Audit sah er mit leerem Vorrat genauso aus wie mit vollem, und der
        Trupp konnte in der Liste nicht sagen, ob er die Karte dabei hat. */
-    if (schluessel === 'vorrat') vorratChip(chip);
+    if (schluessel === 'vorrat') vorratChip(chip, s);
   }
   const doku = knopf('▤ Doku', () => oeffneBaudoku(s.id), 'klein bau-sprung-doku');
   doku.title = 'Baudokumentation als PDF';
@@ -4986,31 +5224,56 @@ const mengenText = bytes => bytes >= 1024 * 1024
    zum Deckel weiter, während der Knopf schon wieder Bereitschaft meldet. */
 let vorratLaeuft = null;
 
-/* Der Kachelvorrat. Er steht im Baumodus und nicht in den Kartenoptionen:
-   geholt wird er vor dem Ausrücken, und wer ihn braucht, ist schon hier.
+/* „Abbrechen“ nimmt in der ersten Sekunde nach dem Start keinen Tipp an. Es
+   stand früher an derselben Stelle wie „Karte holen“, und ein Doppeltipp mit
+   Handschuh – oder ein prellender Finger – brach den Abruf ab, kaum dass er
+   lief. Ein eigener Knopf daneben allein genügt nicht: wenn er erscheint,
+   rückt „Karte holen“ zusammen, und der zweite Tipp auf dessen rechte Hälfte
+   träfe ihn. */
+const ABBRUCH_SPERRE = 1000;
 
-   Ohne ihn ist der Baumodus am Bauort blind – die Anwendung startet dank des
+/* Der Block „Vor dem Ausrücken“. Er steht im Baumodus und nicht in den
+   Kartenoptionen: geholt wird die Karte vor dem Ausrücken, und wer sie
+   braucht, ist schon hier.
+
+   Ohne sie ist der Baumodus am Bauort blind – die Anwendung startet dank des
    Wächters in `sw.js` zwar ohne Netz, aber die Karte bliebe grau, und
-   „antippen, wo der Punkt wirklich liegt“ ginge ins Leere. */
+   „antippen, wo der Punkt wirklich liegt“ ginge ins Leere. Und ohne Papier
+   steht der Trupp ganz ohne Nachweis da, wenn das Gerät ausfällt – deshalb
+   steht der Baunachweis daneben. Wer nur über den Link arbeitet, erfuhr von
+   ihm sonst nichts: der Bauauftrag ist im Baumodus nur über den
+   Strecken-Reiter zu erreichen, und das Wort kam im Bau-Reiter nicht vor. */
 function kartenvorratBlock(s) {
   const box = el('div', 'feldgruppe bau-vorrat');
-  box.appendChild(el('h3', 'gruppen-titel', 'Karte für den Bauort mitnehmen'));
+  /* Ohne Strecke (leere Planung) bleibt nur das Wegräumen des Vorrats – ein
+     Baunachweis ohne Strecke hat nichts, worauf er sich bezöge. */
+  box.appendChild(el('h3', 'gruppen-titel', s ? 'Vor dem Ausrücken' : 'Karte für den Bauort mitnehmen'));
+  /* Die Unterzeile heißt wie der Chip im Sprungstreifen, der hierher führt:
+     wer „Karte mitnehmen“ tippt, soll dieselben Worte vorfinden. */
+  if (s) box.appendChild(el('h4', 'bau-untertitel', 'Karte mitnehmen'));
+  /* Der Nutzen zuerst, in einem Satz. Vorher standen vor dem Knopf zwei
+     Absätze über Nutzungsbedingungen und Datenschutz, und wer vor dem
+     Ausrücken nur wissen wollte, wozu der Knopf da ist, las zuerst, warum er
+     ihn besser nicht drückt. */
+  box.appendChild(el('p', 'klein vorrat-nutzen',
+    'Holt die Karte entlang der Trasse ins Gerät – am Bauort steht sie dann auch ohne Netz.'));
 
   const umfangZeile = el('p', 'klein vorrat-umfang');
   const standZeile = el('p', 'klein vorrat-stand');
   const basis = basiskarteById(store.projekt.ansicht.basemap);
   box.appendChild(umfangZeile);
 
-  const punkteFuer = alles => {
+  const linienFuer = alles => {
     const strecken = alles ? store.projekt.strecken : (s ? [s] : []);
     /* Ein Ist-Punkt weit abseits der Trasse – eine Ortung 80 km daneben –
        zog den Korridor bis dorthin, und die Deckelung fraß die feinen Stufen
        der echten Trasse. Er kommt nicht mit; genommen wird, was plausibel am
-       Bauort liegt. */
+       Bauort liegt. Plan und Ist sind zwei Linien, jede Strecke hat ihre
+       eigenen (`kachellisteLinien` in kacheln.js). */
     return strecken.flatMap(st => {
       const fern = new Set(baukennzahlen(st).abseits.map(a => a.ist));
-      return [...(st.punkte || []), ...istPunkte(st).filter(pt => !fern.has(pt))];
-    });
+      return [st.punkte || [], istPunkte(st).filter(pt => !fern.has(pt))];
+    }).filter(l => l.length);
   };
   let allesMitnehmen = !s;
   let bisZoom = ZOOM_BIS;
@@ -5032,12 +5295,12 @@ function kartenvorratBlock(s) {
   }));
 
   function umfangZeigen() {
-    const punkte = punkteFuer(allesMitnehmen);
-    if (!punkte.length) {
+    const linien = linienFuer(allesMitnehmen);
+    if (!linien.length) {
       umfangZeile.innerHTML = 'Ohne Trassenpunkte gibt es keinen Ausschnitt zum Mitnehmen.';
       return;
     }
-    const u = kachelUmfang(punkte, { zoomBis: bisZoom });
+    const u = kachelUmfang(linien, { zoomBis: bisZoom });
     umfangZeile.innerHTML =
       `<b>${escapeHtml(basis.name)}</b> entlang der Trasse, ${PUFFER}&nbsp;m beiderseits, ` +
       `Zoomstufen ${ZOOM_VON} bis ${bisZoom}: ` +
@@ -5050,11 +5313,39 @@ function kartenvorratBlock(s) {
   }
   umfangZeigen();
 
+  /* Grenzen und Datenschutz stehen eingeklappt, aber VOR dem Knopf: was der
+     Kartenanbieter beim Mitnehmen sieht, muss erreichbar sein, bevor gedrückt
+     wird, und nicht danach. Die Zeile, die es aufklappt, nennt deshalb genau
+     das – wer sie liest, weiß, dass es etwas zu wissen gibt. */
+  const mehr = document.createElement('details');
+  mehr.className = 'vorrat-mehr klein';
+  mehr.appendChild(el('summary', '', 'Mehr: Grenzen und was der Kartenanbieter dabei sieht'));
+  mehr.appendChild(el('p', 'klein',
+    'Geholt wird nur der Korridor der Trasse, mit Bedacht und gedeckelt: die ' +
+    'Nutzungsbedingungen der Kartenanbieter untersagen das massenhafte ' +
+    'Vorabladen, und wer dort auffällt, steht am Ende ganz ohne Karte da. ' +
+    'Mitnehmen lassen sich deshalb nur die Karten des BKG. Die Karte im ' +
+    'Bauauftrag und auf der Lagekarte bleibt ohne Netz leer – sie wird in ' +
+    'Graustufen gezeichnet, und die sind nicht im Vorrat. Das Blatt kommt aus ' +
+    'der Unterkunft mit.'));
+  /* Beim Betrachten sieht der Anbieter den Ausschnitt, in dem gearbeitet wird.
+     Beim Vorladen sieht er mehr: die Kacheln kommen in einem Zug und liegen in
+     einem schmalen Band – und dieses Band ist die Trasse, auf Kachelbreite
+     gerundet. Das ist ein Unterschied, den der Nutzer vor dem Knopfdruck
+     kennen muss und nicht danach. */
+  mehr.appendChild(el('p', 'klein vorrat-hinweis',
+    'Der Kartenanbieter sieht dabei mehr als beim gewöhnlichen Betrachten: die ' +
+    'Kacheln kommen in einem Zug und liegen in einem schmalen Band. Daraus ist ' +
+    'der Verlauf der Trasse auf einige hundert Meter genau abzulesen – nicht ' +
+    'ihre Punkte, aber ihr Weg; und wo Ist-Punkte aufgenommen sind, zählen die ' +
+    'mit. Wer das nicht möchte, nimmt die Karte nicht mit und baut ohne sie.'));
+  box.appendChild(mehr);
+
   const tasten = el('div', 'tastenreihe bau-tasten');
-  const holen = knopf(vorratLaeuft ? 'Abbrechen' : '↓ Karte holen', () => {
-    if (vorratLaeuft) { vorratLaeuft.abbrechen(); return; }
-    const punkte = punkteFuer(allesMitnehmen);
-    if (!punkte.length) return hinweis('Diese Strecke hat noch keine Trassenpunkte.', 'warnung');
+  const holen = knopf('↓ Karte holen', () => {
+    if (vorratLaeuft) return;
+    const linien = linienFuer(allesMitnehmen);
+    if (!linien.length) return hinweis('Diese Strecke hat noch keine Trassenpunkte.', 'warnung');
     /* Ohne Netz lief der Abruf bis zum vollen Balken durch und meldete danach
        „Karte mitgenommen: 0 Kacheln“ – im Vorbeigehen liest man das erste
        Wort und rückt ein zweites Mal ohne Karte aus. Die Kacheln kommen aus
@@ -5071,8 +5362,7 @@ function kartenvorratBlock(s) {
         'bedingungen erlauben kein Vorabladen. In den Kartenoptionen auf eine ' +
         'Karte des BKG wechseln – TopPlusOpen oder basemap.de.', 'warnung');
     }
-    holen.textContent = 'Abbrechen';
-    vorratLaeuft = kachelVorladen(basis.url, basis.id, punkte, {
+    vorratLaeuft = kachelVorladen(basis.url, basis.id, linien, {
       zoomBis: bisZoom,
       /* Gezählt werden die Kacheln, die wirklich im Gerät liegen, und nicht
          die erledigten Abrufe. Ohne Netz lief der Balken sonst bis ans Ende
@@ -5084,9 +5374,10 @@ function kartenvorratBlock(s) {
           (stand.fehler ? ` · ${stand.fehler} ohne Antwort` : ''), da / gesamt);
       }
     });
+    vorratLaeuft.seit = Date.now();
+    tastenZeigen();
     vorratLaeuft.lauf.then(e => {
       vorratLaeuft = null;
-      holen.textContent = '↓ Karte holen';
       /* Was am Ende zählt, ist die Zahl im Gerät – das Geholte und das, was
          schon dalag. Wer denselben Ausschnitt ein zweites Mal mitnimmt, hört
          sonst „0 Kacheln“, obwohl die Karte vollständig da ist. */
@@ -5110,58 +5401,131 @@ function kartenvorratBlock(s) {
               (e.fehler ? ` · ${e.fehler} fehlen` : ''),
           !da ? 'fehler' : e.fehler ? 'warnung' : 'info');
       }
-      standZeigen();
+      /* Aufgefrischt wird, was JETZT steht – der Block, in dem gedrückt wurde,
+         kann längst neu gebaut sein. */
+      vorratAuffrischen();
     }).catch(f => {
       vorratLaeuft = null;
-      holen.textContent = '↓ Karte holen';
       hinweis('Karte konnte nicht geholt werden: ' + f.message, 'fehler');
+      vorratAuffrischen();
     });
   }, 'bau-taste primaer');
-  tasten.append(holen, knopf('Vorrat löschen', () => {
-    kachelVorratLeeren().then(() => { hinweis('Kachelvorrat gelöscht'); standZeigen(); })
-      .catch(f => hinweis('Löschen fehlgeschlagen: ' + f.message, 'fehler'));
-  }, 'klein'));
+  const abbrechen = knopf('Abbrechen', () => {
+    if (!vorratLaeuft || Date.now() - vorratLaeuft.seit < ABBRUCH_SPERRE) return;
+    vorratLaeuft.abbrechen();
+  }, 'bau-taste vorrat-abbrechen');
+  let sperrUhr = null;
+  function tastenZeigen() {
+    const laeuft = !!vorratLaeuft;
+    holen.disabled = laeuft;
+    holen.textContent = laeuft ? 'Karte wird geholt …' : '↓ Karte holen';
+    abbrechen.hidden = !laeuft;
+    const rest = laeuft ? ABBRUCH_SPERRE - (Date.now() - vorratLaeuft.seit) : 0;
+    abbrechen.disabled = rest > 0;
+    clearTimeout(sperrUhr);
+    if (rest > 0) sperrUhr = setTimeout(tastenZeigen, rest);
+  }
+  tasten.append(holen, abbrechen);
+  tastenZeigen();
   box.appendChild(tasten);
   box.appendChild(standZeile);
 
-  function standZeigen() {
+  /* „Vorrat löschen“ stand 16 px neben „Karte holen“ und leerte auf einen
+     Tipp den ganzen Kachelspeicher – ohne Rückfrage, an einer Stelle, über der
+     „Umfang: nur diese Strecke“ stand. Jetzt steht es eine Zeile tiefer,
+     unter dem Bestand, auf den es sich bezieht, fragt nach und fehlt, solange
+     nichts da ist.
+
+     Gelöscht wird weiter ALLES und nicht nur diese Strecke. Der Speicher legt
+     Kacheln unter ihrer Adresse ab, nicht unter einer Strecke, und eine
+     Kachel gehört jeder Strecke, deren Korridor sie berührt: wer „nur diese“
+     löschte, risse still Löcher in die Karte der Nachbarstrecke. Die
+     Rückfrage sagt deshalb, dass es alle sind. */
+  const loeschReihe = el('div', 'vorrat-loeschen');
+  const loeschen = knopf('Vorrat löschen …', () => {
     kachelBestand().then(b => {
+      if (!b.anzahl) { standZeigen(); return; }
+      const namen = b.karten.map(id => basiskarteById(id).name);
+      dialog({
+        titel: 'Alle mitgenommenen Karten löschen?',
+        inhalt: `<p>Im Gerät liegen <b>${b.anzahl.toLocaleString('de-DE')} Kacheln</b> ` +
+          `(${escapeHtml(mengenText(b.bytes))})` +
+          (namen.length ? ` für ${escapeHtml(namen.join(', '))}` : '') + '. ' +
+          'Gelöscht werden <b>alle</b> – auch die Karten anderer Strecken und Planungen' +
+          (s ? `, nicht nur die von „${escapeHtml(s.name)}“` : '') + '.</p>' +
+          '<p><b>Ohne Netz ist kein Ersatz zu holen</b> – am Bauort bliebe die Karte ' +
+          'danach grau. „Rückgängig“ bringt sie nicht zurück.</p>',
+        fuss: [
+          { text: 'Behalten', primaer: true },
+          { text: 'Alle löschen', gefahr: true, tun: () => {
+            kachelVorratLeeren().then(() => {
+              hinweis(`Kartenvorrat gelöscht – ${b.anzahl.toLocaleString('de-DE')} Kacheln`);
+              vorratAuffrischen();
+            }).catch(f => hinweis('Löschen fehlgeschlagen: ' + f.message, 'fehler'));
+          } }
+        ]
+      });
+    });
+  }, 'klein');
+  loeschen.hidden = true;
+  loeschReihe.appendChild(loeschen);
+  box.appendChild(loeschReihe);
+
+  function standZeigen() {
+    Promise.all([kachelBestand(), s ? karteDabei(s) : null]).then(([b, d]) => {
+      loeschen.hidden = !b.anzahl;
       if (!b.anzahl) { standZeile.innerHTML = 'Noch nichts im Gerät.'; return; }
       /* Welche Karte im Vorrat liegt, gehört dazu: der Vorrat hängt an der
          Kartenwahl, und wer nach dem Holen die Karte wechselt, steht am Bauort
          vor einer grauen Fläche, während hier ein stattlicher Bestand steht. */
       const namen = b.karten.map(id => basiskarteById(id).name);
       const passt = b.karten.includes(basis.id);
+      /* Und was davon dieser Strecke gilt – dieselbe Zahl wie im Chip. Der
+         Bestand allein sagt darüber nichts: er zählt jede Kachel im Gerät,
+         auch die anderer Planungen. */
+      const strecke = d && d.gesamt && passt
+        ? (d.vollstaendig
+          ? ` Die Trasse von „${escapeHtml(s.name)}“ ist <b>vollständig</b> dabei.`
+          : ` <b class="vorrat-warnung">Von der Trasse von „${escapeHtml(s.name)}“ fehlen ` +
+            `${(d.gesamt - d.da).toLocaleString('de-DE')} von ${d.gesamt.toLocaleString('de-DE')} ` +
+            'Kacheln</b> – noch einmal holen.')
+        : '';
       standZeile.innerHTML =
         `Im Gerät: <b>${b.anzahl.toLocaleString('de-DE')} Kacheln</b> ` +
         `(${escapeHtml(mengenText(b.bytes))})` +
-        (namen.length ? ` für ${escapeHtml(namen.join(', '))}` : '') + '.' +
+        (namen.length ? ` für ${escapeHtml(namen.join(', '))}` : '') + '.' + strecke +
         (passt ? '' : ` <b class="vorrat-warnung">Die eingestellte Karte „${escapeHtml(basis.name)}“ ` +
           'ist nicht dabei – am Bauort bliebe sie leer.</b>');
-    });
+    }).catch(() => { /* dann bleibt der bisherige Stand stehen */ });
   }
   standZeigen();
+  /* Der Abruf und das Löschen enden, ohne dass die Liste neu gebaut wird –
+     über diesen Griff holt `vorratAuffrischen()` Knöpfe und Bestand nach. */
+  box._vorratZeigen = () => { tastenZeigen(); standZeigen(); };
 
-  box.appendChild(el('p', 'klein',
-    'Geholt wird nur der Korridor der Trasse, mit Bedacht und gedeckelt: die ' +
-    'Nutzungsbedingungen der Kartenanbieter untersagen das massenhafte ' +
-    'Vorabladen, und wer dort auffällt, steht am Ende ganz ohne Karte da. ' +
-    'Mitnehmen lassen sich deshalb nur die Karten des BKG. Die Karte im ' +
-    'Bauauftrag und auf der Lagekarte bleibt ohne Netz leer – sie wird in ' +
-    'Graustufen gezeichnet, und die sind nicht im Vorrat. Das Blatt kommt aus ' +
-    'der Unterkunft mit.'));
-  /* Beim Betrachten sieht der Anbieter den Ausschnitt, in dem gearbeitet wird.
-     Beim Vorladen sieht er mehr: die Kacheln kommen in einem Zug und liegen in
-     einem schmalen Band – und dieses Band ist die Trasse, auf Kachelbreite
-     gerundet. Das ist ein Unterschied, den der Nutzer vor dem Knopfdruck
-     kennen muss und nicht danach. */
-  box.appendChild(el('p', 'klein vorrat-hinweis',
-    'Der Kartenanbieter sieht dabei mehr als beim gewöhnlichen Betrachten: die ' +
-    'Kacheln kommen in einem Zug und liegen in einem schmalen Band. Daraus ist ' +
-    'der Verlauf der Trasse auf einige hundert Meter genau abzulesen – nicht ' +
-    'ihre Punkte, aber ihr Weg; und wo Ist-Punkte aufgenommen sind, zählen die ' +
-    'mit. Wer das nicht möchte, nimmt die Karte nicht mit und baut ohne sie.'));
+  if (s && !kabelById(s.kabeltyp).funk) box.appendChild(baunachweisTeil(s));
   return box;
+}
+
+/* Der Baunachweis zum Ausfüllen ist das letzte Blatt des Bauauftrags und die
+   Rückfallebene, wenn das Gerät ausfällt: Akku leer, Schirm gebrochen, nass.
+   Der Griff öffnet den Bauauftrag dieser Strecke, denn dort steht der
+   Nachweis – ein eigenes Blatt nur dafür gäbe es zweimal, mit zwei Ständen.
+   Bei der Funkstrecke gibt es keinen Baunachweis, und der Teil fehlt. */
+function baunachweisTeil(s) {
+  const teil = el('div', 'vorrat-baunachweis');
+  teil.appendChild(el('h4', 'bau-untertitel', 'Baunachweis ausdrucken – falls das Gerät ausfällt'));
+  teil.appendChild(el('p', 'klein',
+    'Fällt das Gerät aus, schreibt der Trupp auf Papier weiter – in denselben Feldern wie ' +
+    'hier, damit das Nachtragen eine Abschrift ist. Das Blatt „Baunachweis zum Ausfüllen“ ' +
+    'steht am Ende des Bauauftrags.'));
+  const druck = knopf('▤ Bauauftrag mit Baunachweis', () => oeffneBauauftrag(s.id), 'bau-taste');
+  if (s.punkte.length < 2) {
+    druck.disabled = true;
+    druck.title = 'Für den Bauauftrag braucht die Strecke mindestens zwei Trassenpunkte.';
+  }
+  teil.appendChild(druck);
+  return teil;
 }
 
 /* Kopf: der Baustand und die Zahlen, die ihn stützen. Der Stand ist ein
@@ -5272,7 +5636,7 @@ function baukopfBlock(s, k) {
       z.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') oeffnen(e); };
       titel.appendChild(z);
     }
-    titel.insertAdjacentHTML('beforeend', kennungHTML(s));
+    titel.insertAdjacentHTML('beforeend', kennungHTML(s, true));
   }
   box.appendChild(merkeFeld(standFeld, 'stand'));
 
@@ -5301,16 +5665,39 @@ function baukopfBlock(s, k) {
        kann. */
     zeile(fertigGebaut ? 'Unterschied' : 'Unterschied (offen)', k.laengenUnterschied
       ? `${k.laengenUnterschied > 0 ? '+' : '−'}${escapeHtml(formatLaenge(Math.abs(k.laengenUnterschied)))}`
-      : '–', fraglich ? 'bz-fraglich' : fertigGebaut && Math.abs(k.laengenUnterschied) > 0 ? 'bz-merken' : '');
+      : '–', fraglich ? 'bz-fraglich' : fertigGebaut && Math.abs(k.laengenUnterschied) > 0 ? 'bz-merken' : '') +
+    /* Nur wenn es eine gibt, und hinter den dreien: ohne Lücke wäre sie ein
+       „–“ mehr in einem Reiter, der am Bauort um jede Zeile ringt, und davor
+       gesetzt risse sie die Reihe geplant – gebaut – Unterschied auseinander. */
+    (k.lueckeLaenge
+      ? zeile('Lücke (offen)', `⚠ ${escapeHtml(formatLaenge(k.lueckeLaenge))}`, 'bz-merken') : '');
   box.appendChild(zahlen);
 
 
   if (k.laenge) {
     box.appendChild(el('p', 'klein',
-      'Gebaut = Trasse zwischen den aufgenommenen Punkten, ohne Zuschlag und Reserve. ' +
+      'Gebaut = Trasse zwischen den aufgenommenen Punkten, ohne Zuschlag und Reserve' +
+      (k.lueckeLaenge ? ' und ohne die Lücken dazwischen. ' : '. ') +
       'Den Kabelverbrauch sagt der Materialnachweis.'));
   }
   return box;
+}
+
+/* Was ein Bauabschnitt trägt, in Worten für die Rückfrage vor dem Löschen.
+   Der Name zählt nicht mit: „Bauabschnitt 2“ vergibt die Anwendung selbst,
+   und ein Abschnitt, der nur ihn trägt, ist ein Doppeltipp auf „+“. */
+function abschnittInhalt(s, a) {
+  const bau = s.bau || {};
+  const zahl = (n, eins, viele) => n ? `${n} ${n === 1 ? eins : viele}` : '';
+  const zugeordnet = liste => (liste || []).filter(x => x.abschnitt === a.id).length;
+  return [
+    a.trupp && `Trupp „${a.trupp}“`,
+    a.fuehrer && `Truppführer ${a.fuehrer}`,
+    (a.beginn || a.ende) && 'Bauzeiten',
+    zahl(zugeordnet(bau.punkte), 'Punkt', 'Punkte'),
+    zahl(zugeordnet(bau.material), 'Materialzeile', 'Materialzeilen'),
+    zahl(zugeordnet(bau.meldungen), 'Meldung', 'Meldungen')
+  ].filter(Boolean);
 }
 
 /* Bauabschnitte: die Aufteilung EINER Strecke unter mehrere Trupps. Sie ist
@@ -5318,7 +5705,16 @@ function baukopfBlock(s, k) {
 function bauabschnittBlock(s) {
   const box = el('div', 'feldgruppe bau-abschnitte');
   const abschnitte = bauabschnitte(s);
-  box.appendChild(el('h3', 'gruppen-titel', 'Bauabschnitte und Trupps'));
+  /* Die Überschrift trägt die Zusammenfassung mit: zugeklappt ist sie alles,
+     was vom Block zu sehen ist, und „Bauabschnitte“ allein sagte nicht, ob
+     überhaupt einer da ist und ob er aufnimmt. */
+  const aktiv = aktiverBauabschnitt(s);
+  const zusammenfassung = !abschnitte.length ? 'keiner – die ganze Strecke ist ein Auftrag'
+    : abschnitte.length === 1
+      ? `${abschnitte[0].trupp || abschnitte[0].name}${aktiv ? ', nimmt auf' : ', nimmt nicht auf'}`
+      : `${abschnitte.length}, ${aktiv ? `es nimmt auf: ${aktiv.trupp || aktiv.name}` : 'keiner nimmt auf'}`;
+  box.appendChild(el('h3', 'gruppen-titel', 'Bauabschnitte und Trupps' +
+    `<span class="fg-zusatz"> · ${escapeHtml(zusammenfassung)}</span>`));
 
   if (!abschnitte.length) {
     box.appendChild(el('p', 'klein',
@@ -5347,11 +5743,27 @@ function bauabschnittBlock(s) {
     kopf.appendChild(marke);
     const weg = el('button', 'mini-knopf gefahr', '✕');
     weg.title = `${a.name} löschen`;
-    weg.onclick = () => {
+    const loeschen = () => {
       store.aendern(() => bauabschnittLoeschen(s, a.id), 'bau');
       if (bauabschnittAktivId() === a.id) bauabschnittAktivSetzen(null);
       hinweis(`${a.name} gelöscht – die aufgenommenen Punkte bleiben stehen. ` +
-        '„Rückgängig“ in der Kopfzeile holt die Zuordnung zurück.');
+        `${RUECKGAENGIG_TEXT.replace(/ es /, ' die Zuordnung ')}.`);
+    };
+    /* Dieselbe Regel wie bei der Meldung: ein leerer Abschnitt geht mit einem
+       Tipp, ein gefüllter fragt nach. Das ✕ steht mit 44 px unmittelbar neben
+       der großen Marke, und ein Fehlgriff nahm Trupp, Truppführer und Zeiten
+       mit – und Punkten, Materialzeilen und Meldungen ihre Zuordnung, ohne
+       dass irgendwo stand, wie viele es waren. */
+    weg.onclick = () => {
+      const verlust = abschnittInhalt(s, a);
+      if (!verlust.length) { loeschen(); return; }
+      dialog({
+        titel: `${a.name} löschen?`,
+        inhalt: `<p>Darin steht: ${verlust.map(escapeHtml).join(', ')}.</p>` +
+          '<p>Die Einträge selbst bleiben stehen, gehören danach aber keinem ' +
+          'Bauabschnitt mehr an.</p>',
+        fuss: [{ text: 'Abbrechen' }, { text: 'Löschen', gefahr: true, tun: loeschen }]
+      });
     };
     kopf.appendChild(weg);
     zeile.appendChild(kopf);
@@ -5372,6 +5784,10 @@ function bauabschnittBlock(s) {
     let neu = null;
     store.aendern(() => { neu = bauabschnittAnlegen(s); }, 'bau');
     if (neu) bauabschnittAktivSetzen(neu.id);
+    /* Der neue Abschnitt will ausgefüllt werden – der Block bleibt offen,
+       auch wenn er mit einem einzigen, aufnehmenden Abschnitt sonst zuklappt. */
+    bauKlappGewaehlt.add('abschnitte');
+    bauZu.delete('abschnitte');
     zeichneBauListe();
   }, 'klein'));
   box.appendChild(tasten);
@@ -5618,10 +6034,12 @@ function naechsteOffeneZeigen() {
    genügte nicht: wer nach Mitternacht oder am nächsten Morgen nachträgt, bekam
    das Datum des Eintippens, und ein Bau über zwei Tage stand mit falschen
    Zeiten in der Dokumentation. Zur Wahl stehen die letzten Tage und der Tag
-   des Eintrags selbst – mehr braucht der Nachtrag vom Bauort nicht, und ein
-   Kalender wäre am Handy ein Umweg. Geändert wird bei `change`, nicht bei
-   jedem Anschlag: die Liste sortiert nach der Zeit und zöge die Zeile sonst
-   unter dem Finger weg. */
+   des Eintrags selbst – das ist der Regelfall, und ein Kalender wäre dafür am
+   Handy ein Umweg. Für alles davor steht „anderer Tag …“ am Ende der Liste und
+   öffnet ein Datumsfeld: im Audit lag ein Baunachweis eine Woche im Fahrzeug,
+   bevor jemand nachtrug, und der früheste wählbare Tag war vorgestern.
+   Geändert wird bei `change`, nicht bei jedem Anschlag: die Liste sortiert
+   nach der Zeit und zöge die Zeile sonst unter dem Finger weg. */
 function zeitWahl(iso, titel, setzen, knapp = false) {
   if (knapp) return zeitWahlKnapp(iso, titel, setzen);
   const box = el('div', 'zeit-wahl');
@@ -5647,6 +6065,24 @@ function zeitWahl(iso, titel, setzen, knapp = false) {
     op.selected = d.toDateString() === basis.toDateString();
     tag.appendChild(op);
   });
+  const ANDERER = 'anderer';
+  const anderer = document.createElement('option');
+  anderer.value = ANDERER;
+  anderer.textContent = 'anderer Tag …';
+  tag.appendChild(anderer);
+
+  /* Das Datumsfeld erscheint nur auf Wahl und verschwindet mit ihr: dauerhaft
+     daneben stünde ein drittes Feld in jeder Punktkarte, für einen Fall von
+     hundert. Nach vorn ist es begrenzt – ein Eintrag vom Bauort liegt nie in
+     der Zukunft. */
+  const datum = document.createElement('input');
+  datum.type = 'date';
+  datum.className = 'zw-datum';
+  datum.hidden = true;
+  datum.max = isoTag(heute);
+  datum.value = isoTag(basis);
+  datum.setAttribute('aria-label', `${titel}: anderer Tag`);
+
   const zeit = document.createElement('input');
   zeit.type = 'time';
   zeit.className = 'bm-zeit';
@@ -5655,14 +6091,52 @@ function zeitWahl(iso, titel, setzen, knapp = false) {
   const uebernehmen = () => {
     const [h, min] = zeit.value.split(':').map(Number);
     if (!Number.isFinite(h) || !Number.isFinite(min)) { zeit.value = iso ? uhrzeit(iso) || '' : ''; return; }
+    if (tag.value === ANDERER) return;
     const d = new Date(tag.value);
     d.setHours(h, min, 0, 0);
     setzen(d.toISOString());
   };
-  tag.addEventListener('change', () => { if (zeit.value) uebernehmen(); });
+  tag.addEventListener('change', () => {
+    if (tag.value === ANDERER) {
+      datum.hidden = false;
+      datum.focus({ preventScroll: true });
+      return;
+    }
+    datum.hidden = true;
+    if (zeit.value) uebernehmen();
+  });
+  datum.addEventListener('change', () => {
+    const [j, m, t] = datum.value.split('-').map(Number);
+    if (!j || !m || !t) return;
+    const d = new Date(j, m - 1, t);
+    if (d > heute) { datum.value = isoTag(heute); return; }
+    /* Der gewählte Tag wird ein Eintrag der Liste wie die übrigen – so steht
+       er dort, bis die Zeile neu gebaut wird, und „anderer Tag …“ bleibt frei
+       für den nächsten Griff daneben. */
+    let op = [...tag.options].find(o => o.value === d.toDateString());
+    if (!op) {
+      op = document.createElement('option');
+      op.value = d.toDateString();
+      op.textContent = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      const danach = [...tag.options].find(o => o.value !== ANDERER && new Date(o.value) > d) || anderer;
+      tag.insertBefore(op, danach);
+    }
+    tag.value = op.value;
+    datum.hidden = true;
+    if (zeit.value) uebernehmen();
+  });
+  /* Kein Zurückspringen beim Verlassen des Datumsfeldes: am Telefon nimmt der
+     Datumswähler des Systems den Fokus, und ein Rücksprung auf „blur“ schlösse
+     das Feld, bevor ein Tag gewählt ist. Solange „anderer Tag …“ steht, wird
+     schlicht nichts geschrieben. */
   zeit.addEventListener('change', uebernehmen);
-  box.append(tag, zeit);
+  box.append(tag, zeit, datum);
   return box;
+}
+
+/** „2026-10-04“ für ein Datumsfeld, in der Zeitzone des Geräts */
+function isoTag(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /* In der Meldungszeile ist kein Platz für ein Tagesfeld: gestapelt machte es
@@ -5804,7 +6278,7 @@ function bauSchlussBlock(s, k) {
       `Kein aufgenommener Punkt liegt mehr als ${ABWEICHUNG_SCHWELLE} m vom geplanten entfernt.`));
   }
 
-  box.appendChild(feld('Meldung an den S 6', (s.bau && s.bau.abweichung) || '',
+  box.appendChild(feld('Meldung an den S 6 (Führungsstelle)', (s.bau && s.bau.abweichung) || '',
     w => schreib(() => { bauSichern(s).abweichung = w; }),
     { typ: 'textarea', zeilen: 3,
       platzhalter: 'Was vom Auftrag abweicht und warum' }));
@@ -5958,6 +6432,38 @@ function materialFeld(s, eintrag, abschnittId, soll, summe) {
       const nullFehlt = Number.isFinite(z) && z > 0 && z * 10 >= soll.menge * 0.7 &&
         z * 10 <= soll.menge * 2;
       const zuWenig = Number.isFinite(z) && z > 0 && z < soll.menge / 2 && (nullFehlt || fertig);
+      /* Bruchteile eines Meters. „1,450“ ist die Schreibweise, die die
+         Anwendung selbst für 1.450 m benutzt – nur mit Komma statt Punkt, und
+         gespeichert wurde still 1,45 m neben einem Bedarf von 8.653 m. Weder
+         „zu viel“ noch „eine Null vergessen“ schlug an. Wer Kabel in Metern
+         abliest, schreibt keine Nachkommastellen unter 10 m und keinen Wert
+         unter einem Hundertstel des Bedarfs. Angeboten wird das Tausendfache
+         nur, wo die Schreibweise es nahelegt – genau drei Stellen hinter dem
+         Komma, wie hinter einem Tausenderpunkt –, und übernommen nur auf Tipp.
+         An der Nähe zum Bedarf lässt es sich nicht festmachen: mit mehreren
+         Bauabschnitten trägt jeder nur einen Teil davon. */
+      const kommaStellen = /^\d+,(\d+)$/.exec(gelesen.text);
+      const mitBruch = !!kommaStellen || /\.\d/.test(gelesen.text);
+      const bruchteil = eintrag.einheit === 'm' && Number.isFinite(z) && z > 0 &&
+        ((z < 10 && mitBruch) || z < soll.menge / 100);
+      const gemeint = Math.round(z * 1000);
+      const vorschlag = bruchteil && !!kommaStellen && kommaStellen[1].length === 3;
+      if (bruchteil) {
+        warn.hidden = false;
+        warn.textContent = `⚠ ${z.toLocaleString('de-DE', { maximumFractionDigits: 3 })} m – ` +
+          (vorschlag ? `gemeint ${materialMengeText(gemeint, 'm')}?`
+            : z < 10 && mitBruch ? 'Bruchteile eines Meters, stimmt die Menge?'
+              : 'unter 1 % des Bedarfs, stimmt die Menge?');
+        if (vorschlag) {
+          const griff = knopf(`${materialMengeText(gemeint, 'm')} übernehmen`, () => {
+            ein.value = zahlText(gemeint);
+            ein.dispatchEvent(new Event('input', { bubbles: true }));
+          }, 'klein');
+          griff.classList.add('mat-uebernehmen');
+          warn.appendChild(griff);
+        }
+        return;
+      }
       warn.hidden = !zuViel && !zuWenig;
       warn.textContent = zuViel
         ? `⚠ ${String(Math.round(z / soll.menge * 10) / 10).replace('.', ',')}-fach des Bedarfs – Zahlendreher?`
@@ -6046,8 +6552,8 @@ function bauMeldungBlock(s) {
        der Zeit und zöge die Zeile sonst unter dem Finger weg. */
     zeile.appendChild(zeitWahl(m.zeit, 'Meldung', iso =>
       store.aendern(() => { m.zeit = iso; }, 'bau'), true));
-    zeile.appendChild(feld('', m.text, w => schreib(() => { m.text = w; }),
-      { platzhalter: 'Was gemeldet wurde' }));
+    zeile.appendChild(merkeFeld(feld('', m.text, w => schreib(() => { m.text = w; }),
+      { platzhalter: 'Was gemeldet wurde' }), 'meldung-' + m.id));
     const weg = el('button', 'mini-knopf gefahr', '✕');
     weg.title = 'Meldung löschen';
     const loeschen = () => {
@@ -6070,30 +6576,87 @@ function bauMeldungBlock(s) {
     if (a) zeile.appendChild(el('span', 'bm-abschnitt', escapeHtml(a.name)));
     box.appendChild(zeile);
   }
+  if (meldungEntwurf && meldungEntwurf.sid === s.id) box.appendChild(meldungEntwurfZeile(s));
 
   const tasten = el('div', 'tastenreihe bau-tasten');
   /* „Meldung jetzt“ las sich wie ein Funkspruch, der hinausgeht – im Audit
      glaubte der Trupp, die Anfangsstelle habe die Meldung. Der Knopf schreibt
      aber nur die Uhrzeit auf diesem Gerät mit. Das sagen Knopf und Pille. */
-  /* Ein zweiter Tipp legt keine zweite leere Zeile an: steht eine eben
-     angelegte noch leer da, bekommt sie das Schreibzeichen. Im Audit ergab ein
-     Doppeltipp zwei leere Meldungen, 160 ms auseinander. Die Uhrzeit bleibt
-     die des ersten Tipps – sie ist die Bauzeit.
+  /* Der Knopf legt noch keine Meldung an, sondern eine Zeile zum Schreiben:
+     die Uhrzeit des Tipps steht darin fest, in die Planung kommt sie mit dem
+     ersten Zeichen. Vorher stand die Meldung sofort leer da – wer unterbrochen
+     wurde, fand sie danach als „1 leere Meldung“ im Rückmeldeblock und beim
+     Planer als Baumeldung ohne Inhalt. Eine Zeit ohne Wortlaut sagt nicht, was
+     gemeldet wurde, und ist deshalb keine.
 
-     Kein Hinweis in der Pille mehr: sie lag im Audit über dem Feld „Meldung an
-     den S 6“. Was der Knopf tut, steht im Einführungstext des Blocks. */
+     Ein zweiter Tipp legt keine zweite Zeile an, sondern setzt das
+     Schreibzeichen in die erste – im Audit ergab ein Doppeltipp zwei leere
+     Meldungen, 160 ms auseinander. Die Uhrzeit bleibt die des ersten Tipps.
+
+     Kein Hinweis in der Pille: sie lag im Audit über dem Feld „Meldung an den
+     S 6“. Was der Knopf tut, steht im Einführungstext des Blocks. */
   tasten.appendChild(knopf('Meldung mitschreiben', () => {
-    const jetzt = Date.now();
-    let m = (s.bau && s.bau.meldungen || []).find(x => !String(x.text || '').trim() &&
-      jetzt - Date.parse(x.zeit) < 60000);
-    if (!m) store.aendern(() => { m = baumeldungAnlegen(s, '', aktiv ? aktiv.id : null); }, 'bau');
-    setTimeout(() => {
-      const f = document.querySelector(`.bm-zeile[data-mid="${CSS.escape(m.id)}"] .feld input`);
-      if (f) f.focus();
-    }, 60);
+    if (!meldungEntwurf || meldungEntwurf.sid !== s.id) {
+      meldungEntwurf = { sid: s.id, zeit: new Date().toISOString(), abschnitt: aktiv ? aktiv.id : null };
+      zeichneBauListe();
+    }
+    setTimeout(() => document.querySelector('.bm-entwurf .feld input')?.focus(), 60);
   }, 'klein primaer bau-taste'));
   box.appendChild(tasten);
   return box;
+}
+
+/* Die Zeile, die „Meldung mitschreiben“ aufschlägt. Sie lebt in der Sitzung
+   und nicht in der Planung: ein Neuaufbau der Liste – ein Punkt kommt an, der
+   Stand wechselt – zeichnet sie wieder hin, ein Neuladen nimmt sie mit, und
+   zurück bleibt nichts Leeres. */
+let meldungEntwurf = null;
+function meldungEntwurfZeile(s) {
+  const e = meldungEntwurf;
+  const zeile = el('div', 'bm-zeile bm-entwurf');
+  const a = bauabschnittById(s, e.abschnitt);
+  if (a) zeile.style.setProperty('--farbe', a.farbe);
+  let m = null;
+  zeile.appendChild(zeitWahl(e.zeit, 'Meldung', iso => {
+    if (m) store.aendern(() => { m.zeit = iso; }, 'bau');
+    else e.zeit = iso;
+  }, true));
+  const textFeld = merkeFeld(feld('', '', w => {
+    if (m) { schreib(() => { m.text = w; }); return; }
+    if (!String(w).trim()) return;
+    /* Mit dem ersten Zeichen wird es eine Meldung. Geschrieben wird als
+       Formulareingabe: die Liste bleibt stehen, und das Feld, in dem gerade
+       getippt wird, mit ihr – ein Neuaufbau risse am Telefon die laufende
+       Wortergänzung ab. Nur wenn der Stand dabei von „noch nicht begonnen“ auf
+       „im Bau“ springt, zeichnet die Liste neu, sonst stünde oben der alte. */
+    const standWechsel = !s.bau || s.bau.stand === 'offen';
+    meldungEntwurf = null;
+    store.aendern(() => {
+      m = baumeldungAnlegen(s, w, e.abschnitt);
+      m.zeit = e.zeit;
+      /* Die Marke, unter der ein Neuaufbau das Feld wiederfindet, ist ab
+         jetzt die der Meldung. */
+      ein.dataset.bauFeld = 'meldung-' + m.id;
+    }, standWechsel ? 'bau' : 'formular');
+    zeile.dataset.mid = m.id;
+    if (standWechsel) {
+      setTimeout(() => {
+        const f = document.querySelector(`.bm-zeile[data-mid="${CSS.escape(m.id)}"] .feld input`);
+        if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
+      }, 0);
+    }
+  }, { platzhalter: 'Was gemeldet wurde' }), 'meldung-entwurf');
+  const ein = textFeld.querySelector('input');
+  zeile.appendChild(textFeld);
+  const weg = el('button', 'mini-knopf gefahr', '✕');
+  weg.title = 'Meldung verwerfen';
+  weg.onclick = () => {
+    if (m) store.aendern(() => baumeldungLoeschen(s, m.id), 'bau');
+    else { meldungEntwurf = null; zeichneBauListe(); }
+  };
+  zeile.appendChild(weg);
+  if (a) zeile.appendChild(el('span', 'bm-abschnitt', escapeHtml(a.name)));
+  return zeile;
 }
 
 // -------------------------------------------------- Prüfen und Übergeben
@@ -6222,9 +6785,25 @@ function pruefZeile(s, z) {
   fuss.appendChild(el('span', 'klein', escapeHtml(uhrzeit(z.zeit) || '')));
   const weg = el('button', 'mini-knopf gefahr', '✕');
   weg.title = 'Stamm löschen';
-  weg.onclick = () => {
+  const loeschen = () => {
     store.aendern(() => pruefzeileLoeschen(s, z.id), 'bau');
     hinweis('Stamm gelöscht – „Rückgängig“ in der Kopfzeile holt ihn zurück');
+  };
+  /* Ein Stamm mit Ergebnis, Messwert oder Prüfer ist die Übernahmemessung
+     selbst – und ging mit einem Tipp. Dieselbe Regel wie bei der Meldung: leer
+     ohne Frage, gefüllt mit Rückfrage, die nennt, was verloren ginge. */
+  weg.onclick = () => {
+    const inhalt = [
+      z.bestanden === true ? 'bestanden' : z.bestanden === false ? 'nicht bestanden' : '',
+      String(z.ergebnis || '').trim(),
+      String(z.pruefer || '').trim() && `Prüfer ${String(z.pruefer).trim()}`
+    ].filter(Boolean);
+    if (!inhalt.length) { loeschen(); return; }
+    dialog({
+      titel: `${String(z.stamm || '').trim() || 'Stamm'} löschen?`,
+      inhalt: `<p>${escapeHtml(inhalt.join(' · '))}</p>`,
+      fuss: [{ text: 'Abbrechen' }, { text: 'Löschen', gefahr: true, tun: loeschen }]
+    });
   };
   fuss.appendChild(weg);
   zeile.appendChild(fuss);
@@ -6232,6 +6811,22 @@ function pruefZeile(s, z) {
 }
 
 // ---------------------------------------------------- Baumeldung schicken
+
+/* Der Block liest Material, Meldungstexte und alles, was in den Kurzcode
+   eingeht – und genau das schreibt sich über Formularfelder, die die Liste
+   nicht neu aufbauen (`schreib`, Grund „formular“). Im Audit stand deshalb
+   „Noch offen: Material, 1 leere Meldung“ unter einem ausgefüllten Bogen, bis
+   jemand neu lud. Nachgeführt wird nur dieser Block, und nur, wenn er sich
+   ändert; tippt jemand gerade in seinen Feldern (Trupp, Truppführer), bleibt
+   er stehen, sonst risse der Neuaufbau das Feld unter dem Finger weg. */
+export function rueckwegNachfuehren() {
+  const alt = document.querySelector('#bau-liste .bau-rueckweg');
+  if (!alt || alt.contains(document.activeElement)) return;
+  const s = baustrecke();
+  if (!s) return;
+  const neu = bauRueckwegBlock(s);
+  if (neu.innerHTML !== alt.innerHTML) alt.replaceWith(neu);
+}
 
 /* Der Rückweg. Er steht im Baumodus ganz unten, weil er ans Ende des Bauens
    gehört – und er steht dort auch dann, wenn an dieser Strecke noch gar nichts
@@ -6249,9 +6844,16 @@ function bauRueckwegBlock(s) {
     return box;
   }
 
+  /* Der Kurzcode der Meldung, wie sie JETZT hinausginge. Er ändert sich mit
+     jeder Eintragung; nennt der Planer über Funk denselben, ist genau dieser
+     Stand angekommen – die Frage, die der Vermerk weiter unten offen lassen
+     muss. Er steht im ersten Satz und nicht in einer eigenen Zeile: der Reiter
+     ist am Telefon ohnehin acht Schirme lang. */
   const einleitung = el('p', 'klein',
     `Zurück geht die Baudokumentation von ` +
-    `<b>${escapeHtml(alle.map(x => x.name).join(', '))}</b>, nicht die Planung.`);
+    `<b>${escapeHtml(alle.map(x => x.name).join(', '))}</b>, nicht die Planung – ` +
+    `<span class="bau-code">Meldung <b class="meldungscode">${escapeHtml(meldungsCodeVon(alle))}` +
+    '</b></span>.');
   box.appendChild(einleitung);
 
   /* Was noch fehlt, bevor die Meldung eine Abschlussmeldung ist. Im Audit ging
@@ -6381,9 +6983,14 @@ function bauRueckwegBlock(s) {
   /* Was der Trupp beim Absetzen tut, wird festgehalten: Zeit, Weg und ein
      Fingerabdruck der Aufnahme. Der Vermerk hängt an jeder Strecke, die in der
      Meldung steckt – sonst stünde er an einer, die gar nicht mitging. */
+  /* Ohne Undo-Schritt: „↶“ nahm im Audit als Nächstes den Vermerk zurück –
+     ein Tipp, der dem letzten Punkt galt, machte aus „Link erzeugt“ wieder
+     „noch nicht gemeldet“, während der Link längst im Messenger lag. Der
+     Vermerk ist eine Tatsache über das Gerät und keine Eintragung, die man
+     zurücknimmt. */
   const vermerken = weg => store.aendern(() => {
     for (const s of alle) absetzenVermerken(s, weg);
-  }, 'bau');
+  }, 'bau', { undo: false });
 
   const tasten = el('div', 'tastenreihe bau-tasten');
   tasten.appendChild(knopf('Als Link', () => meldungAlsLinkZeigen(alle, absender, vermerken),
@@ -6391,7 +6998,7 @@ function bauRueckwegBlock(s) {
   tasten.appendChild(knopf('Als Datei', () => {
     if (io.baumeldungExportieren(alle, absender)) {
       vermerken('datei');
-      hinweis('Baumeldung als Datei gesichert – jetzt dem Planer schicken');
+      hinweis(`Datei gesichert – jetzt dem Planer schicken (Meldung ${meldungsCodeVon(alle)})`);
     }
   }, 'klein bau-taste'));
   box.appendChild(tasten);
@@ -6437,8 +7044,13 @@ function meldungAlsLinkZeigen(strecken, absender = '', vermerken = null) {
       ? `<b>Zwischenmeldung</b> – ${offen.length === strecken.length ? 'noch nicht abgeschlossen' :
         `offen: ${escapeHtml(offen.map(x => x.name).join(', '))}`}. Später noch einmal zurückmelden.`
       : '<b>Abschlussmeldung</b> – gebaut und übergeben.'));
+  /* Der Kurzcode zum Gegenlesen: der Planer sieht denselben im Empfangsdialog
+     und in der Meldung nach dem Einspielen (`meldungsCode` in teilen.js). */
+  const code = meldungsCodeVon(strecken);
   box.appendChild(el('p', 'klein',
-    'Der Planer öffnet den Link und bekommt eine Vorschau, bevor etwas eingespielt wird.'));
+    `Der Planer öffnet den Link und bekommt eine Vorschau, bevor etwas eingespielt wird. ` +
+    `Er sieht dort Meldung <b class="meldungscode">${escapeHtml(code)}</b> – über Funk ` +
+    'gegengelesen ist das die Quittung, dass genau diese Meldung angekommen ist.'));
 
   /* Abgesetzt ist die Meldung, wenn sie das Gerät verlassen hat – kopiert oder
      weitergegeben. Beides vermerkt es, und der Vermerk läuft nur einmal: ein
@@ -6457,20 +7069,15 @@ function meldungAlsLinkZeigen(strecken, absender = '', vermerken = null) {
      kennt (Firefox auf dem Rechner), steht der Griff gar nicht erst da –
      „Kopieren“ bleibt in jedem Fall. */
   const kannTeilen = typeof navigator.share === 'function';
-  const fuss = [];
-  if (kannTeilen) {
-    fuss.push({ text: 'Teilen', tun: () => {
-      const wert = feldLink.value;
-      if (!wert || wert.startsWith('wird erzeugt')) return false;
-      navigator.share({ title: 'Baumeldung', text: 'Baumeldung vom Bauort', url: wert })
-        .then(() => { abgesetzt(); hinweis('Baumeldung weitergegeben und als abgesetzt vermerkt'); })
-        /* Ein Abbruch im Teilen-Blatt des Geräts ist kein Fehler und wird
-           deshalb auch nicht gemeldet – der Trupp hat sich anders entschieden. */
-        .catch(() => {});
-      return false;
-    } });
-  }
-  fuss.push({ text: 'Kopieren', tun: () => {
+  /* Der Hauptknopf ist der Weg hinaus und nicht „Schließen“. Drei Prüfungen
+     fanden im Audit „Schließen“ blau und „Kopieren“ grau daneben – unter
+     Zeitdruck wird der blaue getippt, und die Meldung blieb im Gerät.
+     „Schließen“ steht vorn links, wo der Daumen nicht zuerst hinfällt. */
+  /* Die Pille sagt, was jetzt zu tun ist, und nicht „abgesetzt“: das Wort ist
+     Funksprache für „beim Empfänger“, und das weiß das Gerät nicht – dieselbe
+     Regel, nach der der Vermerk „Link erzeugt“ heißt. */
+  const fuss = [{ text: 'Schließen' }];
+  fuss.push({ text: 'Kopieren', primaer: !kannTeilen, tun: () => {
     const wert = feldLink.value;
     if (!wert || wert.startsWith('wird erzeugt')) return false;
     feldLink.select();
@@ -6479,11 +7086,22 @@ function meldungAlsLinkZeigen(strecken, absender = '', vermerken = null) {
       hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler');
       return false;
     }
-    lauf.then(() => { abgesetzt(); hinweis('Baumeldung kopiert und als abgesetzt vermerkt'); })
+    lauf.then(() => { abgesetzt(); hinweis(`Link kopiert – jetzt verschicken (Meldung ${code})`); })
       .catch(() => hinweis('Kopieren nicht möglich – der Link ist markiert, Strg+C genügt.', 'fehler'));
     return false;
   } });
-  fuss.push({ text: 'Schließen', primaer: true });
+  if (kannTeilen) {
+    fuss.push({ text: 'Teilen', primaer: true, tun: () => {
+      const wert = feldLink.value;
+      if (!wert || wert.startsWith('wird erzeugt')) return false;
+      navigator.share({ title: 'Baumeldung', text: `Baumeldung ${code} vom Bauort`, url: wert })
+        .then(() => { abgesetzt(); hinweis(`Link weitergegeben (Meldung ${code})`); })
+        /* Ein Abbruch im Teilen-Blatt des Geräts ist kein Fehler und wird
+           deshalb auch nicht gemeldet – der Trupp hat sich anders entschieden. */
+        .catch(() => {});
+      return false;
+    } });
+  }
 
   dialog({ titel: 'Baumeldung als Link', inhalt: box, breit: true, fuss });
 
@@ -6526,6 +7144,19 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
     const v = vorschlag(p, m.name);
     return v ? v.id : null;
   });
+  const code = meldungsCodeAus(meldung);
+
+  /* Findet keine gemeldete Strecke eine Entsprechung, liegt die Planung
+     vermutlich nicht hier offen. Im Audit öffnete der Planer den Link im
+     Browser seines Telefons, die Planung lag am Rechner – der Dialog nannte
+     „Keine Strecke dieses Namens“ je Zeile, und „Einspielen“ stand blau
+     darunter. Liegt eine andere Planung im Browser, die alle Namen kennt, wird
+     sie angeboten; sonst wird es ausdrücklich gesagt. */
+  const nirgends = zuordnung.length > 0 && zuordnung.every(z => !z);
+  const andere = nirgends ? Object.values(ladeAlle()).filter(pr => pr.id !== p.id &&
+    (meldung.strecken || []).every(m =>
+      (pr.strecken || []).filter(x => x.name === m.name).length === 1))
+    .sort((a, b) => (b.geaendert || '').localeCompare(a.geaendert || ''))[0] : null;
 
   const box = el('div', 'meldung-vorschau');
   const trupp = truppText(meldung);
@@ -6535,6 +7166,11 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
     `<p>Über ${escapeHtml(herkunft === 'Datei' ? 'die Datei' : 'den Link')} kommt eine
         <b>Baumeldung</b> herein${trupp ? ` von <b>${escapeHtml(trupp)}</b>` : ''}${
         zeit ? `, gemeldet ${escapeHtml(zeit)}` : ''}.</p>` +
+    /* Der Kurzcode steht beim Trupp im Rückmeldeblock und im Linkdialog. Über
+       Funk gegengelesen ist er die Quittung, die das Gerät des Trupps nicht
+       haben kann: genau diese Meldung ist angekommen. */
+    `<p class="klein">Meldung <b class="meldungscode">${escapeHtml(code)}</b> – nennt der
+        Trupp über Funk denselben Code, ist es sein letzter Stand.</p>` +
     /* Der Name der Planung reist als Text mit, nicht als Kennung – die gibt es
        auf beiden Seiten nicht gemeinsam (siehe `baumeldung.js`). Stimmt er
        nicht, ist das ein Hinweis und keine Sperre: der Planer kann die Planung
@@ -6551,7 +7187,15 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
       : '') +
     `<p class="klein"><b>Zusammengeführt wird nichts.</b> Eine Baumeldung ersetzt
         genau die Bauabschnitte, die sie nennt; die geplante Trasse bleibt
-        unangetastet.</p>`;
+        unangetastet.</p>` +
+    (nirgends ? (andere
+      ? `<p class="bau-warnung">Keine Strecke der offenen Planung „${escapeHtml(p.name)}“
+           heißt so. Die Meldung gehört vermutlich zu <b>„${escapeHtml(andere.name)}“</b> –
+           erst diese Planung öffnen, dann einspielen.</p>`
+      : `<p class="bau-warnung"><b>Die Planung, zu der diese Meldung gehört, liegt nicht in
+           diesem Browser.</b> Keine Strecke heißt so. ${herkunft === 'Datei' ? 'Die Datei'
+           : 'Den Link'} dort öffnen, wo die Planung liegt – oder unten von Hand zuordnen,
+           wenn sie hier nur anders heißt.</p>`) : '');
   box.appendChild(kopf);
 
   const liste = el('div', 'meldung-liste');
@@ -6567,7 +7211,13 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
       ? `${st.name} (${(st.punkte || []).length} Punkte)` : st.name;
   };
 
+  let einspielKnopf = null;
+  const knopfStand = () => {
+    if (einspielKnopf) einspielKnopf.disabled = zuordnung.every(z => !z);
+  };
+
   const zeichne = () => {
+    knopfStand();
     /* Die Liste wird bei jeder Änderung neu gebaut, und ein Auswahlfeld, das
        dabei den Fokus verliert, ist mit der Tastatur nicht zu bedienen: jede
        Zuordnung verlangte neu zuzugreifen. Gerettet wird über die Stelle und
@@ -6611,10 +7261,52 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
         zeile.appendChild(el('p', 'mv-s6',
           `<span class="klein">Meldung an den S 6</span><br>${escapeHtml(b.s6)}`));
       }
-      if (b.ganzeStrecke && b.standNeu && b.ziel && b.standNeu !== b.standAlt) {
-        zeile.appendChild(el('p', 'klein',
-          `Stand: ${escapeHtml(baustandById(b.standAlt || 'offen').name)} → ` +
-          `<b>${escapeHtml(baustandById(b.standNeu).name)}</b>`));
+      /* Vor allem anderen, was die Zeile sagt: liegt die Aufnahme ganz neben
+         der Trasse, ist alles Weitere eine Rechnung über die falsche Strecke. */
+      if (b.ziel && b.daneben && b.daneben.zahl) {
+        zeile.appendChild(el('p', 'bau-warnung', b.daneben.alle
+          ? `Die gemeldete Aufnahme liegt <b>${escapeHtml(formatLaenge(b.daneben.naechster))}
+              neben der Strecke</b> „${escapeHtml(b.ziel.name)}“ – gehört sie überhaupt
+              hierher? Gleichnamige Strecken gibt es in jeder Planung, die den Vorgabenamen
+              behält.`
+          : `${b.daneben.zahl} gemeldete ${b.daneben.zahl === 1 ? 'Punkt liegt' : 'Punkte liegen'}
+              bis ${escapeHtml(formatLaenge(b.daneben.weitester))} neben der Trasse – beim
+              Trupp nachfragen, ob die Ortung stimmt.`));
+      }
+      /* Bisher und danach in einer Zeile: Stand, bestätigte Punkte und was an
+         Abweichungen dazukommt. „3 Punkte · 2 Baumeldungen“ sagte nicht, ob
+         die Meldung den Bau voranbringt oder nur wiederholt, was hier steht. */
+      if (b.ziel && !b.schonDa && b.bisher && b.danach) {
+        const satz = k => `${escapeHtml(baustandById(k.stand).name)}, ` +
+          `${k.bestaetigt}/${k.soll} bestätigt` +
+          (k.ist > k.bestaetigt ? `, ${k.ist} aufgenommen` : '');
+        const mehr = b.danach.abweichungen - b.bisher.abweichungen;
+        zeile.appendChild(el('p', 'klein mv-verlauf',
+          `Bisher ${satz(b.bisher)} → <b>danach ${satz(b.danach)}</b>` +
+          (mehr > 0 ? ` · <b>${mehr} ${mehr === 1 ? 'neue Abweichung' : 'neue Abweichungen'}</b>`
+            : '')));
+      }
+      /* Die neuen Baumeldungen im Wortlaut – sie sind, was der Trupp
+         unterwegs durchgegeben hat. Drei reichen für die Entscheidung; der
+         Rest steht nach dem Einspielen im Bau-Reiter. */
+      if (b.ziel && !b.schonDa && b.neueMeldungen.length) {
+        const zeigen = b.neueMeldungen.slice(-3);
+        const rest = b.neueMeldungen.length - zeigen.length;
+        const ul = el('ul', 'mv-meldungen');
+        for (const x of zeigen) {
+          ul.appendChild(el('li', '',
+            `<span class="klein">${escapeHtml(uhrzeit(x.zeit) || '')}</span> ` +
+            `„${escapeHtml(kuerzen(x.text, 140))}“`));
+        }
+        if (rest) ul.appendChild(el('li', 'klein', `und ${rest} weitere`));
+        zeile.appendChild(el('p', 'klein mv-meldungen-titel',
+          b.neueMeldungen.length === 1 ? 'Neue Baumeldung:' : 'Neue Baumeldungen:'));
+        zeile.appendChild(ul);
+      }
+      if (b.uebergabeFraglich) {
+        zeile.appendChild(el('p', 'bau-warnung',
+          `Als <b>übergeben</b> gemeldet, aber ${escapeHtml(b.uebergabeFraglich)}. ` +
+          'Nach 3.5 gehört die Messung oder Sprechprobe vor die Übergabe.'));
       }
       if (!b.ziel) {
         zeile.appendChild(el('p', 'klein',
@@ -6654,14 +7346,23 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
             v.punkte && (v.punkte === 1 ? '1 aufgenommener Punkt' : `${v.punkte} aufgenommene Punkte`),
             v.meldungen && (v.meldungen === 1 ? '1 Baumeldung' : `${v.meldungen} Baumeldungen`),
             v.material && (v.material === 1 ? '1 Materialzeile' : `${v.material} Materialzeilen`)
-          ].filter(Boolean).join(', ');
+          ].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' und $1');
           const absender = String(meldung.von || '');
           const fremd = b.bisherVon && absender && b.bisherVon !== absender;
-          zeile.appendChild(el('p', fremd ? 'bau-warnung' : 'mv-ersetzt',
-            `Dabei ${v.punkte + v.meldungen + v.material === 1 ? 'geht' : 'gehen'} hier verloren: ` +
-            `${escapeHtml(was)}${b.bisherVon ? ` – gemeldet von <b>${escapeHtml(b.bisherVon)}</b>` : ''}.` +
-            (fremd ? ' Das ist ein anderer Absender: seine Aufnahme wird ersetzt, nicht ergänzt. ' +
-              'Vorher als Datei sichern, wenn beide gebraucht werden.' : '')));
+          const eins = v.punkte + v.meldungen + v.material === 1;
+          /* Auch vom selben Absender ist das eine Warnung: meldet der Trupp
+             weniger, als hier steht, hat er gelöscht oder auf einem zweiten
+             Gerät gemeldet – beides weiß nur er. Im Audit ging so ein Teil
+             einer Aufnahme verloren, unter einem blauen „Einspielen“. */
+          zeile.appendChild(el('p', 'bau-warnung', fremd
+            ? `Dabei ${eins ? 'geht' : 'gehen'} hier verloren: ${escapeHtml(was)} – ` +
+              `gemeldet von <b>${escapeHtml(b.bisherVon)}</b>. Das ist ein anderer Absender: ` +
+              'seine Aufnahme wird ersetzt, nicht ergänzt. Vorher als Datei sichern, wenn ' +
+              'beide gebraucht werden.'
+            : `Diese Meldung kennt <b>${escapeHtml(was)}</b> nicht, ${eins ? 'der' : 'die'} ` +
+              `hier schon ${eins ? 'steht' : 'stehen'}` +
+              `${b.bisherVon ? ` (gemeldet von ${escapeHtml(b.bisherVon)})` : ''} – beim ` +
+              'Trupp nachfragen. Einspielen nimmt sie heraus.'));
         }
         /* Ist alles schon da, schweigen die Warnungen darunter: sie beschrieben,
            was das Einspielen ersetzt, und das ist hier nichts. Im Audit stand
@@ -6721,10 +7422,18 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
      „Einspielen“ blau unter genau diesen beiden Warnungen – unter Zeitdruck
      wird der blaue Knopf getippt. Eingespielt werden kann weiter; es ist nur
      nicht mehr der naheliegende Griff. */
+  /* Seit der vierten Runde zählt JEDER Verlust, nicht nur der eines anderen
+     Absenders: meldete derselbe Trupp weniger Punkte, als hier standen,
+     blieb „Einspielen“ blau, und die fehlenden waren nach einem Tipp fort.
+     Ebenso eine Aufnahme, die als Ganzes neben der Trasse liegt – das ist die
+     Meldung eines anderen Auftrags gleichen Namens. */
   const riskant = anfang.some(b => b.ziel && !b.schonDa && (b.aelter ||
-    (b.bisherVon && meldung.von && b.bisherVon !== String(meldung.von) &&
-     (b.verloren.punkte || b.verloren.meldungen || b.verloren.material))));
-  const verwerfenVorn = nichtsNeues || riskant;
+    b.verloren.punkte || b.verloren.meldungen || b.verloren.material ||
+    (b.daneben && b.daneben.alle)));
+  /* Liegt die passende Planung im Browser, ist sie zu öffnen der Hauptweg –
+     verworfen ist die Meldung sonst für eine Planung, die nur nicht offen
+     war. */
+  const verwerfenVorn = (nichtsNeues || riskant || nirgends) && !andere;
 
   dialog({
     titel: 'Baumeldung eingegangen',
@@ -6744,13 +7453,20 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
       /* Die Warnung „vorher als Datei sichern“ hatte keinen Griff im Dialog:
          wer beide Stände behalten wollte, musste verwerfen, sichern und den
          Link neu öffnen. Der Dialog bleibt beim Sichern offen. */
+      /* Die andere Planung öffnen und denselben Dialog dort wieder vorlegen.
+         Die Adresse bleibt dabei stehen – entschieden ist noch nichts. */
+      ...(andere ? [{ text: `„${kuerzen(andere.name, 28)}“ öffnen`, primaer: true, tun: () => {
+        if (!store.laden(andere.id)) return false;
+        setTimeout(() => baumeldungDialog(meldung, herkunft, entschieden), 0);
+        return true;
+      } }] : []),
       ...(riskant ? [{ text: 'Erst als Datei sichern', tun: () => {
         io.projektExportieren()
           .then(ok => { if (ok) hinweis('Planung als Datei gesichert – jetzt entscheiden'); })
           .catch(e => hinweis('Sichern fehlgeschlagen: ' + e.message, 'fehler'));
         return false;
       } }] : []),
-      { text: 'Einspielen', primaer: !verwerfenVorn, tun: () => {
+      { text: 'Einspielen', primaer: !verwerfenVorn && !andere, tun: () => {
         if (entschieden) entschieden();
         let bericht;
         /* Vor dem Einspielen gemerkt: die Liste baut sich mit der Änderung neu
@@ -6760,11 +7476,20 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
         ctx.sl.zeichne();
         zeichneStreckenListe();
         zeichneBauListe();
+        /* Der Kurzcode steht in der Meldung danach, damit der Planer ihn
+           zurückfunken kann, ohne ihn aus dem Dialog im Kopf zu behalten. */
         hinweis(berichtText(bericht) +
-          (bericht.uebersprungen ? ` – ${bericht.uebersprungen} ausgelassen` : ''));
+          (bericht.uebersprungen ? ` – ${bericht.uebersprungen} ausgelassen` : '') +
+          ` · Meldung ${code}`);
       } }
     ]
   });
+  /* Ohne eine einzige Zuordnung gibt es nichts einzuspielen; der Knopf bleibt
+     gesperrt, bis von Hand eine Strecke gewählt ist. `zeichne` ruft das bei
+     jeder Änderung der Zuordnung. */
+  einspielKnopf = [...document.querySelectorAll('#dialog-fuss .knopf')]
+    .find(k => k.textContent === 'Einspielen') || null;
+  knopfStand();
 }
 
 // ---------------------------------------------------------------- Projekt
@@ -6883,6 +7608,23 @@ export function zeichneProjektReiter() {
 let speicherlisteOeffner = null;
 export function speicherlisteAnmelden(fn) { speicherlisteOeffner = fn; }
 
+/* Die zweite Zeile eines Eintrags: Plan-Kennung, Baustand und Aufnahme
+   (`baustandDerPlanung` in state.js). Die Kennung steht immer da – sie ist
+   dieselbe wie im Kopf des Bauauftrags und im Bau-Reiter, und an ihr erkennt
+   man zwei gleichnamige Planungen als denselben Plan oder als zwei. */
+function planlistenBau(pr) {
+  const teile = [];
+  if (pr.kennung && pr.strecken) teile.push(`Plan <b class="meldungscode">${escapeHtml(pr.kennung)}</b>`);
+  const staende = BAUSTAENDE.filter(b => pr.staende && pr.staende[b.id]);
+  if (staende.length) {
+    teile.push(staende.map(b => pr.strecken === 1 && pr.staende[b.id] === 1
+      ? escapeHtml(b.name) : `${pr.staende[b.id]} ${escapeHtml(b.kurz)}`).join(', '));
+    teile.push(`${pr.istPunkte} ${pr.istPunkte === 1 ? 'Punkt' : 'Punkte'} aufgenommen` +
+      (pr.zuletzt ? `, zuletzt ${escapeHtml(zeitpunkt(pr.zuletzt))}` : ''));
+  }
+  return teile.join(' · ');
+}
+
 export function projektDialog() {
   const liste = projektListe();
   const amSpeicher = speicherlisteOeffner && speicherlisteOeffner();
@@ -6909,7 +7651,8 @@ export function projektDialog() {
         <span class="klein">${pr.strecken} Strecken · ${pr.zeichen} Zeichen${
           pr.bilder ? ` · ${pr.bilder} Bilder` : ''} ·
         ${new Date(pr.geaendert).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}${
-          offen ? ' · <b class="pl-offen">gerade geöffnet</b>' : ''}</span></div>`;
+          offen ? ' · <b class="pl-offen">gerade geöffnet</b>' : ''}</span>
+        <span class="klein pl-bau">${planlistenBau(pr)}</span></div>`;
     const t = el('div', 'pl-tasten');
     const oeffnen = knopf('Öffnen', () => {
       if (store.laden(pr.id)) { schliesseDialog(); hinweis(`„${pr.name}“ geöffnet`); }
@@ -7145,6 +7888,13 @@ export function koordinatenSuche(punktAnfuegen = null) {
 // ---------------------------------------------------------------- Hilfe
 
 export function hilfeDialog() {
+  /* Die Anleitung spricht die Sprache des Geräts, wie die Modusleiste: am
+     Telefon gibt es keine Enter-, Rück- oder K-Taste und keinen Doppelklick,
+     und im Review suchte ein Helfer genau diese Tasten. Geprüft wird beim
+     Öffnen und nicht beim Laden – ein Tablet bekommt mitunter erst später
+     eine Tastatur. */
+  const finger = matchMedia('(pointer: coarse)').matches &&
+    !matchMedia('(any-pointer: fine)').matches;
   const inhalt = dialog({
     titel: 'Kurzanleitung', breit: true,
     inhalt: `
@@ -7154,20 +7904,38 @@ export function hilfeDialog() {
            Leitungsart wählen, Bauauftrag mitnehmen, Baumodus. Die <b>erweiterte Ansicht</b>
            bringt das Lagebild dazu – taktische Zeichen, Flächen, Relaisstellen, Bilder – und
            alle Bauansatzwerte, die Lagekarte, den Sammeldruck und den eigenen Speicher.
-           Umgeschaltet wird oben in der linken Leiste; die Planung bleibt in beiden Ansichten
-           dieselbe.</p>
+           Umgeschaltet wird über den Reitern „Strecken“ und „Auftrag“; die Planung bleibt in
+           beiden Ansichten dieselbe.</p>
         <h3>Strecke planen</h3>
         <ol>
-          <li><b>Neue Strecke zeichnen</b> wählen und die Trasse auf der Karte anklicken –
-              vom Anfangs- zum Endpunkt.</li>
-          <li>Mit <kbd>Enter</kbd> oder Doppelklick abschließen, <kbd>Rücktaste</kbd> nimmt
-              den letzten Punkt zurück.</li>
-          <li>Beim Zeichnen fügt <b>Koordinate</b> (<kbd>K</kbd>) einen Punkt exakt an –
-              etwa eine über Funk durchgegebene MGRS-Angabe, ganz ohne Kartenklick.</li>
-          <li>Punkte lassen sich später verschieben; die kleinen Griffe zwischen zwei Punkten
-              fügen beim Ziehen einen Zwischenpunkt ein.</li>
+          <li><b>Neue Strecke zeichnen</b> wählen und die Trasse auf der Karte
+              ${finger ? 'antippen' : 'anklicken'} – vom Anfangs- zum Endpunkt. Aus der
+              Übersicht holt der erste ${finger ? 'Tipp' : 'Klick'} nur heran; schneller zur
+              Baustelle führen <b>Ort suchen</b> und <b>Mein Standort</b> in der Leiste.</li>
+          ${finger
+            ? `<li><b>Fertig</b> in der Leiste unten schließt ab, <b>Letzten Punkt zurück</b>
+              nimmt den letzten Punkt zurück.</li>`
+            : `<li>Mit <kbd>Enter</kbd> oder Doppelklick abschließen, <kbd>Rücktaste</kbd>
+              nimmt den letzten Punkt zurück.</li>`}
+          <li>Beim Zeichnen fügt <b>Ort suchen</b>${finger ? '' : ' (<kbd>K</kbd>)'} einen
+              Punkt exakt an – etwa eine über Funk durchgegebene MGRS-Angabe, ganz ohne
+              ${finger ? 'Tipp auf die Karte' : 'Kartenklick'}.</li>
+          ${finger
+            ? `<li>Punkte lassen sich später verschieben: den Finger auf dem Punkt halten,
+              bis sich ein Ring um ihn schließt, dann ziehen – ein bloßes Wischen verschiebt
+              nur die Karte. Ebenso fügen die kleinen Griffe zwischen zwei Punkten einen
+              Zwischenpunkt ein. Ohne Ziehen geht beides über die Punkttabelle: die
+              Koordinate antippen, dann <b>Auf der Karte neu setzen</b> oder <b>Danach
+              einen Punkt einfügen</b>.</li>`
+            : `<li>Punkte lassen sich später verschieben; die kleinen Griffe zwischen zwei
+              Punkten fügen beim Ziehen einen Zwischenpunkt ein.</li>`}
           <li>Punktarten (Muffe, Querung, Mast …) in der Punkttabelle setzen – sie erscheinen
               in Karte und Bauauftrag.</li>
+          <li>Die Punktmarke trägt Nummer und Kürzel der Art: <b>1A</b> ist Punkt 1, der
+              Anfangspunkt, <b>3E</b> Punkt 3, der Endpunkt. Die übrigen Kürzel:
+              ${PLANPUNKTARTEN.filter(a => !['start', 'ziel'].includes(a.id) && a.kurz !== '·')
+                .map(a => `${escapeHtml(a.kurz)} ${escapeHtml(a.name)}`).join(', ')};
+              ein gewöhnlicher Trassenpunkt trägt nur die Nummer.</li>
           <li>An einer <b>Querung</b> die Bauweise am Hindernis wählen: Überbau (Ü, Stangen
               über die Straße), Unterbau (U, Graben oder Durchlass) oder an einem Bauwerk
               entlang. Jede Querung bringt einen Zeitansatz in Minuten mit, der in die
@@ -7305,7 +8073,7 @@ export function hilfeDialog() {
            Kantenlängen anlegen, die der Hinweis am Druckknopf nennt. In der Regel wird
            die Lagekarte als PDF gespeichert und beim Plotter ausgegeben.</p>
         <h3>Flächen und Aufbauplatz</h3>
-        <p>Im Reiter <b>Flächen</b> (<kbd>F</kbd>) lassen sich Grundrisse maßstäblich
+        <p>Im Reiter <b>Flächen</b>${finger ? '' : ' (<kbd>F</kbd>)'} lassen sich Grundrisse maßstäblich
            einzeichnen: der <b>FüKomKW</b> und der <b>Anhänger FüLa</b> jeweils
            aufgebaut, das <b>Zelt SG 300</b>, der <b>Aufbauplatz</b> der Führungsstelle
            von etwa 25 × 15 m oder eine <b>freie Fläche</b> mit eigenen Maßen. Die
@@ -7322,7 +8090,7 @@ export function hilfeDialog() {
               KML als Grundriss; wie Zeichen lassen sie sich Einsatzabschnitten zuteilen.</li>
         </ul>
         <h3>Relaisstellen des Sprechfunks</h3>
-        <p>Im Reiter <b>Relais</b> (<kbd>R</kbd>) wird geplant, wohin eine Relaisstelle
+        <p>Im Reiter <b>Relais</b>${finger ? '' : ' (<kbd>R</kbd>)'} wird geplant, wohin eine Relaisstelle
            über das Gelände trägt – im <b>4-m-</b> und <b>2-m-Band</b> analog und in
            <b>TETRA DMO</b>. Standort auf der Karte setzen, Band und Antennenhöhe über
            Grund eintragen, dann zeigt <b>Ausbreitung zeigen</b> die Fläche in drei
@@ -7379,8 +8147,8 @@ export function hilfeDialog() {
         </ul>
         <h3>Baumodus</h3>
         <p>Der Schalter links oben nennt den Modus, in dem man gerade ist – in der
-           Planung steht <b>Planung ⇄</b> darauf, ein Tipp darauf führt in den
-           <b>Baumodus</b>. Dort zeigt die Anwendung, was am Bauort gebraucht wird, und
+           Planung steht <b>Planung</b> darauf und klein darunter „⇄ zum Bau“: ein Tipp
+           darauf führt in den <b>Baumodus</b>. Dort zeigt die Anwendung, was am Bauort gebraucht wird, und
            hält fest, was gebaut wurde – die Planung bleibt unangetastet. Am Bauort geht
            es über die Karte:</p>
         <ul>
@@ -7422,14 +8190,14 @@ export function hilfeDialog() {
         <h3>Speichern</h3>
         <p>Alles wird laufend im Browserspeicher gespeichert. Für Sicherung und Weitergabe
            <b>Datei → Planung als Datei sichern</b> verwenden – die Bilder gehen mit ein.</p>
-        <h3>Tastatur</h3>
+        ${finger ? '' : `<h3>Tastatur</h3>
         <ul class="tasten-liste">
           <li><kbd>S</kbd> neue Strecke · <kbd>T</kbd> taktisches Zeichen · <kbd>F</kbd> Fläche ·
-              <kbd>R</kbd> Relaisstelle · <kbd>K</kbd> Koordinate</li>
+              <kbd>R</kbd> Relaisstelle · <kbd>K</kbd> Ort suchen</li>
           <li><kbd>Strg</kbd>+<kbd>Z</kbd> rückgängig · <kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>Z</kbd> wiederholen</li>
           <li><kbd>Enter</kbd> Zeichnen beenden · <kbd>Esc</kbd> abbrechen</li>
           <li><kbd>Strg</kbd>+<kbd>P</kbd> Bauauftrag der gewählten Strecke öffnen</li>
-        </ul>
+        </ul>`}
       </div>`,
     fuss: [
       /* Der Rückweg zur Sprungliste, ohne dass sie Höhe kostet: quer bleiben
@@ -7486,6 +8254,22 @@ export function hilfeDialog() {
       'klein' + (NUR_ERWEITERT.has(titel) ? ' nur-erweitert' : '')));
   }
   inhalt.querySelector('.hilfe').prepend(streifen);
+
+  /* Im Baumodus schlägt die Anleitung beim Baumodus auf. Sie begann mit
+     „Einfache und erweiterte Ansicht“, und wer am Bauort „?“ tippte, las
+     zuerst von Planerdingen und musste den Abschnitt erst im Streifen
+     finden. Gerollt wird nur der Inhalt, nicht die Seite dahinter. Der Dialog
+     wächst beim Öffnen aus einer Verkleinerung heran, und gemessen wird
+     mittendrin: der Abstand am Schirm wird deshalb durch dieselbe Skala
+     geteilt – roh stand die Überschrift 98 px unter dem Rand. */
+  if (document.body.classList.contains('baumodus')) {
+    const ziel = kopfe.find(h => h.textContent.trim() === 'Baumodus');
+    const rahmen = inhalt.getBoundingClientRect();
+    if (ziel && rahmen.height) {
+      const skala = rahmen.height / inhalt.offsetHeight;
+      inhalt.scrollTop += (ziel.getBoundingClientRect().top - rahmen.top) / skala;
+    }
+  }
 }
 
 // ---------------------------------------------------------------- Hilfsknopf

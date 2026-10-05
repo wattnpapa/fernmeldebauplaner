@@ -18,7 +18,9 @@
    Bauabschnitt betreffen, wird gefragt. */
 
 import { bauNormalisieren, BAUSTAENDE, id as neueKennung } from './state.js';
-import { bauabschnitte, istPunkte } from './baudoku.js';
+import {
+  bauabschnitte, istPunkte, baukennzahlen, abstandZurLinie, ABSEITS_SCHWELLE
+} from './baudoku.js';
 import { bauAbdruck } from './teilen.js';
 import { materialById } from './vorschrift.js';
 
@@ -143,7 +145,8 @@ export function befund(projekt, meldung, zuordnung) {
        nicht über ihre Zahl. „Dabei weichen 3 Punkte“ stand auch dann da, wenn
        dieselben drei Punkte gleich wieder hereinkamen, und wer das einmal
        gesehen hat, liest es beim nächsten Mal nicht mehr. */
-    const verloren = probe ? verlust(ziel.bau, probe.bau) : { punkte: 0, meldungen: 0, material: 0 };
+    const verloren = probe ? verlust(ziel.bau, probe.bau)
+      : { punkte: 0, meldungen: 0, material: 0, punkteGeaendert: 0, meldungenGeaendert: 0 };
     /* Eine Materialzeile desselben Artikels ist kein Verlust, sondern eine
        Änderung – und die Änderung ist genau das, was der Planer sehen muss:
        im Audit nannte der Dialog bei der berichtigten Meldung „1 Materialzeile
@@ -151,8 +154,52 @@ export function befund(projekt, meldung, zuordnung) {
     const geaendert = probe ? mengenAenderung(ziel.bau, probe.bau) : [];
     verloren.material = Math.max(0, verloren.material - geaendert.length);
 
+    /* Wie weit die gemeldete Aufnahme neben der Trasse liegt, der sie
+       zugeordnet wird. Zugeordnet wird über den Namen, und „Strecke 1“ in
+       „Neue Planung“ heißt in jedem Ortsverband so: im Audit kam die Meldung
+       eines fremden Trupps an, 80 km entfernt, und ersetzte ohne ein Wort die
+       eigene Aufnahme. Liegt schon der NÄCHSTE Punkt weiter als
+       `ABSEITS_SCHWELLE` daneben, gehört die Meldung nicht hierher; liegen nur
+       einzelne daneben, ist es eine Ortung am falschen Platz, und das ist eine
+       Nachfrage, kein Grund zu verwerfen. */
+    const lage = (ziel && (ziel.punkte || []).length)
+      ? ((m.bau && m.bau.punkte) || [])
+          .filter(pt => pt && Number.isFinite(pt.lat) && Number.isFinite(pt.lng))
+          .map(pt => abstandZurLinie(pt, ziel.punkte))
+      : [];
+    const daneben = lage.length ? {
+      naechster: Math.min(...lage),
+      weitester: Math.max(...lage),
+      zahl: lage.filter(d => d >= ABSEITS_SCHWELLE).length,
+      alle: lage.every(d => d >= ABSEITS_SCHWELLE)
+    } : null;
+
+    /* „Übergeben“ ohne Messung kam beim Planer als fertige Leitung an. Beim
+       Trupp fragt die Auswahl nach (`bauUebergabeBlock` in ui.js) – sie lässt
+       „trotzdem übergeben“ aber zu, und dann stand im Empfangsdialog nur der
+       Standwechsel. */
+    const staemme = (m.bau && m.bau.pruefung && m.bau.pruefung.staemme) || [];
+    const uebergabeFraglich = !(m.bau && m.bau.stand === 'uebergeben') ? ''
+      : !staemme.length ? 'ohne Prüfzeile'
+      : staemme.some(z => z && z.bestanden === false) ? 'mit durchgefallener Prüfung'
+      : '';
+
+    /* Was der Planer lesen will, bevor er einspielt: die neuen Baumeldungen im
+       Wortlaut und wie sich der Stand verschiebt. Vorher stand im Dialog nur
+       „3 Punkte · 2 Baumeldungen“ – ob eine davon „Deich überflutet“ hieß,
+       erfuhr er erst danach in der Liste. Neu ist, was die Abschrift nach dem
+       Einspielen trägt und hier noch nicht steht. */
+    const neueMeldungen = probe ? neuNachInhalt(ziel.bau, probe.bau, 'meldungen')
+      .filter(x => String(x.text || '').trim())
+      .sort((a, b) => String(a.zeit || '').localeCompare(String(b.zeit || ''))) : [];
+    const kurz = k => ({ stand: k.stand.id, bestaetigt: k.bestaetigt, soll: k.sollPunkte,
+      ist: k.istPunkte, abweichungen: k.abweichungen.length + k.abseits.length });
+    const bisher = ziel ? kurz(baukennzahlen(ziel)) : null;
+    const danach = probe ? kurz(baukennzahlen(probe)) : null;
+
     return {
       standMeldung, standHier, schonDa, aelter, verloren, geaendert,
+      daneben, uebergabeFraglich, neueMeldungen, bisher, danach,
       /* Wessen Aufnahme hier steht. Ohne den Namen war „Dabei weichen 3
          Punkte“ nicht von „mein eigener älterer Stand“ zu unterscheiden – und
          im Audit verschwand so die Aufnahme des ANDEREN Trupps. */
@@ -225,22 +272,46 @@ const inhaltVon = x => {
   const { id, abschnitt, sollPunkt, ...rest } = x || {};
   return JSON.stringify(rest, Object.keys(rest).sort());
 };
+/* Paart die Einträge von vorher und nachher über ihren Inhalt. Übrig bleiben,
+   was vorher stand und danach nicht mehr (`weg`), und was danach neu dasteht
+   (`neu`). */
+function paaren(vorher, nachher, feld) {
+  const da = new Map();
+  for (const x of (nachher && nachher[feld]) || []) {
+    const k = inhaltVon(x);
+    if (!da.has(k)) da.set(k, []);
+    da.get(k).push(x);
+  }
+  const weg = [];
+  for (const x of (vorher && vorher[feld]) || []) {
+    const liste = da.get(inhaltVon(x));
+    if (liste && liste.length) liste.pop();
+    else weg.push(x);
+  }
+  return { weg, neu: [].concat(...da.values()) };
+}
+
+const neuNachInhalt = (vorher, nachher, feld) => paaren(vorher, nachher, feld).neu;
+
 function verlust(vorher, nachher) {
-  const zaehle = feld => {
-    const da = new Map();
-    for (const x of (nachher && nachher[feld]) || []) {
-      const k = inhaltVon(x);
-      da.set(k, (da.get(k) || 0) + 1);
+  /* Ein Punkt, dem der Trupp nach der ersten Meldung eine Bezeichnung
+     nachgetragen hat, ist nicht verloren, sondern geändert. Seit ein Verlust
+     „Verwerfen“ nach vorn stellt, wäre das sonst bei jeder gewöhnlichen
+     zweiten Meldung so gewesen. Erkannt wird er an der Aufnahmezeit – sie
+     setzt das Gerät beim Aufnehmen und reist mit. */
+  const zaehle = (feld, ueberZeit) => {
+    const { weg, neu } = paaren(vorher, nachher, feld);
+    if (!ueberZeit) return { weg: weg.length, geaendert: 0 };
+    let verloren = 0, geaendert = 0;
+    for (const x of weg) {
+      const i = neu.findIndex(n => n && x && n.zeit && n.zeit === x.zeit);
+      if (i >= 0) { neu.splice(i, 1); geaendert++; } else verloren++;
     }
-    let weg = 0;
-    for (const x of (vorher && vorher[feld]) || []) {
-      const k = inhaltVon(x);
-      if (da.get(k)) da.set(k, da.get(k) - 1);
-      else weg++;
-    }
-    return weg;
+    return { weg: verloren, geaendert };
   };
-  return { punkte: zaehle('punkte'), meldungen: zaehle('meldungen'), material: zaehle('material') };
+  const p = zaehle('punkte', true), m = zaehle('meldungen', true), z = zaehle('material', false);
+  return { punkte: p.weg, meldungen: m.weg, material: z.weg,
+           punkteGeaendert: p.geaendert, meldungenGeaendert: m.geaendert };
 }
 
 function mengenAenderung(vorher, nachher) {

@@ -368,6 +368,35 @@ async function neueSeite(befehl, horcher) {
       await seite.ruhe();
     },
 
+    /* Ein Wisch mit dem Finger, in Schritten wie ein echter – ein Sprung vom
+       Anfang ans Ende wäre für den Browser kein Wisch, sondern zwei Tipps.
+       `halten` lässt den Finger vorher so lange liegen: daran hängt, ob die
+       Geste die Karte verschiebt oder eine Marke zieht (`js/ziehen.js`). */
+    async wische(x1, y1, x2, y2, { halten = 0, schritte = 10 } = {}) {
+      await an('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x1, y: y1 }] });
+      if (halten) await new Promise(f => setTimeout(f, halten));
+      for (let i = 1; i <= schritte; i++) {
+        const x = x1 + (x2 - x1) * i / schritte, y = y1 + (y2 - y1) * i / schritte;
+        await an('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] });
+        await new Promise(f => setTimeout(f, 16));
+      }
+      await an('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await seite.ruhe();
+    },
+
+    /** Dasselbe mit gedrückter Maustaste – am Rechner zieht sie sofort */
+    async zieheMaus(x1, y1, x2, y2, { schritte = 10 } = {}) {
+      await an('Input.dispatchMouseEvent',
+        { type: 'mousePressed', x: x1, y: y1, button: 'left', buttons: 1, clickCount: 1 });
+      for (let i = 1; i <= schritte; i++) {
+        await an('Input.dispatchMouseEvent', { type: 'mouseMoved', button: 'left', buttons: 1,
+          x: x1 + (x2 - x1) * i / schritte, y: y1 + (y2 - y1) * i / schritte });
+      }
+      await an('Input.dispatchMouseEvent',
+        { type: 'mouseReleased', x: x2, y: y2, button: 'left', buttons: 0, clickCount: 1 });
+      await seite.ruhe();
+    },
+
     /* Der Wert wird gesetzt und beide Ereignisse werden ausgelöst: die
        Oberfläche hört teils auf `input`, teils auf `change`. Wer nur eines
        schickt, prüft die halbe Verdrahtung. */

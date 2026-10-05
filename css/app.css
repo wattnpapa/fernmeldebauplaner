@@ -62,6 +62,10 @@
      mit mehr Blau darin als --text, damit er zur Fläche gehört, auf der er
      steht (10,75:1 auf THW-Blass). */
   --text-blau: #24344f;
+  /* Die Fläche des Hauptknopfes („Fertig“, „Punkt hier“). Bei Tag das THW-Blau;
+     eigene Variablen, weil die Nacht sie anders braucht als die Kopfzeile. */
+  --primaer: var(--thw);
+  --primaer-hell: var(--thw-hell);
   --gut: #1b7a3d;
   --radius: 8px;
   --radius-klein: 5px;
@@ -98,6 +102,7 @@
   --zeit-zustand: 200ms;   /* ein Zustand wechselt an Ort und Stelle */
   --zeit-lage: 280ms;      /* eine Schicht oder Ansicht löst die andere ab */
   --zeit-blatt: 380ms;     /* das Auflegen des Blattes – der eine Augenblick */
+  --zeit-halten: 450ms;    /* Halten, bis eine Marke dem Finger folgt (HALTEN_MS in ziehen.js) */
   --weg: cubic-bezier(.16, 1, .3, 1);
   --schrift: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -158,8 +163,8 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; }
 /* Auf der blauen Kopfleiste wäre derselbe Ring nicht zu sehen – dort in Weiß. */
 .kopf :is(button, input):focus-visible { outline-color: #fff; }
-.knopf.primaer { background: var(--thw); border-color: var(--thw); color: #fff; }
-.knopf.primaer:hover:not(:disabled) { background: var(--thw-hell); border-color: var(--thw-hell); }
+.knopf.primaer { background: var(--primaer); border-color: var(--primaer); color: #fff; }
+.knopf.primaer:hover:not(:disabled) { background: var(--primaer-hell); border-color: var(--primaer-hell); }
 .knopf.gefahr { color: var(--gefahr); border-color: var(--gefahr-linie); }
 .knopf.gefahr:hover:not(:disabled) { background: var(--gefahr-flaeche); border-color: var(--gefahr); }
 .knopf.breit { width: 100%; }
@@ -1390,6 +1395,12 @@ body.modus-aktiv .kartenoptionen { display: none; }
   box-shadow: 0 1px 3px rgba(0,0,0,.22);
 }
 .seg-mass.vorschau { border-style: dashed; opacity: .95; }
+/* Aus der Ferne (`_fernSetzen` in strecken.js) weichen Teillängen und das
+   Fragezeichen offener Punktarten: in der Übersicht lagen sie über den
+   Standmarken. Die Vorschau beim Zeichnen bleibt – sie ist die Zahl, nach der
+   gerade gezeichnet wird. Die Marke selbst bleibt auch, nur ihr Zeichen geht. */
+.fbp-fern .seg-mass:not(.vorschau) { display: none; }
+.fbp-fern .fbp-istpunkt.kurz-offen { color: transparent; }
 
 .strecken-mass {
   display: inline-flex !important; flex-direction: column; align-items: flex-start;
@@ -1429,9 +1440,15 @@ body.modus-aktiv .kartenoptionen { display: none; }
   transform: translate(-50%, -50%);
 }
 .strecken-mass b { font-size: 12px; color: #101820; }
-.strecken-mass .wert { font-size: 12.5px; font-weight: 700; color: var(--farbe); font-variant-numeric: tabular-nums; }
+/* Die Länge steht in Schriftfarbe, die Streckenfarbe trägt der Balken links –
+   wie an den Teillängen. In Streckenfarbe gesetzt lag sie bei Oliv auf Weiß
+   bei 2,24:1, nachts bei Braun auf dem dunklen Schild bei 1,84:1: die Zahl,
+   die am Funk durchgegeben wird, war die blasseste im Schild. */
+.strecken-mass { border-left-width: 4px; }
+.strecken-mass .wert { font-size: 12.5px; font-weight: 700; color: #101820; font-variant-numeric: tabular-nums; }
 .strecken-mass .zus { font-size: 11px; color: #59636f; font-variant-numeric: tabular-nums; }
 .strecken-mass .bz-marke { margin-top: 2px; font-size: 10px; }
+.strecken-mass .schild-stand { display: flex; flex-wrap: wrap; gap: 3px; }
 .strecken-mass.aktiv { box-shadow: 0 0 0 2px rgba(0,51,153,.3), 0 2px 8px rgba(0,0,0,.22); }
 
 /* Bezeichnung eines Trassenpunktes. Der Versatz steht in em und nicht in
@@ -1528,6 +1545,20 @@ body.modus-aktiv .kartenoptionen { display: none; }
   background: rgba(255,255,255,.85); border: 2px dashed #4a5768; cursor: grab;
 }
 .fbp-einfuegen:hover i { background: #fff; border-color: var(--thw); border-style: solid; }
+
+/* Halten, bevor eine Marke dem Finger folgt (`ziehen.js`). Der Ring zieht sich
+   in der Haltezeit zusammen und steht, sobald die Marke gegriffen ist – ohne
+   ihn weiß niemand, warum der Wisch die Karte bewegt und das Halten die Marke,
+   und wann das eine ins andere übergeht. Am Kind und nicht am Kasten: den
+   Kasten setzt Leaflet über `transform` an seinen Ort. */
+.leaflet-marker-icon.haelt > *, .leaflet-marker-icon.gehalten > * {
+  outline: 3px solid var(--thw); outline-offset: 3px;
+}
+.leaflet-marker-icon.haelt > * { animation: halten var(--zeit-halten) linear; }
+@keyframes halten {
+  from { outline-color: transparent; outline-offset: 14px; }
+  to   { outline-color: var(--thw); outline-offset: 3px; }
+}
 
 /* ---------------------------------------------------------------- Lichtbilder
 
@@ -1718,8 +1749,8 @@ body.modus-aktiv .fbp-bild { pointer-events: none; }
 }
 .koord-popup .kp-tasten button:hover { border-color: var(--thw); color: var(--thw-text); }
 /* Im Baumodus ist „Punkt hier aufnehmen“ der Griff, um den es geht */
-.koord-popup .kp-tasten .kp-primaer { background: var(--thw); border-color: var(--thw); color: #fff; }
-.koord-popup .kp-tasten .kp-primaer:hover { background: var(--thw-hell); color: #fff; }
+.koord-popup .kp-tasten .kp-primaer { background: var(--primaer); border-color: var(--primaer); color: #fff; }
+.koord-popup .kp-tasten .kp-primaer:hover { background: var(--primaer-hell); color: #fff; }
 
 body.karte-dunkel .seg-mass,
 body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
@@ -2053,6 +2084,13 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   background: rgba(20,28,40,.95); color: #fff; padding: 9px 16px; border-radius: 20px;
   font-size: 13px; box-shadow: var(--schatten-stark); max-width: 88vw; text-align: center;
 }
+/* Oben, unter der Kopfzeile: für die eine Meldung nach „Bau beginnen“. Unten
+   deckte sie „Trupp“, „Truppführer“ und „Baubeginn“ – die Felder, die als
+   Nächstes auszufüllen sind. Oben liegt der Kopf des Reiters, den in diesem
+   Augenblick niemand braucht. */
+.hinweisbox.oben {
+  top: calc(var(--kopf-ist) + 8px + env(safe-area-inset-top, 0px)); bottom: auto;
+}
 .hinweisbox.fehler { background: var(--gefahr); }
 .hinweisbox.warnung { background: var(--warnung); }
 .hinweisbox[hidden] { display: none; }
@@ -2118,10 +2156,15 @@ body.baumodus .kopf {
   background-position: left bottom;
   background-repeat: no-repeat;
 }
-/* Ohne Zeigegerät gibt es keinen Titel zu lesen. Das Zeichen ist am Bauort die
-   einzige Zusage, dass der Knopf umschaltet und nicht nur anzeigt – es tritt
-   aber hinter den Modusnamen zurück, um den es geht. */
-.modus-pfeil { margin-left: .25em; font-weight: 400; opacity: .7; }
+/* Zweizeilig: oben der Modus, in dem man ist, darunter klein das Ziel des
+   Griffs (siehe index.html). Die Breite bleibt die des Modusnamens. */
+.modus-schalter { display: inline-flex; flex-direction: column; align-items: center;
+                  justify-content: center; line-height: 1.1; }
+/* Ohne Zeigegerät gibt es keinen Titel zu lesen. Zeichen und Ziel sind am
+   Bauort die einzige Zusage, dass der Knopf umschaltet und nicht nur anzeigt –
+   sie treten aber hinter den Modusnamen zurück, um den es geht. */
+.modus-ziel { font-size: 11px; font-weight: 400; opacity: .8; white-space: nowrap; }
+.modus-pfeil { margin-right: .2em; }
 /* Unter 340 px ist die Kopfzeile voll: gemessen bei 320×568 stand „Baumodus ⇄“
    16 px über dem Rand, und die Reihe daneben – Hilfe, Rückgängig, Datei – gibt
    nichts her. Dort trägt der Modus sich allein: das Wort steht, im Baumodus
@@ -2141,8 +2184,29 @@ body.baumodus #wz-relais { display: none; }
    Daumen gefunden werden muss, ohne hinzusehen. */
 .wz.nur-bau { display: none; }
 body.baumodus .wz.nur-bau { display: flex; }
-.wz.primaer { background: var(--thw); color: #fff; }
-.wz.primaer:hover { background: var(--thw-hell); }
+.wz.primaer { background: var(--primaer); color: #fff; }
+.wz.primaer:hover { background: var(--primaer-hell); }
+/* Während die Ortung läuft, sagt „Punkt hier“ das selbst – ohne Zeichen
+   tippte der Trupp nach vier Sekunden ein zweites Mal. */
+.wz.primaer.ortet { background: var(--primaer-hell); }
+.wz.ortet .wz-icon { animation: ortet 1s steps(2, jump-none) infinite; }
+@keyframes ortet { to { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .wz.ortet .wz-icon { animation: none; } }
+/* Die Zielstrecke als Merker auf der Oberkante der Bauleiste: aus dem Fluss
+   genommen, damit die Leiste ein Streifen bleibt und das Raster der Griffe
+   keine fünfte Spalte bekommt. Er nimmt keinen Tipp an – sonst finge er ihn
+   über „Punkt hier“ ab. */
+.bau-ziel { display: none; }
+body.baumodus .bau-ziel:not([hidden]) {
+  display: block; position: absolute; left: 8px; top: 0; transform: translateY(-85%);
+  max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 1px 8px; border: 1px solid var(--linie-stark); border-radius: 999px;
+  background: var(--flaeche); color: var(--text); font-size: 11px; font-weight: 650;
+  line-height: 15px; pointer-events: none;
+}
+body.baumodus .bau-ziel.bau-ziel-offen {
+  background: var(--warnung-flaeche); border-color: var(--warnung-linie); color: var(--warnung-tief);
+}
 /* Die Planungszeilen der Kartenoptionen gehen im Baumodus vom Schirm – bleiben
    die vier, die am Bauort umgestellt werden: Karte, Gitter, Nummern, Namen. */
 body.baumodus .ko-zeile.nur-planung { display: none; }
@@ -2151,6 +2215,16 @@ body.baumodus .ko-zeile.nur-planung { display: none; }
    gefüllte Knopf stand ganz oben, wo am Bauort gesucht wird. */
 body.baumodus #btn-neue-strecke,
 body.baumodus #btn-neuer-abschnitt { display: none; }
+/* Dasselbe für jeden Griff, der den Plan einer Strecke ändert: Weiterzeichnen,
+   Umkehren, Löschen, das ✕ am Punkt, Leitung und Farbe. „Ändern heißt
+   umschalten“ (BAUDOKU.md) – an ihrer Stelle steht `.nur-baumodus`, der Weg
+   dorthin und der Auftrag als Satz. */
+body.baumodus .nur-planung { display: none; }
+.nur-baumodus { display: none; }
+body.baumodus .nur-baumodus { display: block; }
+.bau-planhinweis { margin: 10px 0 4px; }
+.bau-planhinweis .klein { margin: 0 0 6px; }
+.bau-auftragszeile { margin: 0 0 8px; }
 
 /* ------------------------------------------------- Einfache Ansicht
 
@@ -2255,8 +2329,10 @@ body.baumodus .sichtwahl { display: none; }
 .bz-wert { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .bz.bz-merken { background: var(--warnung-flaeche); border-color: var(--warnung-linie); }
 .bz.bz-merken .bz-wert { color: var(--warnung-tief); }
-/* Der Kartenchip bei leerem Vorrat: im Mahnton, damit er vor der Abfahrt
-   auffällt und nicht erst am Bauort. */
+/* Der Kartenchip, solange die Karte der Trasse nicht vollständig im Gerät
+   ist: im Mahnton, damit er vor der Abfahrt auffällt und nicht erst am
+   Bauort. Die Klasse heißt noch nach dem leeren Vorrat; eine halbe Karte
+   lässt den Trupp ebenso im Grauen stehen. */
 .bau-sprung .knopf.vorrat-leer { background: var(--warnung-flaeche); border-color: var(--warnung-linie-stark);
   color: var(--warnung-tief); font-weight: 650; }
 .bz.bz-fraglich { background: var(--gefahr-flaeche); border-color: var(--gefahr-linie); }
@@ -2274,6 +2350,10 @@ body.baumodus .sichtwahl { display: none; }
 }
 .bau-zuletzt::after { content: ''; position: absolute; inset: -14px -6px; }
 .plan-kennung { color: var(--text-schwach); white-space: nowrap; text-transform: none; letter-spacing: 0; }
+/* Im Bau-Reiter mit Erklärung: die darf umbrechen, die Kennung selbst nicht. */
+.plan-kennung.erklaert { white-space: normal; }
+.plan-kennung.erklaert b { white-space: nowrap; }
+.kennung-zusatz { font-size: 11.5px; }
 
 /* Der Kachelvorrat. Die Zahl vor dem Knopfdruck ist das Wesentliche: wer am
    Bauort feststellt, dass der Vorrat zu klein war, kann ihn nicht nachholen. */
@@ -2287,7 +2367,30 @@ body.baumodus .sichtwahl { display: none; }
   margin: 8px 0 0; padding: 8px 10px; border-radius: var(--radius-klein);
   background: var(--flaeche-2); border-left: 3px solid var(--linie-stark);
 }
+.vorrat-nutzen { margin: 0 0 6px; }
+/* Grenzen und Datenschutz eingeklappt: der Griff trägt sein Handschuhmaß aus
+   der Polsterung wie `.speicher-mehr`, ein Dreieck allein wäre 12 px. */
+.vorrat-mehr { margin: 8px 0 0; }
+.vorrat-mehr > summary {
+  padding: 12px 0; cursor: pointer; font-weight: 600; color: var(--thw-text);
+}
+.vorrat-mehr > p { margin: 0 0 8px; }
+/* „Vorrat löschen“ steht abgesetzt unter dem Bestand und nicht neben „Karte
+   holen“: dort lag es 16 px neben dem Hauptknopf und leerte auf einen
+   Fehlgriff den ganzen Speicher. */
+.vorrat-loeschen { margin: 0 0 4px; }
+.vorrat-baunachweis {
+  margin-top: 16px; padding-top: 2px; border-top: 1px solid var(--linie);
+}
+.vorrat-baunachweis > p { margin: 0 0 8px; }
 .bau-abw { color: var(--warnung-tief); }
+/* „ohne Angabe“ führt zum Punkt – als Griff gesetzt wie „zuletzt“ daneben,
+   unterstrichen und mit Handschuhmaß über die Aufweitung. */
+.bau-luecke {
+  position: relative; border: 0; background: none; padding: 0; font: inherit;
+  text-decoration: underline; cursor: pointer;
+}
+.bau-luecke::after { content: ''; position: absolute; inset: -14px -6px; }
 
 /* Bauabschnitte – die Aufteilung einer Strecke unter mehrere Trupps */
 .ba-eintrag {
@@ -2359,9 +2462,15 @@ body.baumodus .sichtwahl { display: none; }
   font-weight: 650;
 }
 .bp-trupp-wahl { margin-top: 8px; }
-.bp-felder { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.bp-felder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 8px; }
 .bp-felder .feld, .bp-bemerkung { margin: 8px 0 0; min-width: 0; }
 .bp-felder input, .bp-felder select { min-width: 0; width: 100%; }
+/* Zwei Felder nehmen die ganze Breite: die Zeitwahl trägt Tag und Uhrzeit
+   nebeneinander und ragte in der halben Spalte bei 390 px rechts über die
+   Karte hinaus – mit „08:53 PM“ eines englisch eingestellten Geräts erst
+   recht –, und „Gehört zu“ nennt Punkt, Name und Entfernung und stand als
+   „zusätzliche|“ abgeschnitten da. */
+.bp-felder > .zeit-wahl, .bp-felder > .bp-soll-wahl { grid-column: 1 / -1; min-width: 0; }
 .bau-untertitel { margin: 14px 0 8px; font-size: 13px; color: var(--text-schwach); }
 .bau-zuschlag { margin: 0 0 8px; }
 
@@ -2369,6 +2478,12 @@ body.baumodus .sichtwahl { display: none; }
    der Maus auf Handschuhmaß stehen: an ihnen hängt die Aufnahme, und ein
    Fehlgriff kostet einen Punkt an der falschen Stelle. */
 .bau-tasten { margin-top: 8px; gap: 8px; }
+/* Zwölf Pixel zwischen den drei Aufnahmegriffen, und zwei Klassen im Wähler,
+   damit `.tastenreihe` im Block für grobe Zeiger nicht zurück auf 8 setzt:
+   „✓ wie geplant“ ist gefüllt und der größte Griff der Zeile, und 8 px neben
+   ihm traf der Handschuh im Review „◉ hier“ – das eine bestätigt den Plan,
+   das andere ortet. */
+.tastenreihe.bau-tasten { gap: 12px; }
 .knopf.bau-taste {
   min-height: 46px; padding: 11px 13px; font-size: 13.5px; font-weight: 600;
   flex: 1 1 auto;
@@ -2397,6 +2512,9 @@ body.baumodus .sichtwahl { display: none; }
 .mat-fuss { display: block; margin-top: 2px; font-size: 11px; color: var(--text-schwach); }
 .mat-warnung { display: block; margin-top: 2px; font-size: 12px; font-weight: 650; color: var(--warnung-tief); }
 .mat-warnung[hidden] { display: none; }
+/* Der Griff zur gemeinten Menge steht in der Warnung selbst: sie nennt die
+   Zahl, und ein Tipp darauf schreibt sie ins Feld. */
+.mat-warnung .knopf.mat-uebernehmen { margin: 6px 0 2px; display: flex; }
 /* Nicht `.mat-frei`: den Namen trägt seit je der Kasten für handschriftliche
    Nachträge im gedruckten Bauauftrag (`js/bauauftrag.js`, gestylt in
    `css/print.css`). Beide Blätter hängen im selben Dokument, ein `display:
@@ -2445,6 +2563,17 @@ body.baumodus .sichtwahl { display: none; }
 .zeit-wahl:not(.knapp) input.bm-zeit { min-height: 44px; }
 .zeit-wahl:not(.knapp) .feld-titel { grid-column: 1 / -1; }
 .zeit-wahl:not(.knapp) input.bm-zeit { min-width: 8em; font-weight: 650; }
+/* „anderer Tag …“: eine eigene Zeile unter Tag und Uhrzeit, so breit wie
+   beide – nebeneinander drückte das Datumsfeld bei 360 px die Uhrzeit unter
+   ihre Lesbarkeit. 16 px gegen das Hineinzoomen von iOS, 44 px für den
+   Handschuh, wie die beiden Felder darüber. */
+.zeit-wahl input.zw-datum {
+  grid-column: 1 / -1; min-height: 44px;
+  font: inherit; font-size: 16px; font-variant-numeric: tabular-nums;
+  padding: 4px 6px; border: 1px solid var(--linie-stark);
+  border-radius: var(--radius-klein); background: var(--flaeche); color: var(--text);
+}
+.zeit-wahl input.zw-datum[hidden] { display: none; }
 .bp-haken.bp-pruefen { background: var(--warnung) !important; color: #111 !important; }
 /* Die Meldezeile hat ihre Beschriftung schon in der Überschrift des Blocks;
    der leere Titel des Feldes risse sonst eine Zeile Luft auf. */
@@ -2511,6 +2640,11 @@ body.baumodus .sichtwahl { display: none; }
 .bz-marke.bz-uebergeben { background: var(--gut); color: #fff; }
 .bz-marke.bz-uebergeben::before { content: '✓ '; }
 .bz-warnung { color: var(--warnung-tief); font-weight: 600; }
+/* Die Warnung an der Standmarke der Karte: dieselbe Form wie die Marke, im
+   Mahnton und doppelt umrandet, damit sie auch im Schwarz-Weiß-Druck der
+   Lagekarte nicht als weiterer Baustand gelesen wird. */
+.bz-marke.bz-warn { border: 3px double var(--warnung-linie-stark); background: var(--warnung-flaeche);
+  color: var(--warnung-tief); }
 /* „neu“ ist ausgefüllt und in der Hausfarbe – es soll vor allen anderen
    Marken auffallen und verschwindet mit „gesehen“. */
 .bz-marke.bz-neu { background: var(--thw); border-color: var(--thw); color: #fff; }
@@ -2533,6 +2667,20 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   background: var(--warnung-flaeche); color: var(--warnung-tief); font-size: 12.5px;
   overflow-wrap: anywhere;
 }
+/* Die jüngste Baumeldung: eine Zeile, die nicht umbricht. Sie ist eine
+   Auskunft im Vorbeigehen und darf die Liste nicht verlängern – den ganzen
+   Wortlaut hat der Bau-Reiter. */
+.eintrag-zeile.bz-letzte {
+  display: flex; gap: 6px; min-width: 0; color: var(--text-schwach); font-size: 12.5px;
+}
+.bz-letzte-zeit { flex: none; font-variant-numeric: tabular-nums; }
+.bz-letzte-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Was der Empfangsdialog an Inhalt zeigt: bisher und danach, und die neuen
+   Baumeldungen im Wortlaut. */
+.mv-verlauf { margin: 6px 0 0; }
+.mv-meldungen-titel { margin: 8px 0 2px; }
+.mv-meldungen { margin: 0; padding-left: 18px; font-size: 12.5px; overflow-wrap: anywhere; }
+.mv-meldungen li { margin: 2px 0; }
 
 /* Der Sprungstreifen unter der Summe des Bau-Reiters. Die Liste ist rund
    fünftausend Bildpunkte lang – acht Bildschirmhöhen auf dem Telefon –, und
@@ -2544,8 +2692,12 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
    war, verriet bei 320 px nichts, dass da noch etwas steht: der letzte Chip
    war unsichtbar, bei 390 px waren zwei Buchstaben zu sehen. Zwei Reihen
    kosten eine Zeilenhöhe und sparen das Suchen. */
+/* 10 px zwischen den Chips und nicht 6: sie sind 40 px hoch, ihre Zonen
+   wachsen über `::after` um je 3 px nach oben und unten, und bei 6 px stießen
+   die Zonen zweier Reihen aneinander – ein Tipp zwischen die Reihen traf den
+   falschen Sprung. */
 .bau-sprung {
-  display: flex; flex-wrap: wrap; gap: 6px;
+  display: flex; flex-wrap: wrap; gap: 10px;
   margin: -4px 0 10px; padding: 2px 0;
 }
 .bau-sprung .knopf.klein { flex: 0 0 auto; border-radius: 999px; margin: 0; }
@@ -2583,6 +2735,8 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
 .fg-pfeil { font-size: 10px; color: var(--text-schwach); transition: transform .12s; }
 .fg-klapp.zu .fg-pfeil { transform: rotate(-90deg); }
 .fg-klapp.zu .fg-koerper { display: none; }
+/* Was ein zugeklappter Block enthält, in der Überschrift – leiser als sie. */
+.fg-zusatz { font-weight: 400; color: var(--text-schwach); text-transform: none; letter-spacing: 0; }
 .fg-koerper { display: flex; flex-direction: column; gap: 8px; }
 
 /* Die Vorschau der Baumeldung: was der Planer lesen wird, bevor abgesetzt
@@ -2595,7 +2749,12 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
    Sätze, die vor dem Griff stehen und nicht dahinter. Der zweite beantwortet
    die Frage nach jeder Unterbrechung – „habe ich das schon gemeldet?“ */
 .bau-absender, .bau-abgesetzt { margin: 8px 0 0; }
-.bau-abgesetzt { color: var(--gut); }
+/* Neutral und nicht grün: der Satz sagt ausdrücklich, dass das Gerät den
+   Empfang NICHT kennt. In Erfolgsgrün las er sich im Audit als Quittung. */
+.bau-abgesetzt { color: var(--text-schwach); }
+/* Der Kurzcode wird über Funk gelesen: Festbreite, damit 8 und B, 5 und S
+   nicht im Fließtext verschwimmen, und etwas Sperrung zwischen den Zeichen. */
+.meldungscode { font-family: var(--mono); letter-spacing: .08em; }
 
 /* Wer an diesem Gerät baut. Der Block steht oben bei den Bauabschnitten und
    hebt sich ab, solange niemand eingetragen ist und schon aufgenommen wurde:
@@ -2738,6 +2897,15 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
    auf dem Tablet fiel die freie Kartenfläche damit unter die Abnahme. */
 .pk-zuordnung { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
 .pk-zuordnung .pk-frage { margin-top: 0; flex: none; }
+/* Der Vorschlag der Ortung ist gedrückt wie eine Wahl – und gestrichelt, weil
+   er noch keine ist. Das Wort daneben sagt es ohne Farbe. */
+.pk-chip.pk-chip-vorschlag { border-style: dashed; border-color: #fff; box-shadow: 0 0 0 2px var(--thw); }
+.pk-vorschlag {
+  margin-left: 6px; padding: 2px 7px; border-radius: 999px;
+  background: var(--thw-blass); color: var(--text-blau); font-weight: 650;
+}
+.pk-andere { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.pk-andere .knopf { margin: 0; }
 
 .pk-felder { display: flex; flex-direction: column; gap: 6px; }
 .pk-felder input {
@@ -2763,10 +2931,15 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
    Bruchteilen der Knopfhöhen gescheitert. */
 /* So viel hält das Nachrücken eines Feldes unter der klebenden Abschluss-
    zeile frei (`initBaukarte` in js/baukarte.js). */
-.punktkarte { scroll-padding-bottom: 80px; }
+.punktkarte { scroll-padding-bottom: 88px; }
+/* Die Linie an der Oberkante sagt, dass der Inhalt darunter weiterläuft. Ohne
+   sie las sich ein Feld, das an der Abschlusszeile endete, als zu knapp
+   gesetzt: im Review stand die Bezeichnung 4 px über „Fertig“ und unten
+   angeschnitten da. Das Polster hält auch quer mindestens 12 px. */
 .pk-abschluss {
   position: sticky; bottom: 0; z-index: 2;
   display: flex; background: var(--flaeche); padding: 14px 0 10px;
+  border-top: 1px solid var(--linie);
 }
 .pk-abschluss .knopf { flex: 1 1 auto; margin: 0; }
 /* Die drei Aufnahmegriffe des offenen Punktes – dieselben Maße wie in der
@@ -2809,7 +2982,7 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   .pk-titel b { white-space: nowrap; }
   .pk-unter { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pk-strecke { flex-basis: auto; white-space: nowrap; }
-  .pk-abschluss { padding: 10px 0 6px; }
+  .pk-abschluss { padding: 12px 0 6px; }
   .pk-aufnahme { padding: 6px 0; }
 }
 
@@ -2857,9 +3030,10 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   .punktkarte > div > .pk-aufnahme,
   .punktkarte > div > .pk-fehlertext { grid-column: 1 / -1; }
   .pk-spalte { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  /* Der Abschluss gibt 20 px ab: „Fertig“ trägt seine 44 px weiter, nur das
-     Polster darum wird knapper. */
-  .pk-abschluss { padding: 8px 0 4px; }
+  /* Der Abschluss gibt 8 px ab: „Fertig“ trägt seine 44 px weiter, nur das
+     Polster darunter wird knapper. Oben bleiben 12 – mit 8 stand das Feld
+     der Bezeichnung im Review 4 px über „Fertig“. */
+  .pk-abschluss { padding: 12px 0 4px; }
   /* Die Tastenreihe der Korrekturen bricht in der halben Breite um. Der
      Abstand zur Gefahrtaste bleibt bei 16 px: er ist aus einem Fehlgriff
      entstanden – „Löschen“ neben „Fertig“ nimmt mit dem Handschuh die eben
@@ -2883,7 +3057,9 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   /* Die Kopfzeile gibt Platz frei, bis der Name der Planung lesbar bleibt –
      er ist die Antwort auf „woran arbeite ich hier“. Rückgängig und Wiederholen
      bleiben: auf dem Telefon gibt es kein Strg+Z. */
-  .kopf { gap: 4px 10px; padding: 5px 8px; }
+  /* 8 px zwischen den Reihen: mit 4 lag „↶“ unmittelbar unter dem
+     Namensfeld, und wer zurücknehmen wollte, öffnete die Tastatur. */
+  .kopf { gap: 8px 10px; padding: 5px 8px; }
   /* Der Name der Planung geht vor: hier steht die Nummer im Reiter „Planung"
      unter „Über FMBauplaner" und im Blattfuß jedes Bauauftrags. */
   .marke-version { display: none; }
@@ -3026,6 +3202,8 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
     width: auto; max-width: none;
     grid-auto-flow: row; grid-template-columns: repeat(2, 78px); grid-auto-columns: auto;
   }
+  /* Oben ist hier der Kartenrand – der Merker hängt an der Unterkante. */
+  body.baumodus .bau-ziel:not([hidden]) { top: auto; bottom: 0; transform: translateY(85%); }
 }
 
 /* Unterhalb dieser Breite geht der Wortmarke der Platz aus, den der Name der
@@ -3296,6 +3474,122 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   .zeichen-hinweis { right: calc(64px + env(safe-area-inset-right, 0px)); margin: 0; }
 }
 
+/* ------------------------------------------------- Quer auf dem Telefon
+
+   Bei 844×390 und 667×375 blieb von der Karte nichts frei – gemessen 0 bis
+   1 % der Fensterhöhe. Vor der Karte lagen Kopfzeile und Sicherungsband
+   (zusammen rund 115 px), unter ihr eine Koordinatenleiste, die quer in zwei
+   bis drei Zeilen umbrach (MGRS, GPS, Dezimal, Herkunft), und in ihr die
+   Werkzeugleiste als Spalte über die ganze Höhe neben einer Zoomsteuerung von
+   88 px. Was übrig blieb, war kein Band, in dem sich eine Trasse antippen
+   ließe. Vier Handgriffe, jeder für sich klein, und alle nur bei geringer
+   Höhe – hochkant und am Rechner ändert sich nichts:
+
+   Das Sicherungsband geht und wird zum Merker in der Kopfzeile. Es nahm quer
+   50 px, um zu sagen, was im Regelfall immer gilt; der Mahnton „keine Datei“
+   bleibt, nur eben neben dem Namen statt als eigene Zeile, und ein Tipp darauf
+   sichert wie der Knopf im Band. Mit eigenem Speicher bleibt das Band – der
+   Abgleich ist eine Auskunft, die es nur dort gibt.
+
+   Die Koordinatenleiste steht einzeilig wie hochkant: nur MGRS, die Zahl, die
+   über Funk durchgegeben wird. GPS und Dezimal stehen beim Antippen im Popup.
+
+   Werkzeugleiste, Kartenoptionen und Zoom teilen sich EIN Band an der oberen
+   Kante: die Werkzeuge als Reihe (Sinnbild über dem Wort, wie die Bauleiste
+   hochkant), die Kartenoptionen zugeklappt als Sinnbild, die Zoomsteuerung
+   nebeneinander statt untereinander – mit ihren 44 px Handschuhmaß, nur eben
+   44 hoch statt 88. Die Zoomsteuerung auszublenden ist verworfen (BAUDOKU.md):
+   mit Handschuh ist sie der einzige brauchbare Zoom. */
+@media (max-height: 450px) {
+  .speicherband, .speicherband.mahnung { display: none; }
+  .speicherband:has(.sb-cloud:not([hidden])) { display: flex; }
+  /* Der Merker braucht Platz in der Kopfzeile, und den gibt das Namensfeld:
+     schmal hält eine Regel weiter oben den Namensblock auf der Breite seines
+     Inhalts, und damit lief die einreihige Kopfzeile quer aus dem Fenster. */
+  .kopf .kopf-projekt { min-width: 0; }
+  .kopf .projektname { min-width: 0; flex: 1 1 60px; }
+  .speicherband:has(.sb-cloud:not([hidden])) .sb-text { display: none; }
+  /* Drei Klassen im Wähler: zwischen 761 und 1100 px Breite blendet eine
+     Regel weiter oben den Status aus, schmal eine weitere – beide mit einer. */
+  .kopf .kopf-projekt .speicherstatus.mahnung,
+  .kopf .kopf-projekt .speicherstatus.fehler {
+    display: inline-flex; align-items: center; flex-shrink: 0;
+    font-size: 0; min-height: 44px; padding: 0 10px;
+  }
+  /* Der lange Satz bleibt für die Sprachausgabe im Knopf; zu sehen ist der
+     kurze aus `data-kurz` (js/app.js, `speicherstatusZeigen`). */
+  .kopf .kopf-projekt .speicherstatus.mahnung::before,
+  .kopf .kopf-projekt .speicherstatus.fehler::before {
+    content: '⚠ ' attr(data-kurz); font-size: 13px; white-space: nowrap;
+  }
+
+  #sl-gps-kopie, .sl-dez, .sl-elev, .sl-quelle { display: none; }
+  .statusleiste { flex-wrap: nowrap; padding-top: 2px; padding-bottom: 2px; }
+  .sl-netz { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Die Werkzeuge: eine Reihe oben links, so viele Spalten wie Griffe. Die
+     Breite ist gedeckelt auf das, was Zoom und Kartenoptionen rechts übrig
+     lassen; reicht sie nicht – breit mit offener Liste –, bricht die Reihe in
+     eine zweite um, statt unter die Kartenoptionen zu laufen. */
+  .werkzeuge {
+    top: 8px; bottom: auto; left: calc(8px + env(safe-area-inset-left, 0px)); right: auto;
+    width: max-content;
+    max-width: calc(100% - var(--karten-kopf-breite) - 96px - env(safe-area-inset-left, 0px)
+                    - env(safe-area-inset-right, 0px));
+    display: flex; flex-direction: row; flex-wrap: wrap;
+    gap: 2px; padding: 4px;
+  }
+  .werkzeuge .wz {
+    flex: 0 0 72px; flex-direction: column; justify-content: center; gap: 2px;
+    padding: 4px 2px; min-height: 44px; font-size: 11px; line-height: 1.15;
+    text-align: center; white-space: normal; hyphens: auto;
+  }
+  .werkzeuge .wz-icon { font-size: 16px; height: 17px; }
+  .werkzeuge .wz-taste { display: none; }
+  /* Oben ist hier der Kartenrand – der Merker hängt an der Unterkante. */
+  body.baumodus .bau-ziel:not([hidden]) { top: auto; bottom: 0; transform: translateY(85%); }
+
+  .leaflet-control-zoom { display: flex; }
+  .leaflet-control-zoom a.leaflet-control-zoom-in {
+    border-bottom: 0; border-right: 1px solid var(--linie);
+    border-radius: 2px 0 0 2px;
+  }
+  .leaflet-control-zoom a.leaflet-control-zoom-out { border-radius: 0 2px 2px 0; }
+
+  /* Zugeklappt nur ein Sinnbild: „Kartenoptionen ▸“ nahm 160 px des Bandes,
+     das die Werkzeuge brauchen. Der Name bleibt für die Sprachausgabe im
+     `aria-label` des Griffs. */
+  .kartenoptionen.zu { padding: 0 2px; }
+  .kartenoptionen.zu .ko-kopf { min-width: 44px; min-height: 44px; justify-content: center; }
+  .kartenoptionen.zu .ko-kopf > span { display: none; }
+  .kartenoptionen.zu .ko-kopf::before { content: '≡'; font-size: 22px; line-height: 1; }
+}
+
+/* Die Punktkarte steht quer als Blatt an der rechten Seite und nicht mehr
+   über der ganzen Karte. Über die volle Breite deckte sie bei 844×390 und
+   667×375 alles zu – auch den Punkt, den sie benennt; und das ist der Grund,
+   aus dem sie kein Dialog ist („der Trupp will sehen, WO der Punkt liegt“).
+
+   Weiter oben steht, die Seite sei der falsche Tausch, weil die schmale
+   Spalte die Chipreihe umbricht. Das galt, solange dem Blatt quer 161 px Höhe
+   blieben. Mit Sicherungsband und zweiter Koordinatenzeile weg misst es jetzt
+   rund 300 px hoch und 300 bis 390 breit – so viel wie hochkant bei 320×568,
+   wo dieselbe Chipreihe längst umbricht und geprüft ist. Darin steht es
+   einspaltig wie hochkant; die Zweiteilung des Blattes gilt nur noch, wo die
+   Höhe dafür fehlt (unter 600 px Breite gibt es die Seite nicht). Die
+   Kartenoptionen gehen mit Zoom und Maßstab aus dem Bild: sie lägen unter dem
+   Blatt, und niemand stellt die Karte um, während er einen Punkt benennt. */
+@media (max-height: 450px) and (min-width: 600px) {
+  .punktkarte {
+    left: auto; right: calc(8px + env(safe-area-inset-right, 0px));
+    top: 8px; width: min(46%, 420px); max-width: none; max-height: none;
+  }
+  .punktkarte > div { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+  .pk-spalte { display: contents; }
+  .pk-tasten { gap: 16px 8px; }
+  body.punktkarte-offen .kartenoptionen { visibility: hidden; }
+}
+
 /* ------------------------------------------------- Die engste Breite
 
    Sechs Reiter in 320 px. Mit 6 px Polsterung je Seite maß die Reihe 352 px im
@@ -3548,6 +3842,13 @@ body.nacht {
   --thw-hell: #3a6ad6;
   --thw-blass: #1b2a47;
   --thw-text: #9cb8ff;
+  /* Der Hauptknopf nachts heller als das THW-Blau: #0b2e7a stand mit 1,38:1
+     auf der Fläche, „Fertig“ und „Punkt hier“ waren als Knopf nicht zu
+     erkennen. #3a6ad6 hält 3,4:1 gegen die Fläche und trägt die weiße Schrift
+     mit 5:1. Beim Überfahren dunkler statt heller – heller fiele die Schrift
+     unter 4,5:1. Die Kopfzeile bleibt dunkel und blendet nicht. */
+  --primaer: #3a6ad6;
+  --primaer-hell: #2f5fc4;
   --grund: #0d1218;
   --flaeche: #151c25;
   --flaeche-2: #1a222d;
@@ -3612,9 +3913,18 @@ body.nacht .ansicht-wechsel .aw.aktiv { border-top-color: var(--thw-text); color
   body.nacht #karte .strecken-mass,
   body.nacht #karte .seg-mass,
   body.nacht #karte .punkt-name { background: rgba(21,28,37,.94); color: var(--text); }
-  body.nacht #karte .strecken-mass b { color: var(--text); }
+  body.nacht #karte .strecken-mass b,
+  body.nacht #karte .strecken-mass .wert { color: var(--text); }
   body.nacht #karte .strecken-mass .zus { color: var(--text-schwach); }
   body.nacht #karte .fbp-punkt:not(.art-start):not(.art-ziel) { background: #1a222d; color: var(--text); }
+  /* Die Fassung unter den Trassen ist bei Tag weiß, damit die Linie sich von
+     der hellen Karte abhebt. Auf der abgedunkelten Karte war sie mit 9 bis
+     11 px das Hellste auf dem Schirm und überstrahlte die Linie, die sie
+     tragen soll. Nachts trägt sie den Grund der Oberfläche: die Linie hebt
+     sich davon ab, und gegen die abgedunkelte Kachel steht die dunkle Fassung
+     selbst bei rund 4:1. `stroke` aus dem Stilbogen schlägt das Attribut,
+     das Leaflet setzt. */
+  body.nacht #karte .fbp-fassung { stroke: var(--grund); stroke-opacity: .85; }
   /* Leaflet legt dem Maßstab einen weißen Schatten unter die Schrift; auf dem
      dunklen Grund stand „1 km“ dadurch doppelt und verwaschen. */
   body.nacht .leaflet-control-scale-line { text-shadow: none; }

@@ -100,11 +100,20 @@ function standZeigen(lage) {
 }
 
 let konfliktGezeigt = null;
+let fernstandGezeigt = 0;
 
 /** Den Abgleich an die Oberfläche hängen. Läuft einmal beim Start. */
 export function cloudUiStarten() {
   aufAbgleich(lage => {
     standZeigen(lage);
+    /* Ein neuerer Stand vom Speicher hat die offene Planung ersetzt
+       (`uebernehmen` in abgleich.js). Das gehört gesagt – samt dem, dass „↶“
+       danach nichts mehr von vorher kennt. */
+    if (lage.fernstand && lage.fernstand.nr !== fernstandGezeigt) {
+      fernstandGezeigt = lage.fernstand.nr;
+      hinweis(`Neuerer Stand vom Speicher übernommen (${zeitKurz(lage.fernstand.zeit)})` +
+        (lage.fernstand.verlaufWeg ? ' – „↶“ beginnt damit neu.' : ''));
+    }
     /* Ein Konflikt darf nicht in einer Statuszeile versanden: er hält die
        Übertragung an, bis jemand entscheidet. Gezeigt wird er aber nur
        einmal je Fall – wer ihn wegklickt, findet ihn über den Knopf wieder. */

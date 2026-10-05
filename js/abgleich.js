@@ -388,6 +388,10 @@ const SCHON_OBEN = 'liegt-oben';
 
 // ---------------------------------------------------------------- Übernehmen
 
+/* Zählt die übernommenen Fernstände, damit die Oberfläche jeden genau einmal
+   meldet – die Lage behält ihr letztes Feld über weitere Meldungen hinweg. */
+let fernstandZaehler = 0;
+
 /** Den Stand vom Speicher als den geltenden übernehmen */
 async function uebernehmen(rs, projekt, ordner, fern, z) {
   const fremd = migrieren(JSON.parse(await fern.blob.text()));
@@ -405,7 +409,14 @@ async function uebernehmen(rs, projekt, ordner, fern, z) {
   };
 
   if (store.projekt && store.projekt.id === projekt.id) {
+    /* Die offene Planung wechselt unter der Hand, und `store.uebernehmen`
+       leert dabei den Rückgängig-Verlauf. Im Audit geschah beides still: der
+       Nutzer sah eine andere Karte und ein graues „↶“, und niemand sagte ihm,
+       warum. Gemeldet wird es über die Lage – die Oberfläche (`cloud-ui.js`)
+       sagt es in der Pille. */
+    const verlaufWeg = store.undoStapel.length > 0;
     store.uebernehmen(fremd);
+    setzen({ fernstand: { zeit: fremd.geaendert || '', verlaufWeg, nr: ++fernstandZaehler } });
   } else {
     /* Eine Planung, die gerade nicht offen ist, wird still im Browserspeicher
        ersetzt. Sie über den Store zu laden hieße, dem Nutzer mitten in der
