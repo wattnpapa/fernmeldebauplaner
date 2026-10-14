@@ -4,7 +4,7 @@ import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText }
 import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar, bauBegonnen, baustandById } from './state.js';
 import {
   istPunkte, sollZuIst, istPunktSetzen, sollPunktGeloescht, ABWEICHUNG_SCHWELLE,
-  istKurz, punktartText, istVerlauf, bauzeile
+  istKurz, punktartText, istVerlauf, bauzeile, uhrzeit
 } from './baudoku.js';
 import { auslegung, querschnittText } from './strom.js';
 import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf,
@@ -488,16 +488,55 @@ export function nachtFarbe(farbe) {
   return ergebnis;
 }
 
-/* Beide Stufen für ein `style`-Attribut. Leaflet-Linien tragen keine
+/* Dasselbe nach der anderen Seite: bei Tag, in der Sonne, stand Orange
+   (#f57c00, die Farbe der dritten Strecke) mit 2,6:1 gegen die weiße Fassung
+   und 2,1:1 gegen den Kartengrund – die Linie verlor sich, und mit ihr Schild-
+   balken und Punktrand. Gerechnet wird wie nachts je Farbe eine Tagstufe:
+   derselbe Farbton, so weit abgedunkelt, bis sie 3:1 gegen den hellen
+   Kartengrund hält – damit erst recht gegen die weiße Fassung. Gespeichert
+   bleibt die Farbe, die Druckkarten zeichnen sie unverändert; die Stufe gilt
+   nur an der Arbeitskarte (`#karte` in `app.css`). Auch hier kein `filter`. */
+const TAG_GRUND = [230, 230, 224];
+const TAG_KONTRAST = 3;
+const tagFarben = new Map();
+const kontrastZumTag = rgb => (leuchtdichte(TAG_GRUND) + 0.05) / (leuchtdichte(rgb) + 0.05);
+
+/** Die Tagstufe einer Streckenfarbe – unverändert, wenn sie schon trägt */
+export function tagFarbe(farbe) {
+  const schluessel = String(farbe || '');
+  if (tagFarben.has(schluessel)) return tagFarben.get(schluessel);
+  let ziffern = schluessel.replace(/^#/, '');
+  if (ziffern.length === 3 || ziffern.length === 4) ziffern = [...ziffern].map(z => z + z).join('');
+  let ergebnis = schluessel;
+  if (/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(ziffern)) {
+    const rgb = [0, 2, 4].map(i => parseInt(ziffern.slice(i, i + 2), 16));
+    if (kontrastZumTag(rgb) < TAG_KONTRAST) {
+      const [h, s, l0] = hsl(rgb);
+      let l = l0, neu = rgb;
+      while (kontrastZumTag(neu) < TAG_KONTRAST && l > 0) {
+        l = Math.max(0, l - 0.01);
+        neu = rgbAusHsl([h, s, l]);
+      }
+      ergebnis = '#' + neu.map(v => v.toString(16).padStart(2, '0')).join('');
+    }
+  }
+  tagFarben.set(schluessel, ergebnis);
+  return ergebnis;
+}
+
+/* Alle Stufen für ein `style`-Attribut. Leaflet-Linien tragen keine
    Eigenschaften im Markup; für sie setzt `nachtLinie()` dasselbe am Pfad. */
-const farbStil = farbe => `--farbe:${farbe};--farbe-nacht:${nachtFarbe(farbe)}`;
+const farbStil = farbe =>
+  `--farbe:${farbe};--farbe-tag:${tagFarbe(farbe)};--farbe-nacht:${nachtFarbe(farbe)}`;
 
 /* Der Pfad entsteht erst, wenn die Linie auf eine Karte kommt – vorher gibt es
    kein Element, an das sich die Eigenschaft hängen ließe. Deshalb am `add`,
    und für Linien, die schon liegen, gleich. */
 function nachtLinie(linie, farbe) {
   const setze = () => {
-    if (linie._path) linie._path.style.setProperty('--farbe-nacht', nachtFarbe(farbe));
+    if (!linie._path) return;
+    linie._path.style.setProperty('--farbe-tag', tagFarbe(farbe));
+    linie._path.style.setProperty('--farbe-nacht', nachtFarbe(farbe));
   };
   linie.on('add', setze);
   setze();
@@ -542,6 +581,10 @@ const KOST_TRASSE = 150;
 const KOST_MARKE = 80;
 const KOST_SCHILD = 95;
 const KOST_STIEL = 35;
+/* Was am Bildschirm über der Karte liegt (`_sperrflaechen`): ein Schild darunter
+   ist gelesen, als stünde es nicht da. Teurer als der Blattrand – am Rand
+   fehlt der Rest, hier fehlt alles. */
+const KOST_SPERRE = 260;
 
 const imRechteck = (p, r) => p.x >= r.x && p.x <= r.x + r.breite &&
                              p.y >= r.y && p.y <= r.y + r.hoehe;
@@ -652,6 +695,45 @@ export function standmarkeKurz(w) {
   return w;
 }
 
+/* Nach so vielen Minuten ohne Eintrag gilt eine Strecke im Bau als überfällig.
+   Die Zahl steht hier und nicht in ui.js, weil auch das Blatt sie braucht: die
+   Lagekarte druckt die Überfälligkeit als Wort, und die Liste, das Summenband
+   und die Arbeitskarte müssen dieselbe Schwelle meinen. */
+export const MELDUNG_UEBERFAELLIG_MIN = 120;
+
+/** Wie viele Minuten die Strecke überfällig ist – 0, wenn sie es nicht ist.
+ *  `jetzt` ist der Zeitpunkt, auf den das Blatt gilt: die Lagekarte meldet
+ *  den Stand ihres Lagestandes, nicht den des späteren Lesens. */
+export function ueberfaelligSeit(s, jetzt = Date.now()) {
+  if (!bauBegonnen(s) || !['offen', 'laeuft'].includes(s.bau.stand)) return 0;
+  const z = (bauzeile(s) || {}).zuletzt;
+  const min = z ? (jetzt - Date.parse(z)) / 60000 : 0;
+  return min >= MELDUNG_UEBERFAELLIG_MIN ? min : 0;
+}
+
+/** „seit 3 h“ – auf volle Stunden abgerundet, denn am Funk wird „drei Stunden
+ *  nichts gehört“ gesagt und nicht „drei Stunden zwölf“. */
+const seitText = min => min >= 1440 ? `seit ${Math.floor(min / 1440)}\u00a0d`
+  : `seit ${Math.floor(min / 60)}\u00a0h`;
+
+/* Die Strichmuster der Schwarz-Weiß-Lagekarte. Im Schwarz-Weiß-Druck sind alle
+   Trassen schwarz, und die Verlegeart-Muster der Auftragsblätter (`_stilRoh`)
+   trennten dort nur Erd- von Oberverlegung: neun Strecken in Erdkabel waren
+   neun gleiche durchgezogene Linien. Hier trägt jede Strecke ihr eigenes
+   Muster, und die Nummer im Schild und an der Linie hält auseinander, was nach
+   sechs Mustern wieder von vorn beginnt. Gemessen sind sie auf die Breite 5
+   der Schwarz-Weiß-Trasse: lange Striche, kurze Striche, Strich-Punkt,
+   Punkte, Strich-Punkt-Punkt. Ein Muster ohne Lücke bleibt durchgezogen. */
+export const SW_MUSTER = [
+  { strich: null,              kappe: 'round' },
+  { strich: '26 11',           kappe: 'butt'  },
+  { strich: '0.1 9',           kappe: 'round' },
+  { strich: '12 9',            kappe: 'butt'  },
+  { strich: '26 10 0.1 10',     kappe: 'butt'  },
+  { strich: '26 10 0.1 10 0.1 10', kappe: 'butt' }
+];
+export const swMuster = nr => SW_MUSTER[(nr - 1) % SW_MUSTER.length];
+
 /**
  * Zeichnet und verwaltet alle Strecken auf einer Karte.
  * Wird sowohl für die Arbeitskarte als auch für die Druckkarte benutzt
@@ -679,6 +761,7 @@ export class StreckenLayer {
     this._linienzuege = [];
     this._punktmarken = [];
     this._schilderZoom = null;
+    this._schilderSperre = null;
     this._schilderVersuche = 0;
     this._schilderNachlauf = null;
     this.auswahl = null;        // Strecken-ID
@@ -694,6 +777,15 @@ export class StreckenLayer {
        `bauauftrag.js`). */
     this.mitIst = !!opt.mitIst;
     this.mitStand = !!opt.mitStand;
+    /* Nur die Lagekarte: die Nummer jeder Strecke (`nummern`, Kennung → Zahl)
+       und die Nummer ihrer Meldung an den S 6 (`s6Nummern`), die im Schild
+       steht, während der Wortlaut als Fußnote unter der Karte folgt. Dazu der
+       Zeitpunkt, auf den das Blatt gilt (`lagestand`): „seit 3 h ohne Meldung“
+       steht auf Papier, wo es keinen Zähler gibt, der es nachführt. Alle drei
+       gehen in die Signatur ein. */
+    this.nummern = opt.nummern || null;
+    this.s6Nummern = opt.s6Nummern || null;
+    this.lagestand = opt.lagestand || 0;
     /* Was die Standmarke außer dem Bau noch trägt – „neu“, „ohne Meldung“.
        Beides weiß nur die Oberfläche (`kartenSignale` in ui.js); die
        Druckkarten bekommen es nicht, ein Blatt kennt kein „seit dem letzten
@@ -974,7 +1066,10 @@ export class StreckenLayer {
       nachtLinie(this._vorschau, s.farbe).addTo(this.gruppe);
     } else {
       this._vorschau.setLatLngs(pfad).setStyle({ color: s.farbe });
-      if (this._vorschau._path) this._vorschau._path.style.setProperty('--farbe-nacht', nachtFarbe(s.farbe));
+      if (this._vorschau._path) {
+        this._vorschau._path.style.setProperty('--farbe-tag', tagFarbe(s.farbe));
+        this._vorschau._path.style.setProperty('--farbe-nacht', nachtFarbe(s.farbe));
+      }
     }
     const d = distanz(letzter, e.latlng);
     const html = `<span class="seg-mass vorschau">${meter(d)}</span>`;
@@ -1028,7 +1123,8 @@ export class StreckenLayer {
     this._einfach = !!this.einfach();
     const stand = signatur(
       [p.strecken, p.einsatzabschnitte, o, this.auswahl, this.aktiverPunkt,
-       this.zeichenModus, this.baumodus, this.istSetzModus, [...signale], this._einfach],
+       this.zeichenModus, this.baumodus, this.istSetzModus, [...signale], this._einfach,
+       this._lageStand()],
       p.strecken.flatMap(s => [s, ...s.punkte, ...istPunkte(s)]));
     if (stand === this._stand) return;
     this._stand = stand;
@@ -1055,7 +1151,7 @@ export class StreckenLayer {
          nur ein, OB gezeichnet wird: die Griffe hängen daran. */
       const eigen = signatur(
         [s, o, gewaehlt, gewaehlt ? this.aktiverPunkt : null, !!this.zeichenModus, this.baumodus,
-         signale.get(s.id) || null, this._einfach],
+         signale.get(s.id) || null, this._einfach, this._lageStand()],
         [s, ...s.punkte, ...istPunkte(s)]);
       let r = this._strecken.get(s.id);
       if (r && r.stand === eigen) continue;
@@ -1108,6 +1204,13 @@ export class StreckenLayer {
    * nicht die Farbe: die Auftragsstrecke ist durchgezogen und schwarz,
    * alle anderen gestrichelt und grau.
    */
+  /** Was nur das Lageblatt der Zeichnung mitgibt – für die Signatur */
+  _lageStand() {
+    return this.nummern || this.s6Nummern || this.lagestand
+      ? [this.nummern && [...this.nummern], this.s6Nummern && [...this.s6Nummern], this.lagestand]
+      : null;
+  }
+
   _stil(s) {
     const st = this._stilRoh(s);
     const f = this.strichFaktor * this.strichbreite;
@@ -1127,6 +1230,13 @@ export class StreckenLayer {
        Muster liegt zwischen Erd- und Oberverlegung, damit alle drei
        im S/W-Druck auseinanderzuhalten bleiben. */
     const funk = !!kabelById(s.kabeltyp).funk;
+    /* Die Lagekarte unterscheidet die Strecken am Muster und nicht an der
+       Verlegeart – siehe `SW_MUSTER`. */
+    if (this.sw && this.nummern && this.nummern.has(s.id)) {
+      const m = swMuster(this.nummern.get(s.id));
+      return { farbe: '#000000', breite: 5, strich: m.strich, kappe: m.kappe,
+               deckkraft: 1, fassung: 8.5 };
+    }
     if (this.sw) {
       return {
         farbe: nebensache ? '#8a8a8a' : '#000000',
@@ -1204,6 +1314,14 @@ export class StreckenLayer {
         linie.on('click', e => { L.DomEvent.stop(e); if (!this.zeichenModus) this.waehle(s.id); });
         linie.bindTooltip(() => this._tooltipText(s), { sticky: true, direction: 'top', className: 'fbp-tooltip' });
       }
+
+      /* Die Nummer an der Linie, nur im Schwarz-Weiß-Druck der Lagekarte: dort
+         hält das Muster sechs Strecken auseinander, und bei der siebten
+         beginnt es von vorn. Mehrfach, weil eine lange Trasse zwischen zwei
+         Schildern sonst keinen Hinweis trägt, wer sie ist – und nicht in der
+         Mitte, dort hängt das Schild. Die Marken gehen in die Platzsuche
+         ein: ein Schild darauf verdeckte, was sie sagen sollen. */
+      if (this.sw && this.nummern && this.nummern.has(s.id)) this._nummernSetzen(s);
 
       /* Blass gezeichnete Nebenstrecken bleiben ohne Kabelzeichen – auf ihnen
          käme es nur zur Unruhe, gefragt ist dort der Verlauf. */
@@ -1341,11 +1459,32 @@ export class StreckenLayer {
           `⚠ ${escapeHtml(kurz)}</span>`;
       }).join('') +
         (bz.meldung && !signale.includes('s6erledigt')
-          ? `<span class="bz-marke bz-s6" title="${escapeHtml(bz.meldung)}">✉ S&nbsp;6</span>` : '');
+          /* Auf Papier steht der Wortlaut nicht im Schild, es wäre zu groß:
+             die Marke trägt eine Nummer, der Satz steht als Fußnote unter der
+             Karte (`lageMeldungenHTML` in bauauftrag.js). */
+          ? `<span class="bz-marke bz-s6" title="${escapeHtml(bz.meldung)}">✉ S&nbsp;6${
+            this.s6Nummern && this.s6Nummern.has(s.id)
+              ? `&nbsp;(${this.s6Nummern.get(s.id)})` : ''}</span>` : '');
+      /* Auf dem Blatt gibt es keinen Zähler, der „ohne Meldung“ nachführt –
+         dort steht die Dauer als Wort, gerechnet auf den Lagestand. */
+      const seit = this.mitStand && this.lagestand && !this.interaktiv
+        ? ueberfaelligSeit(s, this.lagestand) : 0;
       const signalSchild =
         (signale.includes('neu') ? '<span class="bz-marke bz-neu">neu</span>' : '') +
-        (signale.includes('spaet') ? '<span class="bz-marke bz-warn">⚠ ohne Meldung</span>' : '');
-      const vorrang = !!(bz && bz.warnungen.length) || signale.includes('spaet');
+        (signale.includes('spaet') ? '<span class="bz-marke bz-warn">⚠ ohne Meldung</span>' : '') +
+        (seit ? `<span class="bz-marke bz-warn">⚠ ${seitText(seit)} ohne Meldung</span>` : '');
+      /* Wer baut und wann zuletzt etwas kam, in einer zweiten, kleinen Zeile:
+         im Review trug das Schild weder Trupp noch Zeit, und an der Wand der
+         Führungsstelle fehlte genau das, was die erste Nachfrage ist. Nur
+         wo gebaut wird; eine offene Strecke hat keinen Trupp, der meldet. */
+      const bauZeile = this.mitStand && bz && (bz.trupp || bz.zuletzt)
+        ? `<span class="schild-bau">${[
+            bz.trupp ? escapeHtml(bz.trupp) : '',
+            bz.zuletzt ? `zuletzt&nbsp;${escapeHtml(this._zeitText(bz.zuletzt))}` : ''
+          ].filter(Boolean).join(' · ')}</span>` : '';
+      const nr = this.sw && this.nummern && this.nummern.has(s.id)
+        ? `<i class="schild-nr">${this.nummern.get(s.id)}</i>` : '';
+      const vorrang = !!(bz && bz.warnungen.length) || signale.includes('spaet') || !!seit;
       /* Die Druckkarte kennt die eigene Schilderebene nicht; dort liegen die
          Griffe ohnehin unter den Beschriftungen. */
       const marke = L.marker([anker.lat, anker.lng], {
@@ -1358,9 +1497,10 @@ export class StreckenLayer {
           html: `<span class="strecken-fahne" style="${farbStil(st.farbe)}">
                    ${abstand ? '<i class="fahnen-stiel"></i>' : ''}
                    <span class="strecken-mass${versatz}${gewaehlt ? ' aktiv' : ''}">
-                     <b>${escapeHtml(s.name)}</b>
+                     <b>${nr}${escapeHtml(s.name)}</b>
                      <span class="wert">${formatLaenge(k.trasse)}</span>
                      ${k.zuschlag || k.reserve ? `<span class="zus">${bedarfsHerkunft(k)} → ${formatLaenge(k.bedarf)}</span>` : ''}
+                     ${bauZeile}
                      ${standSchild || warnung || signalSchild
                        ? `<span class="schild-stand">${standSchild}${warnung}${signalSchild}</span>` : ''}
                    </span>
@@ -1378,6 +1518,38 @@ export class StreckenLayer {
          steht von Haus aus so, und dort lag im Review ein Schild halb über
          dem oberen Rand. */
       this._ziel.schilder.push({ marke, punkte: s.punkte, abstand, vorrang });
+    }
+  }
+
+  /** Die Zeit des letzten Eintrags für das Schild: am Tag des Lagestandes die
+   *  Uhrzeit, an einem anderen Tag mit Datum – „21:28“ allein las sich bei
+   *  einem Eintrag von gestern wie ein frischer. */
+  _zeitText(iso) {
+    const d = new Date(iso), ref = new Date(this.lagestand || Date.now());
+    if (Number.isNaN(d.getTime())) return '';
+    const gleich = d.toDateString() === ref.toDateString();
+    return gleich ? uhrzeit(iso)
+      : `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} ${uhrzeit(iso)}`;
+  }
+
+  /** Streckennummer in kleinen Marken auf die Linie, abseits der Mitte. */
+  _nummernSetzen(s) {
+    const gesamt = kumuliert(s.punkte).pop();
+    if (!(gesamt > 0)) return;
+    /* Je länger die Trasse, desto mehr Marken – höchstens eine je 4 cm Blatt
+       wäre zu rechnen; als Anhalt genügt: kurze Linie zwei, lange vier. */
+    const anteile = gesamt > 2500 ? [0.12, 0.3, 0.7, 0.88] : [0.14, 0.86];
+    for (const a of anteile) {
+      const pos = punktBeiLaenge(s.punkte, gesamt * a);
+      if (!pos) continue;
+      L.marker([pos.lat, pos.lng], {
+        pane: 'fbp-labels', interactive: false,
+        icon: L.divIcon({
+          className: 'fbp-label',
+          html: `<span class="linien-nr">${this.nummern.get(s.id)}</span>`, iconSize: null
+        })
+      }).addTo(this._ziel.gruppe);
+      this._ziel.punktmarken.push({ lat: pos.lat, lng: pos.lng });
     }
   }
 
@@ -1479,7 +1651,7 @@ export class StreckenLayer {
         icon: L.divIcon({
           className: 'fbp-punkt-icon',
           html: `<span class="fbp-istpunkt${kurz ? ' mit-kurz' : ''}` +
-                `${pt.art === 'offen' ? ' kurz-offen' : ''}" style="--farbe:${st.farbe}">` +
+                `${pt.art === 'offen' ? ' kurz-offen' : ''}" style="${farbStil(st.farbe)}">` +
                 `${escapeHtml(kurz)}</span>`,
           iconSize: [18, 18], iconAnchor: [9, 9]
         })
@@ -1578,19 +1750,58 @@ export class StreckenLayer {
    * aber gleichbleibend, und ein Schild, das bei jedem Neuzeichnen woanders
    * steht, wäre auf dem Bildschirm nicht auszuhalten.
    */
+  /**
+   * Die Flächen, die am Bildschirm über der Karte liegen: Zoom, Maßstab,
+   * Kartenoptionen, Werkzeuge, Statusleiste und die Hinweisleiste des
+   * Zeichnens – in Kartenpunkten wie die Schilder. Auf dem Blatt gibt es sie
+   * nicht. Im Review stand „im Bau“ unten halb unter der MGRS-Leiste und
+   * „⚠ 1 Abw.“ unter dem Kasten der Kartenoptionen: die Platzsuche kannte
+   * nur Trassen, Marken und andere Schilder.
+   */
+  _sperrflaechen() {
+    if (!this.interaktiv) return [];
+    const behaelter = this.karte.getContainer();
+    const wurzel = behaelter.closest('.kartenbereich') || behaelter;
+    const r0 = behaelter.getBoundingClientRect();
+    if (!r0.width || !r0.height) return [];
+    const felder = [];
+    for (const e of wurzel.querySelectorAll(
+      '.kartenoptionen, .statusleiste, .werkzeuge, .zeichen-hinweis, ' +
+      '.leaflet-control-zoom, .leaflet-control-scale, .leaflet-control-attribution')) {
+      const r = e.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      const x1 = Math.max(r.left, r0.left), y1 = Math.max(r.top, r0.top);
+      const x2 = Math.min(r.right, r0.right), y2 = Math.min(r.bottom, r0.bottom);
+      if (x2 <= x1 || y2 <= y1) continue;
+      const lo = this.karte.containerPointToLayerPoint([x1 - r0.left, y1 - r0.top]);
+      felder.push({ x: lo.x, y: lo.y, breite: x2 - x1, hoehe: y2 - y1 });
+    }
+    return felder;
+  }
+
   _schilderSetzen() {
     const zoom = this.karte.getZoom();
     if (!this._schilder.length || zoom === undefined) return;
+    const sperren = this._sperrflaechen();
+    const sperrStand = sperren.map(r =>
+      [r.x, r.y, r.breite, r.hoehe].map(Math.round).join(',')).join(';');
     /* Gerechnet wird in Kartenpunkten, und die stehen beim Ziehen still – nur
        eine andere Zoomstufe (oder ein neuer Zeichenlauf) ergibt eine andere
-       Lage. Ohne diese Schranke liefe die Suche bei jedem Verschieben mit. */
-    if (this._schilderZoom === zoom) return;
+       Lage. Ohne diese Schranke liefe die Suche bei jedem Verschieben mit. Ein
+       Verschieben ändert auch die Sperrflächen nicht, sie liegen am Rahmen und
+       in Kartenpunkten nur dann anders, wenn der Rahmen es tut (aufgeklappte
+       Optionen, gedrehtes Gerät). */
+    if (this._schilderZoom === zoom && this._schilderSperre === sperrStand) return;
+    this._schilderSperre = sperrStand;
     const pkt = p => this.karte.latLngToLayerPoint(L.latLng(p.lat, p.lng));
     const zuege = this._linienzuege.map(z => z.map(pkt));
     const marken = this._punktmarken.map(pkt);
     const faktor = kartenSchrift(this.karte);
     const markeHalb = 11 * faktor;
-    const belegt = [];
+    /* Die Sperrflächen stehen von Anfang an unter den belegten Plätzen: so
+       weicht auch das nicht abgerückte Schild ihnen aus (`_schildSchieben`),
+       und das abgerückte zahlt zusätzlich `KOST_SPERRE`. */
+    const belegt = [...sperren];
     let gesetzt = 0;
     /* Das Blatt in Kartenpunkten. Auf der Druckkarte ist das die Kante, an der
        der Ausdruck aufhört; am Bildschirm der Ausschnitt, den man gerade sieht
@@ -1718,6 +1929,10 @@ export class StreckenLayer {
               for (const r of belegt) {
                 const u = ueberdeckung(feld, r);
                 if (u) kosten += KOST_SCHILD + u / 25;
+              }
+              if (kosten >= grenze) continue;
+              for (const r of sperren) {
+                if (ueberdeckung(feld, r)) kosten += KOST_SPERRE;
               }
               if (kosten >= grenze) continue;
 

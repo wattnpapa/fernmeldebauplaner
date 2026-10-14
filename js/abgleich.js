@@ -536,9 +536,18 @@ export async function konfliktEntscheiden(wahl) {
          „die andere gilt“ unumkehrbar, und das ist sie nicht: der Nutzer hat
          zwei Stände vor sich, keinen Fehler. */
       danebenlegen(meins, 'dieses Gerät');
+      /* Die Nachprüfung in `uebernehmen` fragt „hat sich hier seit der
+         Entscheidung etwas geändert?“ und vergleicht dafür mit dem Stand, den
+         der Abgleich zuletzt gesehen hat. Im Konfliktfall ist der per
+         Definition ein anderer – die Prüfung schlug jedes Mal an, der Konflikt
+         stand wieder da, der eigene Stand blieb, und pro Durchgang entstand eine
+         weitere Kopie „(dieses Gerät, …)“. Verglichen wird deshalb mit dem
+         Stand, der eben danebengelegt wurde: ändert der Nutzer in diesem
+         Augenblick noch etwas, steht es nicht in der Kopie und der Konflikt
+         wird erneut gestellt. */
       await uebernehmen(rs, meins, k.ordner,
         { blob: new Blob([JSON.stringify(k.fremdesProjekt)]), marke: k.marke },
-        k.zustand);
+        { ...k.zustand, lokalGeaendert: meins.geaendert || '' });
     } else if (wahl === 'beide') {
       danebenlegen(k.fremdesProjekt, 'anderes Gerät');
       await hochladenGegen(rs, meins, k);

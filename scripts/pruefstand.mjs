@@ -443,6 +443,16 @@ async function neueSeite(befehl, horcher) {
     ohneNetz() { return seite.netz(false); },
     mitNetz() { return seite.netz(true); },
 
+    /** Anfragen an Adressen, die das Muster treffen, nie beantworten: die
+     *  Verbindung steht, der Server schweigt – der Fall, den weder `error`
+     *  noch `navigator.onLine` verrät. `haengenEnde()` gibt sie wieder frei. */
+    async haengen(muster) {
+      await an('Fetch.enable', { patterns: [{ urlPattern: muster, requestStage: 'Request' }] });
+    },
+    async haengenEnde() {
+      await an('Fetch.disable');
+    },
+
     /** Wartet, bis ein Service Worker die Seite führt */
     async warteAufWaechter(frist = 15000) {
       await seite.warteAuf('!!navigator.serviceWorker.controller', frist);

@@ -9,7 +9,7 @@ import {
 } from './state.js';
 import {
   StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen,
-  standmarkeKurz
+  standmarkeKurz, ueberfaelligSeit, swMuster
 } from './strecken.js';
 import { ZeichenLayer, gezeichneteZeichen } from './zeichen.js';
 import { FlaechenLayer, flaechenEcken } from './flaechen.js';
@@ -1240,6 +1240,9 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
      über die ganze Lage aufziehen. */
   const blattauftrag = lagekarteBlatt(auftrag, opt);
   const mitte = gewaehlterAbschnitt(auftrag, opt);
+  /* Der Zeitpunkt, auf den das Blatt gilt: Kopf, „seit 3 h ohne Meldung“ im
+     Schild und die Fußnoten rechnen alle von diesem einen. */
+  const stand = Date.now();
   const el = blatt(ziel, opt);
   el.classList.add('lageblatt');
   el.innerHTML =
@@ -1247,12 +1250,13 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
     (opt.kopf
       ? blattkopfHTML(p, {
           titel: auftragTitel(blattauftrag), unter: umfangText(blattauftrag),
-          doktyp: doktyp(blattauftrag), lagestand: new Date()
+          doktyp: doktyp(blattauftrag), lagestand: new Date(stand)
         })
       : '') +
     (opt.stammdaten ? sammelStammHTML(p, blattauftrag, opt) : '') +
     kartenfeldHTML({ quelle: opt.fuss ? '' : kartenquelle(p, opt) }) +
-    (opt.legende ? lageLegendeHTML(blattauftrag, opt, sw, mass) : '') +
+    lageMeldungenHTML(blattauftrag, opt) +
+    (opt.legende ? lageLegendeHTML(blattauftrag, opt, sw, mass, stand) : '') +
     zonenLegendeHTML(blattauftrag, opt) +
     (opt.kennzahlen && blattauftrag.strecken.length
       ? sammelKennzahlenHTML(gesamtKennzahlen(blattauftrag.strecken), blattauftrag.strecken) : '') +
@@ -1260,7 +1264,7 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
 
   kartenbau.push(() => {
     const karte = baueLagekarte(el.querySelector('.karten-buehne'), blattauftrag, opt, mass, sw,
-      karten, mitte);
+      karten, mitte, stand);
     massstabSchreiben(el, karte);
     return warteAufKacheln(karte, kachelfrist(mass)).then(() => massstabSchreiben(el, karte));
   });
@@ -1497,9 +1501,13 @@ function baueSammelkarte(buehne, auftrag, opt, mass, sw, karten) {
  * Trassen; hier wäre das falsch, denn eine Lagekarte kann aus Zeichen allein
  * bestehen, und ein Zeichen außerhalb der Trassen fiele sonst vom Blatt.
  */
-function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null) {
+function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null, stand = Date.now()) {
   const p = store.projekt;
-  const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.25 });
+  /* Fein gerastet und nicht auf Viertelstufen: das Blatt soll die Lage so
+     groß zeigen, wie der Rahmen es zulässt. Bei 0,25 geht im ungünstigen Fall
+     ein Fünftel verloren, und im Review standen die Trassen auf A4 quer in
+     einem Drittel der Breite bei 1 : 89.000, wo 1 : 75.000 gepasst hätte. */
+  const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.05 });
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
 
   if (opt.strecken !== false) {
@@ -1510,7 +1518,11 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null) {
       interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt),
       nurStrecken: auftrag.strecken.map(s => s.id),
       punktzeichen: opt.punktzeichen !== false,
-      mitStand: true
+      mitStand: true,
+      /* Nummer und Muster je Strecke (Schwarz-Weiß), Nummer der Meldung an
+         den S 6 und der Lagestand – siehe `lageNummern`. */
+      nummern: lageNummern(auftrag).nummern, s6Nummern: lageNummern(auftrag).s6,
+      lagestand: stand
     });
     sl.zeichne({
       ...p.optionen, teillaengen: false,
@@ -1543,7 +1555,11 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null) {
      Aufbauplatz von 25 m am Blattrand darf nicht halb abgeschnitten sein. */
   const ecken = ausschnittEcken(auftrag, opt, mitte, { zeichen, flaechen, relaisstellen });
   if (ecken.length) {
-    const rand = kartenrand(mass, 55);
+    /* Der Rand wächst mit dem Blatt, darf aber nicht den Rahmen auffressen:
+       auf A4 quer ist die Karte nur gut 400 Bildpunkte hoch, und 55 davon je
+       Seite sind ein Viertel der Höhe. Höchstens 8,5 % der kurzen Kante. */
+    const gr = karte.getSize();
+    const rand = Math.min(kartenrand(mass, 55), Math.round(Math.min(gr.x, gr.y) * 0.085));
     const grenzen = L.latLngBounds(ecken);
     /* Ein einzelnes Zeichen oder eine einzelne Relaisstelle ergibt einen
        Ausschnitt ohne Ausdehnung. `fitBounds` geht darauf bis an die höchste
@@ -1563,11 +1579,53 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null) {
   karte.invalidateSize({ animate: false });
   if (opt.gitter) {
     new GitterLayer(karte, {
-      interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt)
+      interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt),
+      dichter: true
     }).zeichne({ gitter: true });
   }
   karten.push(karte);
   return karte;
+}
+
+/**
+ * Die Nummern der Lagekarte: je Strecke ihre Nummer – dieselbe wie im
+ * Streckenverzeichnis des Sammeldrucks, nämlich die Reihenfolge der Auswahl –
+ * und je Meldung an den S 6 ihre laufende Nummer. Das Schild trägt die Nummer,
+ * die Fußnote unter der Karte den Wortlaut; beide rechnen hier, damit sie nicht
+ * auseinanderlaufen.
+ */
+function lageNummern(auftrag) {
+  const nummern = new Map(auftrag.strecken.map((s, i) => [s.id, i + 1]));
+  const s6 = new Map();
+  for (const s of auftrag.strecken) {
+    const bz = bauzeile(s);
+    if (bz && bz.meldung) s6.set(s.id, s6.size + 1);
+  }
+  return { nummern, s6 };
+}
+
+/**
+ * Die Meldungen an den S 6 im Wortlaut, als Fußnoten unter der Karte. Im
+ * Review stand im Schild nur „✉ S 6“, und wer wissen wollte, was gemeldet war,
+ * fand es nur am Bildschirm. Das Schild wäre mit dem Satz zu groß geworden,
+ * deshalb trägt es die Nummer. Gekürzt, damit drei Meldungen auf A4 quer nicht
+ * die Karte fressen; der volle Wortlaut steht auf der Baudokumentation.
+ * Sie gehören zur Beschriftung der Strecken: ohne Schild gäbe es keine Nummer.
+ */
+function lageMeldungenHTML(auftrag, opt) {
+  if (opt.strecken === false || !opt.beschriftung) return '';
+  const { s6 } = lageNummern(auftrag);
+  if (!s6.size) return '';
+  const kurz = t => t.length > 110 ? t.slice(0, 109).trimEnd() + '…' : t;
+  const gezeigt = auftrag.strecken.filter(s => s6.has(s.id)).slice(0, 6);
+  const zeilen = gezeigt.map(s => {
+    const bz = bauzeile(s);
+    return `<span class="lm-zeile"><b>✉&nbsp;S&nbsp;6&nbsp;(${s6.get(s.id)})</b> ` +
+      `${escapeHtml(s.name)}: „${escapeHtml(kurz(bz.meldung))}“</span>`;
+  }).join('');
+  const mehr = s6.size - gezeigt.length;
+  return `<div class="bl-legende bl-s6"><span class="lg-titel">Meldungen an den S 6</span>${zeilen}${
+    mehr > 0 ? `<span class="lm-zeile">… und ${mehr} weitere – Wortlaut auf der Baudokumentation der Strecke</span>` : ''}</div>`;
 }
 
 /**
@@ -1873,12 +1931,20 @@ function blattzahlSchreiben(ziel) {
     const b = el.querySelector('.bl-kopf[data-bogen]')?.dataset.bogen;
     if (b) boegen.set(b, (boegen.get(b) || 0) + 1);
   }
+  /* Der Auftrag zählt sich selbst: „Blatt 3 von 3“, wo er drei Blätter hat –
+     nicht „4 von 10“, weil die abgetrennten Bögen mitgezählt waren. Im Review
+     hielt ein Trupp „1 von 7 | 2 von 7 | 3 von 7“ in der Hand und suchte vier
+     Blätter, die zu einem anderen Papierstapel gehörten. */
+  const auftragsblaetter = blaetter.filter(el => !el.querySelector('.bl-kopf[data-bogen]'));
   const gezaehlt = new Map();
-  blaetter.forEach((el, i) => {
+  blaetter.forEach(el => {
     const feld = el.querySelector('.bl-blattnr');
     if (!feld) return;
     const kopf = el.querySelector('.bl-kopf[data-bogen]');
-    if (!kopf) { feld.textContent = `${i + 1} von ${blaetter.length}`; return; }
+    if (!kopf) {
+      feld.textContent = `${auftragsblaetter.indexOf(el) + 1} von ${auftragsblaetter.length}`;
+      return;
+    }
     const n = (gezaehlt.get(kopf.dataset.bogen) || 0) + 1;
     gezaehlt.set(kopf.dataset.bogen, n);
     /* Der Name wird gekürzt: die Kennungsspalte bricht nicht um, und ein
@@ -2048,12 +2114,17 @@ function kennzahlenHTML(k, s) {
  *  Zuordnung; im Schwarz-Weiß-Druck und bei vielen Strecken tut das allein
  *  die Beschriftung an der Strecke. */
 function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '',
-  hinweis = 'Bezeichnung und Trassenlänge stehen an jeder Strecke') {
+  hinweis = 'Bezeichnung und Trassenlänge stehen an jeder Strecke', nummern = null) {
   if (!auftrag.strecken.length) return '';
-  const zeigbar = !sw && auftrag.strecken.length <= grenze;
+  /* Mit Nummern (die Lagekarte) trägt auch der Schwarz-Weiß-Druck eine
+     Zuordnung: Strichmuster und Nummer, im Schild wie an der Linie. */
+  const muster = sw && nummern;
+  const zeigbar = (!sw || muster) && auftrag.strecken.length <= grenze;
   const eintraege = zeigbar
-    ? auftrag.strecken.map(s =>
-        `<span class="lg-eintrag"><i class="lg-linie voll" style="--farbe:${s.farbe}"></i>${escapeHtml(s.name)}</span>`).join('')
+    ? auftrag.strecken.map(s => muster
+      ? `<span class="lg-eintrag">${musterProbeSVG(nummern.get(s.id))}` +
+        `<i class="schild-nr">${nummern.get(s.id)}</i>${escapeHtml(s.name)}</span>`
+      : `<span class="lg-eintrag"><i class="lg-linie voll" style="--farbe:${s.farbe}"></i>${escapeHtml(s.name)}</span>`).join('')
     : '';
   /* Die Kabelzeichen gelten für alle Strecken gleich, deshalb steht jede
      vorkommende Kabelart nur einmal in der Erklärung. */
@@ -2061,6 +2132,17 @@ function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '',
   const zeichen = arten.map(a => kabelzeichenEintrag(a, '#000')).join('');
   return `<div class="bl-legende"><span class="lg-titel">Zeichenerklärung</span>${eintraege}${zeichen}${zusatz}
     ${hinweis ? `<span class="lg-eintrag lg-hinweis">${escapeHtml(hinweis)}</span>` : ''}</div>`;
+}
+
+/** Das Strichmuster einer Strecke als Probe für die Zeichenerklärung. Als SVG
+ *  und nicht als Rahmenlinie: CSS kennt weder Strich-Punkt noch Punkte mit
+ *  runder Kappe, und die Probe muss genau das zeigen, was auf der Karte steht. */
+function musterProbeSVG(nr) {
+  const m = swMuster(nr);
+  const strich = m.strich ? m.strich.split(' ').map(n => (Number(n) * 0.5).toFixed(2)).join(' ') : '';
+  return `<svg class="lg-muster" viewBox="0 0 36 4" aria-hidden="true"><line x1="0" y1="2" x2="36" y2="2" ` +
+    `stroke="#000" stroke-width="2.5" stroke-linecap="${m.kappe}"` +
+    `${strich ? ` stroke-dasharray="${strich}"` : ''}/></svg>`;
 }
 
 /**
@@ -2071,7 +2153,7 @@ function sammelLegendeHTML(auftrag, sw, grenze, zusatz = '',
  * Farbzuordnung der Beschriftung an der Strecke überlassen wird, wächst
  * deshalb mit dem Blatt.
  */
-function lageLegendeHTML(auftrag, opt, sw, mass) {
+function lageLegendeHTML(auftrag, opt, sw, mass, stand = Date.now()) {
   /* Erklärt wird, was auf dem Blatt steht: ohne Strecken bliebe eine Liste
      von Farben und Punktarten übrig, die auf der Karte nicht vorkommen. */
   if (opt.strecken === false) return '';
@@ -2087,16 +2169,18 @@ function lageLegendeHTML(auftrag, opt, sw, mass) {
      muss dort stehen. */
   const hinweis = opt.beschriftung
     ? 'Bezeichnung und Trassenlänge stehen an jeder Strecke'
-    : (sw ? '' : 'Die Farbe der Linie ordnet die Strecke zu');
+    : (sw ? 'Strichmuster und Nummer der Linie ordnen die Strecke zu'
+          : 'Die Farbe der Linie ordnet die Strecke zu');
   return sammelLegendeHTML(auftrag, sw, Math.round(12 * mass.blatt),
-    punkte + (opt.beschriftung ? standmarkenLegendeHTML(auftrag.strecken) : ''), hinweis);
+    punkte + (opt.beschriftung ? standmarkenLegendeHTML(auftrag.strecken, stand) : ''), hinweis,
+    lageNummern(auftrag).nummern);
 }
 
 /* Die Marken im Schild der Lagekarte. Wörter wie „gebaut“ erklären sich
    selbst; was nicht, sind die Kurzformen „Abw.“ und „S 6“ und die Form der
    Marke, die im Schwarz-Weiß-Druck den Stand trägt. Erklärt wird nur, was auf
    dem Blatt vorkommt. */
-function standmarkenLegendeHTML(strecken) {
+function standmarkenLegendeHTML(strecken, stand = Date.now()) {
   if (!strecken.some(bauBegonnen)) return '';
   const staende = new Set(strecken.map(s => bauBegonnen(s) && s.bau ? s.bau.stand : 'offen'));
   const zeilen = strecken.map(bauzeile).filter(Boolean);
@@ -2109,8 +2193,17 @@ function standmarkenLegendeHTML(strecken) {
     'Punkte abweichend vom Plan gebaut</span>');
   if (warn.has('abseits')) teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ abseits')}` +
     'Punkt weit neben der Trasse</span>');
-  if (zeilen.some(z => z.meldung)) teile.push(`<span class="lg-eintrag">${marke('bz-s6', '✉ S&nbsp;6')}` +
-    'Meldung des Trupps an den S&nbsp;6</span>');
+  if (zeilen.some(z => z.meldung)) teile.push(`<span class="lg-eintrag">${marke('bz-s6', '✉ S&nbsp;6 (1)')}` +
+    'Meldung des Trupps an den S&nbsp;6 – Wortlaut unter der Karte</span>');
+  /* Die zweite Zeile des Schildes und das Wort für die Überfälligkeit: beides
+     erklärt sich nicht von selbst, und „zuletzt“ allein sagt nicht, wessen
+     Eintrag gemeint ist. */
+  if (zeilen.some(z => z.trupp || z.zuletzt)) teile.push('<span class="lg-eintrag">' +
+    '<span class="lg-zeitzeile">1. FmTr · zuletzt&nbsp;21:28</span>Trupp und Uhrzeit des letzten Eintrags</span>');
+  if (strecken.some(s => ueberfaelligSeit(s, stand))) {
+    teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ seit&nbsp;3&nbsp;h ohne Meldung')}` +
+      'Strecke im Bau, seit der genannten Zeit kein Eintrag</span>');
+  }
   return teile.join('');
 }
 
@@ -3068,7 +3161,8 @@ function baunachweisMeldungenHTML(k, opt) {
     </table>
     <p class="tab-fussnote">${regel ? `${escapeHtml(regel.text)} (${escapeHtml(fundstelleText(regel))}). ` : ''}Datum
       nur, wenn es nicht das Baudatum oben ist. Im Baumodus mit „Vom Baunachweis nachtragen“
-      unter „Meldungen“ so übernehmen, wie es hier steht.</p>
+      unter „Meldungen“ so übernehmen, wie es hier steht. „Trommeln verbaut“ hat im Gerät
+      kein eigenes Feld: als freie Zeile unter „Material“ → „Sonstiges“ eintragen.</p>
   </section>`;
 }
 
@@ -3368,7 +3462,11 @@ function baudokuStammHTML(p, s, k) {
   const leer = abs.length > 1 ? '–' : '\u00a0';
   const geraet = truppAmGeraet();
   const auftrag = (s.trupp || '').trim();
-  const rueckfall = geraet.trupp || (s.bau && s.bau.gemeldetVon) || auftrag;
+  /* Der Absender der letzten Meldung trägt den Truppführer im Text („1. FmTr
+     · Lang“ oder „1. FmTr (Truppführer Lang)“). Im Review stand die ganze
+     Zeile im Feld „Trupp“ und das Feld „Truppführer“ daneben leer. */
+  const absender = absenderTeilen((s.bau && s.bau.gemeldetVon) || '');
+  const rueckfall = geraet.trupp || absender.trupp || auftrag;
 
   const einmal = liste => [...new Set(liste.map(x => (x || '').trim()).filter(Boolean))];
   const trupp = abs.length > 1
@@ -3376,7 +3474,8 @@ function baudokuStammHTML(p, s, k) {
     : (eins && eins.trupp) || rueckfall;
   const fuehrer = abs.length > 1
     ? einmal(abs.map(a => a.fuehrer)).join(', ')
-    : (eins && eins.fuehrer) || geraet.fuehrer;
+    : (eins && eins.fuehrer) || geraet.fuehrer ||
+      (absender.trupp && (!geraet.trupp || geraet.trupp === absender.trupp) ? absender.fuehrer : '');
 
   /* Erklärte Zeiten gehen vor; nur wo keine steht, zählen die Einträge. Bei
      mehreren Abschnitten endet der Bau erst mit dem letzten – fehlt einem
@@ -3390,7 +3489,10 @@ function baudokuStammHTML(p, s, k) {
   const beginn = zeiten.length ? dtgOderStrich(zeiten[0])
     : eintraege.length ? `${dtgOderStrich(eintraege[0])} (aus Aufnahmen)` : '';
   const ende = alleZu ? dtgOderStrich(enden[enden.length - 1])
-    : abs.length > 1 && enden.length ? `${enden.length} von ${abs.length} beendet`
+    : abs.length > 1 && enden.length
+      /* Nennt, wer fehlt: „1 von 2 beendet“ sagte nicht, auf wen gewartet wird. */
+      ? `${enden.length} von ${abs.length} beendet – offen: ${
+        abs.filter(a => !gueltigeZeit(a.ende)).map(a => a.trupp || a.name).join(', ')}`
     : eintraege.length ? `${dtgOderStrich(eintraege[eintraege.length - 1])}` +
         (gebaut ? ' (aus Aufnahmen)' : '') : '';
   /* Solange gebaut wird, ist die jüngste Aufnahme kein Bauende – das Feld
@@ -3413,6 +3515,19 @@ function baudokuStammHTML(p, s, k) {
        einem Blatt sind eine zu viel. */
     ['Baustand', k.stand.name]
   ]);
+}
+
+/** Trupp und Truppführer aus dem Absender einer Meldung. Mehrere Trupps in
+ *  einem Absender („1. FmTr, 3. FmTr“) bleiben beieinander – dort ist nicht zu
+ *  sagen, wessen Führer gemeint ist. */
+function absenderTeilen(text) {
+  const t = String(text || '').trim();
+  if (!t) return { trupp: '', fuehrer: '' };
+  const klammer = /^(.*?)\s*\(\s*(?:Truppführer|Gruppenführer|Zugführer|Führer)?\s*(.+?)\s*\)\s*$/i.exec(t);
+  if (klammer && !klammer[1].includes(',')) return { trupp: klammer[1], fuehrer: klammer[2] };
+  const punkt = t.split(' · ');
+  if (punkt.length === 2 && !punkt[0].includes(',')) return { trupp: punkt[0], fuehrer: punkt[1] };
+  return { trupp: t, fuehrer: '' };
 }
 
 const gueltigeZeit = z => !!z && !Number.isNaN(Date.parse(z));
@@ -3529,16 +3644,29 @@ function baudokuKennzahlenHTML(k, strecke) {
       k.lueckeLaenge ? `Lücke ${formatLaenge(k.lueckeLaenge)} offen` : 'Trasse nach Aufnahme'],
     ['Unterschied', (geplant && k.laenge)
       ? ((k.laenge - geplant) > 0 ? '+' : '−') + formatLaenge(Math.abs(k.laenge - geplant))
-      : '–', 'gebaut gegen geplant'],
+      : '–', k.lueckeLaenge ? 'gebaut gegen geplant, mit Lücke' : 'gebaut gegen geplant'],
     ['Punkte', `${k.bestaetigt} von ${k.sollPunkte}`,
       k.zusaetzlich ? `${k.zusaetzlich} zusätzlich` : 'bestätigt'],
     ['Abweichungen', String(k.abweichungen.length),
       k.groessteAbweichung ? `größte ${formatLaenge(k.groessteAbweichung)}` : `ab ${ABWEICHUNG_SCHWELLE} m`]
   ];
+  /* „Unterschied −374 m“ neben „Lücke 374 m offen“ las sich als Minderlänge,
+     als hätte der Trupp kürzer gebaut. Die Zeile sagt, wo die Meter fehlen:
+     nicht gebaut ist nicht aufgenommen, und das Stück liegt zwischen zwei
+     Abschnitten. */
+  const lueckenZeile = k.bauluecken.length
+    ? `<p class="bl-luecke">${k.bauluecken.map(l => {
+        const a = bauabschnittById(strecke, l.von.abschnitt), b = bauabschnittById(strecke, l.bis.abschnitt);
+        const wo = a && b && a.id !== b.id
+          ? `zwischen den Abschnitten ${escapeHtml(a.trupp || a.name)} und ${escapeHtml(b.trupp || b.name)}`
+          : 'zwischen zwei aufgenommenen Punkten';
+        return `<b>Lücke ${wo}:</b> ${escapeHtml(formatLaenge(l.laenge))} nicht aufgenommen – ` +
+          'kein Minderbau, sondern noch offen.';
+      }).join(' ')}</p>` : '';
   return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>
     `<div class="kz"><span class="kz-titel">${escapeHtml(t)}</span>` +
     `<span class="kz-wert">${escapeHtml(w)}</span>` +
-    `<span class="kz-unter">${escapeHtml(u)}</span></div>`).join('')}</div>`;
+    `<span class="kz-unter">${escapeHtml(u)}</span></div>`).join('')}</div>${lueckenZeile}`;
 }
 
 /* Die Karte des Blattes: die gebaute Trasse kräftig, die geplante daneben.
@@ -3884,6 +4012,18 @@ function materialbogenZeilenHTML(s) {
   const summe = materialSumme(s);
   const soll = materialSoll(kennzahlen(s));
   const zeilen = [];
+  /* Mit mehr als einem Abschnitt, der Material eingetragen hat, steht unter
+     der Summe, wer wie viel verbraucht hat: die Summe allein ließ bei zwei
+     Trupps nicht erkennen, wessen Trommel fehlt. Eine Zeile je Abschnitt unter
+     dem Artikel und nicht eine Spalte je Abschnitt – die Tabelle ist auf A4
+     hoch ausgemessen, und die Zahl der Trupps ist nicht begrenzt. */
+  const mitMaterial = new Set(materialzeilen(s).filter(z => Number.isFinite(z.menge))
+    .map(z => z.abschnitt || null));
+  const aufteilen = mitMaterial.size > 1;
+  const abschnittName = aid => {
+    const a = aid ? bauabschnittById(s, aid) : null;
+    return a ? (a.trupp || a.name) : 'ohne Abschnitt';
+  };
   for (const gruppe of MATERIALGRUPPEN) {
     for (const eintrag of MATERIALKATALOG.filter(m => m.gruppe === gruppe.id)) {
       if (eintrag.mehrfach) continue;
@@ -3893,6 +4033,11 @@ function materialbogenZeilenHTML(s) {
         (soll && soll.artikel === eintrag.id)
           ? mengeMitEinheit(Math.round(soll.menge), eintrag.einheit) : '–',
         bemerkungenZu(s, eintrag.id)]);
+      if (!aufteilen) continue;
+      for (const z of materialzeilen(s).filter(x => x.artikel === eintrag.id && Number.isFinite(x.menge))) {
+        zeilen.push(['', `davon ${abschnittName(z.abschnitt || null)}`,
+          mengeMitEinheit(z.menge, eintrag.einheit), '', z.bemerkung || '', true]);
+      }
     }
   }
   /* Die freien Zeilen stehen am Ende und tragen ihre Bezeichnung in der
@@ -3902,10 +4047,10 @@ function materialbogenZeilenHTML(s) {
       Number.isFinite(z.menge) ? mengeMitEinheit(z.menge, '') : '–', '–', '']);
   }
   if (!zeilen.length) return leerzeile(5, 'Kein Material eingetragen.');
-  return zeilen.map(([g, a, ist, sollText, bem]) => `<tr>
+  return zeilen.map(([g, a, ist, sollText, bem, unter]) => `<tr${unter ? ' class="mat-unter"' : ''}>
     <td>${escapeHtml(g)}</td>
-    <td>${escapeHtml(a)}</td>
-    <td class="zahl"><b>${escapeHtml(ist)}</b></td>
+    <td${unter ? ' class="mat-einzug"' : ''}>${escapeHtml(a)}</td>
+    <td class="zahl">${unter ? escapeHtml(ist) : `<b>${escapeHtml(ist)}</b>`}</td>
     <td class="zahl">${escapeHtml(sollText)}</td>
     <td>${escapeHtml(bem)}</td>
   </tr>`).join('');
@@ -3950,7 +4095,11 @@ function nachtragHTML(eintrag) {
   const d = new Date(eintrag.nachgetragen);
   const wann = Number.isNaN(d.getTime()) ? ''
     : ' ' + d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-  return `<span class="bd-nachtrag">nachgetragen${escapeHtml(wann)}</span>`;
+  /* Ohne Uhrzeit steht in der Zeile sonst gar kein Tag – nur der Tag der
+     Abschrift, und der ist nicht der Bautag. */
+  const [, m, tg] = String(eintrag.nachtragTag || '').split('-');
+  const bautag = !eintrag.zeit && m && tg ? ` · Bautag ${tg}.${m}.` : '';
+  return `<span class="bd-nachtrag">nachgetragen${escapeHtml(wann + bautag)}</span>`;
 }
 
 /* Messungen und Sprechproben je Leitungsstamm, darunter die Übergabe. Ohne

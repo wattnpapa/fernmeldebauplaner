@@ -15,9 +15,18 @@
    falsch verschmolzene Trasse ist schlimmer als zwei, zwischen denen jemand
    entscheidet. Eine Baumeldung ERSETZT genau die Bauabschnitte, die sie nennt,
    und rührt die Soll-Geometrie nicht an. Wo zwei Meldungen denselben
-   Bauabschnitt betreffen, wird gefragt. */
+   Bauabschnitt betreffen, wird gefragt.
 
-import { bauNormalisieren, BAUSTAENDE, id as neueKennung } from './state.js';
+   Zwei Ausnahmen, beide eng geschnitten: die Prüfung wird je Stamm
+   zusammengeführt, mit und ohne Bauabschnitt (`pruefungZusammenfuehren`), und
+   was der Planer vom Papier abgeschrieben hat, bleibt beim Ersetzen eines
+   Abschnitts stehen (`papierBehalten`). In beiden Fällen gäbe es sonst nur die
+   Wahl zwischen Verlust und Verschmelzen, und die Meldung des Geräts weiß
+   von beidem nichts. */
+
+import {
+  bauNormalisieren, BAUSTAENDE, id as neueKennung, neuerBauabschnitt, bauBegonnen
+} from './state.js';
 import {
   bauabschnitte, istPunkte, baukennzahlen, abstandZurLinie, ABSEITS_SCHWELLE
 } from './baudoku.js';
@@ -92,7 +101,8 @@ export function befund(projekt, meldung, zuordnung) {
   return (meldung.strecken || []).map((m, i) => {
     /* Hat der Planer „als eigenen Bauabschnitt“ gewählt, wird die Meldung
        genau so gerechnet, wie sie eingespielt würde. */
-    const alsEigener = !!(zuordnung && zuordnung.eigenerAbschnitt && zuordnung.eigenerAbschnitt[i]);
+    const wahl = wahlVon(zuordnung, i);
+    const alsEigener = wahl.alsEigener;
     if (alsEigener) m = alsEigenerAbschnitt(m, meldung.von);
     const zielId = zuordnung ? zuordnung[i] : undefined;
     const ziel = zielId === null ? null
@@ -101,8 +111,13 @@ export function befund(projekt, meldung, zuordnung) {
        später herstellt – sonst sähe die Vorschau leere Namen, meldete nie eine
        Kollision und zeigte „0 weichen“, während das Einspielen sehr wohl
        etwas ersetzte. */
-    const abschnitteDerMeldung = ((m.bau && m.bau.abschnitte) || [])
-      .map((a, n) => String((a && a.name) || `Bauabschnitt ${n + 1}`));
+    /* Und die Abschnitte desselben Trupps, die hier unter anderem Namen
+       stehen, tragen den Namen, den sie HIER haben (`abschnittZuordnen`) –
+       sonst zählte die Vorschau einen dritten Abschnitt, den das Einspielen
+       nie anlegt. */
+    const rohAbschnitte = (m.bau && Array.isArray(m.bau.abschnitte)) ? m.bau.abschnitte : [];
+    const abschnitteDerMeldung = abschnittZuordnen(ziel ? bauabschnitte(ziel) : [], rohAbschnitte)
+      .map(e => e.name);
     const ganzeStrecke = abschnitteDerMeldung.length === 0;
     const unzugeordnet = m.bau ? zaehleOhneAbschnitt(m.bau) : 0;
 
@@ -153,15 +168,19 @@ export function befund(projekt, meldung, zuordnung) {
        übereinstimmte – im Audit genau die BERICHTIGTE Meldung, in der der
        Trupp 31.200 m auf 3.120 m korrigiert hatte. „Verwerfen genügt“ stand
        darüber, und der Zahlendreher blieb in der Dokumentation. */
-    const versuch = ziel ? probeEinspielen(ziel, m) : null;
+    const versuch = ziel ? probeEinspielen(ziel, m, ctxVon(meldung, wahl)) : null;
     const probe = versuch ? versuch.kopie : null;
     const schonDa = !!(probe && bauAbdruck(ziel) && bauAbdruck(probe) === bauAbdruck(ziel));
     /* Ohne Bauabschnitt und von einem anderen Absender sagen zwei Zeitpunkte
        nichts über „älter“: es sind die Aufnahmen zweier Trupps, und welcher
        zuletzt getippt hat, macht den anderen nicht veraltet. Was dabei weicht,
        nennt die Verlustzeile mit dem Namen des anderen Absenders. */
+    /* Verglichen wird der Trupp und nicht der Truppführer: wechselt in der
+       Schicht nur der Führer, ist es dieselbe Aufnahme eines Trupps – im Audit
+       bot der Dialog dafür „als eigenen Bauabschnitt“ an, und die Punkte
+       standen doppelt da. Der Wechsel bleibt sichtbar (`fuehrerWechsel`). */
     const andererAbsender = ganzeStrecke && !!ziel && !!ziel.bau && !!ziel.bau.gemeldetVon &&
-      !!meldung.von && !gleicherAbsender(ziel.bau.gemeldetVon, meldung.von);
+      !!meldung.von && !gleicherTrupp(ziel.bau.gemeldetVon, meldung.von);
     const aelter = !schonDa && !andererAbsender &&
       !!(standMeldung && standHier && standMeldung < standHier);
     /* Was danach nicht mehr dasteht – gezählt über den Inhalt der Einträge und
@@ -237,7 +256,35 @@ export function befund(projekt, meldung, zuordnung) {
       ? bauabschnitte(probe).filter(a => !abschnitteDerMeldung.includes(a.name))
         .map(a => a.trupp || a.name) : [];
 
+    /* Der Absender hier und was daraus folgt. `ersteName` ist der Trupp, dessen
+       Aufnahme ohne Abschnitt hier steht und auf Wunsch zum Abschnitt wird
+       (`ersteInAbschnitt`) – nur wenn ein einzelner Absender dahintersteht. */
+    const bisherAbsender = ziel && ziel.bau ? String(ziel.bau.gemeldetVon || '') : '';
+    const ersteName = (alsEigener && ziel && ziel.bau && ohneAbschnitt(ziel.bau) &&
+      bisherAbsender && !bisherAbsender.includes(',') && bisherAbsender !== 'unbekannter Absender' &&
+      !gleicherTrupp(bisherAbsender, meldung.von)) ? absenderTrupp(bisherAbsender) : '';
+    /* Derselbe geplante Punkt, einmal im Abschnitt und einmal daneben ohne
+       Abschnitt: die Aufnahme steht doppelt (im Audit 6 Ist bei 3 Soll). Gezählt
+       wird, was die Meldung NEU so macht; was schon vorher doppelt stand, ist
+       nicht ihre Sache. */
+    const doppeltePunkte = bau => (bau ? bau.punkte || [] : []).filter(u =>
+      nichtZugeordnet(u) && u.sollPunkt &&
+      bau.punkte.some(o => o !== u && !nichtZugeordnet(o) && o.sollPunkt === u.sollPunkt)).length;
+    const verdacht = probe ? Math.max(0, doppeltePunkte(probe.bau) - doppeltePunkte(ziel.bau)) : 0;
+    const hinweisArt = art => (versuch ? versuch.pruefhinweise : []).find(h => h[art]);
+
     return {
+      ersteName, ersteAls: wahl.ersteAlsAbschnitt && !!ersteName,
+      fuehrerWechsel: fuehrerWechsel(bisherAbsender, meldung.von),
+      ohneTrupp: !meldung.von,
+      /* Hier hat ein benannter Trupp gemeldet, und diese Meldung nennt
+         niemanden: weder als eigener Abschnitt noch als Folgemeldung
+         zuzuordnen, und einspielen ersetzte seine Aufnahme. */
+      ohneTruppKonflikt: !meldung.von && ganzeStrecke && !!ziel && !!ziel.bau &&
+        !!bisherAbsender && bisherAbsender !== 'unbekannter Absender' && bauBegonnen(ziel),
+      verdopplung: { entfernt: (hinweisArt('doppeltEntfernt') || { doppeltEntfernt: { punkte: 0, meldungen: 0 } })
+          .doppeltEntfernt, verdacht },
+      papierBehalten: (hinweisArt('papierBehalten') || {}).papierBehalten || null,
       standMeldung, standHier, schonDa, aelter, verloren, geaendert,
       daneben, uebergabeFraglich, neueMeldungen, bisher, danach,
       eigenerAbschnittMoeglich, alsEigener, gedeckelt, offeneAbschnitte,
@@ -295,18 +342,52 @@ const zaehleOhneAbschnitt = bau =>
   (bau.material || []).filter(nichtZugeordnet).length +
   (bau.meldungen || []).filter(nichtZugeordnet).length;
 
+/* Was der Planer im Dialog entschieden hat, als Satz Werte – `zuordnung` ist
+   ein Feld mit der Zielstrecke je Meldung, und die Entscheidungen hängen als
+   Felder daran: `eigenerAbschnitt[i]`, `ersteAlsAbschnitt[i]` und
+   `messung[i]` (Stammschlüssel → Messung dieses Absenders übernehmen). */
+const wahlVon = (zuordnung, i) => ({
+  alsEigener: !!(zuordnung && zuordnung.eigenerAbschnitt && zuordnung.eigenerAbschnitt[i]),
+  ersteAlsAbschnitt: !!(zuordnung && zuordnung.ersteAlsAbschnitt && zuordnung.ersteAlsAbschnitt[i]),
+  messung: (zuordnung && zuordnung.messung && zuordnung.messung[i]) || {}
+});
+const ctxVon = (meldung, wahl) => ({ von: String((meldung && meldung.von) || ''), ...wahl });
+
 /* Das Einspielen an einer Abschrift – dieselben Schritte wie in
    `einspielen()`, nur ohne Folgen. */
-function probeEinspielen(ziel, m) {
+function probeEinspielen(ziel, m, ctx) {
   const kopie = JSON.parse(JSON.stringify(ziel));
+  const getan = anwenden(kopie, m, ctx);
+  if (!getan) return null;
+  return { kopie, frisch: getan.frisch, pruefhinweise: getan.hinweise };
+}
+
+/**
+ * Die eine Stelle, an der eine Meldung auf eine Strecke trifft – für die
+ * Vorschau und für das Einspielen. Zwei Wege, die dasselbe tun sollen, laufen
+ * sonst auseinander: die Vorschau erklärte im Audit ein Ergebnis, das das
+ * Einspielen nie hergestellt hat.
+ *
+ * Zurück kommen die Hinweise, die der Planer lesen muss (Prüfung, Übergabe,
+ * abgeschriebene Einträge, Doppeltes).
+ */
+function anwenden(ziel, m, ctx) {
   const planAbweicht = Number.isInteger(m.sollPunkte) &&
-    m.sollPunkte !== (kopie.punkte || []).length;
-  const frisch = aufloesen(kopie, m, planAbweicht);
+    m.sollPunkte !== (ziel.punkte || []).length;
+  /* Die erste Meldung ohne Abschnitt wird VOR dem Auflösen in einen Abschnitt
+     ihres Absenders gestellt: danach gibt es sie als Abschnitt, und die
+     nächste Meldung dieses Trupps findet ihn wieder. */
+  if (ctx.ersteAlsAbschnitt) ersteInAbschnitt(ziel);
+  /* Wer vorher gemeldet hat, wird gemerkt, bevor die Strecke sich ändert. */
+  const gleich = !!(ctx.von && ziel.bau && ziel.bau.gemeldetVon &&
+    gleicherTrupp(ziel.bau.gemeldetVon, ctx.von));
+  const frisch = aufloesen(ziel, m, planAbweicht);
   if (!frisch) return null;
-  let pruefhinweise = [];
-  if (!frisch.abschnitte.length) ganzeStreckeErsetzen(kopie, frisch);
-  else pruefhinweise = abschnitteErsetzen(kopie, frisch);
-  return { kopie, pruefhinweise };
+  const c = { ...ctx, gleich };
+  const hinweise = !frisch.abschnitte.length
+    ? ganzeStreckeErsetzen(ziel, frisch, c)
+    : abschnitteErsetzen(ziel, frisch, { ...c, ersetzeOhne: ctx.alsEigener && gleich });
+  return { frisch, hinweise };
 }
 
 /* Ein Eintrag ohne das, was beim Einspielen neu vergeben wird: Kennungen und
@@ -421,6 +502,35 @@ export function gleicherAbsender(a, b) {
 }
 
 /**
+ * Derselbe TRUPP, gleich wer ihn führt?
+ *
+ * Für die Frage „ist das eine andere Aufnahme als die hier?“ zählt der Trupp.
+ * Wechselt in der Schicht nur der Truppführer, baut weiter derselbe Trupp an
+ * derselben Strecke – im Audit galt er als anderer Absender, der Dialog bot
+ * „als eigenen Bauabschnitt“ an, und dieselben Punkte standen doppelt da. Der
+ * Wechsel selbst bleibt sichtbar (`fuehrerWechsel`).
+ */
+export function gleicherTrupp(a, b) {
+  const teile = t => String(t || '').split(',')
+    .map(x => x.split(' · ')[0].trim().toLowerCase()).filter(Boolean);
+  const x = teile(a), y = teile(b);
+  if (!x.length || !y.length) return !x.length && !y.length;
+  return x.length === y.length && x.every(p => y.includes(p));
+}
+
+/* Der Trupp am Anfang einer Absenderangabe – „1. FmTr“ aus „1. FmTr · Krause“ */
+const absenderTrupp = von => String(von || '').split(',')[0].split(' · ')[0].trim();
+
+/** Wechselt bei gleichem Trupp der Truppführer? `{ alt, neu }` oder `null`. */
+export function fuehrerWechsel(bisher, jetzt) {
+  const teile = t => String(t || '').split(',')[0].split(' · ').map(x => x.trim());
+  if (!bisher || !jetzt || String(bisher).includes(',') || String(jetzt).includes(',')) return null;
+  const [t1, f1 = ''] = teile(bisher), [t2, f2 = ''] = teile(jetzt);
+  if (!t1 || t1.toLowerCase() !== t2.toLowerCase() || !f1 || !f2) return null;
+  return f1.toLowerCase() === f2.toLowerCase() ? null : { alt: f1, neu: f2 };
+}
+
+/**
  * Eine Meldung ohne Bauabschnitt als eigenen Abschnitt ihres Absenders.
  *
  * Alles, was sie ohne Abschnitt mitbringt, wird diesem zugeordnet; danach
@@ -448,6 +558,89 @@ export function alsEigenerAbschnitt(m, von) {
   return kopie;
 }
 
+/**
+ * Die Aufnahme ohne Bauabschnitt, die hier steht, rückwirkend zum Abschnitt
+ * ihres Absenders machen.
+ *
+ * Zwei Trupps ohne Abschnitt (die einfache Ansicht kennt „Auftrag an“ nicht):
+ * kommt die zweite Meldung als eigener Abschnitt herein, stünde die erste
+ * weiter ohne Abschnitt da – und eine Folgemeldung des ersten Trupps hätte
+ * entweder den Abschnitt des zweiten überschrieben oder die eigenen Punkte
+ * verdoppelt (6 Ist bei 3 Soll, ohne ein Wort). Mit dem Abschnitt hat jeder
+ * Trupp sein Feld, und die nächste Meldung findet es wieder.
+ *
+ * Es geht nur, wenn EIN Absender dahintersteht: bei „1. FmTr, 2. FmTr“ oder
+ * ohne Namen wäre der Abschnitt geraten.
+ */
+function ersteInAbschnitt(ziel) {
+  const bau = ziel.bau;
+  if (!bau || !ohneAbschnitt(bau)) return null;
+  const von = String(bau.gemeldetVon || '');
+  const trupp = absenderTrupp(von);
+  if (!trupp || von.includes(',') || von === 'unbekannter Absender') return null;
+  if (!Array.isArray(bau.abschnitte)) bau.abschnitte = [];
+  let a = bau.abschnitte.find(x => x.name === trupp || (x.trupp && gleicherTrupp(x.trupp, trupp)));
+  if (!a) {
+    a = neuerBauabschnitt(bau);
+    a.name = trupp; a.trupp = trupp;
+    a.fuehrer = (von.split(' · ')[1] || '').trim();
+    bau.abschnitte.push(a);
+  }
+  for (const feld of ['punkte', 'material', 'meldungen']) {
+    for (const x of Array.isArray(bau[feld]) ? bau[feld] : []) {
+      if (x && nichtZugeordnet(x)) x.abschnitt = a.id;
+    }
+  }
+  return a;
+}
+
+/**
+ * Soll „als eigenen Bauabschnitt einspielen“ schon gewählt sein?
+ *
+ * Ja, wenn es den Abschnitt dieses Absenders hier gibt – dann hat der Planer
+ * es bei der vorigen Meldung so entschieden –, und ja, wenn hier die Aufnahme
+ * eines ANDEREN Trupps ohne Abschnitt steht: ohne das Häkchen ersetzte die
+ * Meldung sie, und der Hauptknopf hieß „Verwerfen“. Im Audit setzte das
+ * Folgemeldungen des ersten Trupps ebenso auf „aus“ und löschte den zweiten.
+ */
+export function eigenerVorgabe(projekt, meldung, i, zielId) {
+  const m = (meldung.strecken || [])[i];
+  if (!m || ((m.bau && m.bau.abschnitte) || []).length) return false;
+  const ziel = zielId === null ? null
+    : (projekt.strecken || []).find(s => s.id === zielId) || vorschlag(projekt, m.name);
+  const von = String(meldung.von || '');
+  const trupp = absenderTrupp(von);
+  if (!ziel || !trupp) return false;
+  if (bauabschnitte(ziel).some(a => a.name === trupp || (a.trupp && gleicherTrupp(a.trupp, trupp)))) {
+    return true;
+  }
+  const hier = ziel.bau && ziel.bau.gemeldetVon;
+  return !!hier && hier !== 'unbekannter Absender' && !gleicherTrupp(hier, von) && bauBegonnen(ziel);
+}
+
+// ---------------------------------------------------- Rückgabe-Codes je Absender
+
+/* Je Absender der zuletzt eingespielte Code, als Zeilen „CODE Absender“ in
+   `bau.gemeldetCodes`. Ein Feld je Strecke ließ zwei Trupps einander den Code
+   überschreiben – fragte der erste später über Funk „ist JE2F angekommen?“,
+   stand dort der des zweiten. Älter als sechs Absender werden vergessen. */
+const MAX_CODES = 6;
+
+export function codesLesen(bau) {
+  const zeilen = String((bau && bau.gemeldetCodes) || '').split('\n')
+    .map(z => z.trim()).filter(Boolean)
+    .map(z => ({ code: z.slice(0, 4), von: z.slice(4).trim() }));
+  if (!zeilen.length && bau && bau.gemeldetCode) zeilen.push({ code: bau.gemeldetCode, von: '' });
+  return zeilen;
+}
+
+export function codesVermerken(bau, code, von) {
+  const nr = absenderTrupp(von);
+  const liste = codesLesen(bau).filter(z => !(nr ? gleicherTrupp(z.von, von) : !z.von));
+  liste.push({ code, von: nr ? String(von).slice(0, 50) : '' });
+  return liste.slice(-MAX_CODES).map(z => (z.code + ' ' + z.von).trim()).join('\n');
+}
+
 /** Hängt an diesem Bauabschnitt überhaupt etwas? */
 function traegtEintraege(strecke, aid) {
   const bau = strecke.bau;
@@ -469,25 +662,27 @@ function traegtEintraege(strecke, aid) {
  */
 export function einspielen(projekt, meldung, zuordnung) {
   const bericht = { strecken: 0, punkte: 0, bestand: 0, abschnitte: 0, uebersprungen: 0,
-    pruefhinweise: [] };
+    unveraendert: 0, pruefhinweise: [] };
   const code = meldungsCodeAus(meldung);
   (meldung.strecken || []).forEach((m, i) => {
     const zielId = zuordnung ? zuordnung[i] : undefined;
     const ziel = zielId === null ? null
       : (projekt.strecken || []).find(s => s.id === zielId) || vorschlag(projekt, m.name);
     if (!ziel) { bericht.uebersprungen++; return; }
-    if (zuordnung && zuordnung.eigenerAbschnitt && zuordnung.eigenerAbschnitt[i]) {
-      m = alsEigenerAbschnitt(m, meldung.von);
-    }
-
-    const planAbweicht = Number.isInteger(m.sollPunkte) &&
-      m.sollPunkte !== (ziel.punkte || []).length;
-    const frisch = aufloesen(ziel, m, planAbweicht);
-    if (!frisch) { bericht.uebersprungen++; return; }
+    const wahl = wahlVon(zuordnung, i);
+    if (wahl.alsEigener) m = alsEigenerAbschnitt(m, meldung.von);
 
     const vorher = istPunkte(ziel).length;
-    if (!frisch.abschnitte.length) ganzeStreckeErsetzen(ziel, frisch);
-    else bericht.pruefhinweise.push(...abschnitteErsetzen(ziel, frisch));
+    const abdruckVorher = bauAbdruck(ziel);
+    /* Die Codes der anderen Absender gehören der Strecke und nicht dem Bogen:
+       bei der Meldung ohne Abschnitt tritt der ganze Bogen an die Stelle des
+       alten und brächte sie nicht mit. Deshalb vorher gemerkt. */
+    const codesAlt = { gemeldetCode: ziel.bau && ziel.bau.gemeldetCode,
+      gemeldetCodes: ziel.bau && ziel.bau.gemeldetCodes };
+    const getan = anwenden(ziel, m, ctxVon(meldung, wahl));
+    if (!getan) { bericht.uebersprungen++; return; }
+    const frisch = getan.frisch;
+    bericht.pruefhinweise.push(...getan.hinweise);
     /* Der Absender bleibt an der Strecke stehen: die Streckenliste nennt ihn,
        und die nächste Meldung sagt damit, WESSEN Aufnahme sie ersetzt. */
     /* Ohne Absender steht das auch so da: ein leeres Feld ließ die nächste
@@ -496,10 +691,14 @@ export function einspielen(projekt, meldung, zuordnung) {
     /* Und der Rückgabe-Code, gerechnet über die Meldung, wie sie ankam – derselbe,
        den der Trupp am Gerät sieht. Er steht danach an der Strecke neben
        „zuletzt“, damit eine Nachfrage über Funk auch Stunden später noch zu
-       beantworten ist. */
+       beantworten ist. `gemeldetCode` ist der jüngste, `gemeldetCodes` hält
+       einen je Absender: zwei Trupps an einer Strecke überschrieben sonst
+       einander den Code. */
     ziel.bau.gemeldetCode = code;
+    ziel.bau.gemeldetCodes = codesVermerken(codesAlt, code, meldung.von);
 
     bericht.strecken++;
+    if (abdruckVorher && bauAbdruck(ziel) === abdruckVorher) bericht.unveraendert++;
     /* Gezählt wird, was danach WIRKLICH in der Planung steht, und nicht, was die
        Meldung mitbrachte. Beides auseinanderlaufen zu lassen wäre die
        schlimmste Sorte Fehler: der Planer läse „7 Punkte eingespielt“ und hätte
@@ -509,6 +708,41 @@ export function einspielen(projekt, meldung, zuordnung) {
     bericht.abschnitte += frisch.abschnitte.length;
   });
   return bericht;
+}
+
+/**
+ * Welcher hiesige Bauabschnitt ist der der gemeldeten?
+ *
+ * Zuerst über den Namen. Trägt keiner den Namen, dann über den Trupp – aber nur,
+ * wenn es hier genau EINEN freien Abschnitt dieses Trupps gibt: das Gerät legt
+ * „Bauabschnitt 1“ an, der Planer hat dieselbe Aufnahme vom Papier unter
+ * „Nord“ abgeschrieben, beide nennen „Trupp Nord“. Ohne den zweiten Schritt
+ * entstand ein dritter Abschnitt desselben Trupps, und die Baudokumentation
+ * führte ihn doppelt. Sind es zwei, wird nicht geraten.
+ *
+ * Zurück kommt je Abschnitt der Meldung `{ name, alt }`; `name` ist der, den der
+ * Abschnitt danach trägt – bei einem Treffer über den Trupp der hiesige.
+ */
+function abschnittZuordnen(vorhandene, roh) {
+  const vergeben = new Set();
+  const liste = roh.map((a, n) => {
+    const name = String((a && a.name) || `Bauabschnitt ${n + 1}`);
+    const alt = vorhandene.find(x => x.name === name && !vergeben.has(x.id)) || null;
+    if (alt) vergeben.add(alt.id);
+    return { name, alt };
+  });
+  liste.forEach((e, n) => {
+    const trupp = roh[n] && roh[n].trupp;
+    if (e.alt || !trupp) return;
+    const gleichnamig = roh.filter(r => r && r.trupp && gleicherTrupp(r.trupp, trupp)).length;
+    const frei = vorhandene.filter(x => !vergeben.has(x.id) && x.trupp && gleicherTrupp(x.trupp, trupp));
+    if (gleichnamig === 1 && frei.length === 1) {
+      vergeben.add(frei[0].id);
+      e.alt = frei[0];
+      e.name = frei[0].name;
+    }
+  });
+  return liste;
 }
 
 /**
@@ -540,18 +774,16 @@ function aufloesen(ziel, m, planAbweicht) {
 
      Ein vorhandener Abschnitt gleichen Namens gibt seine Kennung her: sonst
      hinge alles, was beim Planer sonst noch auf ihn zeigt, in der Luft. */
-  const vorhandene = bauabschnitte(ziel);
-  const vergeben = new Set();
+  const zuordnungen = abschnittZuordnen(bauabschnitte(ziel), abschnitte);
   abschnitte.forEach((a, n) => {
     /* Der Name wird festgeschrieben, BEVOR gesucht wird, und zwar genauso, wie
        `bauNormalisieren()` ihn gleich darauf herstellen wird. Sonst suchte
        diese Zeile mit einem leeren Namen, fände nichts, und der Namensvergleich
        in `abschnitteErsetzen()` träfe eine Zeile später doch – auf eine andere
        Kennung. Der Bogen beider Trupps wäre dann weg. */
-    a.name = String((a && a.name) || `Bauabschnitt ${n + 1}`);
-    const alt = vorhandene.find(x => x.name === a.name && !vergeben.has(x.id));
-    if (alt) vergeben.add(alt.id);
-    a.id = alt ? alt.id : (a.id || neueKennung());
+    const z = zuordnungen[n];
+    a.name = z.name;
+    a.id = z.alt ? z.alt.id : (a.id || neueKennung());
   });
 
   /* Weicht die Zahl der geplanten Punkte ab, hat jemand eingefügt oder gelöscht,
@@ -619,18 +851,28 @@ function istPunkteOrdnen(ziel, punkte) {
 
 /* Eine Meldung ohne Bauabschnitt betrifft die ganze Strecke: ein Trupp, eine
    Trasse. Dann tritt ihr Bogen an die Stelle des vorhandenen – alles andere
-   liefe darauf hinaus, zwei Bögen zu verschmelzen. */
-function ganzeStreckeErsetzen(ziel, frisch) {
+   liefe darauf hinaus, zwei Bögen zu verschmelzen.
+
+   Mit einer Ausnahme: die Prüfung gehört der Leitung und nicht dem Bogen, und
+   dieselbe Je-Stamm-Regel wie bei der Teilmeldung gilt auch hier
+   (`pruefungZusammenfuehren`): im Audit ersetzte die Meldung ohne Abschnitt den
+   ganzen Bogen samt Prüfung, ein durchgefallener Stamm verschwand hinter einem
+   „bestanden nach Reparatur“ des zweiten Trupps, und im Gegenfall stand
+   „übergeben“ neben „Prüfung nicht bestanden“. */
+function ganzeStreckeErsetzen(ziel, frisch, ctx = {}) {
+  const alt = ziel.bau;
   ziel.bau = frisch;
+  return pruefungZusammenfuehren(frisch, frisch, ctx, alt ? alt.pruefung : null, true);
 }
 
 /* Eine Meldung MIT Bauabschnitten ersetzt genau die, die sie nennt. Was beim
    Planer an anderen Abschnitten hängt, bleibt unangetastet – das ist der ganze
    Zweck der Abschnitte: dass zwei Trupps nie in dasselbe Feld schreiben. */
-function abschnitteErsetzen(ziel, frisch) {
+function abschnitteErsetzen(ziel, frisch, ctx = {}) {
   const bau = ziel.bau || (ziel.bau = bauNormalisieren({}));
   const betroffen = new Set();
   const vergeben = new Set();
+  const paare = [];
 
   for (const neu of frisch.abschnitte) {
     /* Jeder vorhandene Abschnitt wird höchstens EINMAL vergeben: trüge eine
@@ -640,9 +882,7 @@ function abschnitteErsetzen(ziel, frisch) {
     if (alt) {
       vergeben.add(alt.id);
       betroffen.add(alt.id);
-      /* Die Farbe bleibt die des Planers: an ihr hängt die Karte, die er vor
-         sich hat, und der Trupp hat sie nie gesehen. */
-      Object.assign(alt, neu, { id: alt.id, farbe: alt.farbe });
+      paare.push({ alt, neu, vorher: { ...alt } });
     } else {
       betroffen.add(neu.id);
       bau.abschnitte.push(neu);
@@ -659,20 +899,58 @@ function abschnitteErsetzen(ziel, frisch) {
      ergänzt. Sonst stünde nach einem zweiten Einspielen derselben Meldung alles
      doppelt da – und eine Meldung zweimal einzuspielen ist am Bauort
      wahrscheinlicher als zwei Trupps, die beide nichts zuordnen. Die Vorschau
-     nennt diesen Bestand eigens. */
-  if (ohneAbschnitt(frisch)) betroffen.add(null);
+     nennt diesen Bestand eigens.
 
-  bau.punkte = (bau.punkte || []).filter(pt => !betroffen.has(pt.abschnitt))
-    .concat(frisch.punkte.filter(pt => betroffen.has(pt.abschnitt)));
-  bau.material = (bau.material || []).filter(z => !betroffen.has(z.abschnitt))
-    .concat(frisch.material.filter(z => betroffen.has(z.abschnitt)));
-  bau.meldungen = (bau.meldungen || []).filter(mm => !betroffen.has(mm.abschnitt))
-    .concat(frisch.meldungen.filter(mm => betroffen.has(mm.abschnitt)));
-  bau.punkte = istPunkteOrdnen(ziel, bau.punkte);
+     Ebenso, wenn dieselbe Aufnahme als eigener Abschnitt hereinkommt
+     (`ersetzeOhne`): was derselbe Trupp zuvor ohne Abschnitt gemeldet hat, ist
+     der ältere Stand DESSELBEN Bogens und geht in den Abschnitt über, statt
+     neben ihm zu stehen. */
+  if (ohneAbschnitt(frisch) || ctx.ersetzeOhne) betroffen.add(null);
+
+  const behalten = papierBehalten(bau, frisch, betroffen);
+
+  /* Dieselbe Aufnahme, die hier schon ohne Abschnitt steht, wird nicht
+     doppelt geführt – bei einer Folgemeldung nach „als eigenen Abschnitt“ der
+     Fall, wenn der Bestand dem Absender nicht (mehr) zuzuordnen war. Exakt
+     Gleiches fällt weg; Ähnliches nennt der Dialog (`verdopplung`). */
+  let doppelt = { punkte: 0, meldungen: 0 };
+  if (!betroffen.has(null)) {
+    const gleich = (liste, x) => liste.some(n => inhaltVon(n) === inhaltVon(x));
+    const mitPunkten = frisch.punkte.filter(pt => betroffen.has(pt.abschnitt));
+    const mitMeldungen = frisch.meldungen.filter(mm => betroffen.has(mm.abschnitt));
+    const punkteVorher = bau.punkte.length, meldungenVorher = bau.meldungen.length;
+    bau.punkte = bau.punkte.filter(pt => !(nichtZugeordnet(pt) && gleich(mitPunkten, pt)));
+    bau.meldungen = bau.meldungen.filter(mm => !(nichtZugeordnet(mm) && gleich(mitMeldungen, mm)));
+    doppelt = { punkte: punkteVorher - bau.punkte.length,
+      meldungen: meldungenVorher - bau.meldungen.length };
+  }
+
+  bau.punkte = istPunkteOrdnen(ziel, behalten.punkte(bau.punkte, frisch.punkte));
+  bau.material = behalten.material(bau.material, frisch.material);
+  bau.meldungen = behalten.meldungen(bau.meldungen, frisch.meldungen);
+
+  /* Erst jetzt die Abschnitte selbst: ob einer abgeschriebene Einträge trägt,
+     steht erst nach dem Zusammenführen der Listen fest. Trägt er welche, ist
+     die Abschrift die vollständigere Auskunft über Beginn, Ende und Ausfall –
+     das Gerät, das ausfiel, kennt sie nicht –, und leere Felder der Meldung
+     löschen sie nicht. */
+  for (const { alt, neu, vorher } of paare) {
+    /* Die Farbe bleibt die des Planers: an ihr hängt die Karte, die er vor
+       sich hat, und der Trupp hat sie nie gesehen. */
+    Object.assign(alt, neu, { id: alt.id, farbe: alt.farbe });
+    if (behalten.abschnitte.has(alt.id)) {
+      for (const f of ['trupp', 'fuehrer', 'beginn', 'ende', 'ausfallZeit', 'ausfallNach',
+        'vonPunkt', 'bisPunkt']) {
+        if (!alt[f] && vorher[f]) alt[f] = vorher[f];
+      }
+    }
+  }
 
   bau.stand = standNachTeilmeldung(bau.stand, frisch.stand);
 
-  const hinweise = pruefungZusammenfuehren(bau, frisch);
+  const hinweise = pruefungZusammenfuehren(bau, frisch, ctx, bau.pruefung, false);
+  if (behalten.zahl) hinweise.push({ papierBehalten: behalten.zahl });
+  if (doppelt.punkte || doppelt.meldungen) hinweise.push({ doppeltEntfernt: doppelt });
 
   /* Zwei Abweichungsmeldungen werden aneinandergehängt und nicht ersetzt: was
      der eine Trupp gemeldet hat, geht den anderen nichts an, und der S 6
@@ -684,12 +962,89 @@ function abschnitteErsetzen(ziel, frisch) {
   return hinweise;
 }
 
+/**
+ * Was vom Papier abgeschrieben wurde, bleibt beim Ersetzen eines Abschnitts.
+ *
+ * Fällt das Gerät eines Trupps aus (Schema 19), schreibt der Planer den Rest
+ * vom Baunachweis ab; später meldet das Gerät doch noch seinen Teil – die
+ * Punkte VOR dem Ausfall. Ersetzte die Meldung den Abschnitt wie gewohnt,
+ * nähme sie die abgeschriebenen Punkte, Meldungen und die 620 m Kabel heraus,
+ * und die Warnung darüber hieß „beim Trupp nachfragen“ – der hat sie nie
+ * gesehen. Behalten wird deshalb, was `nachgetragen` trägt, und je Eintrag mit
+ * der Meldung zusammengeführt:
+ *
+ *  - Punkte mit demselben geplanten Punkt: das Gerät gewinnt nur mit der
+ *    späteren Zeit, sonst bleibt die Abschrift. Ein Punkt ohne Planbezug
+ *    (ein Mast) ist derselbe, wenn Art und Zeit übereinstimmen.
+ *  - Meldungen mit gleicher Zeit und gleichem Wortlaut sind eine.
+ *  - Material: der Abschnitt hat Abschriften, also gilt seine Menge – das
+ *    Gerät, das ausfiel, hat nach dem Ausfall nichts mehr gezählt. Ein Artikel,
+ *    den nur die Abschrift kennt, bleibt; hat die Abschrift keine Menge, gilt
+ *    die des Geräts. Material trägt keine Marke `nachgetragen`, der Abschnitt
+ *    gilt als abgeschrieben, sobald ein Punkt oder eine Meldung es ist.
+ *
+ * Geliefert werden Griffe, die der Aufrufer in der Reihenfolge seiner Schritte
+ * auf die Listen anwendet (alte Liste, Liste der Meldung → neue Liste).
+ */
+function papierBehalten(bau, frisch, betroffen) {
+  const abschnitte = new Set();
+  const zahl = { punkte: 0, meldungen: 0, material: 0 };
+  const hierP = (bau.punkte || []).filter(x => betroffen.has(x.abschnitt) && x.nachgetragen);
+  const hierM = (bau.meldungen || []).filter(x => betroffen.has(x.abschnitt) && x.nachgetragen);
+  const neuP = (frisch.punkte || []).filter(x => betroffen.has(x.abschnitt));
+  const neuM = (frisch.meldungen || []).filter(x => betroffen.has(x.abschnitt));
+  const behaltenP = [], behaltenM = [], ersetzt = new Map();
+  for (const k of hierP) {
+    const gegen = k.sollPunkt
+      ? neuP.findIndex(n => n.sollPunkt === k.sollPunkt && n.abschnitt === k.abschnitt)
+      : neuP.findIndex(n => !n.sollPunkt && n.zeit && n.zeit === k.zeit && n.art === k.art &&
+          n.abschnitt === k.abschnitt);
+    if (gegen >= 0) {
+      /* Das Gerät gewinnt nur mit der späteren Zeit – bei Gleichstand ist es
+         derselbe Eintrag, und der steht schon in der Meldung. */
+      if (!k.sollPunkt || (neuP[gegen].zeit || '') >= (k.zeit || '')) continue;
+      ersetzt.set(neuP[gegen], k);
+    } else behaltenP.push(k);
+    abschnitte.add(k.abschnitt);
+    zahl.punkte++;
+  }
+  for (const k of hierM) {
+    if (neuM.some(n => n.zeit === k.zeit && n.text === k.text)) continue;
+    behaltenM.push(k);
+    abschnitte.add(k.abschnitt);
+    zahl.meldungen++;
+  }
+  const schluessel = z =>
+    `${z.artikel}|${z.abschnitt || ''}|${z.artikel === 'sonstiges' ? z.bemerkung : ''}`;
+  return {
+    abschnitte,
+    zahl: (zahl.punkte || zahl.meldungen) ? zahl : null,
+    punkte: (liste, frischeListe) => liste.filter(x => !betroffen.has(x.abschnitt))
+      .concat(frischeListe.filter(x => betroffen.has(x.abschnitt)).map(x => ersetzt.get(x) || x),
+        behaltenP),
+    meldungen: (liste, frischeListe) => liste.filter(x => !betroffen.has(x.abschnitt))
+      .concat(frischeListe.filter(x => betroffen.has(x.abschnitt)), behaltenM),
+    material: (liste, frischeListe) => {
+      const neu = frischeListe.filter(z => betroffen.has(z.abschnitt));
+      const hier = (liste || []).filter(z => abschnitte.has(z.abschnitt));
+      const zeilen = neu.map(z => {
+        const h = hier.find(x => schluessel(x) === schluessel(z));
+        return h && h.menge !== null && h.menge !== undefined ? h : z;
+      });
+      for (const h of hier) if (!neu.some(z => schluessel(z) === schluessel(h))) zeilen.push(h);
+      zahl.material = hier.length;
+      return (liste || []).filter(z => !betroffen.has(z.abschnitt)).concat(zeilen);
+    }
+  };
+}
+
 /* Ein Prüfergebnis in Worten, für die Hinweise des Empfangsdialogs */
 const ergebnisWort = z => z.bestanden === false ? 'durchgefallen'
   : z.bestanden === true ? 'bestanden' : 'offen';
 
 /**
- * Prüfung und Übergabe einer Teilmeldung mit dem Stand hier zusammenführen.
+ * Prüfung und Übergabe einer Meldung mit dem Stand hier zusammenführen –
+ * mit oder ohne Bauabschnitt.
  *
  * Prüfung und Übergabe gehören der ganzen Leitung und nicht einem Abschnitt.
  * Bisher trug eine Teilmeldung sie nur ein, wo beim Planer noch nichts stand –
@@ -698,59 +1053,119 @@ const ergebnisWort = z => z.bestanden === false ? 'durchgefallen'
  * Meldung verschwand ohne ein Wort; die Baudokumentation druckte „bestanden,
  * übergeben“ über einer Leitung, die nicht ging.
  *
- * Jetzt je Stamm, mit zwei Regeln: ein „durchgefallen“ gewinnt immer gegen
- * „bestanden“ – wer eine Leitung für gut hält, die ein anderer gerade als
- * schlecht gemessen hat, übergibt sonst eine kaputte –, und sonst ersetzt die
- * neuere Messung desselben Stammes die ältere. Ein gemeldetes „bestanden“
- * gegen ein „durchgefallen“ hier wird NICHT übernommen, sondern genannt: ob
- * repariert und neu gemessen wurde, weiß nur der Trupp.
+ * Jetzt je Stamm, mit drei Regeln:
+ *
+ *  1. Eine Nachmessung DESSELBEN Trupps ersetzt seine frühere Messung, wie
+ *     auch immer sie ausfiel. Wer eine durchgefallene Leitung repariert und neu
+ *     misst, meldet „bestanden“ – und das darf nicht an der eigenen alten
+ *     Messung scheitern, sonst ist die Übergabe nie zu erreichen.
+ *  2. Sonst gewinnt ein „durchgefallen“ immer gegen „bestanden“: wer eine
+ *     Leitung für gut hält, die ein anderer gerade als schlecht gemessen hat,
+ *     übergibt sonst eine kaputte.
+ *  3. Sonst ersetzt die neuere Messung desselben Stammes die ältere.
+ *
+ * Ein gemeldetes „bestanden“ eines ANDEREN Trupps gegen ein „durchgefallen“
+ * hier wird nicht übernommen, sondern genannt – ob repariert und neu gemessen
+ * wurde, weiß nur der Trupp; der Planer kann die Messung ausdrücklich
+ * übernehmen (`ctx.messung`).
  *
  * Eine Übergabe setzt eine bestandene Prüfung voraus (3.5). Steht nach dem
- * Zusammenführen ein durchgefallener Stamm da, fällt der Stand von
- * „übergeben“ auf „gebaut“. Wer an wen übergeben hat, bleibt stehen – es ist
- * geschehen und gehört in die Dokumentation, nur gilt es nicht mehr.
+ * Zusammenführen ein durchgefallener Stamm da, wird eine gemeldete Übergabe
+ * nicht übernommen, und der Stand fällt von „übergeben“ auf „gebaut“. Wer an
+ * wen übergeben hat, bleibt stehen, wo es schon dastand – es ist geschehen und
+ * gehört in die Dokumentation, nur gilt es nicht mehr.
+ *
+ * `bau` ist der Bogen, der danach gilt, `hier` die Prüfung, gegen die
+ * zusammengeführt wird. Bei der Meldung ohne Abschnitt (`ganze`) ist `bau` die
+ * Meldung selbst, bei der Teilmeldung der Bogen hier.
  *
  * Zurück kommt, was der Planer lesen muss – je Stamm ein Eintrag.
  */
-function pruefungZusammenfuehren(bau, frisch) {
+function pruefungZusammenfuehren(bau, frisch, ctx, hier, ganze) {
   const hinweise = [];
   const neu = frisch.pruefung;
-  if (!neu) return hinweise;
-  if (!bau.pruefung) {
-    bau.pruefung = neu;
-  } else {
-    const hier = bau.pruefung;
-    const schluessel = z => String((z && z.stamm) || '').trim().toLowerCase();
-    const gemessen = z => z.bestanden !== null || !!String(z.ergebnis || '').trim();
+  const hatUebergabe = pr => !!(pr && (pr.uebergabeAn || pr.uebergabeZeit || pr.uebergabeName));
+  const name = z => String((z && z.stamm) || '').trim();
+  const schluessel = z => name(z).toLowerCase();
+  const gemessen = z => z.bestanden !== null || !!String(z.ergebnis || '').trim();
+  const vonHier = new Set(hier ? hier.staemme : []);
+  let ergebnis = hier || neu || null;
+
+  if (hier && neu) {
     for (const g of neu.staemme || []) {
       const stelle = hier.staemme.findIndex(h => schluessel(h) === schluessel(g));
       if (stelle < 0) { hier.staemme.push(g); continue; }
       const h = hier.staemme[stelle];
-      let nehmen;
-      if (g.bestanden === false && h.bestanden !== false) nehmen = true;
-      else if (h.bestanden === false && g.bestanden !== false) nehmen = false;
-      else if (!gemessen(g)) nehmen = false;
+      let nehmen, fraglich = false, nachmessung = false;
+      if (ctx.gleich && gemessen(g) && gemessen(h) && g.zeit && h.zeit) {
+        nehmen = g.zeit > h.zeit;
+        nachmessung = nehmen;
+      } else if (g.bestanden === false && h.bestanden !== false) nehmen = true;
+      else if (h.bestanden === false && g.bestanden !== false) {
+        nehmen = !!(ctx.messung && ctx.messung[schluessel(g)]);
+        fraglich = g.bestanden === true;
+      } else if (!gemessen(g)) nehmen = false;
       else if (!gemessen(h)) nehmen = true;
       else nehmen = (g.zeit || '') > (h.zeit || '');
       if (ergebnisWort(g) !== ergebnisWort(h)) {
-        hinweise.push({ stamm: String(g.stamm || '').trim() || 'Stamm ohne Namen',
-          hier: ergebnisWort(h), gemeldet: ergebnisWort(g), uebernommen: nehmen });
+        hinweise.push({ stamm: name(g) || 'Stamm ohne Namen', schluessel: schluessel(g),
+          hier: ergebnisWort(h), gemeldet: ergebnisWort(g), uebernommen: nehmen, fraglich,
+          nachmessung });
       }
       if (nehmen) hier.staemme[stelle] = g;
     }
-    if (!hier.uebergabeAn && !hier.uebergabeZeit && !hier.uebergabeName) {
-      hier.uebergabeAn = neu.uebergabeAn;
-      hier.uebergabeZeit = neu.uebergabeZeit;
-      hier.uebergabeName = neu.uebergabeName;
+  }
+
+  const durchgefallen = ergebnis ? ergebnis.staemme.filter(z => z.bestanden === false) : [];
+  /* Bei der Meldung ohne Abschnitt sperrt nur, was von hier stammt: ein Trupp,
+     der „trotzdem übergeben“ wählt, steht mit seiner eigenen Messung da – das
+     sagt der Dialog schon vorher (`uebergabeFraglich`). */
+  const sperrend = ganze ? durchgefallen.filter(z => vonHier.has(z)) : durchgefallen;
+
+  if (neu && hatUebergabe(neu)) {
+    const staemme = sperrend.map(z => name(z) || 'ein Stamm');
+    if (!hier) {
+      if (sperrend.length) {
+        neu.uebergabeAn = ''; neu.uebergabeZeit = ''; neu.uebergabeName = '';
+        hinweise.push({ uebergabeNichtUebernommen: true, staemme });
+      }
+    } else if (ganze || !hatUebergabe(hier)) {
+      if (sperrend.length) {
+        hinweise.push({ uebergabeNichtUebernommen: true, staemme });
+      } else {
+        hier.uebergabeAn = neu.uebergabeAn;
+        hier.uebergabeZeit = neu.uebergabeZeit;
+        hier.uebergabeName = neu.uebergabeName;
+      }
     }
   }
-  const durchgefallen = bau.pruefung.staemme.filter(z => z.bestanden === false);
+
+  if (ergebnis) bau.pruefung = ergebnis;
   if (durchgefallen.length && bau.stand === 'uebergeben') {
     bau.stand = 'gebaut';
-    hinweise.push({ uebergabeAufgehoben: true,
-      staemme: durchgefallen.map(z => String(z.stamm || '').trim() || 'ein Stamm') });
+    /* Wurde die gemeldete Übergabe ohnehin nicht übernommen, sagt das schon der
+       Hinweis darüber – zweimal dasselbe liest niemand. */
+    if (!hinweise.some(h => h.uebergabeNichtUebernommen)) {
+      hinweise.push({ uebergabeAufgehoben: true,
+        staemme: durchgefallen.map(z => name(z) || 'ein Stamm') });
+    }
   }
   return hinweise;
+}
+
+/** Was vom Gemeldeten NICHT übernommen wurde, in Stichworten für die Pille */
+function teilText(bericht) {
+  const teile = [];
+  for (const h of bericht.pruefhinweise || []) {
+    if (h.stamm && !h.uebernommen) teile.push(`Prüfung ${h.stamm} nicht übernommen`);
+    else if (h.uebergabeNichtUebernommen) teile.push('Übergabe nicht übernommen');
+    else if (h.uebergabeAufgehoben) teile.push('Übergabe aufgehoben');
+  }
+  if (bericht.uebersprungen) {
+    teile.push(`${bericht.uebersprungen} ${bericht.uebersprungen === 1
+      ? 'Strecke ausgelassen' : 'Strecken ausgelassen'}`);
+  }
+  return teile.join(', ');
 }
 
 /** Kurzfassung für die Meldung nach dem Einspielen */
@@ -760,6 +1175,12 @@ export function berichtText(bericht) {
   zaehl(bericht.strecken, 'Strecke', 'Strecken');
   zaehl(bericht.abschnitte, 'Bauabschnitt', 'Bauabschnitte');
   if (!teile.length) return 'Nichts eingespielt';
+  /* Ein zweites Mal eingespielt, was schon da war: „1 Strecke eingespielt“
+     las sich, als wäre etwas gekommen, und der Planer suchte es. */
+  const teil = teilText(bericht);
+  if (bericht.strecken && bericht.unveraendert === bericht.strecken) {
+    return 'Nichts geändert – dieser Stand war schon eingespielt' + (teil ? ` – ${teil}` : '');
+  }
   /* Der Bestand und nicht der Zuwachs: eine Meldung, die vorhandene Punkte
      ERSETZT, bringt netto null neue – „0 Punkte“ danebenzuschreiben wäre
      irreführend, „12 Punkte stehen jetzt an dieser Strecke“ ist die Aussage,
@@ -768,8 +1189,11 @@ export function berichtText(bericht) {
      geplante Trasse bleibe unangetastet, und der Satz danach klang, als sei
      sie es nicht. */
   const satz = teile.join(', ') + ' eingespielt';
-  return bericht.bestand
+  const kern = bericht.bestand
     ? `${satz} – ${bericht.bestand} ${bericht.bestand === 1
         ? 'aufgenommener Punkt steht' : 'aufgenommene Punkte stehen'} jetzt in der Baudokumentation`
     : satz;
+  /* Eine Teilübernahme gehört in dieselbe Zeile: „2 Strecken eingespielt“ ließ
+     offen, dass die Prüfung des einen Stamms nicht dabei war. */
+  return teil ? `${kern} – ${teil}` : kern;
 }

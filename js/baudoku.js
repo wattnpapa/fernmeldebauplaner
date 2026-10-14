@@ -113,21 +113,42 @@ export function istPunktSetzen(strecke, lat, lng, o = {}) {
     : (neu.sollPunkt ? bau.punkte.findIndex(pt => pt.sollPunkt === neu.sollPunkt) : -1);
   if (alt >= 0) {
     const vorher = bau.punkte[alt];
+    /* Wird ein Punkt im Nachtrag NEU GESETZT (Auf Karte verschieben), trägt die
+       neue Aufnahme die Abschrift – Uhrzeit leer, „nachgetragen“ gesetzt – und
+       vernichtete die Bauzeit eines Punktes, der draußen entstand: genau das,
+       was ein Papierbogen nicht wiedergibt. Korrigiert wird die LAGE; die Zeit
+       und ob der Eintrag abgeschrieben ist, bleiben die des Vorgängers. */
+    if (o.ersetzt && o.zeit === undefined && neu.nachgetragen && o.quelle !== 'standort') {
+      neu.zeit = vorher.zeit;
+      neu.nachgetragen = vorher.nachgetragen || '';
+      neu.nachtragTag = vorher.nachtragTag || '';
+    }
     neu.id = vorher.id;
     neu.bemerkung = vorher.bemerkung || neu.bemerkung;
     neu.abschnitt = neu.abschnitt || vorher.abschnitt;
     neu.name = neu.name || vorher.name;
     neu.sollPunkt = neu.sollPunkt || vorher.sollPunkt;
     if (!o.art) { neu.art = vorher.art; neu.bauweise = vorher.bauweise; }
+    abschnittNachtragen(strecke, neu);
     bau.punkte[alt] = neu;
     truppFrageVormerken(strecke, neu);
     return neu;
   }
 
+  abschnittNachtragen(strecke, neu);
   const stelle = einsortierStelle(strecke, bau, neu);
   bau.punkte.splice(stelle, 0, neu);
   truppFrageVormerken(strecke, neu);
   return neu;
+}
+
+/* Kam der Punkt ohne Abschnitt an, bekommt er den des Geräts. Jeder Aufnahmeweg
+   reicht den aktiven Abschnitt mit, aber einer, der es vergisst, ließ den
+   Punkt aus der Meldung fallen – das Netz hier fängt alle, auch die künftigen. */
+function abschnittNachtragen(strecke, neu) {
+  if (neu.abschnitt) return;
+  const a = aktiverBauabschnitt(strecke);
+  if (a) neu.abschnitt = a.id;
 }
 
 /**
@@ -526,7 +547,10 @@ export const baumeldungen = s => (s && s.bau && s.bau.meldungen) || [];
 /** Eine Baumeldung anlegen. Nur innerhalb von `store.aendern` aufrufen. */
 export function baumeldungAnlegen(strecke, text = '', abschnitt = null) {
   const bau = bauSichern(strecke);
-  const m = neueBaumeldung({ text, abschnitt, ...nachtragFelder() });
+  /* Ohne Angabe der Abschnitt des Geräts, aus demselben Grund wie beim Punkt
+     (`abschnittNachtragen`): eine Meldung ohne Abschnitt ging nicht hinaus. */
+  const eigener = abschnitt || (aktiverBauabschnitt(strecke) || {}).id || null;
+  const m = neueBaumeldung({ text, abschnitt: eigener, ...nachtragFelder() });
   if (bau.stand === 'offen') bau.stand = 'laeuft';
   bau.meldungen.push(m);
   return m;
@@ -657,10 +681,14 @@ export function truppAmGeraetSetzen(o) {
   return truppVermerk;
 }
 
+/* Gehört der Abschnitt dem Trupp `ich`? Eigen ist einer, dessen Trupp (oder,
+   ohne Trupp, dessen Name) der Trupp am Gerät ist; so legt ihn auch „Welcher
+   Trupp seid ihr?“ an. */
+const gehoertZu = (a, ich) => (a.trupp ? a.trupp.trim() : (a.name || '').trim()) === ich;
+
 /**
- * Die Bauabschnitte, die diesem Gerät gehören – oder `null`, wenn es keinen
- * kennt. Eigen ist ein Abschnitt, dessen Trupp (oder, ohne Trupp, dessen Name)
- * der Trupp am Gerät ist; so legt ihn auch „Welcher Trupp seid ihr?“ an.
+ * Die Bauabschnitte, die diesem Gerät gehören – oder `null`, wenn sich nicht
+ * entscheiden lässt, was fremd ist.
  *
  * Gebraucht wird das auf dem Rückweg: ein zweiter Auftrag an denselben Trupp
  * trägt den ganzen Bau-Block, wie ihn der Planer zuletzt hatte – samt dem
@@ -668,12 +696,22 @@ export function truppAmGeraetSetzen(o) {
  * überschrieb beim Planer der alte Stand von „1. FmTr“ den neuen, gemeldet von
  * „2. FmTr“ (`alsBaumeldung` in teilen.js). Kennt das Gerät seinen Trupp
  * nicht, bleibt alles wie bisher: dann ist nicht zu entscheiden, was fremd ist.
+ *
+ * Kennt es seinen Trupp, und die Strecke trägt nur Abschnitte ANDERER Trupps
+ * (Gerät „3. FmTr“, aufgetragen „1. FmTr und 2. FmTr“), ist das Ergebnis eine
+ * LEERE Menge und nicht `null`: vorher hieß das „alles geht hinaus“, und beim
+ * Planer ersetzte die Meldung die Aufnahme beider anderen Trupps. Ein
+ * Abschnitt ohne Trupp unter anderem Namen zählt dabei nicht als fremd – er
+ * nennt keinen Trupp, und wer ein Gerät mit Namen und selbst angelegte
+ * Abschnitte hat, meldet sie weiter wie bisher.
  */
 export function eigeneAbschnitte(s) {
   const ich = truppAmGeraet().trupp.trim();
   if (!ich) return null;
-  const eigene = bauabschnitte(s).filter(a => a.trupp ? a.trupp.trim() === ich : a.name.trim() === ich);
-  return eigene.length ? new Set(eigene.map(a => a.id)) : null;
+  const alle = bauabschnitte(s);
+  const eigene = alle.filter(a => gehoertZu(a, ich));
+  if (eigene.length) return new Set(eigene.map(a => a.id));
+  return alle.some(a => a.trupp && a.trupp.trim()) ? new Set() : null;
 }
 
 /** Ein Bauabschnitt, der nach `eigeneAbschnitte` einem anderen Trupp gehört –
@@ -719,35 +757,101 @@ export function absenderText(strecken) {
    Der Punkt entsteht dabei trotzdem: die Frage kommt danach und nicht davor,
    denn wer an der Muffe steht, soll die Ortung nicht verlieren, weil ein
    Dialog dazwischenkam. Fällt die Wahl, bekommt er seinen Abschnitt
-   nachträglich (`truppWahlWartende`). Die Frage selbst stellt die Oberfläche
+   nachträglich. Die Frage selbst stellt die Oberfläche
    (`truppFrageAnmelden`) – hier steht nur, wann. */
 let truppFrage = null;
-const truppGefragt = new Set();
-const truppWartend = new Map();
 export function truppFrageAnmelden(fn) { truppFrage = fn; }
 
-/** Muss dieses Gerät noch sagen, welcher der aufgetragenen Trupps es ist? */
-export const truppWahlOffen = s => auftragsTrupps(s).length >= 2 && !eigeneAbschnitte(s);
+/** Muss dieses Gerät noch sagen, welcher der aufgetragenen Trupps es ist?
+ *  Auch dann, wenn es einen Trupp kennt, der nicht darunter ist (siehe
+ *  `truppNichtAufgetragen`): eigene Abschnitte hat es an dieser Strecke nicht. */
+export const truppWahlOffen = s => {
+  const eigene = eigeneAbschnitte(s);
+  return auftragsTrupps(s).length >= 2 && !(eigene && eigene.size);
+};
 
+/** Kennt das Gerät seinen Trupp, und der Planer hat der Strecke mehrere andere
+ *  aufgetragen? Dann ist „3. FmTr“ weder „1. FmTr“ noch „2. FmTr“, und die
+ *  Frage lautet nicht „welcher von beiden“, sondern „eigener Abschnitt?“ –
+ *  vorher blieb nur, sich unter fremdem Namen einzutragen. */
+export function truppNichtAufgetragen(s) {
+  const ich = truppAmGeraet().trupp.trim();
+  const trupps = auftragsTrupps(s);
+  return !!ich && trupps.length >= 2 && !trupps.includes(ich);
+}
+
+/* Die Frage kommt bei JEDER Aufnahme ohne Abschnitt wieder, solange keine
+   Wahl getroffen ist – nicht nur einmal je Sitzung und Strecke: wer einmal
+   „Später“ sagte oder den Dialog mit einem Fehltipp verlor, baute sonst bis
+   zum Neuladen ohne Abschnitt, und beim Planer ersetzte seine Meldung die
+   Aufnahme des anderen Trupps. Höchstens einmal je Aufnahme und nie über einer
+   Eingabe regelt die Oberfläche (`truppFrageAnmelden` in app.js). */
 function truppFrageVormerken(strecke, neu) {
   if (neu.abschnitt || !truppFrage || !truppWahlOffen(strecke)) return;
-  if (!truppWartend.has(strecke.id)) truppWartend.set(strecke.id, []);
-  truppWartend.get(strecke.id).push(neu.id);
-  /* Einmal je Sitzung und Strecke: wer zweimal „Später“ gesagt hat, will
-     aufnehmen und nicht bei jedem Punkt dieselbe Frage. Nach dem Neuladen
-     kommt sie wieder, solange kein Abschnitt dieses Geräts da ist. */
-  if (truppGefragt.has(strecke.id)) return;
-  truppGefragt.add(strecke.id);
   const sid = strecke.id;
   setTimeout(() => truppFrage && truppFrage(sid), 0);
 }
 
-/** Die Punkte, die in dieser Sitzung ohne Abschnitt aufgenommen wurden,
- *  während die Wahl offen war – sie bekommen den gewählten nachträglich */
-export function truppWahlWartende(sid) {
-  const liste = truppWartend.get(sid) || [];
-  truppWartend.delete(sid);
-  return liste;
+// ---------------------------------------------- Was ohne Abschnitt dasteht
+
+/* Einträge ohne Bauabschnitt gehen mit einer Meldung dieses Geräts nicht
+   hinaus, sobald das Gerät eigene Abschnitte kennt (`bauVerschlanken`): sie
+   könnten der Bestand des Planers sein, und der gehört nicht in die Meldung
+   dieses Trupps. Still weglassen durfte das Gerät sie trotzdem nie – im Review
+   gingen zwei Punkte und eine Meldung am Gerät als null in die Baumeldung. Hier
+   steht, wie viele es sind und wie sie zu einem Abschnitt kommen. */
+
+/** Wie viel an dieser Strecke keinem Bauabschnitt angehört */
+export function ohneAbschnitt(s) {
+  const bau = s && s.bau;
+  const zahl = liste => (liste || []).filter(x => !x.abschnitt).length;
+  const r = bau ? { punkte: zahl(bau.punkte), material: zahl(bau.material),
+    meldungen: zahl(bau.meldungen) } : { punkte: 0, material: 0, meldungen: 0 };
+  r.summe = r.punkte + r.material + r.meldungen;
+  return r;
+}
+
+/** Was ohne Abschnitt dasteht, in einem Satzteil: „2 Punkte, 1 Meldung“ */
+export function ohneAbschnittText(s) {
+  const r = ohneAbschnitt(s);
+  const z = (n, eins, viele) => n ? `${n} ${n === 1 ? eins : viele}` : '';
+  return [z(r.punkte, 'Punkt', 'Punkte'), z(r.material, 'Materialzeile', 'Materialzeilen'),
+    z(r.meldungen, 'Meldung', 'Meldungen')].filter(Boolean).join(', ');
+}
+
+/** Alles ohne Abschnitt dem Abschnitt `aid` zuordnen. Die Materialzeilen
+ *  werden danach zusammengezogen – eine gleiche Zeile im Abschnitt zählte
+ *  sonst doppelt. Nur innerhalb von `store.aendern` aufrufen. */
+export function ohneAbschnittZuordnen(s, aid) {
+  const bau = s && s.bau;
+  if (!bau || !aid) return 0;
+  let n = 0;
+  for (const liste of [bau.punkte, bau.material, bau.meldungen]) {
+    for (const x of liste || []) if (!x.abschnitt) { x.abschnitt = aid; n++; }
+  }
+  bau.material = materialZusammenfassen(bau.material || []);
+  return n;
+}
+
+/** Den Abschnitt dieses Trupps an der Strecke – gibt es ihn nicht, wird er
+ *  angelegt. Nur innerhalb von `store.aendern` aufrufen. */
+export function eigenenAbschnittSichern(strecke, trupp, fuehrer = '') {
+  const name = String(trupp || '').trim();
+  let a = bauabschnitte(strecke).find(x => gehoertZu(x, name));
+  if (!a) {
+    a = bauabschnittAnlegen(strecke);
+    a.name = name; a.trupp = name; a.fuehrer = fuehrer;
+  } else if (fuehrer && !a.fuehrer) a.fuehrer = fuehrer;
+  return a;
+}
+
+/** Die Abschnitte, in die dieses Gerät eintragen darf: die eigenen, und
+ *  solange es keinen Trupp kennt, alle. Fremde sind nicht wählbar – wer unter
+ *  dem Abschnitt eines anderen Trupps aufnimmt, ersetzt beim Planer dessen
+ *  Aufnahme. */
+export function waehlbareAbschnitte(s) {
+  const eigene = eigeneAbschnitte(s);
+  return eigene ? bauabschnitte(s).filter(a => eigene.has(a.id)) : bauabschnitte(s);
 }
 
 // ------------------------------------------------------------ Was hinausging
@@ -1155,6 +1259,9 @@ export function bauzeile(strecke) {
   if (!trupps.length && strecke.bau.gemeldetVon) trupps.push(strecke.bau.gemeldetVon);
   if (!trupps.length && strecke.trupp) trupps.push(strecke.trupp);
   if (trupps.length) teile.push(trupps.join(', '));
+  /* Der Trupp auch einzeln: das Schild der Lagekarte trägt ihn in einer
+     eigenen Zeile, nicht im Fließtext mit Punkten und Lücke. */
+  const truppText = trupps.join(', ');
   /* Die Zeit des letzten Eintrags steht nicht mehr im Text: die Liste setzt
      sie mit ihrem Alter daneben („vor 2 h 50 min“). Eine bloße Uhrzeit las
      sich im Audit wie eine frische Meldung, auch drei Stunden später. */
@@ -1174,7 +1281,7 @@ export function bauzeile(strecke) {
      ob es trägt. */
   if (k.uebergabe.durchgefallen) warnungen.unshift('Prüfung nicht bestanden');
   const meldung = ((strecke.bau && strecke.bau.abweichung) || '').trim();
-  return { stand: k.stand, text: teile.join(' · '), warnungen, meldung, zuletzt };
+  return { stand: k.stand, text: teile.join(' · '), warnungen, meldung, zuletzt, trupp: truppText };
 }
 
 /* Die Strecke, die im Baumodus gerade bearbeitet wird – am Gerät gemerkt wie
@@ -1230,32 +1337,96 @@ export function bauabschnittAktivId() { return aktiverAbschnittId; }
    Sitzungszustand wie der aktive Abschnitt und nicht in der Planung: er sagt,
    was gerade am Gerät geschieht, nicht, was gebaut wurde. Ein Neuladen und das
    Verlassen des Bau-Reiters beenden ihn – wer am nächsten Morgen weiterbaut,
-   soll nicht still mit dem Tag von gestern aufnehmen. */
+   soll nicht still mit dem Tag von gestern aufnehmen.
+
+   Das Ende darf aber nichts mitnehmen: jeder abgeschriebene Eintrag trägt den
+   Bautag selbst (`nachtragTag`), und seine Uhrzeit gilt auf diesem Tag, auch
+   wenn sie erst nach dem Neuladen eingetragen wird. Davor galt für eine Zeile
+   ohne Uhrzeit „heute“ – „14:20“ stand am 05.10. statt am 03.10. Und das Ende
+   wird gesagt, nicht verschwiegen (`nachtragEndeSagen` in `ui.js`). */
 let nachtragTagWert = null;
+/* Wer den Zustand anzeigt, ohne ihn zu ändern (Bauleiste und Punktkarte der
+   Karte), lässt sich rufen, statt dass jede Stelle, die ihn setzt, die Karte
+   kennen müsste – der Nachtrag wird in der Liste geschaltet und gilt auf der
+   Karte. */
+const nachtragBeobachter = [];
+export const nachtragBeobachten = fn => { nachtragBeobachter.push(fn); };
 export function nachtragSetzen(tag) {
-  nachtragTagWert = /^\d{4}-\d{2}-\d{2}$/.test(String(tag || '')) ? tag : null;
+  const neu = /^\d{4}-\d{2}-\d{2}$/.test(String(tag || '')) ? tag : null;
+  const geaendert = neu !== nachtragTagWert;
+  nachtragTagWert = neu;
+  if (geaendert) nachtragBeobachter.forEach(fn => fn());
 }
 export const nachtragTag = () => nachtragTagWert;
+/** „03.10.“ für einen Tag „2026-10-03“ – so steht er auf dem Blatt */
+export const tagKurz = tag => {
+  const [, m, d] = String(tag || '').split('-');
+  return m && d ? `${d}.${m}.` : '';
+};
 /** Was ein neuer Eintrag im Nachtrag mitbekommt – leer, wenn keiner läuft.
  *  `zeit` ist dabei leer und nicht „jetzt“: eine Uhrzeit, die niemand vom
  *  Blatt übernommen hat, ist keine Bauzeit. */
 export const nachtragFelder = () => nachtragTagWert
-  ? { zeit: '', nachgetragen: new Date().toISOString() } : {};
+  ? { zeit: '', nachgetragen: new Date().toISOString(), nachtragTag: nachtragTagWert } : {};
+
+/** Die Einträge einer Strecke, die vom Papier stammen und noch keine Uhrzeit
+ *  tragen – Punkte, Meldungen und Prüfzeilen. */
+export function nachtragOffene(strecke) {
+  const bau = strecke && strecke.bau;
+  if (!bau) return [];
+  return [...(bau.punkte || []), ...(bau.meldungen || []),
+    ...((bau.pruefung && bau.pruefung.staemme) || [])]
+    .filter(e => e && e.nachgetragen && !e.zeit);
+}
+
+const tagIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-` +
+  String(d.getDate()).padStart(2, '0');
+
+/**
+ * Der Tag, auf dem die Uhrzeit dieses Eintrags gilt, solange sie fehlt – nie
+ * „heute“. Der Eintrag trägt den Bautag vom Blatt selbst (`nachtragTag`,
+ * Schema 20). Ein Eintrag von Schema 19 trägt keinen: dann gilt der Tag der
+ * anderen offenen Einträge und zuletzt der des jüngsten Eintrags vom Bauort,
+ * wie ihn der Nachtrag auch vorschlägt (`nachtragVorschlag` in `ui.js`).
+ */
+export function nachtragTagVon(strecke, eintrag) {
+  if (eintrag && eintrag.nachtragTag) return eintrag.nachtragTag;
+  const andere = nachtragOffene(strecke).map(e => e.nachtragTag).filter(Boolean).sort();
+  if (andere.length) return andere.at(-1);
+  const z = zuletztVomBau(strecke);
+  const d = z && !Number.isNaN(Date.parse(z)) ? new Date(z) : new Date();
+  return tagIso(d > new Date() ? new Date() : d);
+}
+
+/** Der Tag, an dem ein beendeter Nachtrag fortgesetzt würde – der jüngste Tag
+ *  unter den offenen Einträgen, sonst `null` */
+export function nachtragFortsetzTag(strecke) {
+  const offene = nachtragOffene(strecke);
+  return offene.length ? nachtragTagVon(strecke, offene[0]) : null;
+}
 
 /** Der aktive Bauabschnitt dieser Strecke – oder `null`, wenn keiner (mehr) gilt */
 export function aktiverBauabschnitt(s) {
   const gewaehlt = bauabschnittById(s, aktiverAbschnittId);
-  if (gewaehlt) return gewaehlt;
+  const eigene = eigeneAbschnitte(s);
+  /* Eine Wahl gilt nur, solange der Abschnitt dem Gerät gehört: wechselt der
+     Trupp am Gerät („Trupp wechseln“, ein anderer Auftrag), blieb sonst der
+     Abschnitt des alten Namens aktiv – und die Punkte gingen unter fremdem
+     Namen hinein. */
+  if (gewaehlt && (!eigene || eigene.has(gewaehlt.id))) return gewaehlt;
   /* Ohne Wahl in dieser Sitzung nimmt kein Abschnitt auf – mit einer
-     Ausnahme: hat der Planer mehrere Trupps aufgetragen und dieses Gerät
-     seinen gewählt (`auftragsTrupps`), gehört der Abschnitt dieses Trupps
-     dem Gerät. Die Wahl überlebte das Neuladen sonst nicht, und die Punkte
-     danach ersetzten beim Planer, was dort ohne Abschnitt steht – also die
-     Aufnahme des anderen Trupps. */
-  const ich = truppAmGeraet().trupp;
-  if (ich && auftragsTrupps(s).includes(ich)) {
-    return bauabschnitte(s).find(a => a.name === ich && a.trupp === ich) || null;
-  }
+     Ausnahme: kennt das Gerät seinen Trupp und gibt es an der Strecke einen
+     Abschnitt dieses Trupps, ist DER der Abschnitt des Geräts. Die Wahl
+     überlebte das Neuladen sonst nicht, und die Punkte danach ersetzten beim
+     Planer, was dort ohne Abschnitt steht.
+
+     Früher galt das nur, wenn der Planer mehrere Trupps aufgetragen hatte
+     (`auftragsTrupps`). Ohne „Auftrag an“ – der Normalfall der einfachen
+     Ansicht, und ebenso nach „als eigenen Bauabschnitt einspielen“ und dem
+     nächsten Link zurück – entstanden neue Punkte ohne Abschnitt, und die
+     Meldung ließ sie weg (`bauVerschlanken`): zwei Punkte und eine Meldung am
+     Gerät, null in der Baumeldung. */
+  if (eigene && eigene.size) return bauabschnitte(s).find(a => eigene.has(a.id)) || null;
   return null;
 }
 

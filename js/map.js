@@ -240,6 +240,9 @@ export function erstelleKarte(el, ansicht = {}) {
     maxZoom: MAX_ZOOM,
     preferCanvas: false
   });
+  /* Nur die Arbeitskarte gibt einem hängenden Kartenserver eine Frist (siehe
+     `ABRUF_FRIST` bei der Kachelebene); Druckkarten warten auf jede Kachel. */
+  karte._fbpAnzeige = true;
 
   /* Die Funksichtfläche liegt unter allem, was geplant wird: sie ist
      Kartengrundlage, kein Planungsinhalt. Läge sie darüber, verdeckte sie
@@ -296,6 +299,16 @@ export function setzeVorrang(karte, bereich) {
    ist ein Ausschnitt aus 32 × 32 Bildpunkten nur noch Farbe. */
 const ERSATZ_STUFEN = 5;
 
+/* Wie lange eine Kachel der Arbeitskarte auf den Kartenserver wartet, bevor
+   die gröbere Stufe aus dem Vorrat einspringt. Ein Server, der die Verbindung
+   annimmt und nie antwortet (überlasteter Anbieter, Funkloch mit stehendem
+   Netzsymbol), löst weder `error` noch `navigator.onLine === false` aus: die
+   Fläche blieb bei Stufe 18 grau, und die Leiste schwieg. Die Frist ist kurz,
+   weil am Bauort jede Sekunde Grau eine ist, in der niemand die Karte lesen
+   kann – und nur für die Arbeitskarte: der Bauauftrag wartet lieber auf die
+   feine Kachel, als gröber auszudrucken. */
+const ABRUF_FRIST = 4000;
+
 /* Eine Kachelebene, die erst im Vorrat des Geräts nachsieht und nur dann ins
    Netz geht, wenn dort nichts liegt.
 
@@ -319,15 +332,28 @@ function vorratsEbene(url, optionen) {
       bild.alt = '';
       const adresse = this.getTileUrl(koordinaten);
       let ersatzVersucht = false;
-      L.DomEvent.on(bild, 'load', () => fertig(null, bild));
+      let abrufUhr = null;
+      /* Leaflet erwartet je Kachel genau einen Abschluss. Mit der Frist kann
+         das Bild nach einem Fehlschlag des Rückgriffs doch noch aus dem Netz
+         eintreffen – es erscheint dann, ohne die Ebene ein zweites Mal
+         fertigzumelden. */
+      let abgeschlossen = false;
+      const abschluss = fehler => {
+        clearTimeout(abrufUhr);
+        if (abgeschlossen) return;
+        abgeschlossen = true;
+        fertig(fehler, bild);
+      };
+      L.DomEvent.on(bild, 'load', () => abschluss(null));
       /* Kommt die Kachel weder aus dem Vorrat noch aus dem Netz, springt die
          gröbere Stufe aus dem Vorrat ein, bevor die Fläche grau bleibt. */
       L.DomEvent.on(bild, 'error', () => {
         if (bild._fbpWeg) return;
-        if (ersatzVersucht) return fertig(new Error('Kachel nicht verfügbar'), bild);
+        if (ersatzVersucht) return abschluss(new Error('Kachel nicht verfügbar'));
         ersatzVersucht = true;
+        clearTimeout(abrufUhr);
         this._ersatzSetzen(bild, koordinaten).then(da => {
-          if (!da && !bild._fbpWeg) fertig(new Error('Kachel nicht verfügbar'), bild);
+          if (!da && !bild._fbpWeg) abschluss(new Error('Kachel nicht verfügbar'));
         });
       });
       const ausDemNetz = () => {
@@ -346,6 +372,20 @@ function vorratsEbene(url, optionen) {
            Blob-Adresse ist es ohne Wirkung und bei manchen Browsern hinderlich. */
         if (this.options.crossOrigin) bild.crossOrigin = this.options.crossOrigin;
         bild.src = adresse;
+        if (!this._map || !this._map._fbpAnzeige) return;
+        abrufUhr = setTimeout(() => {
+          if (bild._fbpWeg || abgeschlossen || ersatzVersucht) return;
+          ersatzVersucht = true;
+          this._ersatzSetzen(bild, koordinaten).then(da => {
+            if (bild._fbpWeg) return;
+            /* Ein ersetzter Abruf endet nie in `error` – die Kachelwacht
+               erfährt von der Frist nur hierüber. */
+            if (da) this.fire('fbp:abrufstumm', { tile: bild });
+            /* Ohne gröbere Stufe bleibt der Abruf stehen: kommt die Kachel
+               doch noch, erscheint sie, aber gemeldet ist der Ausfall. */
+            else abschluss(new Error('Kachelserver antwortet nicht'));
+          });
+        }, ABRUF_FRIST);
       };
       kachelHolen(adresse).then(blob => {
         /* Abgeräumt, bevor der Vorrat geantwortet hat. Dann darf hier nichts
@@ -459,10 +499,12 @@ function kachelWacht(karte, ebene) {
     /* Gezählt wird je Ladelauf und nicht über die Sitzung: nach drei Löchern
        am Rand einer Abdeckung bliebe die Anzeige sonst für immer stehen. */
     e.on('loading', () => { fehler = 0; });
-    e.on('tileerror', () => {
+    const ausgefallen = () => {
       fehler++;
       if (navigator.onLine === false || fehler >= AUSFALL_AB) melden(true);
-    });
+    };
+    e.on('tileerror', ausgefallen);
+    e.on('fbp:abrufstumm', ausgefallen);
     /* Aufgehoben wird erst, wenn ein ganzer Lauf durch ist und dabei zu wenige
        Kacheln gefehlt haben. Auf jede einzelne angekommene Kachel zurück-
        zusetzen ließe die Anzeige flackern, sobald ein Vorrat den Ausschnitt
@@ -480,6 +522,7 @@ export function setzeBasiskarte(karte, id) {
        an `load`, die Kachelwacht ihre an `tileerror`. */
     karte._fbpBasis.off('load');
     karte._fbpBasis.off('tileerror');
+    karte._fbpBasis.off('fbp:abrufstumm');
     karte.removeLayer(karte._fbpBasis);
     /* Der gemeldete Zustand gehört zur alten Ebene: die neue meldet ihn mit
        ihrer ersten Kachel neu, ob sie ankommt oder nicht. */

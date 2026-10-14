@@ -5,7 +5,7 @@ import {
   abschnittById, zeichengruppeById, streckenIm, zeichenIm, zeichenFuer, flaechenIm, flaechenFuer,
   relaisstellenIm, relaisstellenFuer, streckenUnter, zeichenUnter, flaechenUnter,
   relaisstellenUnter, abschnittBaum, abschnittEltern, abschnittPfad, unterabschnitte,
-  punktartById, VERLEGEARTEN, KABELTYPEN
+  punktartById, VERLEGEARTEN, KABELTYPEN, stammtVonNeuerer
 } from './state.js';
 import { kennzahlen, segmentLaengen, kumuliert } from './strecken.js';
 import { toMGRS, toDDM, peilung } from './geo.js';
@@ -329,6 +329,9 @@ async function jsonUebernehmen(inhalt, dateiname) {
      und lässt sich später neu belegen. */
   const bilder = (roh.bilder || []).length;
   const uebernommen = bilder ? await bilderAusDatei(roh.bilder) : 0;
+  /* Vor dem Lesen festgehalten: `migrieren()` setzt die Version still auf die
+     eigene, danach ließe sich nicht mehr sagen, dass die Datei mehr kannte. */
+  const neuer = stammtVonNeuerer(roh) ? Number(roh.version) : 0;
   const p = migrieren(roh);
   p.id = id();                       // als eigene Kopie ablegen
   p.name = roh.name || dateiname.replace(/\.json$/i, '');
@@ -336,6 +339,7 @@ async function jsonUebernehmen(inhalt, dateiname) {
   const fehlend = bilder - uebernommen;
   return {
     projekt: p,
+    neuer,
     meldung: `„${p.name}“ geladen` +
       (fehlend > 0 ? ` – ${fehlend} ${fehlend === 1 ? 'Bild' : 'Bilder'} ohne Bilddaten` : '')
   };

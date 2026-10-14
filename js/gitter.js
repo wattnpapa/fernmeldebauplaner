@@ -35,6 +35,9 @@ export class GitterLayer {
        gewählt wird, entscheidet der Maßstab, und ein dünnerer Strich soll
        nicht die Zahlen am Blattrand umstellen. */
     this.strichbreite = opt.strichbreite || 1;
+    /* Nur die Lagekarte: die Maschenweite folgt der Ausdehnung des Blattes und
+       nicht allein dem Linienabstand (`_zeichneGitter`). */
+    this.dichter = !!opt.dichter;
     this.gruppe = L.layerGroup().addTo(karte);
     this._an = false;
     this._stand = null;
@@ -105,8 +108,21 @@ export class GitterLayer {
     const m1 = karte.containerPointToLatLng([groesse.x / 2, groesse.y / 2]);
     const m2 = karte.containerPointToLatLng([groesse.x / 2 + 100, groesse.y / 2]);
     const mProPx = Math.max(0.01, distanz(m1, m2) / 100);
-    const weite = WEITEN.find(w => w / mProPx >= MIN_ABSTAND_PX * this.strichFaktor)
-      || WEITEN[WEITEN.length - 1];
+    const mindest = MIN_ABSTAND_PX * this.strichFaktor;
+    let wi = WEITEN.findIndex(w => w / mProPx >= mindest);
+    if (wi < 0) wi = WEITEN.length - 1;
+    /* Die Lagekarte zeigt oft sechs Kilometer auf einem Blatt, auf dem der
+       Linienabstand von 50 Bildpunkten das 1-km-Gitter knapp ausschloss – es
+       blieb ein 10-km-Gitter, von dem im Rahmen nur eine Linie stand, und die
+       Ablesung, wofür das Gitter da ist, ging verloren. Steht über die kurze
+       Blattseite weniger als vier Linien, wird die nächst feinere Weite
+       genommen, solange ihr Abstand noch gut zu lesen ist (acht Millimeter). */
+    if (this.dichter) {
+      const kurz = Math.min(groesse.x, groesse.y);
+      while (wi > 0 && kurz / (WEITEN[wi] / mProPx) < 4 &&
+             WEITEN[wi - 1] / mProPx >= 0.6 * mindest) wi--;
+    }
+    const weite = WEITEN[wi];
 
     /* Am Zonenrand (in Deutschland der 12. Längengrad) wird je Zone ihr
        eigenes Gitter gezeichnet und am Meridian geschnitten – die Werte der
@@ -126,7 +142,7 @@ export class GitterLayer {
   _signatur() {
     const m = this.karte.getCenter(), g = this.karte.getSize();
     return `${this.karte.getZoom()}|${m.lat.toFixed(6)},${m.lng.toFixed(6)}|` +
-           `${g.x}x${g.y}|${this.karte._fbpBasisId}`;
+           `${g.x}x${g.y}|${this.karte._fbpBasisId}|${this.dichter ? 1 : 0}`;
   }
 
   /** Gitter einer Zone im Streifen zwischen Zonenrand und Blattausschnitt */

@@ -38,6 +38,16 @@ const RUHE_PX = 14;
    knapp über der Kuppe; weiter oben verlöre die Marke den Bezug zum Finger.
    Die Maus zieht ohne Versatz: ihr Zeiger verdeckt nichts. */
 const VERSATZ_PX = 40;
+/* Auf dieser Strecke jenseits der Ruhezone wächst der Versatz von 0 auf
+   VERSATZ_PX. Ohne das sprang die Marke mit der ersten Bewegung um 40 px nach
+   oben: im Review verschob ein Zittern von 1 bis 6 px nach dem Greifen den
+   Punkt um 57 bis 59 m, bei einer Geste, die nichts bewegen wollte. Die
+   Strecke ist kurz – wer zieht, hat die Marke nach 30 px über dem Finger,
+   und sie folgt ihm stetig statt in einem Satz. Sie wird
+   nicht über die Zeit eingeblendet: Zeigerereignisse kommen nur bei
+   Bewegung, und ein stehender Finger mitten in einer Zeitrampe ließe die
+   Marke halb unterwegs stehen. */
+const AUFBAU_PX = 16;
 /* Wer so lange stand und dann doch abrutschte, wollte halten und nicht
    wischen – ein Wisch setzt sich in den ersten Millisekunden in Bewegung.
    Dann sagt es die Anwendung einmal (`fbp:ziehen-fehlstart`, js/app.js). */
@@ -94,6 +104,7 @@ function anfassen(karte, marke, el, e, { start, ziehen, ende }) {
   const t0 = performance.now();
   let gegriffen = !finger;   // die Maus greift sofort, der Finger nach dem Halten
   let gezogen = false;
+  let aufbau = 0;   // wie weit der Versatz schon angelegt ist, 0 bis 1
   let uhr = null;
 
   /* Die Maus nimmt der Karte das Ziehen gleich ab: die Marke liegt über ihr,
@@ -138,11 +149,17 @@ function anfassen(karte, marke, el, e, { start, ziehen, ende }) {
       }
       return;
     }
-    if (!gezogen && Math.hypot(dx, dy) <= (finger ? 0 : MAUS_PX)) return;
+    /* Auch nach dem Greifen gilt die Ruhezone: der Handschuh zittert weiter.
+       Darunter bleibt es ein Halten, und Loslassen ändert nichts. Wer die
+       Zone einmal verlassen hat, zieht von da an auch nahe dem Ausgang
+       weiter – sonst klebte die Marke beim Zurückführen an der Zonengrenze. */
+    const weg = Math.hypot(dx, dy);
+    if (!gezogen && weg <= (finger ? RUHE_PX : MAUS_PX)) return;
     ev.preventDefault();
     if (!gezogen) { gezogen = true; start(); }
+    if (finger) aufbau = Math.max(aufbau, Math.min(1, (weg - RUHE_PX) / AUFBAU_PX));
     const ll = karte.containerPointToLatLng(
-      ausgangPunkt.add(L.point(dx, dy - (finger ? VERSATZ_PX : 0))));
+      ausgangPunkt.add(L.point(dx, dy - (finger ? VERSATZ_PX * aufbau : 0))));
     marke.setLatLng(ll);
     ziehen(ll);
   };

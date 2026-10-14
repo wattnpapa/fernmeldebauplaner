@@ -12,7 +12,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 19;
+export const SCHEMA = 20;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_VERLAUF  = 'fbp.verlauf.v1';   // Rückgängig-Verlauf, im Sitzungsspeicher
@@ -506,6 +506,21 @@ function nachtragZeit(roh) {
   return t && !Number.isNaN(Date.parse(t)) ? t : '';
 }
 
+/* Das Baudatum, von dem ein Eintrag abgeschrieben wurde (Schema 20), als
+   „2026-10-03“ – sonst leer. `nachgetragen` sagt nur, WANN abgetippt wurde;
+   ohne den Tag vom Blatt blieb einem Eintrag, dessen Uhrzeit noch fehlt, nach
+   Neuladen oder Reiterwechsel nur „heute“ – und „14:20“ stand dann auf dem
+   Tag der Abschrift statt auf dem Bautag. Ein Datum, das keines ist, fällt
+   weg: der Eintrag stünde sonst mit einem Tag da, den niemand gemeint hat. */
+function nachtragTagOderLeer(roh) {
+  const t = String(roh || '');
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (!m) return '';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.getFullYear() === Number(m[1]) && d.getMonth() === Number(m[2]) - 1 &&
+    d.getDate() === Number(m[3]) ? t : '';
+}
+
 export function neuerBau() {
   return {
     stand: 'offen',
@@ -550,7 +565,12 @@ export function neuerBau() {
        Funk „ist 5QVV angekommen?“, war er nirgends mehr nachzulesen. Kein
        neues Schema: ein Stand ohne das Feld öffnet mit leerem Code, und
        `bauNormalisieren()` stellt es her. */
-    gemeldetCode: ''
+    gemeldetCode: '',
+    /* Je Absender der zuletzt eingespielte Code, Zeilen „CODE Absender“. Ein
+       einziges Feld ließ zwei Trupps an einer Strecke einander den Code
+       überschreiben. Auch dieses Feld braucht keine Schemaerhöhung: ein Stand
+       ohne es öffnet leer, und der Codec in `teilen.js` lässt es zu Hause. */
+    gemeldetCodes: ''
   };
 }
 
@@ -616,7 +636,10 @@ export function neuerIstPunkt(lat, lng, o = {}) {
        übernommenes „wie geplant“ trägt die Koordinate des Plans. Wer später
        eine Bauzeit liest, muss aber wissen, ob sie draußen gestempelt oder
        abends abgetippt wurde. */
-    nachgetragen: nachtragZeit(o.nachgetragen)
+    nachgetragen: nachtragZeit(o.nachgetragen),
+    /* Der Bautag vom Blatt (Schema 20), solange die Uhrzeit noch fehlt: die
+       Zeile bietet dann diesen Tag an und nie „heute“. */
+    nachtragTag: nachtragTagOderLeer(o.nachtragTag)
   };
 }
 
@@ -649,7 +672,8 @@ export function neueBaumeldung(o = {}) {
     zeit: o.zeit ?? new Date().toISOString(),
     text: String(o.text || ''),
     abschnitt: o.abschnitt || null,
-    nachgetragen: nachtragZeit(o.nachgetragen)
+    nachgetragen: nachtragZeit(o.nachgetragen),
+    nachtragTag: nachtragTagOderLeer(o.nachtragTag)
   };
 }
 
@@ -666,7 +690,8 @@ export function neuePruefzeile(o = {}) {
     bestanden: null,
     zeit: o.zeit ?? new Date().toISOString(),
     pruefer: '',
-    nachgetragen: nachtragZeit(o.nachgetragen)
+    nachgetragen: nachtragZeit(o.nachgetragen),
+    nachtragTag: nachtragTagOderLeer(o.nachtragTag)
   };
 }
 
@@ -1344,7 +1369,8 @@ export function bauNormalisieren(roh) {
     gemeldetVon: String(roh.gemeldetVon || '').slice(0, 120),
     ausfallZeit: String(roh.ausfallZeit || ''),
     ausfallNach: roh.ausfallNach || null,
-    gemeldetCode: String(roh.gemeldetCode || '').slice(0, 8)
+    gemeldetCode: String(roh.gemeldetCode || '').slice(0, 8),
+    gemeldetCodes: String(roh.gemeldetCodes || '').slice(0, 420)
   };
 }
 
@@ -1366,6 +1392,15 @@ function abgesetztNormalisieren(roh) {
     code: String(roh.code || '').slice(0, 8)
   };
 }
+
+/** Stammt der Stand von einer neueren Version dieser Anwendung? `migrieren()`
+ *  setzt die Version still auf die eigene, und Felder, die diese Version nicht
+ *  kennt, gehen beim nächsten Speichern verloren – wer den Stand dann an den
+ *  Planer zurückgibt, gibt eine beschnittene Planung zurück. Die Oberfläche
+ *  fragt deshalb VOR dem Öffnen und sagt es. Gilt die Zahl nicht (kein
+ *  Version-Feld), ist es kein neuerer Stand. */
+export const stammtVonNeuerer = roh =>
+  !!roh && typeof roh === 'object' && Number.isFinite(Number(roh.version)) && Number(roh.version) > SCHEMA;
 
 /** Ältere/fremde Projektdateien auf das aktuelle Schema heben */
 export function migrieren(p) {
@@ -1462,7 +1497,13 @@ export function migrieren(p) {
            Schema 19 hat die Herkunft „Papier“, den Zeitpunkt der Abschrift
            (`nachgetragen`) und den Geräteausfall ergänzt. Auch hier kein
            Schritt: was vorher vom Papier nachgetragen wurde, ist nicht als
-           solches erkennbar, und es nachträglich so zu nennen wäre geraten. */
+           solches erkennbar, und es nachträglich so zu nennen wäre geraten.
+
+           Schema 20 hat `nachtragTag` ergänzt, den Bautag vom Blatt am
+           abgeschriebenen Eintrag. Ältere Einträge tragen keinen – eine Zeile
+           von 19 ohne Uhrzeit bekommt den Tag aus ihrer Nachbarschaft
+           (`tagFuerEintrag` in `ui.js`), nicht aus der Migration: dort wäre er
+           geraten. */
         bau: bauNormalisieren(s.bau)
       };
     }),

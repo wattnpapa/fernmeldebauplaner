@@ -945,6 +945,26 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   b.pruefe(/ruhig halten/.test(fehlstart) && (await punktLage()).lat === vorWisch.lat,
     `Rutscht der Finger nach 250 ms ab, bleibt der Punkt und es heißt „${fehlstart}“`);
 
+  /* Nach dem Greifen zittert der Handschuh weiter. Vorher legte jede
+     Bewegung über 0 px den vollen Versatz von 40 px an, und ein Zittern von
+     1 bis 6 px verschob den Punkt um 57 bis 59 m. */
+  const vorZittern = await punktLage();
+  await seite.wische(vorZittern.x, vorZittern.y, vorZittern.x + 4, vorZittern.y + 3,
+    { halten: 700, schritte: 4 });
+  const nachZittern = await punktLage();
+  b.pruefe(nachZittern.lat === vorZittern.lat && nachZittern.lng === vorZittern.lng,
+    'Gehalten und dann 1 bis 5 px gezittert, bleibt der Punkt, wo er war');
+  b.pruefe(!/verschoben/.test(await seite.text('#hinweisbox') || ''),
+    'Und es heißt nicht, er sei verschoben worden');
+  await seite.wische(nachZittern.x, nachZittern.y, nachZittern.x, nachZittern.y + 30,
+    { halten: 700, schritte: 6 });
+  const nachDreissig = await punktLage();
+  const dreissigUeber = nachZittern.y + 30 - nachDreissig.y;
+  b.pruefe(nachDreissig.lat !== vorZittern.lat && Math.abs(dreissigUeber - 40) <= 3,
+    `Nach 30 px Zug ist der Punkt bewegt und steht ${dreissigUeber} px über dem Finger (40 verlangt)`);
+  await seite.klick('#btn-undo');
+  b.gleich((await punktLage()).lat, vorZittern.lat, 'Rückgängig holt auch ihn zurück');
+
   b.abschnitt('Wer einen Punkt einer nicht gewählten Strecke hält, erfährt warum nichts folgt');
   /* Gezogen wird nur an der gewählten Strecke. Im Review hielt ein
      Erstnutzer einen Punkt einer anderen, und nichts geschah – kein Ring,
@@ -1024,6 +1044,32 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     `Zwischen Kartenoptionen und Bauleiste bleiben ${bauKarte.frei} von ${bauKarte.karte} px frei`);
   /* Eine Zeile misst 34 px, zwei rund 60. */
   b.pruefe(bauKarte.statusleiste <= 36, `Die Statusleiste ist einzeilig (${bauKarte.statusleiste} px)`);
+  /* Fällt das Netz aus und springt eine gröbere Stufe ein, steht die längste
+     Zeile der Leiste da: Anlass, Vorrat, „gröber“. Sie darf die Leiste nicht
+     zweizeilig machen, nicht über die Gitterangabe laufen, und „kein Netz“
+     darf nie angeschnitten sein – bei 320 px war vom Anlass nichts mehr da. */
+  await seite.ohneNetz();
+  await seite.auswerten(`window.dispatchEvent(new Event('offline'));
+    window.fbp.karte.fire('fbp:kachelgrob', { z: 18, aus: 17 }); return true;`);
+  await new Promise(r => setTimeout(r, 400));
+  const netzLeiste = await seite.auswerten(`
+    const n = document.getElementById('sl-netz');
+    const was = n.querySelector('.sl-netz-was');
+    const koord = [...document.querySelectorAll('.statusleiste .sl-koord')]
+      .filter(k => k.getClientRects().length).map(k => k.getBoundingClientRect().right);
+    return { text: n.textContent, hoehe: Math.round(n.parentElement.getBoundingClientRect().height),
+      links: Math.round(n.getBoundingClientRect().left), koordRechts: Math.round(Math.max(0, ...koord)),
+      wasGanz: !!was && was.scrollWidth <= was.clientWidth };`);
+  await seite.mitNetz();
+  await seite.auswerten(`window.dispatchEvent(new Event('online'));
+    window.fbp.karte.fire('zoomstart'); return true;`);
+  b.pruefe(/^kein Netz/.test(netzLeiste.text),
+    `Ohne Netz nennt die Leiste zuerst den Anlass („${netzLeiste.text}“)`);
+  b.pruefe(netzLeiste.hoehe <= 36,
+    `Mit Anlass, Vorrat und „gröber“ bleibt die Leiste einzeilig (${netzLeiste.hoehe} px)`);
+  b.pruefe(netzLeiste.links >= netzLeiste.koordRechts,
+    `Die Netzzeile liegt nicht über der Gitterangabe (ab ${netzLeiste.links}, Gitter bis ${netzLeiste.koordRechts} px)`);
+  b.pruefe(netzLeiste.wasGanz, '„kein Netz“ steht ungekürzt da');
   const bauGriffe = await zuKleineGriffe('.werkzeuge', 'button');
   b.gleich(bauGriffe.length, 0, 'Bauleiste: jeder Griff trägt 44 px' +
     (bauGriffe.length ? ' – zu klein: ' + bauGriffe.join(', ') : ''));
@@ -1043,6 +1089,29 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     `Die Bauleiste nennt die Zielstrecke („${bauZiel.text}“, ${bauZiel.hoehe} px) und ` +
     (bauZiel.trifft ? 'lässt den Tipp auf „Punkt hier“ durch'
       : 'fängt den Tipp auf „Punkt hier“ ab'));
+  /* Paket Z: im Nachtrag nennt derselbe Merker den Tag vom Blatt – als Textmarke
+     im bestehenden Raster, ohne die Leiste höher zu machen oder einen Tipp
+     abzufangen. */
+  const bauZielNachtrag = await seite.auswerten(`
+    const bd = await import('./js/baudoku.js');
+    bd.nachtragSetzen('2026-10-03');
+    await new Promise(r => setTimeout(r, 120));
+    const z = document.getElementById('bau-ziel'), k = document.getElementById('wz-punkt-hier');
+    const r = z.getBoundingClientRect(), kr = k.getBoundingClientRect();
+    const x = Math.round(Math.min(Math.max(r.left + 12, kr.left + 4), kr.right - 4));
+    const y = Math.round(Math.max(kr.top + 2, r.bottom - 2));
+    const p = document.elementFromPoint(x, y);
+    const leiste = document.querySelector('.werkzeuge').getBoundingClientRect().height;
+    const erg = { text: z.textContent, leiste: Math.round(leiste),
+      imBild: r.height > 0 && r.top >= 0 && r.left >= 0 && r.right <= innerWidth,
+      trifft: !!p && (p === k || k.contains(p)) };
+    bd.nachtragSetzen(null);
+    await new Promise(r => setTimeout(r, 120));
+    return erg;`);
+  b.pruefe(/^Nachtrag vom 03\.10\./.test(bauZielNachtrag.text) && bauZielNachtrag.imBild &&
+    bauZielNachtrag.trifft && bauZielNachtrag.leiste <= 64,
+    `Im Nachtrag nennt die Bauleiste den Tag („${bauZielNachtrag.text}“), bleibt ${bauZielNachtrag.leiste} px ` +
+    'hoch und lässt den Tipp durch');
   await seite.klick('#ko-kopf');
   await seite.ruhe();
   const koZeilen = await seite.auswerten(
@@ -1581,6 +1650,26 @@ const seitenGriffe = await zuKleineGriffe('.seite',
         return { gut: m.anteil >= FREI_BAU, kurz: prozent(m.anteil),
                  text: freiText(m) };
       });
+    /* Zwischen den Griffen der Bauleiste liegen mindestens 8 px: bei 2 bis 5
+       lagen „Punkt hier“ und „Auf Karte“ Kante an Kante, und der Daumen traf
+       im Review den Nachbarn. */
+    await fall(fenster, 'Bauleiste: Griffe mit Abstand',
+      'Zwischen den Griffen der Bauleiste liegen mindestens 8 px',
+      async () => {
+        const m = await seite.auswerten(`
+          const k = [...document.querySelectorAll('.werkzeuge .wz')]
+            .filter(e => e.getClientRects().length).map(e => e.getBoundingClientRect());
+          let kleinster = Infinity;
+          for (let i = 1; i < k.length; i++) {
+            const a = k[i - 1], c = k[i];
+            const dx = Math.max(0, c.left - a.right, a.left - c.right);
+            const dy = Math.max(0, c.top - a.bottom, a.top - c.bottom);
+            kleinster = Math.min(kleinster, Math.max(dx, dy));
+          }
+          return { n: k.length, kleinster: Math.round(kleinster) };`);
+        return { gut: m.n >= 2 && m.kleinster >= 8, kurz: m.kleinster + ' px',
+                 text: `${m.n} Griffe, der engste Abstand misst ${m.kleinster} px` };
+      });
     await kartenoptionenZu(false);
     await fall(fenster, 'Kartenoptionen (Bau) im Fenster oder rollbar',
       'Kartenoptionen im Baumodus: ganz im Fenster oder innen rollbar',
@@ -1746,6 +1835,23 @@ const seitenGriffe = await zuKleineGriffe('.seite',
           return { gut: g.abstand >= 16, kurz: g.abstand + ' px',
                    text: `„${g.text}“ steht ${g.abstand} px von der nächsten Taste` };
         });
+      /* Steht die Gefahrtaste allein in ihrer Zeile, beginnt sie bündig mit der
+         Reihe darüber: mit einem Rand von 16 px stand sie hochkant bei x = 41
+         gegen 25 und sah eingerückt aus. */
+      await fall(fenster, 'Punktkarte: Gefahrtaste bündig' + spalte,
+        'Steht „Zurücknehmen“ bzw. „Löschen“ allein in einer Zeile, beginnt sie bündig mit der Reihe',
+        async () => {
+          const m = await seite.auswerten(`
+            const k = [...document.querySelectorAll('#punktkarte .pk-tasten .knopf')]
+              .map(e => ({ r: e.getBoundingClientRect(), gefahr: e.classList.contains('gefahr') }));
+            const g = k.find(e => e.gefahr), erste = k[0];
+            if (!g) return { allein: false, versatz: 0 };
+            const allein = g.r.top >= erste.r.bottom - 1;
+            return { allein, versatz: Math.round(g.r.left - erste.r.left) };`);
+          return { gut: !m.allein || Math.abs(m.versatz) <= 1, kurz: m.allein ? m.versatz + ' px' : '',
+                   text: m.allein ? `steht allein, ${m.versatz} px gegen die Reihe darüber`
+                                  : 'steht neben ihrem Nachbarn' };
+        });
     };
     await punktkarteFaelle(false);
     /* Quer stand im seitlichen Blatt kein einziger Art-Chip ohne Rollen im
@@ -1870,6 +1976,27 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                  text: `${d.ganzSichtbar} von ${d.felder} Feldern ganz im Bild, ` +
                        `dem Blatt bleiben ${d.blattAnteil} % der Fensterfläche` };
       });
+    /* Auf dem Tablet (820 px) standen dort „Schwarz-W…“, „ganze Au“ und „an der
+       S“: das Auswahlfeld hatte höchstens 64 % einer schmalen Spalte. Gemessen
+       wird die Schrift des gewählten Eintrags gegen die Breite, die das Feld
+       dafür hat – ein Feld bricht unter seinen Namen, statt zu kürzen. */
+    await fall(fenster, 'Druckvorschau: Auswahlfelder zeigen ihren Wert ganz',
+      'Kein Auswahlfeld der Einstellungen schneidet den gewählten Eintrag ab',
+      async () => {
+        const d = await seite.auswerten(`
+          const z = document.createElement('canvas').getContext('2d');
+          const knapp = [...document.querySelectorAll('.druck-steuerung .ds-feld select')]
+            .filter(e => e.getClientRects().length).map(e => {
+              const st = getComputedStyle(e);
+              z.font = st.fontWeight + ' ' + st.fontSize + ' ' + st.fontFamily;
+              const text = e.options[e.selectedIndex] ? e.options[e.selectedIndex].textContent : '';
+              const platz = e.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight) - 22;
+              return z.measureText(text).width > platz + 1 ? text : null;
+            }).filter(Boolean);
+          return { knapp };`);
+        return { gut: d.knapp.length === 0, kurz: d.knapp.length ? d.knapp.length + ' gekürzt' : '',
+                 text: d.knapp.length ? 'abgeschnitten: ' + d.knapp.join(', ') : 'alle ganz zu lesen' };
+      });
     await fall(fenster, 'Druckvorschau: Umstellen behält die Originalgröße',
       'Eine geänderte Einstellung wirft das vergrößerte Blatt nicht in die Einpassung zurück',
       async () => {
@@ -1896,6 +2023,65 @@ const seitenGriffe = await zuKleineGriffe('.seite',
     console.log('  ' + zeile.padEnd(sz) +
       spalten.map(f => (werte.get(f) || '–').padStart(sb)).join(''));
   }
+
+  // ------------------------------------------------------------ Seitliches Blatt quer
+
+  b.abschnitt('Telefon quer: das seitliche Blatt nennt den Zwilling zuerst und schneidet den Falz sauber');
+  /* Im Review lag „Eben schon aufgenommen“ im seitlichen Blatt unter dem Falz,
+     die Art-Chips standen davor – wer die Art tippte, hatte die Muffe doppelt.
+     Dazu schnitt die Abschlusszeile die Zeile mit der Gitterangabe zur Hälfte
+     durch, und niemand sah, dass darunter noch etwas liegt. */
+  await stelleEin(844, 390);
+  await seite.auswerten('document.getElementById("aw-karte").click(); return true;');
+  await new Promise(r => setTimeout(r, 450));
+  await seite.klick('#wz-punkt-hier');
+  await seite.warteAuf('!document.getElementById("punktkarte").hidden', 8000);
+  await new Promise(r => setTimeout(r, 450));
+  await seite.klick('#wz-punkt-hier');
+  await seite.warteAuf('!!document.querySelector("#punktkarte .pk-zwilling")', 8000);
+  await new Promise(r => setTimeout(r, 450));
+  const zw = await seite.auswerten(`
+    const b = window._g.muss('#punktkarte');
+    const kante = window._g.muss('#punktkarte .pk-abschluss').getBoundingClientRect().top;
+    const z = window._g.muss('#punktkarte .pk-zwilling').getBoundingClientRect();
+    const chips = [...b.querySelectorAll('.pk-chips.pk-art .pk-chip')];
+    const erster = Math.min(...chips.map(c => c.getBoundingClientRect().top));
+    const knopf = window._g.treffer(window._g.muss('#punktkarte .pk-zwilling .knopf'));
+    /* Jede Zeile, die der Falz anschneidet – Befund, Chip, Feld, Taste. */
+    const halb = [...b.querySelectorAll('.pk-befund, .pk-warnung, .pk-frage, .pk-zuordnung, ' +
+      '.pk-chip, .pk-felder input, .pk-tasten .knopf')]
+      .filter(e => { const r = e.getBoundingClientRect();
+        return r.height > 0 && r.top < kante - 1 && r.bottom > kante + 1; })
+      .map(e => (e.textContent || e.placeholder || e.className).trim().slice(0, 24));
+    const mehr = getComputedStyle(window._g.muss('#punktkarte .pk-abschluss'), '::before').content;
+    return { zwUnten: Math.round(z.bottom), kante: Math.round(kante), zwOben: Math.round(z.top),
+             vorChips: z.top < erster, imBild: z.bottom <= kante + 0.5, halb,
+             rollt: b.scrollHeight > b.clientHeight + 6, merker: b.dataset.mehr === '1',
+             mehr, griff: Math.min(knopf.breite, knopf.hoehe), gerollt: Math.round(b.scrollTop) };`);
+  b.pruefe(zw.vorChips && zw.imBild,
+    `Der Zwilling-Hinweis steht vor den Art-Chips und über der Abschlusszeile (${zw.zwOben}–${zw.zwUnten}, Kante ${zw.kante})`);
+  b.pruefe(zw.griff >= GRIFF - TASTFEHLER, `„Diesen wieder löschen“ trägt ${zw.griff} px`);
+  b.pruefe(zw.halb.length === 0,
+    'Der Falz schneidet keine Zeile an' + (zw.halb.length ? ': ' + zw.halb.join(', ') : ''));
+  b.pruefe(!zw.rollt || (zw.merker && /mehr/.test(zw.mehr)),
+    `Rollt das Blatt noch, sagt es „mehr ▾“ (Merker ${zw.merker}, ${zw.mehr})`);
+  await seite.auswerten(`
+    (await import('./js/baukarte.js')).punktkarteSchliessen();
+    window.fbp.store.aendern(p => {
+      if (p.strecken[0].bau) p.strecken[0].bau.punkte = [];
+    }, 'bau');
+    return true;`);
+  await seite.ruhe();
+  /* Die Pille „Strecke fertig – … unter ‚Liste‘“ deckte nach dem Wechsel auf
+     die Liste drei Sekunden lang den Knopf, auf den sie eben verwiesen hatte. */
+  await seite.auswerten(`(await import('./js/ui.js')).hinweis('Strecke fertig – Bauauftrag unter „Liste“.'); return true;`);
+  await seite.warteAuf('!document.getElementById("hinweisbox").hidden', 3000);
+  await seite.klick('#aw-liste');
+  await new Promise(r => setTimeout(r, 350));   // die Pille geht in 160 ms
+  b.pruefe(await seite.auswerten('document.getElementById("hinweisbox").hidden'),
+    'Mit dem Wechsel auf die Liste geht die Pille „Strecke fertig …“ weg');
+  await seite.klick('#aw-karte');
+  await seite.ruhe();
 
   // ------------------------------------------------------------ Querformat
 
@@ -1973,8 +2159,22 @@ const seitenGriffe = await zuKleineGriffe('.seite',
       werkzeuge: [...document.querySelectorAll('.werkzeuge .wz')].filter(x => x.getClientRects().length).length });`);
   const wzAuf = JSON.parse(await wzMass());
   b.pruefe(wzAuf.kopf >= 44, `Der Klappgriff steht da und trägt ${wzAuf.kopf} px`);
+  /* Der Griff sieht wie ein Knopf aus und sagt, was ein Tipp tut – und
+     zugeklappt, dass die Leiste zu ist. */
+  const wzGriff = await seite.auswerten(`
+    const k = document.getElementById('wz-kopf');
+    return { rahmen: getComputedStyle(k).borderTopWidth, text: k.textContent.trim() };`);
+  b.pruefe(wzGriff.rahmen !== '0px' && /ausblenden/.test(wzGriff.text),
+    `Der Klappgriff ist umrandet und nennt seine Wirkung („${wzGriff.text}“)`);
+  /* Auf dem Tablet standen die Griffe der Leiste 5 px auseinander. */
+  const wzLuecke = await seite.auswerten(`
+    const k = [...document.querySelectorAll('.werkzeuge .wz')]
+      .filter(e => e.getClientRects().length).map(e => e.getBoundingClientRect());
+    return k.length < 2 ? 0 : Math.round(Math.min(...k.slice(1).map((r, i) => r.top - k[i].bottom)));`);
+  b.pruefe(wzLuecke >= 8, `Zwischen den Werkzeugen des Tablets liegen ${wzLuecke} px (mindestens 8)`);
   await seite.klick('#wz-kopf');
   const wzZu = JSON.parse(await wzMass());
+  b.pruefe(/einblenden/.test(await seite.text('#wz-kopf')), 'Zugeklappt heißt der Griff „einblenden“');
   b.pruefe(wzZu.werkzeuge === 0 && wzZu.hoch <= 60,
     `Zugeklappt bleibt nur der Griff: ${wzZu.hoch} px statt ${wzAuf.hoch} px hoch`);
   await seite.neuLaden();
@@ -2257,6 +2457,16 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   b.gleich(einstieg.wege.length, 2, 'Zwei Wege im Einstieg: ' + einstieg.wege.map(w => w.text).join(', '));
   b.pruefe(einstieg.wege.every(w => w.kleinste >= GRIFF - TASTFEHLER),
     'Beide Wege auf Handschuhmaß – ' + einstieg.wege.map(w => `${w.text} ${w.kleinste} px`).join(', '));
+  /* Quer ragte der letzte Absatz über die Rollleiste hinaus: bei 844×390
+     blieben dem Inhalt 281 px, der Einstieg brauchte 323. Er passt jetzt
+     ohne Rollen, sonst bliebe der Satz zur erweiterten Ansicht ungelesen. */
+  await stelleEin(844, 390);
+  const einstiegQuer = await seite.auswerten(`
+    const i = document.getElementById('dialog-inhalt');
+    return { zu: i.scrollHeight, hoch: i.clientHeight };`);
+  b.pruefe(einstiegQuer.zu <= einstiegQuer.hoch + 1,
+    `Quer passt der Einstieg ohne Rollen (Inhalt ${einstiegQuer.zu} px, Fläche ${einstiegQuer.hoch} px)`);
+  await stelleEin(390, 690);
   await seite.klick('[data-weg="strecke"]');
   await seite.ruhe();
   const zeichnet = await seite.auswerten(

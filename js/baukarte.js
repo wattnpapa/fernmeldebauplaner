@@ -22,7 +22,9 @@ import {
   istPunkte, istZuSoll, sollZuIst, istPunktSetzen, istArtSetzen, bauabschnittById,
   istSollZuordnen, offeneSollPunkte, sollVorschlag, andereStreckeNahe, istPunktUmhaengen,
   baustrecke, baustreckeSetzen, aktiverBauabschnitt, bauabschnitte, bauabschnittAktivSetzen,
-  quelleText, punktartText, auftragsTrupps, truppAmGeraet, ABWEICHUNG_SCHWELLE, ABSEITS_SCHWELLE
+  quelleText, punktartText, auftragsTrupps, truppAmGeraet, ABWEICHUNG_SCHWELLE, ABSEITS_SCHWELLE,
+  nachtragTag, tagKurz,
+  waehlbareAbschnitte, eigenenAbschnittSichern
 } from './baudoku.js';
 import { toMGRS, formatLaenge, distanz } from './geo.js';
 import { escapeHtml } from './strecken.js';
@@ -55,6 +57,7 @@ export function initBaukarte(kontext) {
     if (jetzt - aufgeschlagen < TIPPSPERRE_MS && b && !b.hidden && b.contains(e.target)) {
       e.preventDefault();
       e.stopPropagation();
+      tippWink(e.target);
       return;
     }
     /* Und in der Gegenrichtung: nach dem Schließen liegt unter dem Finger die
@@ -67,6 +70,7 @@ export function initBaukarte(kontext) {
         e.target.closest('.werkzeuge, #zeichen-hinweis')) {
       e.preventDefault();
       e.stopPropagation();
+      tippWink(e.target);
     }
   }, true);
   /* Was zwischen dem Start einer Ortung und ihrem Ergebnis geschieht (siehe
@@ -81,7 +85,10 @@ export function initBaukarte(kontext) {
   document.addEventListener('keydown', e => { if (e.isTrusted) eingaben++; }, true);
   /* Gedreht oder die Tastatur geht auf: das gekürzte Maß (`blattKuerzen`)
      gehört zur alten Höhe des Fensters. */
-  window.addEventListener('resize', () => { const b = blatt(); if (b) b.style.maxHeight = ''; });
+  window.addEventListener('resize', () => {
+    const b = blatt();
+    if (b) { b.style.maxHeight = ''; setTimeout(rollhinweis, 0); }
+  });
   /* Ein Feld, das halb unter der klebenden Abschlusszeile steht, ist nur
      halb zu treffen – im Review die Bemerkung mit 28 von 44 px, und der Rest
      des Tipps traf „Fertig“. Kommt das Rollen so zum Stehen, rückt das Blatt
@@ -91,6 +98,7 @@ export function initBaukarte(kontext) {
     if (e.target !== blatt()) return;
     clearTimeout(rollTimer);
     rollTimer = setTimeout(feldFreiRuecken, 140);
+    rollhinweis();
   }, true);
   unterbrocheneOrtungMelden();
 }
@@ -115,6 +123,46 @@ function blattKuerzen() {
       return;
     }
   }
+  /* Im seitlichen Blatt quer geht der Falz nicht durch eine Zeile. Es ist dort
+     nur rund 316 px hoch, und die Abschlusszeile schnitt im Review die Zeile
+     mit der Gitterangabe zur Hälfte durch – halb gelesen, und ohne Hinweis,
+     dass darunter noch Zuordnung und „Löschen“ liegen. Das Blatt wird so viel
+     niedriger, dass die oberste angeschnittene Zeile ganz darunter bleibt;
+     den Hinweis, dass es weitergeht, gibt `rollhinweis`. Nicht höher
+     gemacht: die Höhe ist die der Karte neben dem Blatt. Nicht unter
+     Mindesthöhe – ein Blatt, das nur noch Kopf und Abschluss zeigt, ist
+     schlimmer als eine halbe Zeile. */
+  if (!window.matchMedia(SEITENBLATT).matches) return;
+  const hoehe = b.getBoundingClientRect().height;
+  let oben = Infinity;
+  for (const z of b.querySelectorAll(
+    '.pk-befund, .pk-warnung, .pk-frage, .pk-zuordnung, .pk-chip, .pk-felder input, .pk-tasten .knopf')) {
+    const r = z.getBoundingClientRect();
+    if (r.top < kante && r.bottom > kante && r.top < oben) oben = r.top;
+  }
+  if (oben < Infinity && hoehe - (kante - oben) - 8 >= SEITENBLATT_MIN) {
+    b.style.maxHeight = `${Math.floor(hoehe - (kante - oben) - 8)}px`;
+  }
+}
+
+/* Das Blatt an der Seite, quer (`css/app.css`, „Die Punktkarte steht quer als
+   Blatt an der rechten Seite“) – dieselbe Bedingung wie dort. */
+const SEITENBLATT = '(max-height: 450px) and (min-width: 600px)';
+const SEITENBLATT_MIN = 170;
+
+/**
+ * Zeigen, dass unter der Abschlusszeile noch etwas liegt. Das Blatt rollt
+ * unter einer festgehaltenen Zeile, und nichts an ihm sagte es: im Review
+ * lagen Zuordnung, „Löschen“ und „Neu orten“ quer unter dem Falz, ohne dass
+ * jemand wusste, dass es sie gibt. Das Merkmal am Blatt schaltet einen
+ * Schatten über der Zeile und das Wort „mehr ▾“ ein (`css/app.css`); es
+ * verschwindet, sobald das Ende erreicht ist.
+ */
+function rollhinweis() {
+  const b = blatt();
+  if (!b) return;
+  const rest = b.scrollHeight - b.clientHeight - b.scrollTop;
+  if (!b.hidden && rest > 6) b.dataset.mehr = '1'; else delete b.dataset.mehr;
 }
 
 function feldFreiRuecken() {
@@ -136,6 +184,27 @@ let aufgeschlagen = -Infinity;
 let geschlossen = -Infinity;
 let echterTipp = -Infinity;
 let eingaben = 0;
+
+/**
+ * Dem Finger zeigen, dass sein Tipp von einer Tippsperre geschluckt wurde.
+ *
+ * Die Sperren schützen vor dem zweiten Tipp eines Doppeltipps, und sie sind
+ * still: im Review verschluckten sie auch gewollte schnelle Tipps – den Chip
+ * 300 ms nach dem Aufschlagen, „Punkt hier“ 250 ms nach „Fertig“ –, und der
+ * Trupp tippte noch einmal in dem Glauben, ein Griff sei kaputt. Der Knopf
+ * blitzt deshalb kurz auf. Die Sperre selbst wird dafür nicht länger: ein
+ * Wink, der die Frist verlängerte, risse den Schutz vor dem Doppeltipp auf, für
+ * den sie da ist. Eine Pille wäre das Falsche – sie liegt über den Leisten,
+ * die der Tipp eben treffen sollte.
+ */
+export function tippWink(ziel) {
+  const knopf = ziel && ziel.closest ? ziel.closest('button, .pk-chip') || ziel : null;
+  if (!knopf || !knopf.classList) return;
+  knopf.classList.remove('tipp-wink');
+  void knopf.offsetWidth;   // die Animation von vorn beginnen lassen
+  knopf.classList.add('tipp-wink');
+  setTimeout(() => knopf.classList.remove('tipp-wink'), 500);
+}
 
 /**
  * Ob ein Kartentipp in die Sperre um das Blatt fällt – kurz nach dem
@@ -176,13 +245,17 @@ const hinweisAus = () => ctx && ctx.hinweisAus();
  * Punktkarte auf, die Liste braucht das nicht.
  */
 export function istPunktAusStandort(sid, sollPunktId, o = {}) {
-  if (!navigator.geolocation) return hinweis('Dieses Gerät liefert keine Position.', 'fehler');
+  /* `o.fernPos` ist die Position, die der Trupp nach der Rückfrage bestätigt
+     hat (siehe unten) – sie wird nicht noch einmal geortet. */
+  if (!navigator.geolocation && !o.fernPos) {
+    return hinweis('Dieses Gerät liefert keine Position.', 'fehler');
+  }
   /* Eine Ortung zur Zeit. Bei langsamer Ortung (4 s) startete jeder weitere
      Tipp eine eigene, und am Ende standen zwei deckungsgleiche Punkte da –
      der Knopf hatte nicht gezeigt, dass er schon arbeitet. Jetzt zeigt er es,
      und ein zweiter Tipp startet nichts. */
   if (ortungLaeuft) return hinweis('Die Position wird noch ermittelt …');
-  hinweis('Position wird ermittelt …');
+  if (!o.fernPos) hinweis('Position wird ermittelt …');
   ortungAnzeigen(true);
   const abschnittId = (aktiverBauabschnitt(store.strecke(sid)) || {}).id || null;
   /* Was bei Start galt – daran misst das Ergebnis, ob es noch erwartet wird.
@@ -195,7 +268,7 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
   const sollVorher = sollPunktId ? !!istZuSoll(store.strecke(sid), sollPunktId) : false;
   const ersetztVorher = o.ersetzt ? punktAbdruck(store.strecke(sid), o.ersetzt) : null;
   ortungVermerken(sid);
-  navigator.geolocation.getCurrentPosition(pos => {
+  const verarbeiten = pos => {
     ortungAnzeigen(false);
     ortungVermerken(null);
     const { latitude: lat, longitude: lng, accuracy } = pos.coords;
@@ -239,6 +312,33 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
        die Aufnahme ist gesichert, die Zuordnung bleibt eine Entscheidung, die
        der Trupp in der Punktkarte bewusst trifft. */
     const zuWeit = gewuenscht && distanz(gewuenscht, { lat, lng }) >= ABSEITS_SCHWELLE;
+    /* Ab einem Kilometer wird nicht aufgenommen, sondern gefragt – auf BEIDEN
+       Wegen. „◉ hier“ in der Zeile der Liste legte bei 20 km Abstand still
+       einen Zusatzpunkt an (nur eine Pille), während die Karte zurückfragte.
+       Zwischen 300 m und einem Kilometer bleibt es bei der Aufnahme mit
+       Warnung: dort ist eine Umgehung möglich, und die Ortung streut. Darüber
+       ist ein falscher Fix oder ein falscher Punkt wahrscheinlicher als ein
+       Bau, und ein Zusatzpunkt 20 km neben der Trasse verdirbt Summenband und
+       Lagekarte, bis ihn jemand findet. */
+    if (gewuenscht && !o.fernPos && ctx && ctx.dialog &&
+        distanz(gewuenscht, { lat, lng }) >= ORTUNG_FRAGEN_AB) {
+      const nr = nrVon(gewuenscht.id);
+      ctx.dialog({
+        titel: 'Standort weit vom geplanten Punkt',
+        inhalt: `<p>Der Standort liegt <b>${escapeHtml(formatLaenge(distanz(gewuenscht, { lat, lng })))}</b> ` +
+          `von Punkt ${nr}. Das ist weiter, als am Bauort ausgewichen wird – ` +
+          'eher stimmt die Ortung nicht, oder es war der falsche Punkt.</p>' +
+          '<p class="klein">Aufgenommen würde ein zusätzlicher Punkt, nicht Punkt ' + nr + '.</p>',
+        schutz: 'Bitte entscheiden: nicht aufnehmen oder als zusätzlichen Punkt aufnehmen.',
+        fuss: [
+          { text: 'Nicht aufnehmen', primaer: true,
+            tun: () => hinweis(`Nichts aufgenommen – Standort ${formatLaenge(distanz(gewuenscht, { lat, lng }))} neben Punkt ${nr}.`, 'warnung') },
+          { text: 'Als zusätzlichen Punkt aufnehmen',
+            tun: () => { setTimeout(() => istPunktAusStandort(sid, sollPunktId, { ...o, fernPos: pos }), 0); } }
+        ]
+      });
+      return;
+    }
     const sollPunkt = zuWeit ? null : gewuenscht;
     /* Der Bauabschnitt wird noch einmal geprüft: er kann in der Wartezeit
        gelöscht worden sein, und ein Verweis ins Leere machte den Punkt
@@ -294,11 +394,14 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
          fertigen Punkt schon zeigt. */
       hinweisAus();
     }
-  }, err => {
+  };
+  const fehlschlag = err => {
     ortungAnzeigen(false);
     ortungVermerken(null);
     ortungFehlerMelden(err, sid, sollPunktId, o, lage() !== start);
-  },
+  };
+  if (o.fernPos) return verarbeiten(o.fernPos);
+  navigator.geolocation.getCurrentPosition(verarbeiten, fehlschlag,
      /* Eine frische Position, keine gemerkte. Mit `maximumAge: 10000` gab das
         Gerät 5 s nach dem ersten Punkt dieselbe Koordinate zurück, obwohl der
         Trupp 60 m weiter stand – und das Blatt nannte „Standort ±6 m“. Akku
@@ -308,6 +411,11 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
         und das Fehlerblatt bietet danach „Noch einmal orten“ und die Karte. */
      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
 }
+
+/* Ab dieser Entfernung zum gemeinten geplanten Punkt fragt „◉ hier“ nach,
+   statt aufzunehmen. Die Karte warnte schon ab `ABSEITS_SCHWELLE`; die Rückfrage
+   liegt bewusst darüber (siehe die Begründung an der Stelle). */
+const ORTUNG_FRAGEN_AB = 1000;
 
 let ortungLaeuft = false;
 /* Der Knopf „Punkt hier“ zeigt, dass er arbeitet – und ebenso der Ortungsgriff
@@ -446,11 +554,20 @@ export function bauzielNachfuehren() {
   const s = store.projekt && store.projekt.strecken.length ? baustrecke() : null;
   const a = s ? aktiverBauabschnitt(s) : null;
   const ohneAbschnitt = !!s && !a && bauabschnitte(s).length > 0;
-  const text = !s ? '' : `an ${s.name}` +
+  /* Der Nachtrag gilt auf der Karte genauso wie in der Liste: jede Aufnahme
+     über die Leiste trägt den Tag vom Blatt und keine Uhrzeit. Ohne diese
+     Marke war er dort unsichtbar – im Review liefen über Leiste und Punktkarte
+     weiter nachgetragene Einträge, ohne dass die Karte es sagte. Im selben
+     Merker und nicht in einer eigenen Zeile: die Leiste ist höchstens 64 px
+     hoch. */
+  /* Vorn und nicht hinten: der Merker kürzt von rechts, und der Nachtrag ist
+     das, was nicht untergehen darf. */
+  const text = !s ? '' : (nachtragTag() ? `Nachtrag vom ${tagKurz(nachtragTag())} · ` : '') +
+    `an ${s.name}` +
     (a ? ` · ${a.trupp || a.name}` : ohneAbschnitt ? ' · kein Bauabschnitt gewählt' : '');
   if (z.textContent !== text) z.textContent = text;
   z.hidden = !text;
-  z.classList.toggle('bau-ziel-offen', ohneAbschnitt);
+  z.classList.toggle('bau-ziel-offen', ohneAbschnitt || (!!s && !!nachtragTag()));
 }
 
 /** „Punkt hier“: Standort des Geräts als zusätzlichen Punkt aufnehmen */
@@ -677,6 +794,7 @@ function punktkarteZeichnen(neuAufgeschlagen = false) {
     b.hidden = false;
     b.scrollTop = rollstand;
     document.body.classList.add('punktkarte-offen');
+    rollhinweis();
     return;
   }
   const soll = offen.sollId ? s.punkte.find(pt => pt.id === offen.sollId) : null;
@@ -694,6 +812,7 @@ function punktkarteZeichnen(neuAufgeschlagen = false) {
   b.scrollTop = Math.min(rollstand, Math.max(0, b.scrollHeight - b.clientHeight));
   document.body.classList.add('punktkarte-offen');
   if (neuAufgeschlagen) blattKuerzen();
+  rollhinweis();
 }
 
 // ---------------------------------------------------------------- Bausteine
@@ -742,7 +861,13 @@ function kopf(titel, untertitel, s, zuText = 'Schließen') {
   k.appendChild(el('div', 'pk-titel',
     `<b>${escapeHtml(titel)}</b>` +
     (untertitel ? `<span class="pk-unter">${escapeHtml(untertitel)}</span>` : '') +
-    `<span class="pk-strecke">${escapeHtml(s.name)}</span>`));
+    /* Dieselbe Marke wie an der Leiste: die Punktkarte schreibt Einträge ohne
+       Uhrzeit, solange der Nachtrag läuft, und sagt es im Kopf. In der Zeile
+       der Strecke und nicht in einer eigenen – der Kopf ist festgehalten, und
+       jede Zeile mehr geht dem Blatt ab. */
+    `<span class="pk-strecke">${escapeHtml(s.name)}` +
+    (nachtragTag() ? ` · <b class="pk-nachtrag">Nachtrag vom ${escapeHtml(tagKurz(nachtragTag()))}</b>` : '') +
+    '</span>'));
   return k;
 }
 
@@ -917,8 +1042,13 @@ function istBlatt(s, ist, soll) {
     }
     if (offeneSoll.length) {
       const reihe = el('div', 'pk-zuordnung');
+      /* „Zuordnung ändern:“ mit Doppelpunkt, der auf die Chips weist. Vorher
+         stand dort „– ändern?“, und im Review tippte ein Erstnutzer den Satz
+         an wie einen Griff; er bewirkte nichts, denn die Chips daneben sind
+         der Griff. Der Satz bleibt ein Etikett, und er sieht jetzt wie eines
+         aus. */
       reihe.appendChild(el('span', 'pk-frage', vorschlagAktiv
-        ? `<span class="pk-vorschlag">zugeordnet: Punkt ${nr}</span> – ändern?`
+        ? `<span class="pk-vorschlag">zugeordnet: Punkt ${nr}</span> Zuordnung ändern:`
         : 'Welcher Punkt?'));
       /* Ein Punkt, der weiter weg liegt, als eine Umgehung reicht, verlangt
          eine eigene Bestätigung. Im Audit stand „Punkt 1 · 82,43 km“
@@ -998,8 +1128,17 @@ function istBlatt(s, ist, soll) {
 
   /* `pk-art` markiert Frage und Chips der Punktart: quer rücken sie an den
      Anfang des Blattes (`css/app.css`, „Quer auf dem Telefon“). */
+  /* Die Zuordnung steht im seitlichen Blatt quer unter dem Falz, die Chipreihe
+     der Art davor – im Review sah der Trupp dort nie, dass der Punkt schon
+     einer Planstelle zugeordnet war. Für diesen Fall trägt die Frage der Art
+     die Zuordnung als Kurzangabe mit, in derselben Zeile und ohne eine
+     weitere: eine eigene Zeile hätte die dritte Chipreihe unter den Falz
+     geschoben. Gezeigt wird sie nur dort (`css/app.css`, „seitliches Blatt“);
+     hochkant steht die Zuordnung selbst in Sicht. */
+  const zuKurz = vorschlagAktiv
+    ? `<span class="pk-zu-kurz">zugeordnet: Punkt ${nr}</span>` : '';
   links.appendChild(el('div', 'pk-frage pk-art' + (ist.art === 'offen' ? ' pk-frage-offen' : ''),
-    ist.art === 'offen' ? 'Was ist hier? <span>fehlt noch</span>' : 'Was ist hier?'));
+    (ist.art === 'offen' ? 'Was ist hier? <span>fehlt noch</span>' : 'Was ist hier?') + zuKurz));
   /* Anfang und Ende stehen zur Wahl, wenn der Punkt sie trägt ODER der
      geplante Punkt sie trug: wer am Anfangspunkt versehentlich „Muffe“
      antippt, muss zum Anfang zurückkönnen, ohne Rückgängig zu suchen. */
@@ -1043,12 +1182,32 @@ function istBlatt(s, ist, soll) {
      Art und nicht davor: die ist die Frage, wegen der das Blatt aufschlägt. */
   if (!ist.abschnitt && bauabschnitte(s).length && !aktiverBauabschnitt(s)) {
     const reihe = el('div', 'pk-zuordnung pk-abschnitt');
-    reihe.appendChild(el('span', 'pk-frage pk-frage-offen',
-      'Bauabschnitt? <span>keiner gewählt</span>'));
-    reihe.appendChild(chips(bauabschnitte(s).map(a => [a.id, a.trupp || a.name]), '', aid => {
-      bauabschnittAktivSetzen(aid);
-      store.aendern(() => { ist.abschnitt = aid; }, 'bau');
-    }, 'Bauabschnitt'));
+    /* Zur Wahl stehen nur die Abschnitte dieses Geräts. Die eines anderen
+       Trupps anzubieten hieß, unter fremdem Namen aufzunehmen – beim Planer
+       ersetzte die Meldung dann dessen Aufnahme. Hat das Gerät keinen eigenen,
+       steht der Griff zum Anlegen da. */
+    const meine = waehlbareAbschnitte(s);
+    const ich = truppAmGeraet().trupp.trim();
+    if (meine.length || !ich) {
+      reihe.appendChild(el('span', 'pk-frage pk-frage-offen',
+        'Bauabschnitt? <span>keiner gewählt</span>'));
+      reihe.appendChild(chips((meine.length ? meine : bauabschnitte(s))
+        .map(a => [a.id, a.trupp || a.name]), '', aid => {
+        bauabschnittAktivSetzen(aid);
+        store.aendern(() => { ist.abschnitt = aid; }, 'bau');
+      }, 'Bauabschnitt'));
+    } else {
+      reihe.appendChild(el('span', 'pk-frage pk-frage-offen',
+        'Nicht aufgetragen? <span>eigener Abschnitt</span>'));
+      reihe.appendChild(chips([['eigen', `Neu: ${ich}`]], '', () => {
+        let a = null;
+        store.aendern(() => {
+          a = eigenenAbschnittSichern(s, ich, truppAmGeraet().fuehrer);
+          ist.abschnitt = a.id;
+        }, 'bau');
+        bauabschnittAktivSetzen(a.id);
+      }, 'Bauabschnitt'));
+    }
     links.appendChild(reihe);
   }
 
@@ -1140,9 +1299,14 @@ function ebenAufgenommen(s, ist) {
 
 function zwillingWarnung(s, ist, z) {
   const nr = z.punkt.sollPunkt ? s.punkte.findIndex(pt => pt.id === z.punkt.sollPunkt) + 1 : 0;
-  const w = el('div', 'pk-warnung pk-zwilling',
-    `Eben schon aufgenommen (${nr ? `Punkt ${nr}` : 'zusätzlicher Punkt'}, ` +
-    `vor ${Math.max(1, Math.round(z.vor))}\u00a0s) – an derselben Stelle.`);
+  const text = `Eben schon aufgenommen (${nr ? `Punkt ${nr}` : 'zusätzlicher Punkt'}, ` +
+    `vor ${Math.max(1, Math.round(z.vor))}\u00a0s) – an derselben Stelle.`;
+  /* Der Satz in einem eigenen Element: seitlich quer steht er höchstens
+     zweizeilig neben dem Griff statt über ihm (`.pk-zwilling-text`). */
+  const w = el('div', 'pk-warnung pk-zwilling');
+  const satz = el('span', 'pk-zwilling-text', escapeHtml(text));
+  satz.title = text;
+  w.appendChild(satz);
   w.appendChild(knopf('Diesen wieder löschen', () => {
     store.aendern(() => { s.bau.punkte = s.bau.punkte.filter(x => x.id !== ist.id); }, 'bau');
     const frueher = istPunkte(s).find(x => x.id === z.punkt.id);
@@ -1167,32 +1331,48 @@ function umhaengenFragen(s, ist, andere, nach) {
   if (a) return umhaengen(s, ist, andere, a.id);
   const abschnitte = bauabschnitte(ziel);
   const trupps = auftragsTrupps(ziel);
-  const ich = truppAmGeraet().trupp;
+  const ich = truppAmGeraet().trupp.trim();
   const fremd = trupps.length > 0 && !(ich && trupps.includes(ich));
   if (!abschnitte.length && !fremd) return umhaengen(s, ist, andere, null);
   const alt = blatt() && blatt().querySelector('.pk-umhaengen');
   if (alt) alt.remove();
   const name = escapeHtml(ziel.name);
   const wem = fremd ? ` ist ${escapeHtml(trupps.join(', '))} aufgetragen` : '';
-  const frage = el('div', 'pk-warnung pk-rueckfrage pk-umhaengen', abschnitte.length
-    ? `„${name}“${wem}${wem ? ' und' : ''} wird in Bauabschnitten gebaut – für welchen?`
-    : `„${name}“${wem} – trotzdem dorthin?`);
-  if (abschnitte.length) {
-    for (const ab of abschnitte) {
-      frage.appendChild(knopf(`Für ${ab.trupp || ab.name}`,
-        () => umhaengen(s, ist, andere, ab.id), 'klein'));
-    }
+  let frage;
+  if (ich) {
+    /* Das Gerät kennt seinen Trupp: gewählt wird nur, was ihm gehört. Vorher
+       bot das Blatt „Für 1. FmTr“ und „Für 2. FmTr“ an einem Gerät „3. FmTr“ –
+       jede Wahl trug unter fremdem Namen ein und ersetzte beim Planer die
+       Aufnahme des anderen Trupps. Der Hauptweg ist der eigene Abschnitt. */
+    frage = el('div', 'pk-warnung pk-rueckfrage pk-umhaengen',
+      `„${name}“${wem}${fremd ? ' – ihr seid nicht aufgetragen' : ' und wird in Bauabschnitten gebaut'}. ` +
+      `Eigenen Abschnitt „${escapeHtml(ich)}“ anlegen?`);
+    frage.appendChild(knopf(`Ja, Abschnitt „${ich}“`,
+      () => umhaengen(s, ist, andere, null, ich), 'klein'));
   } else {
-    frage.appendChild(knopf(`Ja, zu ${ziel.name}`, () => umhaengen(s, ist, andere, null), 'klein'));
+    frage = el('div', 'pk-warnung pk-rueckfrage pk-umhaengen', abschnitte.length
+      ? `„${name}“${wem}${wem ? ' und' : ''} wird in Bauabschnitten gebaut – für welchen?`
+      : `„${name}“${wem} – trotzdem dorthin?`);
+    if (abschnitte.length) {
+      for (const ab of abschnitte) {
+        frage.appendChild(knopf(`Für ${ab.trupp || ab.name}`,
+          () => umhaengen(s, ist, andere, ab.id), 'klein'));
+      }
+    } else {
+      frage.appendChild(knopf(`Ja, zu ${ziel.name}`, () => umhaengen(s, ist, andere, null), 'klein'));
+    }
   }
   nach.after(frage);
   frage.scrollIntoView({ block: 'nearest' });
 }
 
-function umhaengen(s, ist, andere, abschnittId) {
+function umhaengen(s, ist, andere, abschnittId, eigenerTrupp = '') {
   const ziel = andere.strecke;
   let neu = null;
   store.aendern(() => {
+    if (eigenerTrupp) {
+      abschnittId = eigenenAbschnittSichern(ziel, eigenerTrupp, truppAmGeraet().fuehrer).id;
+    }
     neu = istPunktUmhaengen(s, ziel, ist, andere.offen ? andere.punkt.id : null, abschnittId);
   }, 'bau');
   if (!neu) return;
@@ -1271,6 +1451,10 @@ function sollBlatt(s, soll) {
         abschnitt: a ? a.id : null
       });
     }, 'bau');
+    /* Im Nachtrag trägt der Punkt keine Uhrzeit, und die Karte hat kein Feld
+       dafür – die Pille sagt, wo sie hingehört, statt auf eine Zeile zu
+       verweisen, die hier nicht zu erreichen ist. */
+    if (nachtragTag()) hinweis('Punkt bestätigt – die Uhrzeit vom Blatt in der Liste eintragen');
   }, 'bau-taste primaer'));
   tasten.appendChild(ortungsgriff('◉ Hier', () => istPunktAusStandort(s.id, soll.id), 'bau-taste'));
   tasten.appendChild(knopf('✛ Auf Karte', () => {

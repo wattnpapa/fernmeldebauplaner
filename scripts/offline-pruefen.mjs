@@ -425,12 +425,85 @@ try {
   b.pruefe(zoom18.bilder > 0 && zoom18.sichtbar === zoom18.bilder,
     `Jede Kachel zeigt den Ausschnitt der gröberen Stufe (${zoom18.sichtbar} von ${zoom18.bilder})`);
   b.gleich(zoom18.farbe, '200,216,232', 'Und zwar mit ihrem Bild, nicht als leere Fläche');
-  b.pruefe(/kein Netz/.test(zoom18.leiste) && /feiner nicht mitgenommen/.test(zoom18.leiste),
-    `Die Statusleiste sagt still, dass es feiner nicht mitgenommen ist („${zoom18.leiste}“)`);
+  b.pruefe(/kein Netz/.test(zoom18.leiste) && /gröber/.test(zoom18.leiste),
+    `Die Statusleiste nennt den Anlass und dass es gröber ist („${zoom18.leiste}“)`);
+  b.pruefe(/^kein Netz/.test(zoom18.leiste) && /Vorrat/.test(zoom18.leiste),
+    'Der Anlass steht vorn, der Vorrat dahinter');
   b.pruefe(await seite.auswerten('document.getElementById("hinweisbox").hidden'),
     'Ohne Hinweispille – die gröbere Stufe ist ein Zustand, keine Meldung');
   server.netzAn();
   await seite.mitNetz();
+  await seite.auswerten(`window.fbp.karte.setView([51.803, 10.60], 15, { animate: false }); return true;`);
+
+  b.abschnitt('Ein Kartenserver, der nie antwortet, hält die Karte nicht grau');
+  /* Der Browser gilt als online, die Verbindung steht – aber der Anbieter
+     antwortet nicht. Weder `error` noch `navigator.onLine` springen an; die
+     Fläche blieb bei Stufe 18 nach 30 s noch grau, die Leiste schwieg. Der
+     Prüfstand nimmt die Anfragen an und lässt sie liegen. Im Vorrat liegt
+     noch die Stufe 17 aus dem Abschnitt davor. */
+  await seite.auswerten('return (await import("./js/ui.js")).hinweisAus();');
+  await seite.haengen('*geodatenzentrum.de*');
+  await seite.auswerten(`
+    const k = window.fbp.karte;
+    k.setView([51.8031, 10.6003], 18, { animate: false });
+    k._fbpBasis.redraw();
+    return true;`);
+  await new Promise(f => setTimeout(f, 1500));
+  const vorFrist = await seite.auswerten(`
+    const bilder = [...document.querySelectorAll('#karte img.leaflet-tile')];
+    return { bilder: bilder.length, blob: bilder.filter(i => i.src.startsWith('blob:')).length,
+             leiste: document.getElementById('sl-netz').hidden };`);
+  b.pruefe(vorFrist.bilder > 0 && vorFrist.blob === 0,
+    `Innerhalb der Frist steht noch nichts (${vorFrist.blob} von ${vorFrist.bilder} Kacheln)`);
+  await seite.warteAuf(`
+    const bilder = [...document.querySelectorAll('#karte img.leaflet-tile')];
+    return bilder.length > 0 && bilder.every(i => i.src.startsWith('blob:') && i.complete)
+      && !document.getElementById('sl-netz').hidden;`, 12000).catch(() => {});
+  const haengt18 = await seite.auswerten(`
+    const bilder = [...document.querySelectorAll('#karte img.leaflet-tile')];
+    const sichtbar = bilder.filter(i => i.src.startsWith('blob:') && i.complete && i.naturalWidth === 256);
+    return { online: navigator.onLine, bilder: bilder.length, sichtbar: sichtbar.length,
+             leiste: document.getElementById('sl-netz').hidden ? ''
+               : document.getElementById('sl-netz').textContent,
+             pille: document.getElementById('hinweisbox').hidden };`);
+  b.gleich(haengt18.online, true, 'Der Browser hält das Netz für da');
+  b.pruefe(haengt18.bilder > 0 && haengt18.sichtbar === haengt18.bilder,
+    `Nach der Frist zeigt jede Kachel die gröbere Stufe aus dem Vorrat (${haengt18.sichtbar} von ${haengt18.bilder})`);
+  b.pruefe(/^Karte nicht erreichbar/.test(haengt18.leiste) && /gröber/.test(haengt18.leiste),
+    `Die Leiste nennt den Ausfall und dass es gröber ist („${haengt18.leiste}“)`);
+  b.pruefe(!/kein Netz/.test(haengt18.leiste), 'Und behauptet nicht, das Netz sei weg');
+  b.pruefe(haengt18.pille, 'Ohne Hinweispille');
+  await seite.haengenEnde();
+
+  b.abschnitt('Springt eine gröbere Stufe ein, sagt die Leiste es auch mit Netz');
+  /* Ein Server, der Kacheln abweist, ist für den Trupp von einem Funkloch nicht
+     zu unterscheiden. Die Leiste zeigte aber nur bei Ausfall oder fehlendem
+     Netz – ein einzelner Rückgriff blieb stumm. Angestoßen wird das Ereignis
+     selbst, damit der Fall nicht an der Zahl der Fehlschläge hängt. */
+  const rueckgriff = async (z, kachelnot) => seite.auswerten(`
+    const k = window.fbp.karte;
+    k.fire('zoomstart');
+    k.fire('fbp:kachelnot', { aus: ${kachelnot} });
+    k.fire('fbp:kachelgrob', { z: ${z}, aus: ${z - 1} });
+    await new Promise(f => setTimeout(f, 300));
+    const n = document.getElementById('sl-netz');
+    return { online: navigator.onLine, sichtbar: !n.hidden, text: n.textContent };`);
+  const fein = await rueckgriff(18, false);
+  b.pruefe(fein.online && fein.sichtbar && /feiner nicht mitgenommen/.test(fein.text),
+    `Online, Server ohne Ausfall: die Leiste nennt „feiner nicht mitgenommen“ („${fein.text}“)`);
+  const rand = await rueckgriff(16, false);
+  b.pruefe(rand.sichtbar && /Rand: gröber/.test(rand.text) && !/feiner/.test(rand.text),
+    `Am Korridorrand (Stufe 16) steht „Rand: gröber“ („${rand.text}“)`);
+  const beides = await rueckgriff(18, true);
+  b.pruefe(/^Karte nicht erreichbar/.test(beides.text) && /·\s*gröber$/.test(beides.text),
+    `Mit Ausfall: Anlass vorn, „gröber“ hinten („${beides.text}“)`);
+  await seite.auswerten(`
+    const k = window.fbp.karte;
+    k.fire('zoomstart'); k.fire('fbp:kachelnot', { aus: false });
+    await new Promise(f => setTimeout(f, 300));
+    return true;`);
+  b.pruefe(await seite.auswerten('document.getElementById("sl-netz").hidden'),
+    'Nach dem Zoomen ohne Ausfall verschwindet die Zeile wieder');
   await seite.auswerten(`window.fbp.karte.setView([51.803, 10.60], 15, { animate: false }); return true;`);
 
   b.abschnitt('Der Vorrat lässt sich löschen');

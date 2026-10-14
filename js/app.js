@@ -2,11 +2,12 @@
 
 import {
   store, neueStrecke, neuerPunkt, neuesZeichen, abschnittById, abschnitteGeordnet, abschnittPfad,
-  dateisicherung, istGehaltvoll, ladeAlle, migrieren, planKennung, baustandDerPlanung
+  dateisicherung, istGehaltvoll, ladeAlle, migrieren, planKennung, baustandDerPlanung,
+  SCHEMA, stammtVonNeuerer
 } from './state.js';
 import { erstelleKarte, setzeBasiskarte, setzeVorrang, BASISKARTEN } from './map.js';
 import { sichtStarten, sichtSetzen, istEinfach, gemerkteSicht } from './sicht.js';
-import { bestand as kachelBestand } from './kacheln.js';
+import { bestand as kachelBestand, ZOOM_BIS } from './kacheln.js';
 import { StreckenLayer, escapeHtml, ZEICHNEN_AB_ZOOM } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
 import { FlaechenLayer } from './flaechen.js';
@@ -25,13 +26,15 @@ import {
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog,
   dialogAbweisen, hinweis, hinweisAus,
   abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen, zeichneBauListe, karteDabei,
-  baumeldungDialog, rueckwegNachfuehren, kartenSignale, formularSchreiben
+  baumeldungDialog, rueckwegNachfuehren, kartenSignale, formularSchreiben, nachtragBeenden,
+  netzHinweisFuehren
 } from './ui.js';
 import {
   baustrecke, baustreckeSetzen, truppAmGeraet, truppAmGeraetSetzen, bauBegonnen as bauBegonnenAn,
   auftragsTrupps, bauabschnitte, bauabschnittAnlegen, bauabschnittAktivSetzen,
-  nachtragTag, nachtragSetzen,
-  truppWahlOffen, truppFrageAnmelden, truppWahlWartende, istPunkte
+  nachtragTag, nachtragSetzen, nachtragBeobachten,
+  truppWahlOffen, truppNichtAufgetragen, truppFrageAnmelden, istPunkte,
+  eigenenAbschnittSichern, ohneAbschnittZuordnen
 } from './baudoku.js';
 import {
   initBaukarte, punktkarteOeffnen, punktkarteSchliessen, punktkarteOffen, punktkarteNachfuehren,
@@ -250,7 +253,7 @@ initUI({
 });
 /* Die Karte des Baumodus bekommt, was sie aus der Oberfläche braucht, von
    hier – sie darf `ui.js` nicht einführen, weil `ui.js` sie einführt. */
-initBaukarte({ karte, sl, hinweis, hinweisAus, modusAnzeigen: () => modusAnzeigen(), zurKarte });
+initBaukarte({ karte, sl, hinweis, hinweisAus, dialog, modusAnzeigen: () => modusAnzeigen(), zurKarte });
 
 // Der Stand steht dauerhaft im Kopf: Wer zu einem gedruckten Bauauftrag
 // zurückfragt, hat dieselbe Nummer vor Augen, die im Blattfuß steht – ohne
@@ -350,8 +353,13 @@ function zeichnenBeenden(abbrechen = false) {
        Liste hinter dem Umschalter, und in der einfachen Ansicht ist der Knopf
        in der Streckenkarte der einzige Weg dorthin. Ein Erstnutzer stand im
        Review mit fertiger Trasse vor der Karte und suchte. */
-    hinweis(document.body.classList.contains('seite-zu')
-      ? 'Strecke fertig – den Bauauftrag gibt es unter „Liste“.'
+    /* Entscheidend ist die Schmalansicht und nicht, welche Seite gerade vorn
+       liegt: quer steht der Umschalter als Spalte links, und „links in der
+       Streckenkarte“ wies auf ihn statt auf die Liste. Dort steht der Satz
+       kurz – bei 390 px Höhe maß die lange Pille 112 px und deckte Streckenkarte
+       und Kartenoptionen. */
+    hinweis(schmalAbfrage.matches
+      ? 'Strecke fertig – Bauauftrag unter „Liste“.'
       : 'Strecke fertig – den Bauauftrag gibt es links in der Streckenkarte: ' +
         '„▤ Bauauftrag (PDF)“.');
   }
@@ -719,14 +727,17 @@ const slNetz = $('#sl-netz');
    Netz hat, und ob gerade eine gröbere Stufe aus dem Vorrat einspringt
    (`fbp:kachelgrob`). Sie werden hier gesammelt, damit jeder Anlass dieselbe
    Zeile schreibt und keiner die Aussage des anderen überschreibt. */
-const netzlage = { kachelAus: false, grob: false };
+const netzlage = { kachelAus: false, grob: null, vorrat: '' };
 let bestandLauf = 0;
 function netzstandZeigen(aus) {
   if (aus !== undefined) netzlage.kachelAus = aus;
   /* Ohne Netz ist der Ausfall da, auch wenn die Kacheln aus dem Vorrat kommen
-     und darum keine ausbleibt – gerade dann soll die Zeile den Vorrat nennen. */
+     und darum keine ausbleibt – gerade dann soll die Zeile den Vorrat nennen.
+     Springt eine gröbere Stufe ein, steht die Zeile auch bei Netz und
+     antwortendem Server: ein Server, der Kacheln abweist, ist für den Trupp
+     nicht von einem Funkloch zu unterscheiden, und das Bild ist unscharf. */
   const offline = navigator.onLine === false;
-  const zeigen = offline || netzlage.kachelAus;
+  const zeigen = offline || netzlage.kachelAus || !!netzlage.grob;
   /* Die Höhe weicht, solange der Ausfall steht: sie kommt aus einer Kachel und
      zeigt ohne Netz ohnehin „–“. Ohne diesen Tausch bricht die Leiste bei
      390 px in zwei Zeilen um und nimmt der Karte 21 px – dauerhaft, denn der
@@ -737,48 +748,72 @@ function netzstandZeigen(aus) {
   /* „kein Netz“ hieß es auch, wenn nur der Kartenserver schwieg – dann ist
      aber Netz da, und wer das Telefon hochhält und Balken sieht, glaubt der
      Anzeige nichts mehr. Der Browser weiß, ob er verbunden ist. */
-  const was = offline ? 'kein Netz' : 'Karte nicht erreichbar';
+  const gebremst = offline || netzlage.kachelAus;
   /* Über der feinsten mitgenommenen Stufe springt eine gröbere ein; dass das
      Bild deshalb unscharf ist, gehört dazu, sonst sucht man den Fehler am
-     Gerät. */
-  const grob = netzlage.grob ? ' · feiner nicht mitgenommen' : '';
-  /* Der Anlass steht in eigenem Feld: schmal wird er gekürzt, der Vorrat nie
-     (`.sl-netz-was` in app.css). */
-  const zeile = rest => {
-    const vorn = document.createElement('span');
-    vorn.className = 'sl-netz-was';
-    vorn.textContent = was;
-    slNetz.replaceChildren(vorn, rest ? '\u00a0' + rest.trimStart() : '');
+     Gerät. Am Korridorrand (Stufe 16 und gröber) fehlt dagegen nichts
+     Feineres, der Ausschnitt reicht nur nicht ganz hin – „feiner nicht
+     mitgenommen“ wäre dort falsch. */
+  const feiner = netzlage.grob === 'fein';
+  const was = offline ? 'kein Netz'
+    : netzlage.kachelAus ? 'Karte nicht erreichbar'
+    : feiner ? 'feiner nicht mitgenommen' : 'Rand: gröber';
+  const grob = !netzlage.grob || !gebremst ? ''
+    : feiner ? 'gröber' : 'Rand gröber';
+  /* Drei Felder, damit schmal in fester Rangfolge gekürzt wird: erst das
+     Anhängsel, dann der Anlass, der Vorrat zuletzt (`.sl-netz-*` in app.css).
+     Die Trenner sind Haarspatien: mit gefüllter Gitterangabe fehlten bei
+     390 px sonst fünf Pixel, und „kein Netz · Vorrat leer · gröber“ wäre
+     abgeschnitten worden. Vorher stand der Anlass im einzigen Feld, das
+     schrumpfte – bei 320 px blieb von „kein Netz“ nichts übrig. */
+  const zeile = vorrat => {
+    netzlage.vorrat = vorrat;
+    const feld = (klasse, text) => {
+      const el = document.createElement('span');
+      el.className = klasse;
+      el.textContent = text;
+      return el;
+    };
+    slNetz.replaceChildren(feld('sl-netz-was', was),
+      ...(vorrat ? [feld('sl-netz-vorrat', '\u200a·\u200a' + vorrat)] : []),
+      ...(grob ? [feld('sl-netz-grob', '\u200a·\u200a' + grob)] : []));
   };
-  if (!slNetz.textContent.startsWith(was)) zeile(grob);
+  /* Bis die Zählung da ist, steht die zuletzt gezählte Zahl – so springt die
+     Zeile bei jedem neuen Anlass nicht erst auf die kurze Form zurück. */
+  zeile(netzlage.vorrat);
   const lauf = ++bestandLauf;
   kachelBestand().then(b => {
     if (lauf !== bestandLauf) return;
     /* „Vorrat: 0 Kacheln“ las sich wie eine Zählerangabe. „Vorrat leer“ sagt,
        dass keine Karte an Bord ist; mehr trägt die einzeilige Leiste bei
        320 px nicht. */
-    zeile((b.anzahl
-      ? ` · Vorrat: ${b.anzahl.toLocaleString('de-DE')} Kacheln`
-      : ' · Vorrat leer') + grob);
+    zeile(b.anzahl ? `Vorrat: ${b.anzahl.toLocaleString('de-DE')} Kacheln` : 'Vorrat leer');
   }).catch(() => { /* ohne Bestand bleibt die kurze Form stehen – sie ist die Aussage */ });
 }
 karte.on('fbp:kachelnot', e => netzstandZeigen(e.aus));
 /* Meldet der Browser das Netz zurück, ist die Anzeige sofort falsch – auf die
    nächste geglückte Kachel zu warten hieße, sie bis zur nächsten Bewegung der
    Karte stehen zu lassen. */
-window.addEventListener('online', () => netzstandZeigen(false));
+window.addEventListener('online', () => {
+  /* Auch die Erinnerung der Kachelwacht fällt: sie meldet einen Ausfall nur,
+     wenn er sich ändert. Bliebe sie auf „aus“ stehen, bliebe ein Kartenserver,
+     der nach der Rückkehr des Netzes weiter schweigt, für immer stumm. */
+  karte._fbpKachelAus = undefined;
+  netzstandZeigen(false);
+});
 window.addEventListener('offline', () => netzstandZeigen(true));
 if (navigator.onLine === false) netzstandZeigen(true);
 /* Die gröbere Stufe gilt für den Ausschnitt, in dem sie einsprang. Nach dem
    Zoomen meldet sie sich neu, wenn sie wieder gebraucht wird. */
-karte.on('fbp:kachelgrob', () => {
-  if (netzlage.grob) return;
-  netzlage.grob = true;
+karte.on('fbp:kachelgrob', e => {
+  const art = e.z > ZOOM_BIS ? 'fein' : 'rand';
+  if (netzlage.grob === 'fein' || netzlage.grob === art) return;
+  netzlage.grob = art;
   netzstandZeigen();
 });
 karte.on('zoomstart', () => {
   if (!netzlage.grob) return;
-  netzlage.grob = false;
+  netzlage.grob = null;
   netzstandZeigen();
 });
 /* Nach „Karte holen“ und „Vorrat löschen“ zählt die Leiste neu. Ein Abruf legt
@@ -969,6 +1004,11 @@ const wzLeiste = $('.werkzeuge'), wzKopf = $('#wz-kopf');
 function werkzeugeSetzen(zu) {
   wzLeiste.classList.toggle('zu', zu);
   wzKopf.setAttribute('aria-expanded', String(!zu));
+  /* Der Griff sagt, was ein Tipp bewirkt, und im zugeklappten Zustand, dass die
+     Leiste zugeklappt ist: das Wort „Werkzeuge“ allein sah offen wie eine
+     Überschrift und zugeklappt wie ein Karteneintrag aus – und der Zustand
+     überlebt den Neustart, ohne dass ihn jemand sieht. */
+  wzKopf.firstElementChild.textContent = zu ? 'Werkzeuge einblenden' : 'Werkzeuge ausblenden';
 }
 wzKopf.onclick = () => {
   const zu = !wzLeiste.classList.contains('zu');
@@ -1146,6 +1186,12 @@ function ansichtSetzen(karteVorn) {
     modusAnzeigen();
     hinweisAus();
   }
+  /* Die Pille „Strecke fertig – … unter ‚Liste‘“ hat mit dem Wechsel auf die
+     Liste ihren Zweck erfüllt – und deckte dort drei Sekunden lang genau den
+     Knopf „Bauauftrag (PDF)“, auf den sie eben verwiesen hatte. */
+  if (!karteVorn && /^Strecke fertig –/.test(document.getElementById('hinweisbox')?.textContent || '')) {
+    hinweisAus();
+  }
   document.body.classList.toggle('seite-zu', karteVorn);
   awListe.classList.toggle('aktiv', !karteVorn);
   awKarte.classList.toggle('aktiv', karteVorn);
@@ -1317,9 +1363,9 @@ function teilenDialog(vorwahl) {
   /* Ohne Netz geht der Link trotzdem in den Messenger, und der zeigt ihn als
      verschickt an – hinaus geht er erst mit Netz. Am Bauort ist das der
      Unterschied zwischen „Auftrag ist beim Trupp“ und „liegt noch im Telefon“. */
-  const ohneNetz = navigator.onLine === false
-    ? `<p class="bau-warnung"><b>Kein Netz</b> – der Messenger schickt erst, wenn Netz da ist.
-        Danach beim Empfänger nachfragen, ob der Link angekommen ist.</p>` : '';
+  const ohneNetz = `<p class="bau-warnung" id="tl-netz" hidden><b>Kein Netz</b> – der Messenger
+        schickt erst, wenn Netz da ist. Danach beim Empfänger nachfragen, ob der Link
+        angekommen ist.</p>`;
   box.innerHTML = `${ohneNetz}
     <label class="feld"><span class="feld-titel">Was soll der Link enthalten?</span>
       <select id="tl-was">
@@ -1344,6 +1390,9 @@ function teilenDialog(vorwahl) {
     <p class="teilen-ampel" id="tl-ampel"></p>
     <p class="teilen-merke" id="tl-merke"></p>`;
 
+  /* Der Hinweis folgt dem Netz, solange der Dialog offen ist – gelesen nur
+     beim Öffnen, stünde er weiter da, wenn der Trupp das Funkloch verlassen hat. */
+  netzHinweisFuehren(box.querySelector('#tl-netz'), box);
   const was = box.querySelector('#tl-was');
   const feldLink = box.querySelector('#tl-link');
   const ampel = box.querySelector('#tl-ampel');
@@ -1568,6 +1617,11 @@ async function geteiltenLinkPruefen() {
       <li><b>Bau beginnen</b> – jetzt bauen und dokumentieren: der Auftrag wird übernommen,
         und es geht in den Baumodus auf diese Strecke.</li></ul>`;
   const vorhanden = vorhandenerAuftrag(roh);
+  /* Was der Link an Aufnahme selbst trägt: ein neu verschickter Auftrag hat die
+     Baudokumentation des Planers im Gepäck. Der Dialog nannte oben „4 Ist-Punkte“
+     und unten „leere Aufnahme“ – beides stimmte nicht zusammen. */
+  const linkIst = (roh.strecken || []).reduce((n, st) => n + ((st.bau && st.bau.punkte) || []).length, 0);
+  const linkAbschnitte = (roh.strecken || []).reduce((n, st) => n + ((st.bau && st.bau.abschnitte) || []).length, 0);
   /* Gibt es eine bisherige? Auf einem frischen Gerät versprach der Satz eine
      Planung, „die erhalten bleibt“, und der Trupp suchte sie. */
   const bisherige = Object.values(ladeAlle()).some(pr => {
@@ -1653,13 +1707,25 @@ async function geteiltenLinkPruefen() {
     inhalt: `<p>Über den Link kommt <b>${escapeHtml(roh.name || 'eine Planung')}</b> herein.</p>
       <p class="teilen-umfang">${escapeHtml(umfangText(roh))}${stand ? ' · Stand ' + escapeHtml(stand) : ''}</p>
       ${herkunft}
+      ${stammtVonNeuerer(roh) ? `<p class="teilen-merke"><b>Von einer neueren Version</b>
+        (Datenstand ${escapeHtml(String(roh.version))}, diese Seite kennt ${SCHEMA}): nicht alles
+        wird gelesen, und was diese Seite nicht kennt, geht beim Übernehmen verloren.
+        Besser erst die Seite neu laden.</p>` : ''}
       ${bilder ? `<p class="teilen-merke">${bilder === 1
           ? 'Zu dieser Planung gehört ein Lichtbild, das ein Link nicht tragen kann. Sein Ort und seine Beschriftung sind da, die Aufnahme selbst nicht'
           : `Zu dieser Planung gehören ${bilder} Lichtbilder, die ein Link nicht tragen kann. Ihre Orte und Beschriftungen sind da, die Aufnahmen selbst nicht`}
         – dafür braucht es die Planungsdatei.</p>` : ''}
       ${vorhanden ? vorhandenHTML(vorhanden) : folgeHTML}
+      ${vorhanden && vorhanden.gleich && (linkIst || linkAbschnitte)
+        ? `<p class="klein">„${bauauftrag ? 'Dort weiterbauen' : 'Dort weiterarbeiten'}“ öffnet
+            „${escapeHtml(vorhanden.projekt.name || '')}“ mit der bisherigen Aufnahme. Was der Link
+            an Aufnahme mitbringt (${[linkIst && zahlwort(linkIst, 'Ist-Punkt', 'Ist-Punkte'),
+              linkAbschnitte && zahlwort(linkAbschnitte, 'Bauabschnitt', 'Bauabschnitte')]
+              .filter(Boolean).join(', ')}), kommt <b>nicht</b> dazu.</p>` : ''}
       <p class="klein">${vorhanden && vorhanden.gleich
-        ? 'Als neue Planung übernommen, stünde er ein zweites Mal im Gerät – mit leerer Aufnahme.'
+        ? 'Als neue Planung übernommen, stünde er ein zweites Mal im Gerät – ' + (linkIst
+          ? `mit der Aufnahme aus dem Link (${zahlwort(linkIst, 'Ist-Punkt', 'Ist-Punkte')}) und ohne die in „${escapeHtml(vorhanden.projekt.name || '')}“.`
+          : 'mit leerer Aufnahme.')
         : bisherige
           ? 'Sie wird als <b>neue</b> Planung übernommen. Deine bisherige bleibt unter ' +
             '„Gespeicherte Planungen“ erhalten.'
@@ -1868,31 +1934,47 @@ function truppFragen() {
  * Auswahlfeld: eine Wahl, die man treffen MUSS, gehört sichtbar ausgebreitet,
  * und „Weiter“ geht erst, wenn eine getroffen ist.
  *
- * Kommt die Frage bei der ersten Aufnahme (`truppFrageAnmelden` in
- * baudoku.js), bekommt der eben aufgenommene Punkt den Abschnitt des
- * gewählten Trupps nachträglich.
+ * Der Dialog ist geschützt: Esc, ein Tipp auf den Schleier und das Kreuz
+ * schließen ihn nicht. Im Review ging er auf den zweiten Tipp eines
+ * Doppeltipps zu, den der Griff „Punkt hier“ übrig ließ – und ohne Wahl baute
+ * der Trupp ohne Abschnitt weiter. Der bewusste Ausgang ist „Später“; die
+ * Frage kommt bei der nächsten Aufnahme wieder. Die Chips nehmen in den ersten
+ * 400 ms keinen Fingertipp an, wie die Fußknöpfe jedes Dialogs.
+ *
+ * Kennt das Gerät seinen Trupp, und der gehört nicht zu den aufgetragenen
+ * (Gerät „3. FmTr“, aufgetragen „1. FmTr und 2. FmTr“), lautet der Hauptweg
+ * „Eigener Abschnitt anlegen“. Wählbar bleiben nur die aufgetragenen Trupps;
+ * ein Abschnitt, in dem schon ein anderer Trupp aufgenommen hat, ist es nicht.
+ *
+ * Mit der Wahl bekommt ALLES ohne Abschnitt an dieser Strecke den Abschnitt –
+ * nicht nur, was in dieser Sitzung wartete: nach einer Unterbrechung während
+ * der Frage blieb der erste Punkt ohne Abschnitt und fiel aus der Meldung.
  */
 function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
   const v = truppAmGeraet();
   const trupps = auftragsTrupps(s);
+  const ich = v.trupp.trim();
+  const fremd = truppNichtAufgetragen(s);
   let gewaehlt = '';
+  const auf = performance.now();
   const box = document.createElement('div');
   box.innerHTML = `
-    <p>${beiAufnahme ? 'Bevor ihr weiter aufnehmt: ' : ''}An <b>${escapeHtml(s.name)}</b> bauen
-      ${trupps.length} Trupps. Jeder baut in seinem eigenen Bauabschnitt, damit sich die
-      Meldungen beim Planer nicht ersetzen.</p>
-    ${beiAufnahme ? '<p class="klein">Der eben aufgenommene Punkt kommt in den Abschnitt des ' +
-      'Trupps, den ihr hier wählt.</p>' : ''}
+    <p>${beiAufnahme ? 'Bevor ihr weiter aufnehmt: ' : ''}An <b>${escapeHtml(s.name)}</b>
+      baut jeder Trupp in seinem Bauabschnitt.</p>
+    ${fremd ? `<p class="bau-warnung">Ihr seid <b>${escapeHtml(ich)}</b> – an dieser Strecke ` +
+      'nicht aufgetragen.</p>' : ''}
     <div class="feld"><span class="feld-titel" id="tf-titel">Trupp – bitte antippen</span>
       <div class="trupp-chips" role="radiogroup" aria-labelledby="tf-titel">${trupps.map(x =>
         `<button type="button" class="trupp-chip" role="radio" aria-checked="false"
            data-trupp="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('')}</div></div>
-    <label class="feld"><span class="feld-titel">Truppführer</span>
+    <label class="feld"><span class="feld-titel">Truppführer <span class="klein">(kann
+      entfallen)</span></span>
       <input type="text" id="tf-fuehrer" placeholder="Name" autocomplete="off"
         value="${escapeHtml(v.fuehrer || '')}"></label>`;
   let weiter = null;
   for (const chip of box.querySelectorAll('.trupp-chip')) {
-    chip.onclick = () => {
+    chip.onclick = e => {
+      if (e && e.isTrusted && e.detail > 0 && performance.now() - auf < 400) return;
       gewaehlt = chip.dataset.trupp;
       for (const c of box.querySelectorAll('.trupp-chip')) {
         c.setAttribute('aria-checked', String(c === chip));
@@ -1900,42 +1982,43 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
       if (weiter) weiter.disabled = false;
     };
   }
+  const uebernehmen = name => {
+    const fuehrer = box.querySelector('#tf-fuehrer').value.trim();
+    truppAmGeraetSetzen({ trupp: name, fuehrer });
+    let a;
+    store.aendern(() => {
+      /* Steht der Abschnitt dieses Trupps schon da – ein zweiter Auftrag
+         trägt ihn mit –, baut der Trupp darin weiter, statt einen zweiten
+         gleichen Namens anzulegen. */
+      a = eigenenAbschnittSichern(s, name, fuehrer);
+      ohneAbschnittZuordnen(s, a.id);
+    }, 'bau');
+    bauabschnittAktivSetzen(a.id);
+    zeichneBauListe();
+    danach();
+  };
+  const fuss = [
+    /* Ein schon getippter Truppführer bleibt auch bei „Später“ stehen –
+       gefragt wird dann bei der nächsten Aufnahme noch einmal, denn der
+       Bauabschnitt fehlt. */
+    { text: 'Später', tun: () => {
+      const fuehrer = box.querySelector('#tf-fuehrer').value.trim();
+      if (fuehrer && fuehrer !== v.fuehrer) truppAmGeraetSetzen({ ...truppAmGeraet(), fuehrer });
+      danach();
+    } }
+  ];
+  if (fremd) {
+    fuss.push({ text: `Eigener Abschnitt „${ich}“`, primaer: true, tun: () => uebernehmen(ich) });
+  }
+  fuss.push({ text: 'Weiter', primaer: !fremd, tun: () => {
+    if (!gewaehlt) { hinweis('Erst den eigenen Trupp antippen.', 'warnung'); return false; }
+    uebernehmen(gewaehlt);
+  } });
   dialog({
     titel: 'Welcher Trupp seid ihr?',
     inhalt: box,
-    fuss: [
-      /* Ein schon getippter Truppführer bleibt auch bei „Später“ stehen –
-         gefragt wird dann bei der ersten Aufnahme noch einmal, denn der
-         Bauabschnitt fehlt. */
-      { text: 'Später', tun: () => {
-        const fuehrer = box.querySelector('#tf-fuehrer').value.trim();
-        if (fuehrer && fuehrer !== v.fuehrer) truppAmGeraetSetzen({ ...truppAmGeraet(), fuehrer });
-        danach();
-      } },
-      { text: 'Weiter', primaer: true, tun: () => {
-        if (!gewaehlt) { hinweis('Erst den eigenen Trupp antippen.', 'warnung'); return false; }
-        const fuehrer = box.querySelector('#tf-fuehrer').value.trim();
-        truppAmGeraetSetzen({ trupp: gewaehlt, fuehrer });
-        const wartend = truppWahlWartende(s.id);
-        let a;
-        store.aendern(() => {
-          /* Steht der Abschnitt dieses Trupps schon da – ein zweiter Auftrag
-             trägt ihn mit –, baut der Trupp darin weiter, statt einen zweiten
-             gleichen Namens anzulegen. */
-          a = bauabschnitte(s).find(x => x.trupp === gewaehlt || (!x.trupp && x.name === gewaehlt));
-          if (!a) {
-            a = bauabschnittAnlegen(s);
-            a.name = gewaehlt; a.trupp = gewaehlt; a.fuehrer = fuehrer;
-          } else if (fuehrer && !a.fuehrer) a.fuehrer = fuehrer;
-          for (const pt of istPunkte(s)) {
-            if (!pt.abschnitt && wartend.includes(pt.id)) pt.abschnitt = a.id;
-          }
-        }, 'bau');
-        bauabschnittAktivSetzen(a.id);
-        zeichneBauListe();
-        danach();
-      } }
-    ]
+    schutz: 'Bitte den eigenen Trupp antippen – oder „Später“.',
+    fuss
   });
   weiter = [...document.querySelectorAll('#dialog-fuss .knopf')].find(k => k.textContent === 'Weiter');
   if (weiter) weiter.disabled = true;
@@ -1947,16 +2030,33 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
   setTimeout(() => { if (gruppe.isConnected) gruppe.focus({ preventScroll: true }); }, 60);
 }
 
-/* Die Frage bei der ersten Aufnahme (siehe `truppFrageVormerken` in
-   baudoku.js). Steht schon ein Dialog, wartet sie, bis er zu ist – sie
-   verdrängte sonst eine Entscheidung, die gerade läuft. */
+/* Die Frage bei der Aufnahme (siehe `truppFrageVormerken` in baudoku.js).
+   Sie wartet, statt zu stören: solange ein Dialog steht, ein Eingabefeld den
+   Fokus hat oder das Blatt der Punktkarte offen ist, kommt sie nicht. Im
+   Review schlug sie mitten in einer Meldung auf, als die Ortung spät antwortete,
+   und riss das halb geschriebene Wort unter dem Finger weg. Gewählt wurde die
+   Zurückstellung und nicht eine feste Marke „Trupp wählen“ im Reiterkopf: die
+   Marke sähe nur, wer im Bau-Reiter steht – am Bauort steht der Trupp auf der
+   Karte. Zusätzlich nennt der Rückmeldeblock, was ohne Abschnitt dasteht.
+   Es läuft höchstens eine Wartefolge: mehrere Aufnahmen in dieser Zeit
+   ergäben sonst mehrere Dialoge hintereinander. */
+let truppFrageWartet = false;
 truppFrageAnmelden(function fragen(sid, versuch = 0) {
+  if (versuch === 0) {
+    if (truppFrageWartet) return;
+    truppFrageWartet = true;
+  }
   const s = store.projekt && store.projekt.strecken.find(x => x.id === sid);
-  if (!baumodus || !s || !truppWahlOffen(s)) return;
-  if (!document.getElementById('dialog').hidden) {
-    if (versuch < 120) setTimeout(() => fragen(sid, versuch + 1), 500);
+  if (!baumodus || !s || !truppWahlOffen(s)) { truppFrageWartet = false; return; }
+  const a = document.activeElement;
+  const tippt = !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) ||
+    !!a && a.isContentEditable;
+  if (!document.getElementById('dialog').hidden || tippt || punktkarteOffen()) {
+    if (versuch < 600) setTimeout(() => fragen(sid, versuch + 1), 500);
+    else truppFrageWartet = false;
     return;
   }
+  truppFrageWartet = false;
   truppWahlDialog(s, () => {}, true);
 });
 
@@ -2042,11 +2142,40 @@ $('#datei-import').onchange = e => {
          bei einer Planung genügt das Danebenlegen, bei ihr nicht: sie
          überschreibt etwas. */
       if (ergebnis.baumeldung) baumeldungDialog(ergebnis.baumeldung, 'Datei');
+      else if (ergebnis.neuer) neuereVersionDialog(ergebnis.neuer, ergebnis.meldung);
       else hinweis(ergebnis.meldung);
     })
     .catch(err => hinweis('Import fehlgeschlagen: ' + err.message, 'fehler'));
   e.target.value = '';
 };
+
+/* Eine Datei von einer neueren Version. Gesagt wird es mit einem Dialog und
+   nicht mit der Pille: die Pille ginge nach drei Sekunden, und gerade wer die
+   Planung gleich wieder weitergibt, muss es gelesen haben. Die Datei selbst
+   bleibt unberührt – das Öffnen schreibt nur in den Browserspeicher. */
+function neuereVersionDialog(version, meldung) {
+  dialog({
+    titel: 'Datei von einer neueren Version',
+    inhalt: `<p>${escapeHtml(meldung)} – aber nicht ganz: die Datei stammt aus einer
+      <b>neueren Version</b> des FMBauplaners (Datenstand ${escapeHtml(String(version))},
+      diese Seite kennt ${SCHEMA}).</p>
+      <p><b>Nicht alles wird gelesen.</b> Was die neuere Version dazugetan hat, kennt
+      diese Seite nicht und lässt es weg – und beim nächsten Speichern ist es hier
+      auch nicht mehr.</p>
+      <p class="klein">Die Datei selbst ist unverändert. Zum Weiterarbeiten die Seite
+      neu laden (der Wächter holt dabei die neue Version) und die Datei dann noch
+      einmal öffnen.</p>`,
+    fuss: [{ text: 'Verstanden', primaer: true }]
+  });
+}
+
+/* Der Nachtrag wird in der Liste geschaltet und gilt auf der Karte: Marke an
+   der Bauleiste und im Kopf der Punktkarte folgen ihm. Beides hängt sonst nur
+   an Änderungen der Planung, und ein Nachtrag ändert sie nicht. */
+nachtragBeobachten(() => {
+  bauzielNachfuehren();
+  punktkarteNachfuehren('nachtrag');
+});
 
 // ---------------------------------------------------------------- Reiter
 
@@ -2145,9 +2274,7 @@ function einstiegDialog() {
     </div>
     <p>Hast du vom Planer einen <b>Link</b> bekommen? Antippen genügt – die Planung öffnet
        sich hier, und im <b>Baumodus</b> hältst du fest, was gebaut wurde.</p>
-    <p class="klein">Das ist die einfache Ansicht. Taktische Zeichen, Flächen, Relaisstellen
-       und die Bauansatzwerte stehen in der erweiterten Ansicht – der Umschalter steht über
-       den Reitern „Strecken“ und „Auftrag“.</p>`;
+    <p class="klein">Mehr Werkzeuge gibt es in der erweiterten Ansicht – Umschalter über den Reitern.</p>`;
   const erledigt = einstiegMerken;
   box.querySelector('[data-weg="strecke"]').onclick = () => { erledigt(); schliesseDialog(); neueStreckeStarten(); };
   box.querySelector('[data-weg="laden"]').onclick = () => { erledigt(); schliesseDialog(); $('#datei-import').click(); };
@@ -2174,7 +2301,7 @@ function modusAnwenden() {
   document.body.classList.toggle('baumodus', baumodus);
   /* Der Nachtrag vom Baunachweis gehört dem Bau-Reiter und endet mit ihm –
      in der Planung schriebe er sonst still weiter Einträge ohne Uhrzeit. */
-  if (!baumodus) nachtragSetzen(null);
+  if (!baumodus) nachtragBeenden();
   /* Jeder Schritt im Verlauf merkt sich den Modus, in dem er getan wurde –
      daran hält „↶“ im Baumodus an (`rueckgaengig`). */
   store.herkunft = baumodus ? 'bau' : 'planung';
@@ -2285,11 +2412,9 @@ function reiterWechseln(name) {
   /* Wer den Bau-Reiter verlässt, beendet den Nachtrag vom Baunachweis. Er
      ändert, was jeder Griff schreibt – kein Tag, keine Uhrzeit –, und wer
      später zurückkommt, um am Bauort aufzunehmen, soll das nicht unbemerkt
-     mit dem Tag der Abschrift tun. */
-  if (name !== 'bau' && nachtragTag()) {
-    nachtragSetzen(null);
-    zeichneBauListe();
-  }
+     mit dem Tag der Abschrift tun. Beendet wird er aber mit einem Wort
+     (`nachtragBeenden`), und die Zeilen ohne Uhrzeit behalten ihren Tag. */
+  if (name !== 'bau' && nachtragTag()) nachtragBeenden();
   if (reiterHinterher.has(name)) reiterAufbauen(name);
   setzeVorrang(karte, name);
   ansichtSetzen(false);
@@ -2550,7 +2675,9 @@ function speicherstatusZeigen(zustand = 'ruhe') {
   st.textContent = 'zuletzt als Datei gesichert: ' + (zeit ? zeitpunktKurz(zeit) : '—');
   /* Quer steht der Status als Merker an Stelle des Sicherungsbandes und
      braucht dort ein kurzes Wort (`css/app.css`, „Quer auf dem Telefon“). */
-  st.dataset.kurz = 'keine Datei';
+  /* Ausgeschrieben: „keine Datei“ las sich quer wie „keine Datei geöffnet“,
+     dabei fehlt nur die Sicherungsdatei – die Planung liegt längst im Gerät. */
+  st.dataset.kurz = 'nicht als Datei gesichert';
   st.classList.toggle('mahnung', mahnenNoetig());
   bandNachfuehren();
 }

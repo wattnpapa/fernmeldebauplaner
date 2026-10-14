@@ -106,6 +106,32 @@ const stelleVon = (liste, kennung) => {
   return i >= 0 ? i : undefined;
 };
 
+/**
+ * Trägt diese Strecke bei dieser Auswahl überhaupt etwas, das hinausginge?
+ *
+ * `bauBegonnen` fragt nach dem Bau-Block im Ganzen. Mit einer Auswahl der
+ * Abschnitte kann davon nichts übrig sein: zwei Punkte und eine Meldung ohne
+ * Abschnitt am Gerät, null in der Baumeldung – und trotzdem rechnete der
+ * Rückgabe-Code über die leere Meldung und quittierte sie. Eine Meldung, die
+ * nichts trägt, ist keinen Code wert. Der Stand „im Bau“ zählt nicht als
+ * Inhalt, denn er entsteht mit jeder Aufnahme von selbst; „gebaut“ und
+ * „übergeben“ hat dagegen jemand gesetzt.
+ */
+export function meldungTraegt(s, nur = null) {
+  if (!bauBegonnen(s)) return false;
+  if (!nur) return true;
+  const bau = s.bau;
+  /* Ein leerer Abschnitt ist nur der Name eines Trupps und keine Aussage über
+     den Bau; erst Zeiten, Ausfall oder eine Stelle machen ihn zu einer. */
+  return bau.abschnitte.some(a => nur.has(a.id) &&
+      (a.beginn || a.ende || a.ausfallZeit || a.vonPunkt || a.bisPunkt)) ||
+    bau.punkte.some(pt => nur.has(pt.abschnitt)) ||
+    bau.material.some(z => nur.has(z.abschnitt)) ||
+    bau.meldungen.some(m => nur.has(m.abschnitt)) ||
+    pruefungGehaltvoll(bau.pruefung) || ['gebaut', 'uebergeben'].includes(bau.stand) ||
+    !!bau.abweichung || !!bau.ausfallZeit;
+}
+
 /* `nur` ist die Menge der Bauabschnitte, die mitgehen sollen – oder `null` für
    alle. Gebraucht wird sie auf dem Rückweg: ein neu verschickter Auftrag trägt
    den ganzen Bau-Block der Strecke, also auch den Abschnitt des ANDEREN Trupps,
@@ -151,6 +177,7 @@ function bauVerschlanken(s, nur = null) {
   /* Und der Rückgabe-Code der zuletzt eingespielten Meldung, aus demselben
      Grund: er ist eine Notiz des Planers über den Empfang. */
   delete raus.gemeldetCode;
+  delete raus.gemeldetCodes;
 
   if (bau.abschnitte.length) {
     raus.abschnitte = bau.abschnitte.map((a, i) => {
@@ -291,7 +318,7 @@ export function meldungsCode(bloecke) {
  *  Bauabschnitte, die `alsBaumeldung` nimmt. Ein Code über mehr, als
  *  hinausgeht, stimmte beim Planer nie. */
 export const meldungsCodeVon = (strecken, auswahl = null) =>
-  meldungsCode((strecken || []).filter(bauBegonnen)
+  meldungsCode((strecken || []).filter(s => meldungTraegt(s, auswahl ? auswahl(s) : null))
     .map(s => bauVerschlanken(s, auswahl ? auswahl(s) : null)));
 
 /** Und beim Planer, aus der angekommenen Meldung nachgerechnet. Die Bögen
@@ -651,7 +678,7 @@ export async function planungAusFragment(fragment = location.hash) {
 /* `auswahl` liefert je Strecke die Menge der Bauabschnitte, die mitgehen –
    oder `null` für den ganzen Bogen (siehe `bauVerschlanken`). */
 export function alsBaumeldung(projekt, strecken, von = '', auswahl = null) {
-  const gemeldet = (strecken || []).filter(bauBegonnen);
+  const gemeldet = (strecken || []).filter(s => meldungTraegt(s, auswahl ? auswahl(s) : null));
   return {
     fassung: 1,
     planung: projekt.name || '',

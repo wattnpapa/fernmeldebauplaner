@@ -8,6 +8,13 @@
      darstellung wäre #003399 auf dunklem Grund nicht zu lesen, dort wird die
      Schrift heller, während Flächen und Kopfzeile dunkel bleiben. */
   --thw-text: var(--thw);
+  /* Der Hof um den gewählten und den aktiven Punkt, das gewählte Schild und
+     Bild. Bei Tag blasses THW-Blau; nachts trug dasselbe Blau mit 1,3:1 gegen
+     den Grund – „gewählt“ war am dunklen Schirm nicht zu sehen. Der Saum ist
+     ein Bildpunkt Abstand zwischen Marke und Hof (bei Tag durchsichtig). */
+  --hof-saum: transparent;
+  --hof-leicht: rgba(0,51,153,.25);
+  --hof-stark: rgba(0,51,153,.45);
   --grund: #eef1f6;
   --flaeche: #ffffff;
   --flaeche-2: #f7f9fc;
@@ -404,6 +411,17 @@ body.seite-zu .seite { display: none; }
    Band zu zeigen, das über der leeren Liste nichts zusammenfasst. */
 .summe:empty { display: none; }
 .summe b { color: var(--thw-text); }
+/* Die Warnungen des Baus stehen unter den Zählern, in eigener Zeile und im
+   Mahnton – nicht im Blau und nicht fett wie „4 im Bau“. Jede Marke bricht
+   nirgends um, und das Wort ⚠ trägt sie auch im Graudruck. */
+.summe-warnungen {
+  flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 6px;
+}
+.summe-warn {
+  white-space: nowrap; font-weight: 650; color: var(--warnung-tief);
+  background: var(--warnung-flaeche); border: 1.5px solid var(--warnung-linie-stark);
+  border-radius: var(--radius-klein); padding: 1px 7px;
+}
 
 /* Aufschlüsselung nach Kabelart: eigenes Raster statt weiterer Flexglieder,
    sonst rutschten Längen und Trommelzahlen je nach Namenslänge gegeneinander
@@ -969,6 +987,11 @@ body.seite-zu .seite { display: none; }
 .koord-hinweis { line-height: 1.5; }
 
 .tastenreihe { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+/* `hidden` schlug gegen `display: flex`: „Ich habe den Link von Hand
+   weitergegeben“ stand im Dialog sofort da, obwohl er erst nach einem
+   fehlgeschlagenen Kopieren erscheinen soll – ein Fehltipp setzte den Vermerk
+   „Verschickt“ ohne Versand. */
+.tastenreihe[hidden] { display: none !important; }
 
 /* Der Bauauftrag ist das Ergebnis der ganzen Eingabe darüber – er bleibt am
    unteren Rand der geöffneten Streckenkarte stehen, statt hinter Kennzahlen,
@@ -1161,7 +1184,7 @@ body.punktkarte-offen .werkzeuge { display: none; }
 
 .werkzeuge {
   position: absolute; top: 12px; left: calc(12px + env(safe-area-inset-left, 0px)); z-index: 700;
-  display: flex; flex-direction: column; gap: 5px;
+  display: flex; flex-direction: column; gap: 8px;
   background: var(--flaeche); border: 1px solid var(--linie); border-radius: var(--radius);
   padding: 5px; box-shadow: var(--schatten);
 }
@@ -1201,10 +1224,11 @@ body.punktkarte-offen .werkzeuge { display: none; }
 @media (min-width: 761px) and (min-height: 451px) {
   body:not(.baumodus) .wz-kopf {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    border: 0; background: none; padding: 2px 6px; min-height: 28px; cursor: pointer;
-    font: inherit; font-size: 12px; font-weight: 650; color: var(--text-schwach);
+    border: 1px solid var(--linie-stark); border-radius: var(--radius-klein);
+    background: var(--flaeche-2); padding: 2px 8px; min-height: 30px; cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 650; color: var(--text);
   }
-  body:not(.baumodus) .wz-kopf:hover { color: var(--thw-text); }
+  body:not(.baumodus) .wz-kopf:hover { color: var(--thw-text); border-color: var(--thw-hell); }
   body:not(.baumodus) .werkzeuge.zu > .wz { display: none; }
   .werkzeuge.zu .wz-kopf .ko-pfeil { transform: rotate(-90deg); }
 }
@@ -1345,6 +1369,9 @@ body.punktkarte-offen .leaflet-control-zoom { visibility: hidden; }
   white-space: nowrap;
 }
 .sl-netz[hidden] { display: none; }
+/* Die Trenner tragen nur Haarspatien (schmal fehlt jeder Bildpunkt, siehe
+   unten); mit Platz bekommen sie Luft. */
+.sl-netz-vorrat, .sl-netz-grob { margin-left: 4px; }
 
 /* MGRS und GPS sind antippbar: ein Tipp legt die Angabe in die Zwischenablage */
 .sl-kopie {
@@ -1479,7 +1506,23 @@ body.punktkarte-offen .leaflet-control-zoom { visibility: hidden; }
    Warnung an der Standmarke auf dem Tablet das Kleinste auf dem Schirm. */
 .strecken-mass .bz-marke { margin-top: 2px; font-size: 11px; }
 .strecken-mass .schild-stand { display: flex; flex-wrap: wrap; gap: 3px; }
-.strecken-mass.aktiv { box-shadow: 0 0 0 2px rgba(0,51,153,.3), 0 2px 8px rgba(0,0,0,.22); }
+/* Zweite, kleine Zeile des Schildes der Lagekarte: wer baut, wann zuletzt
+   etwas kam. Sie bricht um, wenn zwei Trupps an einer Strecke stehen. */
+.strecken-mass .schild-bau { font-size: 11px; color: #59636f; max-width: 17em;
+  font-variant-numeric: tabular-nums; line-height: 1.25; }
+body.nacht #karte .strecken-mass .schild-bau { color: var(--text-schwach); }
+/* Streckennummer im Schild und an der Linie – nur im Schwarz-Weiß-Druck der
+   Lagekarte, dort trägt das Strichmuster allein sechs Strecken. Der weiße Grund
+   hält die Zahl lesbar auf dem Muster darunter. */
+.schild-nr, .linien-nr {
+  display: inline-block; font-style: normal; font-weight: 800; color: #000;
+  background: #fff; border: 1.5px solid #000; border-radius: 999px;
+  min-width: 1.5em; text-align: center; line-height: 1.3; padding: 0 .25em;
+  font-variant-numeric: tabular-nums;
+}
+.schild-nr { margin-right: .35em; font-size: .92em; }
+.linien-nr { font-size: 11px; }
+.strecken-mass.aktiv { box-shadow: 0 0 0 1px var(--hof-saum), 0 0 0 3px var(--hof-leicht), 0 2px 8px rgba(0,0,0,.22); }
 
 /* Bezeichnung eines Trassenpunktes. Der Versatz steht in em und nicht in
    Pixeln: im Druckbild wächst die Schrift mit --karten-schrift, ein fester
@@ -1560,8 +1603,8 @@ body.punktkarte-offen .leaflet-control-zoom { visibility: hidden; }
 .fbp-punkt.bw-unterbau::after { content: 'U'; }
 .fbp-punkt.bw-bauwerk::after { content: 'B'; }
 .fbp-punkt.art-mast { border-radius: 50% 50% 3px 3px; }
-.fbp-punkt.gewaehlt { width: 26px; height: 26px; box-shadow: 0 0 0 3px rgba(0,51,153,.25), 0 1px 4px rgba(0,0,0,.4); }
-.fbp-punkt.aktiv { box-shadow: 0 0 0 4px rgba(0,51,153,.45), 0 1px 4px rgba(0,0,0,.4); }
+.fbp-punkt.gewaehlt { width: 26px; height: 26px; box-shadow: 0 0 0 1px var(--hof-saum), 0 0 0 4px var(--hof-leicht), 0 1px 4px rgba(0,0,0,.4); }
+.fbp-punkt.aktiv { box-shadow: 0 0 0 1px var(--hof-saum), 0 0 0 5px var(--hof-stark), 0 1px 4px rgba(0,0,0,.4); }
 
 /* Taktisches Zeichen einer Punktart (Verteiler). Kein Schlagschatten wie bei
    den frei gesetzten Zeichen: dieses hier steht auch im Bauauftrag, und Firefox
@@ -1661,7 +1704,7 @@ body.punktkarte-offen .leaflet-control-zoom { visibility: hidden; }
    den Punkt lautlos ausfallen – hier führt Wegsehen zum richtigen Ergebnis. */
 body.modus-aktiv .fbp-bild { pointer-events: none; }
 .fbp-bild-icon:hover .fbp-bild { transform: scale(1.25); }
-.fbp-bild.gewaehlt { box-shadow: 0 0 0 3px rgba(0,51,153,.45), 0 1px 4px rgba(0,0,0,.4); }
+.fbp-bild.gewaehlt { box-shadow: 0 0 0 1px var(--hof-saum), 0 0 0 4px var(--hof-stark), 0 1px 4px rgba(0,0,0,.4); }
 
 /* Die Vorschau ist das Bild selbst – der dunkle Grund der übrigen Tooltips
    wäre hier ein Rahmen um ein Rahmenbild. Die Beschriftung liegt darin. */
@@ -2342,6 +2385,11 @@ body:not(.sicht-einfach) .nur-einfach { display: none; }
   padding: 10px 14px; line-height: 1.3; white-space: normal;
 }
 .einstieg-wege .knopf small { display: block; font-weight: 400; opacity: .85; margin-top: 2px; }
+/* Quer stehen die beiden Wege nebeneinander: untereinander ragte der letzte
+   Absatz bei 844×390 über die Rollleiste hinaus (323 px Inhalt in 281). */
+@media (max-height: 450px) and (min-width: 600px) {
+  .einstieg-wege { grid-template-columns: 1fr 1fr; }
+}
 
 /* Der Umschalter der Ansicht, oben in der Leiste über den Reitern. Im
    Dateimenü war er versteckt – und wer die Anwendung kennt und nach der
@@ -2374,7 +2422,7 @@ body.baumodus .sichtwahl { display: none; }
   width: 14px; height: 14px; margin: 2px; border-radius: 50%;
   background: var(--farbe, #333); border: 2.5px solid #fff;
   box-shadow: 0 0 0 1px rgba(16,32,56,.45);
-  color: #fff; font-size: 9.5px; font-weight: 700; line-height: 1; cursor: pointer;
+  color: #fff; font-size: 11px; font-weight: 700; line-height: 1; cursor: pointer;
 }
 /* Trägt die Marke einen Buchstaben (Muffe, Reserve, Bauweise der Querung),
    füllt sie ihren 18-px-Kasten – in 14 px wäre er nicht zu lesen. Der Anker
@@ -2501,6 +2549,10 @@ body.baumodus .sichtwahl { display: none; }
 }
 .trupp-chip[aria-checked="true"] { background: var(--thw); border-color: var(--thw); color: #fff; }
 .trupp-chip[aria-checked="true"]::before { content: '✓ '; }
+/* Die Warnung „nicht aufgetragen“ stand ohne Abstand über der Wahl. */
+#dialog-inhalt .bau-warnung + .feld { margin-top: 12px; }
+/* „Trupp wechseln“ im Rückmeldeblock: ein Griff unter dem Absender. */
+.bau-trupp-wechseln { margin-top: 4px; }
 /* Je Knopf eine Zeile Folge, unter dem, was hereinkommt. */
 .folge-liste { margin: 0; padding-left: 18px; }
 .folge-liste li { margin: 3px 0; }
@@ -2550,6 +2602,12 @@ body.baumodus .sichtwahl { display: none; }
   background: var(--warnung-flaeche) !important; color: var(--warnung-tief) !important;
   font-weight: 650;
 }
+/* Die Uhrzeit eines abgeschriebenen Eintrags ist freiwillig: der Bogen trägt
+   sie nicht immer. Sie steht deshalb in der Farbe der Abschrift und nicht im
+   Mahnton – „Uhrzeit fehlt“ in Gelb las sich als Fehler, den es zu beheben
+   gilt. */
+.bp-ohne-uhr { font-weight: 500; }
+.pk-nachtrag { font-weight: 700; color: var(--warnung-tief); }
 .bp-trupp-wahl { margin-top: 8px; }
 .bp-felder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 8px; }
 .bp-felder .feld, .bp-bemerkung { margin: 8px 0 0; min-width: 0; }
@@ -2585,6 +2643,7 @@ body.baumodus .sichtwahl { display: none; }
   background: var(--warnung-flaeche); border: 1px solid var(--warnung-linie);
   color: var(--warnung-tief); font-weight: 600;
 }
+.bau-warnung[hidden] { display: none; }
 
 /* Der Materialnachweis. Zwei Spalten wie bei den Punktfeldern, aber mit der
    Einheit rechts am Feld – am Bauort wird die Zahl gesucht und nicht die
@@ -2755,7 +2814,7 @@ body.baumodus .sichtwahl { display: none; }
    im Bau gestrichelt, gebaut gefüllt, übergeben gefüllt mit Haken. */
 .bz-marke {
   padding: 1px 7px; border-radius: 999px; border: 1.5px solid var(--gut);
-  font-size: 10.5px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+  font-size: 11px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
 }
 .bz-marke.bz-offen { border-color: var(--linie-stark); color: var(--text-schwach); }
 .bz-marke.bz-laeuft { border-style: dashed; border-color: var(--warnung-linie-stark);
@@ -2788,6 +2847,9 @@ body.baumodus .sichtwahl { display: none; }
   margin-left: auto; width: auto; min-width: 44px; height: auto; min-height: 32px;
   padding: 4px 10px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
 }
+/* „Alle gesehen“ über den Karten eines Abschnitts, rechtsbündig wie das
+   einzelne „gesehen“ in den Karten darunter. */
+.bz-alle-gesehen { display: flex; justify-content: flex-end; margin: 2px 0 6px; }
 .bz-meldung-text { flex: 1; min-width: 0; }
 .eintrag-zeile.bz-meldung.erledigt { background: none; border-left-color: var(--linie-stark);
   color: var(--text-schwach); }
@@ -2894,7 +2956,14 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   padding: 0 4px; border: 1px solid var(--linie-stark); border-radius: var(--radius-klein);
   white-space: nowrap;
 }
+/* Blau und fett, ohne Rahmen – der Rückgabe-Code daneben ist schwarz in einer
+   Marke. Im Audit unterschied sie nur die Rahmung, und die ging in einer Zeile
+   mit Beschriftung unter. */
 .plan-nr { font-family: var(--mono); font-variant-numeric: slashed-zero; }
+/* Nur in den Listen der Oberfläche: dieselbe Klasse steht auf dem gedruckten
+   Blatt der Baudokumentation (js/bauauftrag.js), und dort soll sie schlicht
+   bleiben. */
+.plan-kennung .plan-nr { font-weight: 700; color: var(--thw-text); }
 
 /* Wer an diesem Gerät baut. Der Block steht oben bei den Bauabschnitten und
    hebt sich ab, solange niemand eingetragen ist und schon aufgenommen wurde:
@@ -3071,14 +3140,20 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
 }
 /* 16 px zwischen den Zeilen, 8 px nebeneinander: bricht die Reihe schmal um,
    steht die Gefahrtaste sonst dicht unter ihrem Nachbarn. */
-.pk-tasten { display: flex; flex-wrap: wrap; gap: 16px 8px; }
+.pk-tasten { display: flex; flex-wrap: wrap; gap: 16px; }
 .pk-tasten .knopf { flex: 1 1 auto; margin: 0; }
 /* „Zurücknehmen“ und „Löschen“ wirken sofort und lagen mit 6 px Abstand
    gleich groß neben „Fertig“ – ein Griff mit dem Handschuh nahm die eben
    eingetragene Aufnahme zurück. Sie wachsen deshalb nicht mit, rücken um
    16 px von ihrem Nachbarn ab und landen so am Ende ihrer Zeile; „Fertig“
-   steht allein eine Zeile tiefer. */
-.pk-tasten .knopf.gefahr { flex: 0 1 auto; margin-left: 16px; }
+   steht allein eine Zeile tiefer.
+
+   Der Abstand kommt aus `gap` und nicht aus einem linken Rand an der Gefahr-
+   taste: hochkant bricht sie immer in die zweite Zeile um, und dort stand sie
+   mit dem Rand 16 px weiter rechts als alles darüber (x 41 gegen 25). Als Lücke
+   zwischen den Tasten trennt dieselbe Zahl sie von ihrem Nachbarn, wo sie in
+   einer Zeile steht, und lässt sie bündig, wo sie allein steht. */
+.pk-tasten .knopf.gefahr { flex: 0 1 auto; }
 /* Der Abschluss bleibt beim Rollen stehen: er ist neben dem Kreuz der zweite
    Ausstieg, und ausgerechnet er stand vorher unter der Kante des Blattes.
    Eigene Zeile, volle Breite – der Griff, der ohne Hinsehen zu finden sein
@@ -3107,6 +3182,30 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   background: var(--flaeche); padding: 8px 0 10px; margin-top: -8px;
 }
 .pk-aufnahme .knopf { flex: 1 1 0; min-width: 0; }
+/* Rollt das Blatt noch (`rollhinweis` in js/baukarte.js), wirft die festge-
+   haltene Zeile einen Schatten nach oben und trägt „mehr ▾“ in ihrem Polster.
+   Kein Pfeil über dem Inhalt: dort deckte er Chips. Das Wort steht im Polster
+   der Abschlusszeile, wo nichts zu treffen ist. */
+.punktkarte[data-mehr] .pk-abschluss,
+.punktkarte[data-mehr] .pk-aufnahme { box-shadow: 0 -9px 8px -7px rgba(0, 0, 0, .28); }
+.punktkarte[data-mehr] .pk-abschluss::before {
+  content: 'mehr ▾'; position: absolute; top: 0; right: 2px; pointer-events: none;
+  font-size: 11.5px; line-height: 13px; font-weight: 650; color: var(--text-schwach);
+}
+/* Ein Tipp, den eine Tippsperre geschluckt hat (`tippWink` in js/baukarte.js):
+   der Knopf blitzt kurz in der Markenfarbe. Ohne Bewegung ein stehender Rand –
+   wer Bewegung abgeschaltet hat, soll den Wink trotzdem sehen. */
+@keyframes tipp-wink {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  25% { box-shadow: 0 0 0 4px var(--thw-hell); }
+}
+.tipp-wink { animation: tipp-wink .45s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .tipp-wink { animation: none; outline: 3px solid var(--thw-hell); outline-offset: 1px; }
+}
+.pk-zu-kurz { display: none; }
+.pk-zuordnung .pk-vorschlag { margin-left: 0; }
+.pk-zwilling-text { min-width: 0; }
 
 /* Quer auf dem Telefon bleibt vom Kartenbereich so wenig übrig, dass Kopf und
    Tastenreihe des Blattes einander überdeckten: bei 667×375 sind es 59 px, der
@@ -3195,7 +3294,7 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
      Abstand zur Gefahrtaste bleibt bei 16 px: er ist aus einem Fehlgriff
      entstanden – „Löschen“ neben „Fertig“ nimmt mit dem Handschuh die eben
      eingetragene Aufnahme zurück – und gilt quer wie hochkant. */
-  .pk-tasten { gap: 16px 8px; }
+  .pk-tasten { gap: 16px; }
 }
 
 /* ---------------------------------------------------------------- Schmale Fenster */
@@ -3333,6 +3432,11 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
     display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
     gap: 2px; padding: 4px;
   }
+  /* Die Bauleiste hat nur vier Griffe und Platz für Lücken: bei 2 px lagen
+     „Punkt hier“ und „Auf Karte“ Kante an Kante, und der Daumen traf im Review
+     den Nachbarn. Die Planung mit ihren sechs Spalten behält 2 px – dort
+     reichten 320 px mit 8 nicht auf 44 px je Griff. */
+  body.baumodus .werkzeuge { gap: 8px; }
   /* Zwei Klassen im Wähler, damit der `pointer: coarse`-Block weiter unten
      mit seinem `.wz { padding: 12px 10px }` nicht dazwischenfährt – der gilt
      der Breitansicht auf dem Tablet, wo Platz ist. */
@@ -3436,13 +3540,23 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
      dann auf „–“, während die Auskunft über den Ausfall gebraucht wird.
      Gemessen: mit beidem bricht die Leiste bei 390 px zweizeilig um. */
   .statusleiste.ohne-netz .sl-elev { display: none; }
-  /* „Karte nicht erreichbar · Vorrat leer“ ist länger als „kein Netz“ und
-     brach die Leiste bei 390 px wieder zweizeilig um. Die Angabe nimmt deshalb
-     nur, was neben der Gitterangabe frei ist, und gekürzt wird vorn: die Zahl
-     des Vorrats ist das, worauf es am Bauort ankommt. */
-  .sl-netz { flex: 1 1 0; min-width: 0; display: flex; justify-content: flex-end; }
+  /* „Karte nicht erreichbar · Vorrat leer · gröber“ ist länger als „kein
+     Netz“ und brach die Leiste bei 390 px wieder zweizeilig um (die Prüfung
+     „Statusleiste einzeilig“ misst das). Die Angabe nimmt deshalb nur, was
+     neben der Gitterangabe frei ist, und gekürzt wird in fester Rangfolge:
+     zuerst das Anhängsel „gröber“, dann der Anlass, der Vorrat zuletzt – die
+     Zahl, auf die es am Bauort ankommt. Der Anlass steht dabei vorn und nicht
+     mehr in einem Feld, das als Erstes auf null schrumpfte: bei 320 px blieb
+     von „kein Netz“ nichts, und der Text lag über dem Feld „MGRS“. Acht
+     Zeichen Mindestbreite lassen „kein Netz“ nie angeschnitten.
+     `margin-left: auto` statt `justify-content: flex-end`, damit ein Überlauf
+     nach rechts ins Abgeschnittene läuft und nicht nach links über MGRS. */
+  .sl-netz { flex: 1 1 0; min-width: 0; display: flex; overflow: hidden; }
   .sl-netz[hidden] { display: none; }
-  .sl-netz-was { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .sl-netz-was { flex: 0 1000 auto; margin-left: auto; min-width: 8ch; overflow: hidden; text-overflow: ellipsis; }
+  .sl-netz-vorrat, .sl-netz-grob { margin-left: 0; }
+  .sl-netz-vorrat { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .sl-netz-grob { flex: 0 100000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* Gitterangabe und Herkunftszeile sollen in eine Zeile passen */
   .statusleiste { padding: 3px 8px; gap: 4px 10px; }
   /* Die Herkunftszeile („zuletzt angetippte Position“) geht: mit gefüllter
@@ -3748,6 +3862,13 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   .kopf .kopf-projekt .speicherstatus.fehler::before {
     content: '⚠ ' attr(data-kurz); font-size: 13px; white-space: nowrap;
   }
+  /* Unter 800 px nimmt der ausgeschriebene Merker dem Namensfeld zu viel:
+     bei 667 px blieben von „Neue Planung“ drei Buchstaben. Dort steht das
+     kurze „nicht gesichert“ – dieselbe Vokabel wie „Als Datei sichern“ am
+     Knopf, den der Merker meint. */
+  @media (max-width: 800px) {
+    .kopf .kopf-projekt .speicherstatus.mahnung:not(.fehler)::before { content: '⚠ nicht gesichert'; }
+  }
 
   #sl-gps-kopie, .sl-dez, .sl-elev, .sl-quelle { display: none; }
   .statusleiste { flex-wrap: nowrap; padding-top: 2px; padding-bottom: 2px; }
@@ -3794,6 +3915,12 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   .kartenoptionen.zu .ko-kopf > span { display: none; }
   .kartenoptionen.zu .ko-kopf::before { content: '≡'; font-size: 22px; line-height: 1; }
 }
+/* Quer, wo die Breite da ist, trägt das Sinnbild sein Wort: „≡“ allein sagte
+   keinem Erstnutzer, dass dahinter die Karteneinstellungen liegen. Hochkant
+   bleibt es beim Sinnbild – dort gehört jeder Bildpunkt den Werkzeugen. */
+@media (max-height: 500px) and (min-width: 700px) and (pointer: coarse) {
+  .kartenoptionen.zu .ko-kopf::before { content: '≡ Karte'; font-size: 15px; font-weight: 650; }
+}
 
 /* Die Punktkarte steht quer als Blatt an der rechten Seite und nicht mehr
    über der ganzen Karte. Über die volle Breite deckte sie bei 844×390 und
@@ -3816,7 +3943,7 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   }
   .punktkarte > div { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
   .pk-spalte { display: contents; }
-  .pk-tasten { gap: 16px 8px; }
+  .pk-tasten { gap: 16px; }
   body.punktkarte-offen .kartenoptionen { visibility: hidden; }
 
   /* Quer zuerst „Was ist hier?“, dann die Zuordnung. Hochkant steht es
@@ -3828,6 +3955,25 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
      Abschluss danach. */
   .pk-kopf { order: -2; }
   .pk-art { order: -1; }
+  /* Der Hinweis „eben schon aufgenommen“ steht vor den Art-Chips, auch wenn
+     er im Blatt sonst danach kommt: im Review lag er quer unter dem Falz, die
+     Chips standen zuerst, und ein Trupp, der die Art tippte, hatte die Muffe
+     doppelt. Gleicher `order`-Wert wie die Art, davor in der Reihenfolge des
+     Baums – er ist der Griff, der den Doppelten wegnimmt, und gehört vor die
+     Entscheidung, mit der man ihn bestätigte. Einzeilig neben dem Griff statt
+     über ihm: der Satz darf auf zwei Zeilen laufen, der Griff bleibt 44 px. */
+  .pk-zwilling { order: -1; flex-wrap: nowrap; gap: 8px; margin-top: 0; }
+  .pk-zwilling-text {
+    flex: 1 1 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; line-height: 1.25;
+  }
+  .pk-zwilling .knopf { flex: none; }
+  /* Die Zuordnung steht quer unter dem Falz; hier trägt die Frage der Art sie
+     als Kurzangabe (`istBlatt` in js/baukarte.js). */
+  .pk-frage .pk-zu-kurz {
+    display: inline; margin-left: 6px; padding: 2px 7px; border-radius: 999px;
+    background: var(--thw-blass); color: var(--text-blau); font-weight: 650;
+  }
   /* Der Titel darf zweizeilig stehen: neben dem 44 px hohen Kreuz ist dafür
      Platz, und einzeilig endete er bei 667 px Breite in „Punkt 2 T.“. */
   .pk-titel { flex-wrap: wrap; row-gap: 0; }
@@ -3913,7 +4059,7 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
 .fl-svg .fl-voll { fill: var(--farbe); fill-opacity: .45; }
 .fl-svg .fl-leicht { fill: var(--farbe); fill-opacity: .18; }
 .fl-svg .fl-linie { fill: none; stroke: var(--farbe); stroke-width: calc(1.2px * var(--strich, 1)); vector-effect: non-scaling-stroke; stroke-linecap: round; }
-.fl-wrap.gewaehlt .fl-dreh { outline: 2px solid var(--thw); outline-offset: 1px; box-shadow: 0 0 0 5px rgba(0,51,153,.25); }
+.fl-wrap.gewaehlt .fl-dreh { outline: 2px solid var(--thw-text); outline-offset: 1px; box-shadow: 0 0 0 1px var(--hof-saum), 0 0 0 6px var(--hof-leicht); }
 /* Der Name liegt ungedreht über der Mitte, wie die Beschriftung der Zeichen –
    ein gedrehter Text wäre auf dem Blatt nicht zu lesen. */
 .fl-label {
@@ -3928,7 +4074,7 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   display: block; width: 10px; height: 10px; margin: 1px;
   background: var(--farbe); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4);
 }
-.fl-marke.gewaehlt { box-shadow: 0 0 0 3px rgba(0,51,153,.45), 0 1px 4px rgba(0,0,0,.4); }
+.fl-marke.gewaehlt { box-shadow: 0 0 0 1px var(--hof-saum), 0 0 0 4px var(--hof-stark), 0 1px 4px rgba(0,0,0,.4); }
 .leaflet-marker-draggable .fl-wrap, .leaflet-marker-draggable .fl-marke { cursor: grab; }
 /* Der Drehgriff: ein Ring an der oberen Kante, der sich beim Ziehen um die
    Mitte bewegt. Groß genug für den Finger, deutlich kein Trassenpunkt. */
@@ -4093,6 +4239,11 @@ body.nacht {
   --thw-hell: #3a6ad6;
   --thw-blass: #1b2a47;
   --thw-text: #9cb8ff;
+  /* Hof nachts: hell gegen den Grund (über 5:1), mit dunklem Saum zur Marke –
+     wie beim Haltering. „Aktiv“ ist die volle Stufe, „gewählt“ die matte. */
+  --hof-saum: var(--grund);
+  --hof-leicht: #6f8fe0;
+  --hof-stark: var(--thw-text);
   /* Der Hauptknopf nachts heller als das THW-Blau: #0b2e7a stand mit 1,38:1
      auf der Fläche, „Fertig“ und „Punkt hier“ waren als Knopf nicht zu
      erkennen. #3a6ad6 hält 3,4:1 gegen die Fläche und trägt die weiße Schrift
@@ -4139,7 +4290,10 @@ html:has(body.nacht) { background: #0d1218; color-scheme: dark; }
    nur um 1,25:1 von der der übrigen Reiter. Nachts trägt der Strich die helle
    Schriftfarbe, und die Schrift wird fett. */
 body.nacht .reiter button.aktiv { border-bottom-color: var(--thw-text); color: #fff; font-weight: 700; }
-body.nacht .ansicht-wechsel .aw.aktiv { border-top-color: var(--thw-text); color: #fff; font-weight: 700; }
+/* Quer steht der Umschalter als Spalte, und der aktive Strich liegt links statt
+   oben: `border-left-color` blieb auf dem dunklen THW-Blau (1,15:1 gegen den
+   Grund) – nur der obere Strich der Hochansicht war nachts geändert. */
+body.nacht .ansicht-wechsel .aw.aktiv { border-top-color: var(--thw-text); border-left-color: var(--thw-text); color: #fff; font-weight: 700; }
 
 @media screen {
   body.nacht #karte { background: #1a2028; }
@@ -4178,6 +4332,15 @@ body.nacht .ansicht-wechsel .aw.aktiv { border-top-color: var(--thw-text); color
      selbst bei rund 4:1. `stroke` aus dem Stilbogen schlägt das Attribut,
      das Leaflet setzt. */
   body.nacht #karte .fbp-fassung { stroke: var(--grund); stroke-opacity: .85; }
+  /* Das Gegenstück bei Tag, in der Sonne: die Streckenfarbe in ihrer Tagstufe
+     (`tagFarbe()` in strecken.js, mindestens 3:1 gegen den hellen Kartengrund).
+     Orange stand bei 2,1:1 und verlor sich; Schildbalken und Punktrand mit
+     ihm. `body:not(.nacht)`, damit die Nachtstufe unten gewinnt, ohne dass
+     beide `!important` um die Reihenfolge streiten. Nur an der Arbeitskarte:
+     die Druckkarten liegen außerhalb von `#karte` und zeichnen die gespeicherte
+     Farbe. */
+  body:not(.nacht) #karte [style*="--farbe-tag"] { --farbe: var(--farbe-tag) !important; }
+  body:not(.nacht) #karte path[style*="--farbe-tag"] { stroke: var(--farbe-tag); }
   /* Die Streckenfarbe in ihrer Nachtstufe (`nachtFarbe()` in strecken.js):
      Lila und Braun standen auf der dunklen Fassung bei 2,3:1 und 2,0:1. Wer
      die Stufe trägt, bekommt sie als `--farbe`, und zwar mit `!important` –
@@ -4188,21 +4351,18 @@ body.nacht .ansicht-wechsel .aw.aktiv { border-top-color: var(--thw-text); color
     --farbe: var(--farbe-nacht) !important;
   }
   body.nacht #karte path[style*="--farbe-nacht"] { stroke: var(--farbe-nacht); }
-  /* Die Beschriftungen der Zeichen, Flächen und Relais und das Gitterschild
-     tragen keine eigene Schriftfarbe: sie erbten nachts das helle Grau der
-     Oberfläche auf ihrem weißen Grund und waren unlesbar. */
-  body.nacht #karte .tz-label,
-  body.nacht #karte .fl-label,
-  body.nacht #karte .rl-label,
-  body.nacht #karte .gitter-info { background: rgba(21,28,37,.94); color: var(--text); }
-  /* Die Kabelzeichen zeigen die Streckenfarbe als Schrift auf Weiß; dunkle
-     Streckenfarben wären auf dunklem Grund unlesbar. Die Farbe bleibt als
-     Rand, die Schrift wird hell. */
-  body.nacht #karte .kabel-zeichen.schrift {
-    background: rgba(21,28,37,.94); color: var(--text);
-    box-shadow: inset 0 0 0 1px var(--farbe, #333);
+  /* Gebaute Punkte (`.fbp-istpunkt`) trugen nur `--farbe` und blieben nachts
+     auf der Tagfarbe. Sie tragen jetzt die Nachtstufe wie jede Marke; weiße
+     Schrift hielte auf dem aufgehellten Grund nicht mehr, deshalb dunkel –
+     und der Ring vom Grund statt von der Fassung, die nachts ohnehin dunkel ist. */
+  body.nacht #karte .fbp-istpunkt { color: #000; border-color: var(--grund); }
+  body.nacht #karte .fbp-fern .fbp-istpunkt.kurz-offen { color: transparent; }
+  /* Die Selektion der Zeichen und Relais ist ein Schatten aus festem Blau; auf
+     dunklem Grund stand sie unsichtbar. */
+  body.nacht .tz-wrap.gewaehlt,
+  body.nacht .rl-wrap.gewaehlt {
+    filter: drop-shadow(0 0 0 var(--thw-text)) drop-shadow(0 0 4px var(--thw-text));
   }
-  body.nacht #karte .kabel-zeichen.stufe rect { fill: #151c25; }
   /* Leaflet legt dem Maßstab einen weißen Schatten unter die Schrift; auf dem
      dunklen Grund stand „1 km“ dadurch doppelt und verwaschen. */
   body.nacht .leaflet-control-scale-line { text-shadow: none; }
