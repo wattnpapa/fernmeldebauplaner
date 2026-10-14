@@ -4363,6 +4363,21 @@ body.nacht .ansicht-wechsel .aw.aktiv { border-top-color: var(--thw-text); borde
   body.nacht .rl-wrap.gewaehlt {
     filter: drop-shadow(0 0 0 var(--thw-text)) drop-shadow(0 0 4px var(--thw-text));
   }
+  /* Die Beschriftungen der Zeichen, Flächen und Relais und das Gitterschild
+     tragen keine eigene Schriftfarbe: sie erbten nachts das helle Grau der
+     Oberfläche auf ihrem weißen Grund und waren unlesbar. */
+  body.nacht #karte .tz-label,
+  body.nacht #karte .fl-label,
+  body.nacht #karte .rl-label,
+  body.nacht #karte .gitter-info { background: rgba(21,28,37,.94); color: var(--text); }
+  /* Die Kabelzeichen zeigen die Streckenfarbe als Schrift auf Weiß; dunkle
+     Streckenfarben wären auf dunklem Grund unlesbar. Die Farbe bleibt als
+     Rand, die Schrift wird hell. */
+  body.nacht #karte .kabel-zeichen.schrift {
+    background: rgba(21,28,37,.94); color: var(--text);
+    box-shadow: inset 0 0 0 1px var(--farbe, #333);
+  }
+  body.nacht #karte .kabel-zeichen.stufe rect { fill: #151c25; }
   /* Leaflet legt dem Maßstab einen weißen Schatten unter die Schrift; auf dem
      dunklen Grund stand „1 km“ dadurch doppelt und verwaschen. */
   body.nacht .leaflet-control-scale-line { text-shadow: none; }
