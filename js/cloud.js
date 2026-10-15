@@ -39,10 +39,11 @@ export class KonfliktFehler extends Error {
 /** Der Anbieter lehnt ab oder ist nicht erreichbar. `erneuern` heißt: die
  *  Anmeldung ist abgelaufen und der Nutzer muss sich neu anmelden. */
 export class CloudFehler extends Error {
-  constructor(nachricht, { erneuern = false } = {}) {
+  constructor(nachricht, { erneuern = false, zeitueberschreitung = false } = {}) {
     super(nachricht);
     this.name = 'CloudFehler';
     this.erneuern = erneuern;
+    this.zeitueberschreitung = zeitueberschreitung;
   }
 }
 
@@ -452,6 +453,11 @@ export function base64url(bytes) {
 
 // ---------------------------------------------------------------- Netz
 
+/* Länger als Overpass-Kacheln, weil hier Lichtbilder hinaufgehen: 45 s sind
+   auf schwachem Mobilfunk für ein verkleinertes Bild (rund 200 kB) noch
+   knapp ausreichend, und eine Anfrage, die so lange schweigt, kommt nicht mehr. */
+const ANFRAGE_FRIST = 45000;
+
 /**
  * Eine Anfrage stellen und die üblichen Fehlerbilder in Sätze übersetzen.
  * Ein abgewiesener Abruf ohne Antwort ist im Browser nicht von einem fehlenden
@@ -459,8 +465,19 @@ export function base64url(bytes) {
  */
 export async function anfrage(adresse, o = {}) {
   try {
-    return await fetch(adresse, o);
+    /* Ohne Frist hängt eine Verbindung, die das Netzsymbol hält und nichts
+       liefert (Funkloch am Bauort), für immer: der Abgleich stand auf „wird
+       übertragen …“, bis die Seite neu geladen wurde, und weder das
+       Netz-Ereignis noch „Jetzt abgleichen“ änderte etwas, weil der laufende
+       Durchgang nie endete. Die Frist gilt je Anfrage, nicht je Durchgang – ein
+       Ordner mit vielen Lichtbildern darf lange dauern, solange etwas fließt. */
+    return await fetch(adresse, { signal: AbortSignal.timeout(ANFRAGE_FRIST), ...o });
   } catch (e) {
+    if (e && e.name === 'TimeoutError') {
+      throw new CloudFehler(
+        'Der Speicher antwortet nicht – die Verbindung steht, es kommt aber nichts an.',
+        { zeitueberschreitung: true });
+    }
     throw new CloudFehler(
       'Der Speicher ist nicht erreichbar – kein Netz, oder der Server lässt den Zugriff ' +
       'aus dem Browser nicht zu (CORS).');

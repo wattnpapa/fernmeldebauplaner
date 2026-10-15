@@ -570,7 +570,16 @@ export function neuerBau() {
        einziges Feld ließ zwei Trupps an einer Strecke einander den Code
        überschreiben. Auch dieses Feld braucht keine Schemaerhöhung: ein Stand
        ohne es öffnet leer, und der Codec in `teilen.js` lässt es zu Hause. */
-    gemeldetCodes: ''
+    gemeldetCodes: '',
+    /* Dass die zuletzt eingespielte Meldung eine Übergabe aufgehoben hat (ein
+       durchgefallener Stamm neben „übergeben“), mit der Zeit des Einspielens
+       und den Stämmen, eine je Zeile. Der Stand fiel dabei still auf „gebaut“
+       zurück; die Liste nennt es, solange die Meldung als neu markiert ist.
+       Wie die beiden Felder davor ohne Schemaerhöhung: ein Stand ohne sie
+       öffnet leer, `bauNormalisieren()` stellt sie her, und der Codec lässt
+       sie zu Hause – es ist eine Notiz des Planers über den Empfang. */
+    uebergabeZurueckZeit: '',
+    uebergabeZurueckStaemme: ''
   };
 }
 
@@ -901,6 +910,35 @@ class Store {
     this.melden(grund);
   }
 
+  /**
+   * Wie `aendern`, aber gespeichert wird sofort, und das Ergebnis kommt zurück.
+   *
+   * Gebraucht wird das, wo etwas quittiert wird, das es nur einmal gibt: das
+   * Einspielen einer Baumeldung. `aendern` speichert 400 ms später; war der
+   * Speicher voll, stand der Code längst auf dem Schirm, die Meldung galt als
+   * übernommen, und nach dem Neuladen war sie weg. Scheitert das Speichern,
+   * wird die Änderung zurückgenommen – im selben Objekt, denn wer die Planung
+   * vorher in der Hand hielt (ein offener Dialog), soll nichts Halbes sehen –
+   * und der Undo-Schritt entfällt, als wäre nichts geschehen.
+   *
+   * @returns {boolean} ob die Änderung gespeichert ist
+   */
+  aendernGesichert(fn, grund = 'aenderung') {
+    const vorher = JSON.stringify(this.projekt);
+    const tiefe = this.undoStapel.length;
+    const letzter = this._letzterSchnappschuss;
+    this.aendern(fn, grund);
+    clearTimeout(this._speicherTimer);
+    if (this.speichern()) return true;
+    const alt = JSON.parse(vorher);
+    for (const k of Object.keys(this.projekt)) delete this.projekt[k];
+    Object.assign(this.projekt, alt);
+    while (this.undoStapel.length > tiefe) { this.undoStapel.pop(); this.undoHerkunft.pop(); }
+    this._letzterSchnappschuss = letzter;
+    this.melden('undo');
+    return false;
+  }
+
   /** Nur melden, ohne Undo-Punkt (z. B. Kartenausschnitt) */
   still(fn) {
     fn(this.projekt);
@@ -1014,10 +1052,21 @@ class Store {
 
   speichernVerzoegert() {
     clearTimeout(this._speicherTimer);
+    this._speicherOffen = true;
     this._speicherTimer = setTimeout(() => this.speichern(), 400);
   }
 
+  /* Was noch auf seine 400 ms wartet, wird gespeichert, bevor eine andere
+     Planung an die Stelle tritt: der Zeitgeber schriebe sonst die NEUE Planung,
+     und die letzte Änderung der alten bliebe im Speicher aus. */
+  offenesSpeichern() {
+    if (!this._speicherOffen || !this.projekt) return;
+    clearTimeout(this._speicherTimer);
+    this.speichern();
+  }
+
   speichern() {
+    this._speicherOffen = false;
     try {
       const alle = ladeAlle();
       alle[this.projekt.id] = this.projekt;
@@ -1034,6 +1083,7 @@ class Store {
   }
 
   laden(pid) {
+    this.offenesSpeichern();
     const alle = ladeAlle();
     const p = alle[pid];
     if (!p) return false;
@@ -1370,7 +1420,9 @@ export function bauNormalisieren(roh) {
     ausfallZeit: String(roh.ausfallZeit || ''),
     ausfallNach: roh.ausfallNach || null,
     gemeldetCode: String(roh.gemeldetCode || '').slice(0, 8),
-    gemeldetCodes: String(roh.gemeldetCodes || '').slice(0, 420)
+    gemeldetCodes: String(roh.gemeldetCodes || '').slice(0, 420),
+    uebergabeZurueckZeit: String(roh.uebergabeZurueckZeit || '').slice(0, 40),
+    uebergabeZurueckStaemme: String(roh.uebergabeZurueckStaemme || '').slice(0, 400)
   };
 }
 

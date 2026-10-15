@@ -108,9 +108,16 @@ export function istPunktSetzen(strecke, lat, lng, o = {}) {
      mitbringt, die Zuordnung zum Bauabschnitt ebenso. Eine neue Koordinate ist
      eine bessere Messung desselben Punktes – kein Grund, den Satz „Muffe 6 m
      versetzt, Wurzelwerk“ wegzuwerfen, der nirgends sonst steht. */
+  /* Bestätigt ein ANDERER Bauabschnitt denselben geplanten Punkt, ist das
+     der Treffpunkt zweier Trupps und keine Korrektur: beide stehen dort, und
+     dass beide dort standen, schließt die Lücke zwischen ihnen
+     (`istVerlauf`). Ersetzt würde die Bestätigung des ersten Trupps still
+     durch die des zweiten, und aus dem gemeinsamen Punkt wurde eine Lücke. */
+  const anderer = pt => !o.ersetzt && o.abschnitt && pt.abschnitt && pt.abschnitt !== o.abschnitt;
   const alt = o.ersetzt
     ? bau.punkte.findIndex(pt => pt.id === o.ersetzt)
-    : (neu.sollPunkt ? bau.punkte.findIndex(pt => pt.sollPunkt === neu.sollPunkt) : -1);
+    : (neu.sollPunkt
+      ? bau.punkte.findIndex(pt => pt.sollPunkt === neu.sollPunkt && !anderer(pt)) : -1);
   if (alt >= 0) {
     const vorher = bau.punkte[alt];
     /* Wird ein Punkt im Nachtrag NEU GESETZT (Auf Karte verschieben), trägt die
@@ -659,18 +666,34 @@ export function truppAmGeraet() {
   try {
     const roh = JSON.parse(localStorage.getItem(TRUPP_SCHLUESSEL) || 'null');
     truppVermerk = roh && typeof roh === 'object'
-      ? { trupp: String(roh.trupp || ''), fuehrer: String(roh.fuehrer || '') }
-      : { trupp: '', fuehrer: '' };
+      ? { trupp: String(roh.trupp || ''), fuehrer: String(roh.fuehrer || ''),
+          frueher: frueherLesen(roh.frueher) }
+      : { trupp: '', fuehrer: '', frueher: [] };
   } catch {
     /* Ein privates Fenster oder ein voller Speicher darf den Baumodus nicht
        aufhalten – dann steht der Name eben nur für diese Sitzung. */
-    truppVermerk = { trupp: '', fuehrer: '' };
+    truppVermerk = { trupp: '', fuehrer: '', frueher: [] };
   }
   return truppVermerk;
 }
 
+const frueherLesen = x =>
+  (Array.isArray(x) ? x : []).map(y => String(y || '').trim()).filter(Boolean).slice(-8);
+
+/* `frueher`: die Namen, unter denen dieses Gerät vorher baute. Gebraucht wird
+   das, damit der Rückmeldeblock einen Abschnitt, der nach „Neuer Abschnitt“
+   beim alten Namen stehen blieb, nicht als „das meldet der andere Trupp
+   selbst“ ausgibt – den anderen Trupp gibt es nicht, es war dieses Gerät. */
 export function truppAmGeraetSetzen(o) {
-  truppVermerk = { trupp: String(o.trupp || ''), fuehrer: String(o.fuehrer || '') };
+  const vorher = truppVermerk || truppAmGeraet();
+  const neu = String(o.trupp || '').trim();
+  let frueher = o.frueher !== undefined ? frueherLesen(o.frueher) : frueherLesen(vorher.frueher);
+  if (o.frueher === undefined && vorher.trupp.trim() &&
+      truppSchluessel(vorher.trupp) !== truppSchluessel(neu) &&
+      !frueher.some(x => truppSchluessel(x) === truppSchluessel(vorher.trupp))) {
+    frueher = frueherLesen([...frueher, vorher.trupp]);
+  }
+  truppVermerk = { trupp: String(o.trupp || ''), fuehrer: String(o.fuehrer || ''), frueher };
   try {
     if (truppVermerk.trupp || truppVermerk.fuehrer) {
       localStorage.setItem(TRUPP_SCHLUESSEL, JSON.stringify(truppVermerk));
@@ -684,7 +707,39 @@ export function truppAmGeraetSetzen(o) {
 /* Gehört der Abschnitt dem Trupp `ich`? Eigen ist einer, dessen Trupp (oder,
    ohne Trupp, dessen Name) der Trupp am Gerät ist; so legt ihn auch „Welcher
    Trupp seid ihr?“ an. */
-const gehoertZu = (a, ich) => (a.trupp ? a.trupp.trim() : (a.name || '').trim()) === ich;
+const gehoertZu = (a, ich) =>
+  truppSchluessel(a.trupp ? a.trupp : a.name) === truppSchluessel(ich);
+
+/**
+ * Der Vergleichsschlüssel eines Truppnamens: ohne Groß-/Kleinschreibung,
+ * Leerzeichen und Punkte. „1. fmtr“, „1.FmTr“ und „1. FmTr“ sind derselbe
+ * Trupp – am Telefon tippt niemand die Schreibweise des Planers nach, und
+ * der genaue Vergleich machte aus einem Tippfehler im Namen einen „nicht
+ * aufgetragenen“ Trupp mit eigenem Abschnitt, dessen Meldung beim Planer
+ * neben der des richtigen stand. Die Anzeige behält die Schreibweise, die
+ * jemand eingegeben hat; verglichen wird nur hierüber. Ein Vergleich in
+ * anderen Modulen (Absender in `baumeldung.js`) darf diese Funktion nutzen –
+ * sie hängt von nichts ab.
+ */
+export function truppSchluessel(name) {
+  return String(name || '').toLowerCase().replace(/[\s.\u00a0]+/g, '');
+}
+
+/** Hieß dieses Gerät früher so? (Siehe `truppAmGeraetSetzen`.) */
+export const warTruppDieses = name =>
+  truppAmGeraet().frueher.some(x => truppSchluessel(x) === truppSchluessel(name));
+
+/** Der aufgetragene Trupp, den diese Eingabe meint – in der Schreibweise des
+ *  Planers, oder `null`, wenn sie keinen der aufgetragenen trifft */
+export function aufgetragenerTrupp(s, eingabe) {
+  const k = truppSchluessel(eingabe);
+  return k ? auftragsTrupps(s).find(x => truppSchluessel(x) === k) || null : null;
+}
+
+/* Derselbe Vergleich unter dem Namen, den `gleicherTrupp` in baumeldung.js
+   benutzt: Absendererkennung und Abschnittszuordnung müssen dasselbe Maß
+   anlegen, sonst gilt ein Abschnitt hier als fremd und dort als eigen. */
+export const truppName = truppSchluessel;
 
 /**
  * Die Bauabschnitte, die diesem Gerät gehören – oder `null`, wenn sich nicht
@@ -744,6 +799,62 @@ export function absenderText(strecken) {
   return [v.trupp, v.fuehrer].filter(Boolean).join(' · ');
 }
 
+// ------------------------------------- Ein Trupp-Wechsel hat zwei Hälften
+
+/* „Trupp wechseln“ und die erste Wahl stellen zweierlei um: den Abschnitt in
+   der Planung (im Rückgängig-Verlauf) und den Trupp am Gerät (im Gerätespeicher,
+   dort gehört er hin – siehe `truppAmGeraet`). „↶“ nahm nur die erste Hälfte
+   zurück: der Abschnitt hieß wieder „1. FmTr“, das Gerät blieb „2. FmTr“, der
+   Abschnitt galt als fremd, und die Baumeldung trug null Punkte. Dieselbe
+   Zweiteilung ist beim Umhängen eines Punktes in `rueckgaengig` (app.js)
+   gelöst; hier wird der Gerätetrupp mit dem Schritt zurückgeholt.
+
+   Erkannt wird der Schritt am Zeitstempel der Planung: der Stand vor ihm und
+   der Stand nach ihm tragen je ihr eigenes `geaendert`. Ein Verbund im
+   Schrittstapel selbst hätte `state.js` und das Format des Verlaufs berührt.
+   Gemerkt wird im Sitzungsspeicher, wie der Verlauf – ein Neuladen mitten im
+   Zurücknehmen soll den Gerätetrupp nicht vom Abschnitt trennen. */
+const SCHRITTE_SCHLUESSEL = 'fbp.truppschritte.v1';
+let truppSchritte = null;
+
+function truppSchritteLaden() {
+  if (truppSchritte) return truppSchritte;
+  try {
+    const roh = JSON.parse(sessionStorage.getItem(SCHRITTE_SCHLUESSEL) || '[]');
+    truppSchritte = Array.isArray(roh) ? roh : [];
+  } catch { truppSchritte = []; }
+  return truppSchritte;
+}
+
+/** Festhalten, dass ein Schritt der Planung zugleich den Gerätetrupp umstellte.
+ *  `vorherGeaendert` ist der Zeitstempel VOR `store.aendern`, `projekt` der
+ *  Stand danach; `vorher` und `nachher` sind die Gerätevermerke. */
+export function truppSchrittMerken(projekt, vorherGeaendert, vorher, nachher) {
+  if (!projekt || !vorherGeaendert || vorherGeaendert === projekt.geaendert) return;
+  const liste = truppSchritteLaden();
+  liste.push({ id: projekt.id, vor: vorherGeaendert, nach: projekt.geaendert,
+    vorher: { trupp: vorher.trupp || '', fuehrer: vorher.fuehrer || '',
+      frueher: [...(vorher.frueher || [])] },
+    nachher: { trupp: nachher.trupp || '', fuehrer: nachher.fuehrer || '',
+      frueher: [...(nachher.frueher || [])] } });
+  if (liste.length > 20) liste.shift();
+  try { sessionStorage.setItem(SCHRITTE_SCHLUESSEL, JSON.stringify(liste)); } catch { /* ohne */ }
+}
+
+/** Nach „↶“ oder „↷“: gehört der Stand zu einem Trupp-Wechsel, den Gerätetrupp
+ *  mitnehmen. Gibt den Trupp zurück, auf den das Gerät jetzt steht, sonst `null`. */
+export function truppSchrittNachfuehren(projekt) {
+  if (!projekt) return null;
+  const r = truppSchritteLaden().find(x => x.id === projekt.id &&
+    (x.vor === projekt.geaendert || x.nach === projekt.geaendert));
+  if (!r) return null;
+  const ziel = r.vor === projekt.geaendert ? r.vorher : r.nachher;
+  const jetzt = truppAmGeraet();
+  if (jetzt.trupp === ziel.trupp && jetzt.fuehrer === ziel.fuehrer) return null;
+  truppAmGeraetSetzen(ziel);
+  return ziel;
+}
+
 // ------------------------------------------------- Welcher Trupp, rechtzeitig
 
 /* Hat der Planer mehrere Trupps aufgetragen, fragt „Bau beginnen“, welcher
@@ -777,8 +888,28 @@ export const truppWahlOffen = s => {
 export function truppNichtAufgetragen(s) {
   const ich = truppAmGeraet().trupp.trim();
   const trupps = auftragsTrupps(s);
-  return !!ich && trupps.length >= 2 && !trupps.includes(ich);
+  return !!ich && trupps.length >= 2 && !aufgetragenerTrupp(s, ich);
 }
+
+/* Zweimal „Später“ an derselben Strecke, und die Frage ruht. Sie kam nach
+   jedem Punkt wieder – ein Modal nach jeder Aufnahme, bei zwanzig Punkten am
+   Tag zwanzigmal, und der Trupp, der „Später“ meint, drückte es zwanzigmal.
+   Dagegen steht die Festlegung, dass die Frage wiederkommt, weil ohne Wahl der
+   Abschnitt fehlt und die Meldung beim Planer die des anderen Trupps ersetzt.
+   Verträglich ist beides so: gefragt wird weiter, nur nicht mehr mit einem
+   Dialog nach jedem Punkt, sondern über die feste Marke „Trupp wählen“ (Leiste
+   und Bau-Reiter) – die verschwindet erst mit der Wahl, und das Neuladen holt
+   die Frage ohnehin zurück. Der Zähler lebt nur in der Sitzung, mit Absicht. */
+const truppFrageSpaeter = new Map();
+
+/** „Später“ wurde gedrückt: einmal mehr vertagt */
+export function truppFrageVertagen(strecke) {
+  truppFrageSpaeter.set(strecke.id, (truppFrageSpaeter.get(strecke.id) || 0) + 1);
+}
+
+/** Hat der Trupp die Frage an dieser Strecke schon zweimal vertagt? Dann
+ *  kommt sie nicht mehr von selbst, sondern über die Marke „Trupp wählen“. */
+export const truppFrageRuht = strecke => (truppFrageSpaeter.get(strecke.id) || 0) >= 2;
 
 /* Die Frage kommt bei JEDER Aufnahme ohne Abschnitt wieder, solange keine
    Wahl getroffen ist – nicht nur einmal je Sitzung und Strecke: wer einmal
@@ -788,6 +919,7 @@ export function truppNichtAufgetragen(s) {
    Eingabe regelt die Oberfläche (`truppFrageAnmelden` in app.js). */
 function truppFrageVormerken(strecke, neu) {
   if (neu.abschnitt || !truppFrage || !truppWahlOffen(strecke)) return;
+  if (truppFrageRuht(strecke)) return;
   const sid = strecke.id;
   setTimeout(() => truppFrage && truppFrage(sid), 0);
 }
@@ -1031,6 +1163,24 @@ export function istVerlauf(strecke) {
   const ordnung = new Map(soll.map((pt, i) => [pt.id, i]));
   const rang = pt => (pt.sollPunkt && ordnung.has(pt.sollPunkt)) ? ordnung.get(pt.sollPunkt) : null;
   const bestaetigt = new Set(ist.map(rang).filter(r => r !== null));
+  /* Welche Planpunkte jeder Bauabschnitt bestätigt hat. Haben zwei Abschnitte
+     einen davon gemeinsam, ist der Treffpunkt erreicht und das Stück zwischen
+     ihnen zusammenhängend gebaut – gleich, in welcher Reihenfolge ihre
+     Punkte in der Liste stehen. Gemessen wurde vorher nur am unmittelbaren
+     Nachbarn: lagen die beiden Bestätigungen des Treffpunkts hintereinander,
+     stand davor „Abschnitt 1, Punkt 3“ neben „Abschnitt 2, Punkt 4“, und aus
+     dem Treffpunkt wurden zwei Lücken (262 m, im Review 524 m Unterschied). */
+  const geteilt = new Map();
+  for (const pt of ist) {
+    const r = rang(pt);
+    if (r === null || !pt.abschnitt) continue;
+    if (!geteilt.has(pt.abschnitt)) geteilt.set(pt.abschnitt, new Set());
+    geteilt.get(pt.abschnitt).add(r);
+  }
+  const treffpunkt = (x, y) => {
+    const a = geteilt.get(x), b = geteilt.get(y);
+    return !!(a && b && [...a].some(r => b.has(r)));
+  };
 
   /* Nach welchem Punkt der Liste getrennt wird – und über welche Planpunkte */
   const trennung = new Map();
@@ -1044,7 +1194,8 @@ export function istVerlauf(strecke) {
       const zwischen = [];
       if (r !== ra) for (let j = ra + schritt; j !== r; j += schritt) zwischen.push(j);
       const offen = zwischen.some(j => !bestaetigt.has(j));
-      const naht = r !== ra && a.abschnitt && b.abschnitt && a.abschnitt !== b.abschnitt;
+      const naht = a.abschnitt && b.abschnitt && a.abschnitt !== b.abschnitt &&
+        !treffpunkt(a.abschnitt, b.abschnitt);
       if (offen || naht) {
         let k = i - 1;
         for (let j = vorher; j < i; j++) {
@@ -1243,6 +1394,7 @@ export function zuletztVomBau(strecke) {
  */
 export function bauzeile(strecke) {
   if (!bauBegonnen(strecke)) return null;
+  const ausfallDa = geraeteAusfall(strecke);
   const k = baukennzahlen(strecke);
   const teile = [];
   if (k.sollPunkte) teile.push(`${k.bestaetigt}/${k.sollPunkte} Punkte`);
@@ -1281,7 +1433,31 @@ export function bauzeile(strecke) {
      ob es trägt. */
   if (k.uebergabe.durchgefallen) warnungen.unshift('Prüfung nicht bestanden');
   const meldung = ((strecke.bau && strecke.bau.abweichung) || '').trim();
-  return { stand: k.stand, text: teile.join(' · '), warnungen, meldung, zuletzt, trupp: truppText };
+  /* Der Geräteausfall steht an der Strecke und nicht nur im Rückmeldeblock des
+     Trupps: ohne ihn war „seit 3 h ohne Meldung“ derselbe Satz für einen
+     Trupp, der schweigt, und einen, der planmäßig auf Papier baut. */
+  const ausfall = ausfallDa
+    ? `Gerät ausgefallen${ausfallDa.zeit ? ` ab ${uhrzeit(ausfallDa.zeit)}` : ''} – Papier` : '';
+  /* Die letzte Meldung hat eine Übergabe aufgehoben (`einspielen` in
+     baumeldung.js). Der Stand sagt dann wieder „gebaut“ – ohne diese Zeile
+     blieb von „1 übergeben“ im Summenband keine Spur, und niemand erfuhr, dass
+     die Strecke zurückgefallen war. Nur solange sie nicht wieder übergeben ist. */
+  const b = strecke.bau || {};
+  const zurueck = b.uebergabeZurueckZeit && b.stand !== 'uebergeben'
+    ? { zeit: b.uebergabeZurueckZeit,
+        staemme: String(b.uebergabeZurueckStaemme || '').split('\n').filter(Boolean) } : null;
+  return { stand: k.stand, text: teile.join(' · '), warnungen, meldung, zuletzt, trupp: truppText,
+    ausfall, zurueck };
+}
+
+/** Ist das Gerät ausgefallen – am Bau-Block oder an einem Bauabschnitt? Dann
+ *  schweigt es planmäßig: der Trupp baut auf Papier, und nachgetragen wird
+ *  später. */
+export function geraeteAusfall(strecke) {
+  const bau = strecke && strecke.bau;
+  if (!bau) return null;
+  const q = [bau, ...(bau.abschnitte || [])].find(x => x && (x.ausfallZeit || x.ausfallNach));
+  return q ? { zeit: q.ausfallZeit || '', nach: q.ausfallNach || null } : null;
 }
 
 /* Die Strecke, die im Baumodus gerade bearbeitet wird – am Gerät gemerkt wie

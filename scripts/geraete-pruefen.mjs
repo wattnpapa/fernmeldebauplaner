@@ -813,6 +813,15 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   b.gleich(seitenGriffe.length, 0, 'Streckenkarte: jeder Griff trägt 44 px' +
     (seitenGriffe.length ? ' – zu klein: ' + seitenGriffe.join(', ') : ''));
 
+  /* Die Farbfelder maßen 36×36 und trugen den Rest als `::after`-Zone, die in
+     die der Nachbarn stieß. Gemessen wird die Fläche selbst. */
+  const farbMass = await seite.auswerten(`
+    const f = [...document.querySelectorAll('.seite .farbe')].filter(e => e.getBoundingClientRect().width > 0);
+    return { n: f.length, klein: f.filter(e => {
+      const r = e.getBoundingClientRect(); return Math.min(r.width, r.height) < 43.5; }).length };`);
+  b.pruefe(farbMass.n >= 1 && farbMass.klein === 0,
+    `Farbfelder der Streckenkarte: ${farbMass.n} gemessen, ${farbMass.klein} unter 44 px in der Fläche`);
+
   b.abschnitt('Die Marken auf der Karte sind mit dem Finger zu greifen');
   /* Breit, aber mit Finger: gemessen wird `pointer: coarse`, nicht die
      Fensterbreite. Schmal lägen die Marken unter Werkzeugleiste und
@@ -864,8 +873,14 @@ const seitenGriffe = await zuKleineGriffe('.seite',
      wird mit elementFromPoint – ein verdeckter Eintrag gibt die Liste zurück. */
   await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
   await seite.ruhe();
+  /* Eine stehende Bestätigung liegt über dem Menü und deckte im Review die
+     Knopfreihe und „Datenschutz“ – mit dem Aufklappen geht sie weg. */
+  await seite.auswerten(`(await import('./js/ui.js')).hinweis('Baumodus: festhalten, was gebaut wurde'); return true;`);
   await seite.klick('#btn-datei');
   await seite.warteAuf('!document.querySelector(".menu").hidden');
+  await new Promise(r => setTimeout(r, 400));
+  b.pruefe(await seite.auswerten('return document.getElementById("hinweisbox").hidden'),
+    'Mit dem Aufklappen des Dateimenüs geht eine stehende Meldung weg');
   const menueFrei = await seite.auswerten(`
     const eintraege = [...document.querySelectorAll('.menu button')].filter(window._g.imBild);
     return { anzahl: eintraege.length,
@@ -982,6 +997,57 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   await seite.auswerten('window.fbp.sl.waehle(window.fbp.store.projekt.strecken[0].id); return true;');
   await seite.ruhe();
 
+  b.abschnitt('Halten auf einem Punkt greift den Punkt und nicht den Einfügegriff daneben');
+  /* Im Review legte Halten zum Ziehen einen Punkt ein und bewegte keinen:
+     die Einfügegriffe sitzen ein Drittel der Strecke vom Punkt, bei kurzen
+     Abschnitten 25 px, und der Griff stand in der Stapelfolge über dem Punkt
+     darunter. `elementFromPoint` zeigte den Punkt – die echte Berührung ging
+     an den Griff. Deshalb wird mit echten Berührungen getastet und das Ziel
+     des `pointerdown` gelesen, an der Punktmitte und 12 px daneben, auf den
+     Griff zu. Ein Griff dichter als 28 px am Punkt nimmt keine Berührung an. */
+  await seite.auswerten(`
+    const sl = window.fbp.sl, st = window.fbp.store.projekt.strecken[0];
+    sl.waehle(st.id);
+    window._griffZiele = [];
+    document.addEventListener('pointerdown', e => {
+      const t = e.target.closest && e.target.closest('.leaflet-marker-icon');
+      window._griffZiele.push(t ? (t.classList.contains('fbp-einfuegen') ? 'griff' : 'punkt') : 'sonst');
+    }, true);
+    return true;`);
+  await seite.ruhe();
+  const griffProbe = await seite.auswerten(`
+    const marken = [...document.querySelectorAll('.fbp-punkt')].map(e => {
+      const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    const griffe = [...document.querySelectorAll('.fbp-einfuegen')].map(e => {
+      const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2,
+        zuNah: e.classList.contains('zu-nah') };
+    });
+    const imBild = p => p.x > 30 && p.x < innerWidth - 30 && p.y > 140 && p.y < innerHeight - 140;
+    return { marken: marken.map((p, i) => ({ ...p, i })).filter(imBild), griffe,
+             nah: griffe.map(g => ({ zuNah: g.zuNah,
+               d: Math.min(...marken.map(m => Math.hypot(m.x - g.x, m.y - g.y))) })) };`);
+  const falschFlag = griffProbe.nah.filter(g => (g.d < 28) !== g.zuNah);
+  b.pruefe(griffProbe.griffe.length >= 2 && falschFlag.length === 0,
+    `${griffProbe.griffe.length} Einfügegriffe, genau die unter 28 px am Punkt sind abgerückt `
+    + `(falsch markiert: ${falschFlag.length})`);
+  const griffErgebnis = [];
+  for (const m of griffProbe.marken) {
+    const naechster = griffProbe.griffe.reduce((a, g) =>
+      !a || Math.hypot(g.x - m.x, g.y - m.y) < Math.hypot(a.x - m.x, a.y - m.y) ? g : a, null);
+    const dx = naechster.x - m.x, dy = naechster.y - m.y, d = Math.hypot(dx, dy) || 1;
+    for (const versatz of [0, 12]) {
+      await seite.auswerten('window._griffZiele.length = 0; return 1');
+      await seite.tippe(Math.round(m.x + dx / d * versatz), Math.round(m.y + dy / d * versatz));
+      griffErgebnis.push(...await seite.auswerten('return window._griffZiele.slice()'));
+      await seite.auswerten(`window.fbp.sl.waehle(window.fbp.store.projekt.strecken[0].id); return 1`);
+    }
+  }
+  b.pruefe(griffErgebnis.length >= 2 && griffErgebnis.every(z => z === 'punkt'),
+    `Der Finger auf dem Punkt trifft den Punkt (${griffErgebnis.length} Berührungen: `
+    + `${[...new Set(griffErgebnis)].join(', ') || 'keine'})`);
+  await seite.ruhe();
+
   b.abschnitt('Aus der Übersicht wird in Stufen herangeholt, Suche und Standort stehen bereit');
   /* Aus Zoom 6 sprang der erste Tipp gleich auf 15, dorthin, wo der Finger
      zufällig lag. */
@@ -1059,7 +1125,8 @@ const seitenGriffe = await zuKleineGriffe('.seite',
       .filter(k => k.getClientRects().length).map(k => k.getBoundingClientRect().right);
     return { text: n.textContent, hoehe: Math.round(n.parentElement.getBoundingClientRect().height),
       links: Math.round(n.getBoundingClientRect().left), koordRechts: Math.round(Math.max(0, ...koord)),
-      wasGanz: !!was && was.scrollWidth <= was.clientWidth };`);
+      wasGanz: !!was && was.scrollWidth <= was.clientWidth,
+      grobGanz: (() => { const g = n.querySelector('.sl-netz-grob'); return !!g && g.scrollWidth <= g.clientWidth; })() };`);
   await seite.mitNetz();
   await seite.auswerten(`window.dispatchEvent(new Event('online'));
     window.fbp.karte.fire('zoomstart'); return true;`);
@@ -1070,6 +1137,9 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   b.pruefe(netzLeiste.links >= netzLeiste.koordRechts,
     `Die Netzzeile liegt nicht über der Gitterangabe (ab ${netzLeiste.links}, Gitter bis ${netzLeiste.koordRechts} px)`);
   b.pruefe(netzLeiste.wasGanz, '„kein Netz“ steht ungekürzt da');
+  /* „gröber“ ist die praktische Folge – die Karte ist unscharf – und ging bei
+     320 px als Erstes verloren („gröb…“). Es kürzt der Vorrat zuerst. */
+  b.pruefe(netzLeiste.grobGanz, '„gröber“ steht ungekürzt da (der Vorrat kürzt zuerst)');
   const bauGriffe = await zuKleineGriffe('.werkzeuge', 'button');
   b.gleich(bauGriffe.length, 0, 'Bauleiste: jeder Griff trägt 44 px' +
     (bauGriffe.length ? ' – zu klein: ' + bauGriffe.join(', ') : ''));
@@ -1189,6 +1259,31 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   await stelleEin(390, 844);
   await seite.taste('Escape');
   b.pruefe(await seite.auswerten('document.getElementById("punktkarte").hidden'), 'Esc schließt das Blatt');
+  await seite.klick('#btn-modus');
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.ruhe();
+
+  b.abschnitt('Telefon quer: nach „zum Bau“ steht die Karte vorn, hochkant bleibt es die Liste');
+  /* Quer landete der Trupp nach „zum Bau“ in der Liste, und „Punkt hier“
+     – in der Bauleiste der Karte – lag hinter einem Tipp auf den schmalen
+     Streifen „Karte“. Quer ist die Karte die Bedienfläche des Baumodus;
+     hochkant steht der Bau-Reiter mit seinen Chips weiter zuerst da. */
+  await stelleEin(844, 390);
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.ruhe();
+  await seite.klick('#btn-modus');
+  await new Promise(r => setTimeout(r, 450));
+  b.pruefe(await seite.auswerten('return document.body.classList.contains("seite-zu")'),
+    'Quer (844×390) steht nach „zum Bau“ die Karte vorn');
+  await seite.klick('#btn-modus');
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.ruhe();
+  await stelleEin(390, 844);
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.klick('#btn-modus');
+  await new Promise(r => setTimeout(r, 450));
+  b.pruefe(await seite.auswerten('return !document.body.classList.contains("seite-zu")'),
+    'Hochkant (390×844) bleibt nach „zum Bau“ die Liste vorn');
   await seite.klick('#btn-modus');
   await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
   await seite.ruhe();

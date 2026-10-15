@@ -28,7 +28,7 @@ import {
   bauNormalisieren, BAUSTAENDE, id as neueKennung, neuerBauabschnitt, bauBegonnen
 } from './state.js';
 import {
-  bauabschnitte, istPunkte, baukennzahlen, abstandZurLinie, ABSEITS_SCHWELLE
+  bauabschnitte, istPunkte, baukennzahlen, abstandZurLinie, ABSEITS_SCHWELLE, truppName
 } from './baudoku.js';
 import { bauAbdruck, meldungsCodeAus } from './teilen.js';
 import { materialById } from './vorschrift.js';
@@ -170,7 +170,19 @@ export function befund(projekt, meldung, zuordnung) {
        darüber, und der Zahlendreher blieb in der Dokumentation. */
     const versuch = ziel ? probeEinspielen(ziel, m, ctxVon(meldung, wahl)) : null;
     const probe = versuch ? versuch.kopie : null;
-    const schonDa = !!(probe && bauAbdruck(ziel) && bauAbdruck(probe) === bauAbdruck(ziel));
+    const gleichAbdruck = !!(probe && bauAbdruck(ziel) && bauAbdruck(probe) === bauAbdruck(ziel));
+    /* „Schon eingespielt“ sagt mehr als „ändert nichts“: im Audit blieb die
+       Nachmessung oder Übergabe eines ANDEREN Trupps ohne jede Wirkung (hier
+       steht „durchgefallen“, die Übernahme bleibt Sache des Planers), und der
+       Dialog behauptete, genau dieser Stand sei schon da – samt unterdrücktem
+       Häkchen „Messung übernehmen“ und einer Funkformel „bereits übernommen“.
+       Ist die Prüfung der Grund, ist es NICHT derselbe Stand, sondern eine
+       Meldung, die an der Prüfung scheitert; sie bleibt mit ihren Hinweisen
+       sichtbar (`nichtsGeaendert`). */
+    const abgelehnt = versuch ? versuch.pruefhinweise.filter(h =>
+      (h.stamm && !h.uebernommen) || h.uebergabeNichtUebernommen) : [];
+    const schonDa = gleichAbdruck && !abgelehnt.length;
+    const nichtsGeaendert = gleichAbdruck && abgelehnt.length > 0;
     /* Ohne Bauabschnitt und von einem anderen Absender sagen zwei Zeitpunkte
        nichts über „älter“: es sind die Aufnahmen zweier Trupps, und welcher
        zuletzt getippt hat, macht den anderen nicht veraltet. Was dabei weicht,
@@ -179,8 +191,14 @@ export function befund(projekt, meldung, zuordnung) {
        Schicht nur der Führer, ist es dieselbe Aufnahme eines Trupps – im Audit
        bot der Dialog dafür „als eigenen Bauabschnitt“ an, und die Punkte
        standen doppelt da. Der Wechsel bleibt sichtbar (`fuehrerWechsel`). */
-    const andererAbsender = ganzeStrecke && !!ziel && !!ziel.bau && !!ziel.bau.gemeldetVon &&
-      !!meldung.von && !gleicherTrupp(ziel.bau.gemeldetVon, meldung.von);
+    /* Steht hier nur, was der Planer vom Papier ohne Abschnitt abgeschrieben
+       hat, fehlt `gemeldetVon` – und der Dialog bot „als eigenen Bauabschnitt“
+       nicht an: die Meldung der ganzen Strecke nahm die Abschrift heraus. Die
+       Abschrift ist ebenso ein anderer Bestand als die Aufnahme des Geräts. */
+    const hierAbsender = ziel && ziel.bau ? ziel.bau.gemeldetVon : '';
+    const hierPapier = papierOhneAbschnitt(ziel && ziel.bau);
+    const andererAbsender = ganzeStrecke && !!ziel && !!ziel.bau && !!meldung.von &&
+      (hierAbsender ? !gleicherTrupp(hierAbsender, meldung.von) : hierPapier);
     const aelter = !schonDa && !andererAbsender &&
       !!(standMeldung && standHier && standMeldung < standHier);
     /* Was danach nicht mehr dasteht – gezählt über den Inhalt der Einträge und
@@ -188,7 +206,8 @@ export function befund(projekt, meldung, zuordnung) {
        dieselben drei Punkte gleich wieder hereinkamen, und wer das einmal
        gesehen hat, liest es beim nächsten Mal nicht mehr. */
     const verloren = probe ? verlust(ziel.bau, probe.bau)
-      : { punkte: 0, meldungen: 0, material: 0, punkteGeaendert: 0, meldungenGeaendert: 0 };
+      : { punkte: 0, meldungen: 0, material: 0, punkteGeaendert: 0, meldungenGeaendert: 0,
+          papier: 0 };
     /* Eine Materialzeile desselben Artikels ist kein Verlust, sondern eine
        Änderung – und die Änderung ist genau das, was der Planer sehen muss:
        im Audit nannte der Dialog bei der berichtigten Meldung „1 Materialzeile
@@ -263,14 +282,21 @@ export function befund(projekt, meldung, zuordnung) {
     const ersteName = (alsEigener && ziel && ziel.bau && ohneAbschnitt(ziel.bau) &&
       bisherAbsender && !bisherAbsender.includes(',') && bisherAbsender !== 'unbekannter Absender' &&
       !gleicherTrupp(bisherAbsender, meldung.von)) ? absenderTrupp(bisherAbsender) : '';
-    /* Derselbe geplante Punkt, einmal im Abschnitt und einmal daneben ohne
-       Abschnitt: die Aufnahme steht doppelt (im Audit 6 Ist bei 3 Soll). Gezählt
-       wird, was die Meldung NEU so macht; was schon vorher doppelt stand, ist
-       nicht ihre Sache. */
-    const doppeltePunkte = bau => (bau ? bau.punkte || [] : []).filter(u =>
-      nichtZugeordnet(u) && u.sollPunkt &&
-      bau.punkte.some(o => o !== u && !nichtZugeordnet(o) && o.sollPunkt === u.sollPunkt)).length;
-    const verdacht = probe ? Math.max(0, doppeltePunkte(probe.bau) - doppeltePunkte(ziel.bau)) : 0;
+    /* Derselbe geplante Punkt in mehr als einem Abschnitt (oder einmal im
+       Abschnitt und einmal ohne): die Aufnahme steht doppelt, im Audit 5 bis 6
+       Ist bei 3 Soll – nach „Trupp wechseln“ unter neuem Namen, nach einer
+       geänderten Bezeichnung und bei zwei Abschnitten desselben Trupps.
+       Gezählt wird, was die Meldung NEU so macht; was schon vorher doppelt
+       stand, ist nicht ihre Sache. */
+    const mitWahl = wahl.ersetzen.length > 0;
+    const ohneWahl = (mitWahl && ziel)
+      ? probeEinspielen(ziel, m, { ...ctxVon(meldung, wahl), ersetzen: [] }) : versuch;
+    const verdacht = probe ? Math.max(0,
+      mehrfachBelegt(probe.bau).length - mehrfachBelegt(ziel.bau).length) : 0;
+    const ersetzbar = (ziel && ohneWahl)
+      ? ersetzbareAbschnitte(ziel, ohneWahl.kopie, abschnitteDerMeldung)
+        .map(a => ({ ...a, gewaehlt: wahl.ersetzen.includes(a.id) })) : [];
+    const verdachtOrte = (probe && verdacht) ? ortsnamen(probe.bau, mehrfachBelegt(probe.bau)) : [];
     const hinweisArt = art => (versuch ? versuch.pruefhinweise : []).find(h => h[art]);
 
     return {
@@ -283,8 +309,15 @@ export function befund(projekt, meldung, zuordnung) {
       ohneTruppKonflikt: !meldung.von && ganzeStrecke && !!ziel && !!ziel.bau &&
         !!bisherAbsender && bisherAbsender !== 'unbekannter Absender' && bauBegonnen(ziel),
       verdopplung: { entfernt: (hinweisArt('doppeltEntfernt') || { doppeltEntfernt: { punkte: 0, meldungen: 0 } })
-          .doppeltEntfernt, verdacht },
+          .doppeltEntfernt, verdacht, orte: verdachtOrte },
+      ersetzbar,
       papierBehalten: (hinweisArt('papierBehalten') || {}).papierBehalten || null,
+      papierVerdraengt: (hinweisArt('papierVerdraengt') || {}).papierVerdraengt || [],
+      standUebergeben: !!hinweisArt('standUebergeben'),
+      hierPapier,
+      /* Steht hier etwas ohne Abschnitt? Sonst träte nichts „an die Stelle“. */
+      hierOhneAbschnitt: !!(ziel && ziel.bau && ohneAbschnitt(ziel.bau)),
+      pruefAbgelehnt: abgelehnt, nichtsGeaendert,
       standMeldung, standHier, schonDa, aelter, verloren, geaendert,
       daneben, uebergabeFraglich, neueMeldungen, bisher, danach,
       eigenerAbschnittMoeglich, alsEigener, gedeckelt, offeneAbschnitte,
@@ -342,14 +375,73 @@ const zaehleOhneAbschnitt = bau =>
   (bau.material || []).filter(nichtZugeordnet).length +
   (bau.meldungen || []).filter(nichtZugeordnet).length;
 
+/* Steht hier Abgeschriebenes (`nachgetragen`) ohne Abschnitt? Das ist der
+   eigene Bestand des Planers und kein Fund vom Bauort. */
+const papierOhneAbschnitt = bau => !!bau &&
+  [...(bau.punkte || []), ...(bau.meldungen || [])]
+    .some(x => nichtZugeordnet(x) && x.nachgetragen);
+
+/* Die geplanten Punkte, die in mehr als einem Abschnitt (null zählt als einer)
+   bestätigt sind – je Punkt die Abschnitte, in denen er steht. */
+function mehrfachBelegt(bau) {
+  const je = new Map();
+  for (const u of (bau && bau.punkte) || []) {
+    if (!u || !u.sollPunkt) continue;
+    if (!je.has(u.sollPunkt)) je.set(u.sollPunkt, new Set());
+    je.get(u.sollPunkt).add(u.abschnitt ?? null);
+  }
+  return [...je].filter(([, orte]) => orte.size > 1);
+}
+const ortsnamen = (bau, doppelte) => {
+  const namen = new Map(((bau && bau.abschnitte) || []).map(a => [a.id, a.name]));
+  const aus = new Set();
+  for (const [, orte] of doppelte) {
+    for (const o of orte) aus.add(o === null ? 'ohne Bauabschnitt' : `„${namen.get(o) || '?'}“`);
+  }
+  return [...aus];
+};
+
+/* Welche hiesigen Abschnitte die Meldung ersetzen könnte, weil sie dieselben
+   geplanten Punkte tragen: derselbe Trupp unter anderem Namen (nach „Trupp
+   wechseln“, bei geänderter Bezeichnung). Nicht angeboten wird ein Abschnitt,
+   der Abgeschriebenes trägt – ihn zu ersetzen nähme die Abschrift des Planers
+   heraus, und dafür gibt es `papierBehalten` und keinen Haken. */
+function ersetzbareAbschnitte(ziel, probeKopie, namenDerMeldung) {
+  const vorher = new Set(mehrfachBelegt(ziel.bau).map(([punkt]) => punkt));
+  const hier = new Map(bauabschnitte(ziel).map(a => [a.id, a]));
+  const ids = new Set();
+  for (const [punkt, orte] of mehrfachBelegt(probeKopie.bau)) {
+    if (vorher.has(punkt)) continue;
+    for (const o of orte) if (o !== null && hier.has(o)) ids.add(o);
+  }
+  const traegtPapier = id => [...(ziel.bau.punkte || []), ...(ziel.bau.meldungen || [])]
+    .some(x => x.abschnitt === id && x.nachgetragen);
+  return [...ids].map(id => hier.get(id))
+    .filter(a => !namenDerMeldung.includes(a.name) && !traegtPapier(a.id))
+    .map(a => ({ id: a.id, name: a.name, trupp: a.trupp || '' }));
+}
+
+function abschnitteEntfernen(ziel, ids) {
+  const bau = ziel.bau;
+  if (!bau || !ids.length) return;
+  const weg = new Set(ids);
+  bau.abschnitte = (bau.abschnitte || []).filter(a => !weg.has(a.id));
+  for (const feld of ['punkte', 'material', 'meldungen']) {
+    bau[feld] = (bau[feld] || []).filter(x => !weg.has(x.abschnitt));
+  }
+}
+
 /* Was der Planer im Dialog entschieden hat, als Satz Werte – `zuordnung` ist
    ein Feld mit der Zielstrecke je Meldung, und die Entscheidungen hängen als
    Felder daran: `eigenerAbschnitt[i]`, `ersteAlsAbschnitt[i]` und
-   `messung[i]` (Stammschlüssel → Messung dieses Absenders übernehmen). */
+   `messung[i]` (Stammschlüssel → Messung dieses Absenders übernehmen) und
+   `ersetzeAlt[i]` (Kennungen hiesiger Abschnitte, die diese Meldung ersetzt –
+   derselbe Trupp unter anderem Namen). */
 const wahlVon = (zuordnung, i) => ({
   alsEigener: !!(zuordnung && zuordnung.eigenerAbschnitt && zuordnung.eigenerAbschnitt[i]),
   ersteAlsAbschnitt: !!(zuordnung && zuordnung.ersteAlsAbschnitt && zuordnung.ersteAlsAbschnitt[i]),
-  messung: (zuordnung && zuordnung.messung && zuordnung.messung[i]) || {}
+  messung: (zuordnung && zuordnung.messung && zuordnung.messung[i]) || {},
+  ersetzen: (zuordnung && zuordnung.ersetzeAlt && zuordnung.ersetzeAlt[i]) || []
 });
 const ctxVon = (meldung, wahl) => ({ von: String((meldung && meldung.von) || ''), ...wahl });
 
@@ -378,6 +470,7 @@ function anwenden(ziel, m, ctx) {
      ihres Absenders gestellt: danach gibt es sie als Abschnitt, und die
      nächste Meldung dieses Trupps findet ihn wieder. */
   if (ctx.ersteAlsAbschnitt) ersteInAbschnitt(ziel);
+  abschnitteEntfernen(ziel, ctx.ersetzen || []);
   /* Wer vorher gemeldet hat, wird gemerkt, bevor die Strecke sich ändert. */
   const gleich = !!(ctx.von && ziel.bau && ziel.bau.gemeldetVon &&
     gleicherTrupp(ziel.bau.gemeldetVon, ctx.von));
@@ -422,20 +515,33 @@ function verlust(vorher, nachher) {
      nachgetragen hat, ist nicht verloren, sondern geändert. Seit ein Verlust
      „Verwerfen“ nach vorn stellt, wäre das sonst bei jeder gewöhnlichen
      zweiten Meldung so gewesen. Erkannt wird er an der Aufnahmezeit – sie
-     setzt das Gerät beim Aufnehmen und reist mit. */
+     setzt das Gerät beim Aufnehmen und reist mit.
+
+     Ebenso, wenn die Meldung denselben geplanten Punkt im selben Abschnitt
+     trägt: die Abschrift vom Papier und die Aufnahme des Geräts am Punkt 3
+     sind zwei Fassungen DERSELBEN Stelle (`papierBehalten` entscheidet, welche
+     gilt), und „kennt 1 aufgenommenen Punkt nicht“ stellte einen Verlust fest,
+     wo keiner ist. */
+  let papier = 0;
   const zaehle = (feld, ueberZeit) => {
     const { weg, neu } = paaren(vorher, nachher, feld);
     if (!ueberZeit) return { weg: weg.length, geaendert: 0 };
     let verloren = 0, geaendert = 0;
     for (const x of weg) {
       const i = neu.findIndex(n => n && x && n.zeit && n.zeit === x.zeit);
-      if (i >= 0) { neu.splice(i, 1); geaendert++; } else verloren++;
+      if (i >= 0) { neu.splice(i, 1); geaendert++; continue; }
+      const gleicheStelle = feld === 'punkte' && x && x.sollPunkt &&
+        ((nachher && nachher.punkte) || []).some(n => n && n.sollPunkt === x.sollPunkt &&
+          (n.abschnitt ?? null) === (x.abschnitt ?? null));
+      if (gleicheStelle) { geaendert++; continue; }
+      verloren++;
+      if (x && x.nachgetragen) papier++;
     }
     return { weg: verloren, geaendert };
   };
   const p = zaehle('punkte', true), m = zaehle('meldungen', true), z = zaehle('material', false);
   return { punkte: p.weg, meldungen: m.weg, material: z.weg,
-           punkteGeaendert: p.geaendert, meldungenGeaendert: m.geaendert };
+           punkteGeaendert: p.geaendert, meldungenGeaendert: m.geaendert, papier };
 }
 
 function mengenAenderung(vorher, nachher) {
@@ -492,7 +598,7 @@ function bisherVon(ziel, namen, ganzeStrecke) {
  */
 export function gleicherAbsender(a, b) {
   const teile = t => String(t || '').split(',').map(x => {
-    const [trupp, fuehrer = ''] = x.split(' · ').map(y => y.trim().toLowerCase());
+    const [trupp, fuehrer = ''] = x.split(' · ').map(truppName);
     return { trupp, fuehrer };
   }).filter(x => x.trupp);
   const x = teile(a), y = teile(b);
@@ -512,7 +618,7 @@ export function gleicherAbsender(a, b) {
  */
 export function gleicherTrupp(a, b) {
   const teile = t => String(t || '').split(',')
-    .map(x => x.split(' · ')[0].trim().toLowerCase()).filter(Boolean);
+    .map(x => truppName(x.split(' · ')[0])).filter(Boolean);
   const x = teile(a), y = teile(b);
   if (!x.length || !y.length) return !x.length && !y.length;
   return x.length === y.length && x.every(p => y.includes(p));
@@ -615,7 +721,10 @@ export function eigenerVorgabe(projekt, meldung, i, zielId) {
     return true;
   }
   const hier = ziel.bau && ziel.bau.gemeldetVon;
-  return !!hier && hier !== 'unbekannter Absender' && !gleicherTrupp(hier, von) && bauBegonnen(ziel);
+  /* Steht hier nur die Abschrift des Planers ohne Abschnitt, hat niemand
+     gemeldet – und die Meldung der ganzen Strecke nähme sie heraus. */
+  if (!hier) return papierOhneAbschnitt(ziel.bau);
+  return hier !== 'unbekannter Absender' && !gleicherTrupp(hier, von) && bauBegonnen(ziel);
 }
 
 // ---------------------------------------------------- Rückgabe-Codes je Absender
@@ -696,6 +805,13 @@ export function einspielen(projekt, meldung, zuordnung) {
        einander den Code. */
     ziel.bau.gemeldetCode = code;
     ziel.bau.gemeldetCodes = codesVermerken(codesAlt, code, meldung.von);
+    /* Hat diese Meldung eine Übergabe aufgehoben, steht das an der Strecke –
+       die Pille nannte es nur kurz, und der Stand sagte danach wieder bloß
+       „gebaut“. Jede weitere Meldung überschreibt den Vermerk: er gilt für
+       den letzten Empfang, nicht für alle. */
+    const aufgehoben = getan.hinweise.find(h => h.uebergabeAufgehoben);
+    ziel.bau.uebergabeZurueckZeit = aufgehoben ? new Date().toISOString() : '';
+    ziel.bau.uebergabeZurueckStaemme = aufgehoben ? aufgehoben.staemme.join('\n') : '';
 
     bericht.strecken++;
     if (abdruckVorher && bauAbdruck(ziel) === abdruckVorher) bericht.unveraendert++;
@@ -862,7 +978,20 @@ function istPunkteOrdnen(ziel, punkte) {
 function ganzeStreckeErsetzen(ziel, frisch, ctx = {}) {
   const alt = ziel.bau;
   ziel.bau = frisch;
-  return pruefungZusammenfuehren(frisch, frisch, ctx, alt ? alt.pruefung : null, true);
+  const hinweise = pruefungZusammenfuehren(frisch, frisch, ctx, alt ? alt.pruefung : null, true);
+  /* Die Übergabe steht aus der Prüfung hier weiter da, der Stand aber kommt
+     aus der Meldung – „im Bau“ neben einer eingetragenen Übergabe, und der
+     Planer erfuhr nicht, welches von beiden gilt. Eine Übergabe ist geschehen
+     (3.5) und geht vor, solange kein Stamm durchgefallen ist; sonst hat
+     `pruefungZusammenfuehren` den Stand schon auf „gebaut“ gesetzt. */
+  const pr = frisch.pruefung;
+  const uebergeben = !!(pr && (pr.uebergabeAn || pr.uebergabeZeit || pr.uebergabeName));
+  if (uebergeben && rang(frisch.stand) < rang('uebergeben') &&
+      !(pr.staemme || []).some(z => z.bestanden === false)) {
+    frisch.stand = 'uebergeben';
+    hinweise.push({ standUebergeben: true });
+  }
+  return hinweise;
 }
 
 /* Eine Meldung MIT Bauabschnitten ersetzt genau die, die sie nennt. Was beim
@@ -907,7 +1036,7 @@ function abschnitteErsetzen(ziel, frisch, ctx = {}) {
      neben ihm zu stehen. */
   if (ohneAbschnitt(frisch) || ctx.ersetzeOhne) betroffen.add(null);
 
-  const behalten = papierBehalten(bau, frisch, betroffen);
+  const behalten = papierBehalten(bau, frisch, betroffen, ziel);
 
   /* Dieselbe Aufnahme, die hier schon ohne Abschnitt steht, wird nicht
      doppelt geführt – bei einer Folgemeldung nach „als eigenen Abschnitt“ der
@@ -950,6 +1079,7 @@ function abschnitteErsetzen(ziel, frisch, ctx = {}) {
 
   const hinweise = pruefungZusammenfuehren(bau, frisch, ctx, bau.pruefung, false);
   if (behalten.zahl) hinweise.push({ papierBehalten: behalten.zahl });
+  if (behalten.verdraengt.length) hinweise.push({ papierVerdraengt: behalten.verdraengt });
   if (doppelt.punkte || doppelt.meldungen) hinweise.push({ doppeltEntfernt: doppelt });
 
   /* Zwei Abweichungsmeldungen werden aneinandergehängt und nicht ersetzt: was
@@ -986,9 +1116,14 @@ function abschnitteErsetzen(ziel, frisch, ctx = {}) {
  * Geliefert werden Griffe, die der Aufrufer in der Reihenfolge seiner Schritte
  * auf die Listen anwendet (alte Liste, Liste der Meldung → neue Liste).
  */
-function papierBehalten(bau, frisch, betroffen) {
+function papierBehalten(bau, frisch, betroffen, ziel) {
   const abschnitte = new Set();
   const zahl = { punkte: 0, meldungen: 0, material: 0 };
+  /* Wo Abschrift und Gerät denselben Punkt tragen, gilt eine von beiden – und
+     die andere Zeile verschwindet. Das wird genannt: bei leerer Uhrzeit der
+     Abschrift (der Nachtrag lässt sie freiwillig) gewann das Gerät still. */
+  const verdraengt = [];
+  const nummer = id => (ziel.punkte || []).findIndex(pt => pt.id === id) + 1;
   const hierP = (bau.punkte || []).filter(x => betroffen.has(x.abschnitt) && x.nachgetragen);
   const hierM = (bau.meldungen || []).filter(x => betroffen.has(x.abschnitt) && x.nachgetragen);
   const neuP = (frisch.punkte || []).filter(x => betroffen.has(x.abschnitt));
@@ -1002,7 +1137,13 @@ function papierBehalten(bau, frisch, betroffen) {
     if (gegen >= 0) {
       /* Das Gerät gewinnt nur mit der späteren Zeit – bei Gleichstand ist es
          derselbe Eintrag, und der steht schon in der Meldung. */
-      if (!k.sollPunkt || (neuP[gegen].zeit || '') >= (k.zeit || '')) continue;
+      if (!k.sollPunkt || (neuP[gegen].zeit || '') >= (k.zeit || '')) {
+        if (k.sollPunkt && (neuP[gegen].zeit || '') !== (k.zeit || '')) {
+          verdraengt.push({ nr: nummer(k.sollPunkt), gewinnt: 'geraet', ohneZeit: !k.zeit });
+        }
+        continue;
+      }
+      verdraengt.push({ nr: nummer(k.sollPunkt), gewinnt: 'papier', ohneZeit: false });
       ersetzt.set(neuP[gegen], k);
     } else behaltenP.push(k);
     abschnitte.add(k.abschnitt);
@@ -1017,7 +1158,7 @@ function papierBehalten(bau, frisch, betroffen) {
   const schluessel = z =>
     `${z.artikel}|${z.abschnitt || ''}|${z.artikel === 'sonstiges' ? z.bemerkung : ''}`;
   return {
-    abschnitte,
+    abschnitte, verdraengt,
     zahl: (zahl.punkte || zahl.meldungen) ? zahl : null,
     punkte: (liste, frischeListe) => liste.filter(x => !betroffen.has(x.abschnitt))
       .concat(frischeListe.filter(x => betroffen.has(x.abschnitt)).map(x => ersetzt.get(x) || x),
@@ -1097,8 +1238,13 @@ function pruefungZusammenfuehren(bau, frisch, ctx, hier, ganze) {
       if (stelle < 0) { hier.staemme.push(g); continue; }
       const h = hier.staemme[stelle];
       let nehmen, fraglich = false, nachmessung = false;
-      if (ctx.gleich && gemessen(g) && gemessen(h) && g.zeit && h.zeit) {
-        nehmen = g.zeit > h.zeit;
+      if (ctx.gleich && gemessen(g) && gemessen(h) && g.zeit) {
+        /* Gleiche oder spätere Zeit: dieselbe Zeile desselben Trupps, deren
+           Ergebnis er geändert hat, ist die NEUE Messung. Die Zeile behielt
+           bisher die Zeit der ersten (die Oberfläche setzte sie beim Ändern des
+           Ergebnisses nicht nach), und bei Gleichstand blieb „durchgefallen“
+           beim Planer stehen. Trägt die Meldung keine Zeit, gelten die Regeln darunter. */
+        nehmen = g.zeit >= (h.zeit || '');
         nachmessung = nehmen;
       } else if (g.bestanden === false && h.bestanden !== false) nehmen = true;
       else if (h.bestanden === false && g.bestanden !== false) {
@@ -1168,6 +1314,31 @@ function teilText(bericht) {
   return teile.join(', ');
 }
 
+/**
+ * Was vom Gemeldeten NICHT übernommen wurde, einzeln und im Klartext – für die
+ * Funkformel nach dem Einspielen. Die Pille nennt es in Stichworten
+ * (`teilText`) und ist nach drei Sekunden weg; der Trupp, der „angekommen“ hört,
+ * hält die Übergabe sonst für verbucht.
+ */
+export function nichtUebernommen(bericht) {
+  const liste = [];
+  const staemme = h => h.staemme.join(', ');
+  for (const h of bericht.pruefhinweise || []) {
+    if (h.stamm && !h.uebernommen) {
+      liste.push(`Prüfung ${h.stamm} (hier ${h.hier}, gemeldet ${h.gemeldet})`);
+    } else if (h.uebergabeNichtUebernommen) {
+      liste.push(`Übergabe (${staemme(h)} ${h.staemme.length === 1 ? 'ist' : 'sind'} durchgefallen)`);
+    } else if (h.uebergabeAufgehoben) {
+      liste.push(`Übergabe aufgehoben (${staemme(h)} ${h.staemme.length === 1 ? 'ist' : 'sind'} durchgefallen)`);
+    }
+  }
+  if (bericht.uebersprungen) {
+    liste.push(`${bericht.uebersprungen} ${bericht.uebersprungen === 1
+      ? 'Strecke ausgelassen' : 'Strecken ausgelassen'}`);
+  }
+  return liste;
+}
+
 /** Kurzfassung für die Meldung nach dem Einspielen */
 export function berichtText(bericht) {
   const teile = [];
@@ -1179,7 +1350,7 @@ export function berichtText(bericht) {
      las sich, als wäre etwas gekommen, und der Planer suchte es. */
   const teil = teilText(bericht);
   if (bericht.strecken && bericht.unveraendert === bericht.strecken) {
-    return 'Nichts geändert – dieser Stand war schon eingespielt' + (teil ? ` – ${teil}` : '');
+    return 'Nichts geändert' + (teil ? ` – ${teil}` : ' – dieser Stand war schon eingespielt');
   }
   /* Der Bestand und nicht der Zuwachs: eine Meldung, die vorhandene Punkte
      ERSETZT, bringt netto null neue – „0 Punkte“ danebenzuschreiben wäre

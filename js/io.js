@@ -13,7 +13,7 @@ import { bandById, funkstrecke, azimutText } from './richtfunk.js';
 import { symbolById, symbolBekannt, STANDARD_SYMBOL } from './symbols.js';
 import { querungsartById, bauweiseById, querungsMinuten } from './vorschrift.js';
 import { kmlLesen, kmlSchreiben, kmlAusKMZ, istKMZ, alsText } from './kml.js';
-import { istBaumeldung, alsBaumeldung } from './teilen.js';
+import { istBaumeldung, alsBaumeldung, neuereMeldungsFassung, neuereMeldungFehler } from './teilen.js';
 import { alsDatenUrls, ausDatei as bilderAusDatei } from './bildspeicher.js';
 import { flaechenEcken, flaechenTitel, flaechenartById, masseText } from './flaechen.js';
 import { relaisTitel, relaisKurz } from './relais.js';
@@ -321,6 +321,8 @@ async function jsonUebernehmen(inhalt, dateiname) {
      machte `migrieren()` eine leere Planung daraus – mit Strecken ohne Punkte,
      ohne Kopf und ohne Karte –, und der Bogen des Trupps wäre verloren. Wer sie
      einspielt, entscheidet die Oberfläche; hier wird nur erkannt. */
+  const neuereFassung = neuereMeldungsFassung(roh);
+  if (neuereFassung) throw neuereMeldungFehler(neuereFassung);
   if (istBaumeldung(roh)) return { baumeldung: roh, dateiname };
   if (!roh.strecken && !roh.zeichen && !roh.flaechen) throw new Error('Keine Planungsdaten in der Datei gefunden.');
   /* Erst die Bilddaten in den Bildspeicher, dann die Planung öffnen: sonst
@@ -335,7 +337,11 @@ async function jsonUebernehmen(inhalt, dateiname) {
   const p = migrieren(roh);
   p.id = id();                       // als eigene Kopie ablegen
   p.name = roh.name || dateiname.replace(/\.json$/i, '');
-  store.uebernehmen(p);
+  /* Von einer neueren Version wird nichts geöffnet, bevor der Dialog gesprochen
+     hat: die Planung stand sonst schon als aktuelle da, und wer „Verstanden“
+     tippte, arbeitete in einem Stand, dem Teile fehlten. Geöffnet wird auf
+     ausdrücklichen Wunsch (`neuereVersionDialog` in `app.js`). */
+  if (!neuer) store.uebernehmen(p);
   const fehlend = bilder - uebernommen;
   return {
     projekt: p,

@@ -417,6 +417,10 @@ body.seite-zu .seite { display: none; }
 .summe-warnungen {
   flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 6px;
 }
+/* „4 neu“ ist ein Zeichen für Meldungen und kein Baustand: neben „2 im Bau, 3
+   gebaut“ addierte es sich im Review zu 13 bei neun Strecken. Als Marke
+   derselben Form wie an der Strecke steht es abseits der Zähler. */
+.summe .bz-marke.bz-neu { align-self: center; }
 .summe-warn {
   white-space: nowrap; font-weight: 650; color: var(--warnung-tief);
   background: var(--warnung-flaeche); border: 1.5px solid var(--warnung-linie-stark);
@@ -575,9 +579,14 @@ body.seite-zu .seite { display: none; }
 }
 .eintrag.offen .eintrag-kopf { background: var(--thw-blass); }
 .farbpunkt {
-  width: 14px; height: 14px; border-radius: 3px; background: var(--farbe);
+  width: 14px; height: 14px; border-radius: 3px; background: var(--farbe-tag, var(--farbe));
   box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); flex-shrink: 0;
 }
+/* Der Punkt der Liste zeigt dieselbe Stufe wie die Linie auf der Karte
+   (`tagFarbe()`/`nachtFarbe()` in strecken.js): nachts stand Lila bei 1,8:1
+   und Braun bei 1,5:1 gegen die Fläche, tags zeigte die Liste Orange, wo die
+   Karte das dunklere trägt. Die gespeicherte Farbe bleibt unberührt. */
+body.nacht .farbpunkt:not(.hohl) { background: var(--farbe-nacht, var(--farbe)); }
 .mini-symbol { display: flex; align-items: center; flex-shrink: 0; width: 28px; }
 .mini-symbol svg { display: block; max-width: 28px; height: auto; }
 /* Der Name ist ein Knopf, damit die Zeile auch mit der Tabulatortaste zu öffnen
@@ -586,6 +595,15 @@ body.seite-zu .seite { display: none; }
   flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: left;
   color: inherit; font: inherit; font-weight: 600; font-size: 13.5px; cursor: pointer;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Die Liste ist im Tablet-Bereich gut 340 px breit, und „Deichwache –
+   EA-Leitung 1“ stand abgeschnitten neben Länge und Auge. Zwei Zeilen statt
+   einer: der Name ist das, wonach in der Liste gesucht wird. */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .eintrag-name {
+    white-space: normal; display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow-wrap: anywhere;
+  }
 }
 .eintrag-wert { font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--text-schwach); }
 .augen {
@@ -1509,7 +1527,12 @@ body.punktkarte-offen .leaflet-control-zoom { visibility: hidden; }
 /* Zweite, kleine Zeile des Schildes der Lagekarte: wer baut, wann zuletzt
    etwas kam. Sie bricht um, wenn zwei Trupps an einer Strecke stehen. */
 .strecken-mass .schild-bau { font-size: 11px; color: #59636f; max-width: 17em;
-  font-variant-numeric: tabular-nums; line-height: 1.25; }
+  font-variant-numeric: tabular-nums; line-height: 1.25;
+  /* Der Kartenrahmen setzt `nowrap` auf alle Beschriftungen: ohne diese Zeile
+     lief „4. FmTr (Gruppenführer Wolf) · zuletzt 14:20“ über den Rand des
+     Schildes. Der Trupp bricht um, die Uhrzeit bleibt als Ganzes zusammen. */
+  white-space: normal; overflow-wrap: anywhere; }
+.strecken-mass .sb-zeit { white-space: nowrap; }
 body.nacht #karte .strecken-mass .schild-bau { color: var(--text-schwach); }
 /* Streckennummer im Schild und an der Linie – nur im Schwarz-Weiß-Druck der
    Lagekarte, dort trägt das Strichmuster allein sechs Strecken. Der weiße Grund
@@ -1617,6 +1640,9 @@ body.nacht #karte .strecken-mass .schild-bau { color: var(--text-schwach); }
   display: block; width: 12px; height: 12px; margin: 1px; border-radius: 50%;
   background: rgba(255,255,255,.85); border: 2px dashed #4a5768; cursor: grab;
 }
+/* Zu nah an einem Punkt (`_griffeAbruecken` in js/strecken.js): sichtbar, aber
+   ohne Zone – der Punkt daneben gewinnt jede Berührung. */
+.fbp-einfuegen.zu-nah { pointer-events: none !important; opacity: .45; }
 .fbp-einfuegen:hover i { background: #fff; border-color: var(--thw); border-style: solid; }
 
 /* Halten, bevor eine Marke dem Finger folgt (`ziehen.js`). Der Ring zieht sich
@@ -2083,6 +2109,7 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
   border: 1px solid var(--linie-stark); border-radius: var(--radius);
 }
 .konflikt-fassung .klein { margin: 0; }
+.konflikt-folgen { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 
 /* Suchfeld und Kategorie bleiben stehen, das Gitter rollt – und zwar als
    einziges. Zwei ineinander rollende Bereiche hatten dazu geführt, dass die
@@ -2547,12 +2574,28 @@ body.baumodus .sichtwahl { display: none; }
   border-radius: 999px; background: var(--flaeche); color: var(--text); cursor: pointer;
   font: inherit; font-size: 15px; font-weight: 600;
 }
-.trupp-chip[aria-checked="true"] { background: var(--thw); border-color: var(--thw); color: #fff; }
-.trupp-chip[aria-checked="true"]::before { content: '✓ '; }
+.trupp-chip[aria-checked="true"],
+.trupp-chip[aria-pressed="true"] { background: var(--thw); border-color: var(--thw); color: #fff; }
+.trupp-chip[aria-checked="true"]::before,
+.trupp-chip[aria-pressed="true"]::before { content: '✓ '; }
 /* Die Warnung „nicht aufgetragen“ stand ohne Abstand über der Wahl. */
 #dialog-inhalt .bau-warnung + .feld { margin-top: 12px; }
-/* „Trupp wechseln“ im Rückmeldeblock: ein Griff unter dem Absender. */
+/* „Trupp wechseln“ im Rückmeldeblock: ein Griff unter dem Absender. Er trägt
+   seine 44 px in der Fläche – als `.knopf.klein` maß er 40, und er ist der
+   Weg zurück aus einer Fehlwahl. */
 .bau-trupp-wechseln { margin-top: 4px; }
+.knopf.klein.trupp-griff { min-height: 44px; }
+/* Der Dialog „Trupp wechseln“: Titel und Feld hielten 3 px Abstand und
+   klebten aneinander (die Zeile darüber hat 8), und drei Fußknöpfe brachen
+   schmal in zwei Zeilen um – der Hauptknopf stand dann unter dem Schlussknopf
+   statt in einer festen Reihe. Er hält jetzt eine Reihe, die Knöpfe teilen
+   sich die Breite und brechen in sich um. */
+.trupp-wechseln .feld { gap: 6px; margin-top: 12px; }
+.trupp-wechseln .trupp-chips + .feld { margin-top: 4px; }
+.dialog:has(.trupp-wechseln) .dialog-fuss { flex-wrap: nowrap; }
+.dialog:has(.trupp-wechseln) .dialog-fuss .knopf {
+  flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px;
+}
 /* Je Knopf eine Zeile Folge, unter dem, was hereinkommt. */
 .folge-liste { margin: 0; padding-left: 18px; }
 .folge-liste li { margin: 3px 0; }
@@ -2644,6 +2687,8 @@ body.baumodus .sichtwahl { display: none; }
   color: var(--warnung-tief); font-weight: 600;
 }
 .bau-warnung[hidden] { display: none; }
+.bau-warnung.fehler { border-color: var(--gefahr); color: var(--gefahr); }
+.bau-speicherwarnung p { margin: 0 0 6px; }
 
 /* Der Materialnachweis. Zwei Spalten wie bei den Punktfeldern, aber mit der
    Einheit rechts am Feld – am Bauort wird die Zahl gesucht und nicht die
@@ -2743,6 +2788,16 @@ body.baumodus .sichtwahl { display: none; }
   background: var(--thw-blass); border: 1px solid var(--thw); border-left-width: 4px;
   border-radius: var(--radius-klein); padding: 8px 10px;
 }
+/* Nachts trägt das THW-Blau nicht mehr: #0b2e7a als Rand auf #1b2a47 stand bei
+   rund 1,2:1, und das Fenster verschwamm in der Seitenleiste – der Zustand,
+   der jeden Griff darunter umdeutet, war nachts nicht zu sehen. Rand in der
+   hellen Stufe und eine gefüllte Kopfzeile, die ihn benennt; beides ist Form
+   und nicht nur Farbe. */
+body.nacht .bau-nachtrag { border: 2px solid var(--thw-text); border-left-width: 6px; padding-top: 0; }
+body.nacht .bau-nachtrag > .gruppen-titel {
+  margin: 0 -10px 2px -10px; padding: 6px 10px; border: 0;
+  background: var(--primaer); color: #fff; font-weight: 700;
+}
 .bau-nachtrag .bn-tag input { min-height: 44px; font-size: 16px; }
 .bau-ausfall { display: grid; grid-template-columns: 1fr; gap: 4px; margin-top: 8px; }
 .bau-ausfall .feld { margin: 0; min-width: 0; }
@@ -2800,6 +2855,33 @@ body.baumodus .sichtwahl { display: none; }
   overflow-wrap: anywhere;
 }
 .mv-s6 .klein { font-weight: 400; }
+/* Im Empfangsdialog sahen alle Warnkästen gleich aus, und der Verlust lag
+   zwischen ihnen. Der Verlust trägt Rot, einen dicken Rand und ein Wort
+   („⚠ Verlust:“) – ohne Farbe lesbar, im Schwarz-Weiß wie bei Nacht. Die
+   Rückfrage ist schwächer: ein Hinweis, kein Kasten. */
+.mv-verlust {
+  background: var(--gefahr-flaeche); border-color: var(--gefahr-linie);
+  border-left: 5px solid var(--gefahr); color: var(--text);
+}
+.mv-verlust b:first-child { color: var(--gefahr); }
+.mv-rueckfrage {
+  margin: 8px 0 0; padding: 4px 0 4px 10px; border-left: 3px solid var(--linie);
+  color: var(--text-schwach);
+}
+.mv-erklaerung { margin: 4px 0 0; }
+/* Die Fußknöpfe des Empfangsdialogs: „Verwerfen“ links, „Einspielen“ rechts,
+   gleich unter welchem Befund, und alles Weitere („Erst als Datei sichern“,
+   „Planung wählen“) in einer Zeile darunter über die ganze Breite. Vorher
+   wechselte der Hauptknopf zwischen den Enden und stapelte sich auf 390 px
+   mit den anderen. Die Hervorhebung (`primaer`) darf wechseln, die Stelle
+   nicht. */
+.dialog-fuss.meldung-fuss {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; justify-content: stretch;
+}
+.meldung-fuss .knopf { margin: 0; min-width: 0; white-space: normal; line-height: 1.25; }
+.meldung-fuss .fuss-verwerfen { grid-column: 1; grid-row: 1; }
+.meldung-fuss .fuss-einspielen { grid-column: 2; grid-row: 1; }
+.meldung-fuss .fuss-weiter { grid-column: 1 / -1; grid-row: 2; }
 .meldung-link textarea {
   width: 100%; min-width: 0; font-family: var(--mono);
   font-size: 12px; word-break: break-all;
@@ -2828,6 +2910,15 @@ body.baumodus .sichtwahl { display: none; }
    Lagekarte nicht als weiterer Baustand gelesen wird. */
 .bz-marke.bz-warn { border: 3px double var(--warnung-linie-stark); background: var(--warnung-flaeche);
   color: var(--warnung-tief); }
+/* Die durchgefallene Prüfung sperrt die Übergabe und ist die stärkste Marke
+   des Schildes: ein gefülltes Rot mit weißer Schrift und „✖“ statt „⚠“. Im
+   Schwarz-Weiß-Druck bleibt sie ein dunkel gefülltes Feld mit heller Schrift
+   – die doppelt umrandete, helle Abweichung daneben nicht. Dieselbe Größe wie
+   jede Marke: die Platzsuche der Lagekarte rechnet mit ihr. */
+.bz-marke.bz-warn.bz-fehl { border: 3px solid #7f1414; background: var(--gefahr); color: #fff; }
+/* Nachts ist --gefahr aufgehellt (#ff7b7b) und trüge die weiße Schrift mit
+   2,5:1 nicht; das Rot bleibt deshalb dunkel und der helle Rand hebt es ab. */
+body.nacht .bz-marke.bz-warn.bz-fehl { background: #b71c1c; border-color: #ffd0d0; }
 /* „✉ S 6“: eine Auskunft an die Führung und keine Warnung – einfach umrandet
    im Mahnton, damit sie neben der doppelt umrandeten Warnung nicht als
    zweite gelesen wird. */
@@ -2837,7 +2928,14 @@ body.baumodus .sichtwahl { display: none; }
    Marken auffallen und verschwindet mit „gesehen“. */
 .bz-marke.bz-neu { background: var(--thw); border-color: var(--thw); color: #fff; }
 .bz-alter { font-variant-numeric: tabular-nums; }
-.bz-code { color: var(--text-schwach); white-space: nowrap; }
+/* Der Code bleibt als Ganzes zusammen, der Absender dahinter bricht um: ein
+   langer Absender („1. FmTr (Truppführer Mustermann-Schmidt)“) stand in einer
+   Zeile, die nicht umbrach, und trieb die Liste über ihren Rand – mit
+   waagerechtem Rollbalken. */
+.bz-code { color: var(--text-schwach); min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.bz-code .meldungscode { white-space: nowrap; }
+.eintrag-zeile.bau-zeile > * { min-width: 0; }
+.eintrag-zeile.bau-zeile { overflow-wrap: anywhere; }
 .bz-alter.spaet { color: var(--gefahr); font-weight: 700; }
 .bz-alter.spaet::before { content: '⚠ '; }
 /* Der Knopf wächst mit seinem Wort: als `mini-knopf` hatte er eine feste
@@ -2956,6 +3054,13 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   padding: 0 4px; border: 1px solid var(--linie-stark); border-radius: var(--radius-klein);
   white-space: nowrap;
 }
+/* Der Rückgabe-Code im Absende-Dialog als eigene Zeile: er ist das, was über
+   Funk durchgegeben wird, und im Fließtext ging er unter. */
+.bau-code-zeile {
+  margin: 8px 0; padding: 8px 12px; border: 1px solid var(--linie-stark);
+  border-radius: var(--radius); background: var(--flaeche-2); font-weight: 600;
+}
+.bau-code-zeile .meldungscode { font-size: 1.15em; }
 /* Blau und fett, ohne Rahmen – der Rückgabe-Code daneben ist schwarz in einer
    Marke. Im Audit unterschied sie nur die Rahmung, und die ging in einer Zeile
    mit Beschriftung unter. */
@@ -3190,16 +3295,21 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
 .punktkarte[data-mehr] .pk-aufnahme { box-shadow: 0 -9px 8px -7px rgba(0, 0, 0, .28); }
 .punktkarte[data-mehr] .pk-abschluss::before {
   content: 'mehr ▾'; position: absolute; top: 0; right: 2px; pointer-events: none;
-  font-size: 11.5px; line-height: 13px; font-weight: 650; color: var(--text-schwach);
+  font-size: 13px; line-height: 14px; font-weight: 700; color: var(--text);
 }
 /* Ein Tipp, den eine Tippsperre geschluckt hat (`tippWink` in js/baukarte.js):
    der Knopf blitzt kurz in der Markenfarbe. Ohne Bewegung ein stehender Rand –
    wer Bewegung abgeschaltet hat, soll den Wink trotzdem sehen. */
+/* Eine Sekunde und nicht knapp eine halbe: unter dem Finger, der eben getippt
+   hat, war ein Aufblitzen von 0,45 s vorbei, ehe die Kuppe den Knopf
+   freigab – im Review sah es niemand. Der Rand steht die ersten 60 % und
+   klingt dann aus. */
 @keyframes tipp-wink {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  25% { box-shadow: 0 0 0 4px var(--thw-hell); }
+  0% { box-shadow: 0 0 0 0 transparent; }
+  12%, 60% { box-shadow: 0 0 0 4px var(--thw-hell); }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
-.tipp-wink { animation: tipp-wink .45s ease-out; }
+.tipp-wink { animation: tipp-wink 1s ease-out; }
 @media (prefers-reduced-motion: reduce) {
   .tipp-wink { animation: none; outline: 3px solid var(--thw-hell); outline-offset: 1px; }
 }
@@ -3585,6 +3695,16 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   .pl-tasten .knopf { flex: 1 1 0; }
 }
 
+/* Bei 320 px bleibt für die Netzzeile ein Rest von gut 150 px; darin ging
+   „gröber“ zuerst verloren, und das ist die praktische Folge: die Karte ist
+   unscharf. Hier kürzt deshalb der Vorrat zuerst, dann der Anlass – „gröber“
+   steht ganz da. Darüber (360 px und mehr) passt alles, und die Rangfolge
+   Anlass, Vorrat, gröber gilt wie gehabt. */
+@media (max-width: 340px) {
+  .sl-netz-grob { flex: 0 0 auto; }
+  .sl-netz-vorrat { flex: 0 100000 auto; }
+}
+
 /* ------------------------------------------------- Bedienung ohne Maus
    Nur für grobe Zeiger (Finger, Handschuh, Stift). Die Maus-Ansicht behält
    ihre Dichte; hier wachsen die Trefferflächen auf ~44 px. */
@@ -3623,8 +3743,12 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   .augen::after { content: ''; position: absolute; inset: -6px 0 -6px -6px; }
   .eintrag-kopf::after { margin-left: 14px; margin-right: 8px; }
   .eintrag.offen .eintrag-kopf::after { margin-left: 14px; margin-right: 8px; }
-  .farbe { width: 36px; height: 36px; }
-  .farbreihe { gap: 8px; }
+  /* 44 px selbst, nicht 36 mit Aufweitung: die Farbfelder der Streckenkarte
+     maßen im Review 36×36, und die `::after`-Zone der Nachbarn stieß bei 8 px
+     Abstand ineinander. Der Griff trägt sein Handschuhmaß in der Fläche. */
+  .farbe { width: 44px; height: 44px; }
+  .farbe::after { content: none; }
+  .farbreihe { gap: 6px; }
   .knopf { padding: 10px 14px; min-height: 44px; }
   /* Nur senkrecht aufziehen: waagerecht stünden die Zonen benachbarter Knöpfe
      ineinander, und „Fertig“ und „Abbrechen“ dürfen sich nicht überlappen. */

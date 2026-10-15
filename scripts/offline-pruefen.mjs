@@ -475,6 +475,49 @@ try {
   b.pruefe(haengt18.pille, 'Ohne Hinweispille');
   await seite.haengenEnde();
 
+  b.abschnitt('Kommt das Netz zurück, werden die gröberen Kacheln still nachgeholt');
+  /* Nach der Frist ersetzt die gröbere Stufe das Bild und bricht den Abruf ab.
+     Ohne Neuversuch blieb sie stehen, bis jemand schob oder zoomte – und die
+     Leiste verschwand mit dem Netz-Ereignis, als wäre alles gut. Der Kachel-
+     server ist im Prüfstand unerreichbar; der zweite Anlauf läuft über ein
+     Bild, das hier ersetzt wird: einmal antwortet es, einmal nicht. */
+  const nachholen = async antwortet => seite.auswerten(`
+    const k = window.fbp.karte;
+    const echt = window.Image;
+    window.Image = function () {
+      const probe = { set src(v) { if (!v) return; setTimeout(() => {
+        if (${antwortet}) probe.onload && probe.onload(); else probe.onerror && probe.onerror();
+      }, 60); } };
+      return probe;
+    };
+    let ereignis = null;
+    k.once('fbp:nachgeladen', e => { ereignis = { offen: e.offen, angekommen: e.angekommen }; });
+    const vorher = [...document.querySelectorAll('#karte img.leaflet-tile')]
+      .filter(i => i.src.startsWith('blob:')).length;
+    window.dispatchEvent(new Event('online'));
+    const sofort = document.getElementById('sl-netz').hidden ? '' : document.getElementById('sl-netz').textContent;
+    const ende = Date.now() + 3000;
+    while (!ereignis && Date.now() < ende) await new Promise(f => setTimeout(f, 50));
+    const nachher = [...document.querySelectorAll('#karte img.leaflet-tile')]
+      .filter(i => i.src.startsWith('blob:')).length;
+    await new Promise(f => setTimeout(f, 4500));
+    window.Image = echt;
+    const n = document.getElementById('sl-netz');
+    return { vorher, nachher, ereignis, sofort, spaeter: n.hidden ? '' : n.textContent };`);
+  const nachFehl = await nachholen(false);
+  b.gleich(nachFehl.vorher, 12, 'Vorher steht jede Kachel gröber da (12)');
+  b.pruefe(/^Netz wieder da/.test(nachFehl.sofort),
+    `Das Netz-Ereignis wird gesagt, statt die Zeile still zu räumen („${nachFehl.sofort}“)`);
+  b.gleich(nachFehl.nachher, 12, 'Antwortet der Server weiter nicht, bleiben die gröberen Kacheln stehen');
+  b.pruefe(nachFehl.ereignis && nachFehl.ereignis.offen === 12, 'Und das Nachladen meldet, dass 12 offen sind');
+  b.pruefe(/gröber/.test(nachFehl.spaeter) && !/Netz wieder da/.test(nachFehl.spaeter),
+    `Danach bleibt die Zeile ehrlich bei „gröber“ („${nachFehl.spaeter}“)`);
+  const nachOk = await nachholen(true);
+  b.pruefe(nachOk.ereignis && nachOk.ereignis.offen === 0 && nachOk.nachher === 0,
+    `Antwortet er, ist jede Kachel wieder die feine (${nachOk.nachher} gröbere übrig)`);
+  b.pruefe(nachOk.spaeter === '', `Und die Zeile ist danach weg („${nachOk.spaeter}“)`);
+  await seite.haengenEnde().catch(() => {});
+
   b.abschnitt('Springt eine gröbere Stufe ein, sagt die Leiste es auch mit Netz');
   /* Ein Server, der Kacheln abweist, ist für den Trupp von einem Funkloch nicht
      zu unterscheiden. Die Leiste zeigte aber nur bei Ausfall oder fehlendem
@@ -505,6 +548,27 @@ try {
   b.pruefe(await seite.auswerten('document.getElementById("sl-netz").hidden'),
     'Nach dem Zoomen ohne Ausfall verschwindet die Zeile wieder');
   await seite.auswerten(`window.fbp.karte.setView([51.803, 10.60], 15, { animate: false }); return true;`);
+
+  b.abschnitt('Ohne Netz sagt es auch die Listenansicht am Telefon');
+  /* Die Netzzeile steht in der Statusleiste, und die sieht nur, wer die Karte
+     vor sich hat. Wer das Telefon mit der Liste öffnete, erfuhr das fehlende
+     Netz erst, wenn Suche oder „Karte holen“ scheiterten. */
+  await seite.schmal(390, 844);
+  await seite.auswerten('document.getElementById("aw-liste").click(); return true;');
+  await seite.ohneNetz();
+  await seite.auswerten(`window.dispatchEvent(new Event('offline')); return true;`);
+  await new Promise(f => setTimeout(f, 500));
+  const listeOffline = await seite.auswerten(`
+    const band = document.getElementById('speicherband');
+    return { text: document.getElementById('sb-stand').textContent,
+             sichtbar: getComputedStyle(band).display !== 'none' && band.getClientRects().length > 0 };`);
+  b.pruefe(listeOffline.sichtbar && /^Kein Netz · /.test(listeOffline.text),
+    `Das Band über der Liste nennt das fehlende Netz („${listeOffline.text}“)`);
+  await seite.mitNetz();
+  await seite.auswerten(`window.dispatchEvent(new Event('online')); return true;`);
+  await new Promise(f => setTimeout(f, 500));
+  b.pruefe(!/Kein Netz/.test(await seite.text('#sb-stand') || ''), 'Und es nimmt es mit dem Netz zurück');
+  await seite.breit(1280, 860);
 
   b.abschnitt('Der Vorrat lässt sich löschen');
   const geleert = await seite.auswerten(`
@@ -832,7 +896,11 @@ try {
   await seite.auswerten('return (await import("./js/ui.js")).hinweisAus();');
   await seite.warteAuf('document.getElementById("hinweisbox").hidden', 5000);
   await seite.auswerten('window.fbp.karte._fbpBasis.redraw(); return true;');
-  await seite.warteAuf('!document.getElementById("sl-netz").hidden', 15000);
+  /* Auf den Ausfall selbst warten und nicht auf die Zeile: die erste Kachel an
+     der Frist zeigt schon „Karte langsam“, der Ausfall steht erst mit der
+     dritten. */
+  await seite.warteAuf('/Karte nicht erreichbar/.test(document.getElementById("sl-netz").textContent)', 15000)
+    .catch(() => {});
   const netzText = (await seite.text('#sl-netz') || '');
   /* Der Browser hat Netz, nur die Kacheln kommen nicht. „kein Netz“ stand
      hier früher auch – und wer dabei Balken auf dem Telefon sieht, glaubt der

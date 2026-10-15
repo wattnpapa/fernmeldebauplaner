@@ -28,7 +28,13 @@ const KANTE = 256;
    nicht bei jeder Mausbewegung erneut angefragt werden. */
 const kacheln = new Map();
 const fehlversuche = new Set();
-const HOECHSTENS = 64;   // 64 × 256 KB Pixeldaten sind ein vertretbarer Speicher
+const HOECHSTENS = 64;
+/* Wie bei den COG-Kacheln (`cog.js`): ohne Frist blieb ein Abruf, den das Netz
+   nur hielt, für immer im Zwischenspeicher – als noch ladendes Versprechen, das
+   `kachelfehlerVergessen` nicht kennt. Gelände, Profil und Relais-Grundhöhe
+   standen auf „wird geholt …“, und auch „Erneut versuchen“ half bis zum
+   Neuladen nicht. Mit der Frist wird daraus ein gewöhnlicher Fehlversuch. */
+const FRIST = 25000;   // 64 × 256 KB Pixeldaten sind ein vertretbarer Speicher
 
 function kachelSchluessel(x, y) { return `${ZOOM}/${x}/${y}`; }
 
@@ -41,7 +47,7 @@ function kachelHolen(x, y) {
     return p;
   }
   const url = QUELLE.replace('{z}', ZOOM).replace('{x}', x).replace('{y}', y);
-  const p = fetch(url)
+  const p = fetch(url, { signal: AbortSignal.timeout(FRIST) })
     .then(r => r.ok ? r.blob() : Promise.reject(new Error(`Höhenkachel ${r.status}`)))
     .then(createImageBitmap)
     .then(bild => {

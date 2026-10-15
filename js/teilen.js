@@ -178,6 +178,9 @@ function bauVerschlanken(s, nur = null) {
      Grund: er ist eine Notiz des Planers über den Empfang. */
   delete raus.gemeldetCode;
   delete raus.gemeldetCodes;
+  /* Und der Vermerk, dass eine Meldung die Übergabe aufgehoben hat. */
+  delete raus.uebergabeZurueckZeit;
+  delete raus.uebergabeZurueckStaemme;
 
   if (bau.abschnitte.length) {
     raus.abschnitte = bau.abschnitte.map((a, i) => {
@@ -701,6 +704,32 @@ export async function meldungAlsLink(projekt, strecken, von = '', auswahl = null
 }
 
 /**
+ * Eine Baumeldung in einer Fassung, die diese Seite nicht kennt?
+ *
+ * Gesagt werden muss es als solche: der Link meldete „enthält keine
+ * Baumeldung“, und als Datei geladen öffnete sie sich als Planung „meldung2“
+ * mit leerer Strecke und ersetzte die offene Ansicht, ohne ein Wort. Erkannt
+ * wird sie an derselben Bauart wie die bekannte – Fassung, Streckenliste, kein
+ * Planungskopf –, nur mit einer höheren Fassung. Die Zahl nennt die Meldung.
+ * @returns {number} die fremde Fassung, sonst 0
+ */
+export function neuereMeldungsFassung(o) {
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return 0;
+  if (!Number.isInteger(o.fassung) || o.fassung <= 1 || !Array.isArray(o.strecken)) return 0;
+  if (o.kopf || o.ansicht || o.zeichen || o.flaechen) return 0;
+  return o.fassung;
+}
+
+export const neuereMeldungFehler = fassung => Object.assign(
+  new Error(neuereMeldungText(fassung)), { neuereFassung: fassung });
+
+const neuereMeldungText = fassung =>
+  `Diese Baumeldung stammt von einer neueren Version des FMBauplaners (Fassung ${fassung}, ` +
+  'diese Seite kennt 1). Sie wird nicht gelesen und nichts davon eingespielt – die Seite ' +
+  'neu laden und den Link bzw. die Datei noch einmal öffnen, oder den Trupp bitten, mit ' +
+  'derselben Version zu melden.';
+
+/**
  * Ist dieses Objekt eine Baumeldung? Gilt für den Datei- wie den Linkweg.
  *
  * Geprüft wird bis in den `bau`-Block hinein und nicht nur an der Oberfläche.
@@ -751,6 +780,8 @@ export async function baumeldungAusFragment(fragment = location.hash) {
     throw new Error('Der Link ist unvollständig oder beschädigt – ' +
       'oft hat ihn ein Mailprogramm umgebrochen.');
   }
+  const neuer = neuereMeldungsFassung(objekt);
+  if (neuer) throw neuereMeldungFehler(neuer);
   if (!istBaumeldung(objekt)) throw new Error('Der Link enthält keine Baumeldung.');
   return objekt;
 }

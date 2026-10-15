@@ -22,7 +22,8 @@ import {
   istPunkte, istZuSoll, sollZuIst, istPunktSetzen, istArtSetzen, bauabschnittById,
   istSollZuordnen, offeneSollPunkte, sollVorschlag, andereStreckeNahe, istPunktUmhaengen,
   baustrecke, baustreckeSetzen, aktiverBauabschnitt, bauabschnitte, bauabschnittAktivSetzen,
-  quelleText, punktartText, auftragsTrupps, truppAmGeraet, ABWEICHUNG_SCHWELLE, ABSEITS_SCHWELLE,
+  quelleText, punktartText, auftragsTrupps, aufgetragenerTrupp, truppAmGeraet, truppWahlOffen,
+  truppFrageRuht, ABWEICHUNG_SCHWELLE, ABSEITS_SCHWELLE,
   nachtragTag, tagKurz,
   waehlbareAbschnitte, eigenenAbschnittSichern
 } from './baudoku.js';
@@ -203,7 +204,7 @@ export function tippWink(ziel) {
   knopf.classList.remove('tipp-wink');
   void knopf.offsetWidth;   // die Animation von vorn beginnen lassen
   knopf.classList.add('tipp-wink');
-  setTimeout(() => knopf.classList.remove('tipp-wink'), 500);
+  setTimeout(() => knopf.classList.remove('tipp-wink'), 1000);
 }
 
 /**
@@ -565,9 +566,14 @@ export function bauzielNachfuehren() {
   const text = !s ? '' : (nachtragTag() ? `Nachtrag vom ${tagKurz(nachtragTag())} · ` : '') +
     `an ${s.name}` +
     (a ? ` · ${a.trupp || a.name}` : ohneAbschnitt ? ' · kein Bauabschnitt gewählt' : '');
-  if (z.textContent !== text) z.textContent = text;
-  z.hidden = !text;
-  z.classList.toggle('bau-ziel-offen', ohneAbschnitt || (!!s && !!nachtragTag()));
+  /* Ruht die Frage „Welcher Trupp seid ihr?“ nach zweimal „Später“, steht sie
+     hier als feste Marke – bis zur Wahl (`truppFrageRuht` in baudoku.js). Die
+     Karte steht am Bauort vorn, und der Reiter zeigt sie nur dem, der dort ist. */
+  const wahlOffen = !!s && !a && truppWahlOffen(s) && truppFrageRuht(s);
+  const gesamt = wahlOffen ? text + ' · Trupp wählen' : text;
+  if (z.textContent !== gesamt) z.textContent = gesamt;
+  z.hidden = !gesamt;
+  z.classList.toggle('bau-ziel-offen', ohneAbschnitt || wahlOffen || (!!s && !!nachtragTag()));
 }
 
 /** „Punkt hier“: Standort des Geräts als zusätzlichen Punkt aufnehmen */
@@ -1332,7 +1338,7 @@ function umhaengenFragen(s, ist, andere, nach) {
   const abschnitte = bauabschnitte(ziel);
   const trupps = auftragsTrupps(ziel);
   const ich = truppAmGeraet().trupp.trim();
-  const fremd = trupps.length > 0 && !(ich && trupps.includes(ich));
+  const fremd = trupps.length > 0 && !(ich && aufgetragenerTrupp(ziel, ich));
   if (!abschnitte.length && !fremd) return umhaengen(s, ist, andere, null);
   const alt = blatt() && blatt().querySelector('.pk-umhaengen');
   if (alt) alt.remove();

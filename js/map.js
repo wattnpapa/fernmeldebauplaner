@@ -309,6 +309,13 @@ const ERSATZ_STUFEN = 5;
    feine Kachel, als gröber auszudrucken. */
 const ABRUF_FRIST = 4000;
 
+/* Der zweite Anlauf für eine Kachel, die nur gröber da ist, darf länger warten
+   als der erste: er läuft unsichtbar nebenher, und die Fläche zeigt solange das
+   unscharfe Bild. Die vier Sekunden des ersten Anlaufs waren für eine langsame,
+   aber lebende Verbindung zu knapp und brachen den Abruf ab – ohne Neuversuch
+   blieb die Kachel dann unscharf, bis jemand schob oder zoomte. */
+const NACHLADE_FRIST = 20000;
+
 /* Eine Kachelebene, die erst im Vorrat des Geräts nachsieht und nur dann ins
    Netz geht, wenn dort nichts liegt.
 
@@ -331,6 +338,7 @@ function vorratsEbene(url, optionen) {
       const bild = document.createElement('img');
       bild.alt = '';
       const adresse = this.getTileUrl(koordinaten);
+      bild._fbpAdresse = adresse;
       let ersatzVersucht = false;
       let abrufUhr = null;
       /* Leaflet erwartet je Kachel genau einen Abschluss. Mit der Frist kann
@@ -344,7 +352,16 @@ function vorratsEbene(url, optionen) {
         abgeschlossen = true;
         fertig(fehler, bild);
       };
-      L.DomEvent.on(bild, 'load', () => abschluss(null));
+      L.DomEvent.on(bild, 'load', () => {
+        abschluss(null);
+        /* Kam eine Kachel doch aus dem Netz, lebt der Server – dann lohnt der
+           zweite Anlauf für die, die an der Frist gescheitert waren. Entprellt,
+           weil ein Ausschnitt seine Kacheln in Schüben bekommt. */
+        if (!bild._fbpGrob && !bild._fbpBlobAdresse && this._map) {
+          clearTimeout(this._nachladeUhr);
+          this._nachladeUhr = setTimeout(() => this.nachladen(false), 2000);
+        }
+      });
       /* Kommt die Kachel weder aus dem Vorrat noch aus dem Netz, springt die
          gröbere Stufe aus dem Vorrat ein, bevor die Fläche grau bleibt. */
       L.DomEvent.on(bild, 'error', () => {
@@ -352,7 +369,7 @@ function vorratsEbene(url, optionen) {
         if (ersatzVersucht) return abschluss(new Error('Kachel nicht verfügbar'));
         ersatzVersucht = true;
         clearTimeout(abrufUhr);
-        this._ersatzSetzen(bild, koordinaten).then(da => {
+        this._ersatzSetzen(bild, koordinaten, 'fehler').then(da => {
           if (!da && !bild._fbpWeg) abschluss(new Error('Kachel nicht verfügbar'));
         });
       });
@@ -361,7 +378,7 @@ function vorratsEbene(url, optionen) {
            und bis dahin stünde die Fläche leer, wo der Vorrat sie füllen kann. */
         if (navigator.onLine === false) {
           ersatzVersucht = true;
-          this._ersatzSetzen(bild, koordinaten).then(da => {
+          this._ersatzSetzen(bild, koordinaten, 'fehler').then(da => {
             if (da || bild._fbpWeg) return;
             if (this.options.crossOrigin) bild.crossOrigin = this.options.crossOrigin;
             bild.src = adresse;
@@ -376,7 +393,7 @@ function vorratsEbene(url, optionen) {
         abrufUhr = setTimeout(() => {
           if (bild._fbpWeg || abgeschlossen || ersatzVersucht) return;
           ersatzVersucht = true;
-          this._ersatzSetzen(bild, koordinaten).then(da => {
+          this._ersatzSetzen(bild, koordinaten, 'frist').then(da => {
             if (bild._fbpWeg) return;
             /* Ein ersetzter Abruf endet nie in `error` – die Kachelwacht
                erfährt von der Frist nur hierüber. */
@@ -420,7 +437,7 @@ function vorratsEbene(url, optionen) {
        damit das Bild denselben Weg geht wie jede Kachel aus dem Vorrat – samt
        Freigabe beim Abräumen und ohne CSS-Filter, dessen Bereich Firefox beim
        Drucken weglässt. */
-    async _ersatzSetzen(bild, { x, y, z }) {
+    async _ersatzSetzen(bild, { x, y, z }, grund) {
       for (let stufen = 1; stufen <= ERSATZ_STUFEN && z - stufen >= 0; stufen++) {
         const teiler = 2 ** stufen;
         const eltern = { x: Math.floor(x / teiler), y: Math.floor(y / teiler), z: z - stufen };
@@ -444,13 +461,70 @@ function vorratsEbene(url, optionen) {
           if (bild._fbpBlobAdresse) URL.revokeObjectURL(bild._fbpBlobAdresse);
           bild._fbpBlobAdresse = URL.createObjectURL(ausschnitt);
           bild.src = bild._fbpBlobAdresse;
-          if (this._map) this._map.fire('fbp:kachelgrob', { z, aus: z - stufen });
+          bild._fbpGrob = grund;
+          if (this._map) this._map.fire('fbp:kachelgrob', { z, aus: z - stufen, grund });
           return true;
         } catch (e) {
           return false;
         }
       }
       return false;
+    },
+
+    /* Die Kacheln, die nur gröber dastehen, noch einmal aus dem Netz holen –
+       im Hintergrund, mit einem unsichtbaren Bild, und getauscht wird erst,
+       wenn es da ist. Ein `redraw()` risse alle Kacheln ab und baute sie neu
+       auf: die Fläche stünde einen Augenblick leer, und das mitten in einem
+       Funkloch, das gerade endet. `alle` gilt nach der Rückkehr des Netzes für
+       jede gröbere Kachel; sonst nur für die, die an der Frist gescheitert
+       waren, und jede nur einmal – eine Kachel, die der Anbieter nicht führt,
+       soll nicht bei jedem Schub erneut angefragt werden. */
+    nachladen(alle) {
+      const laeufe = [];
+      let angekommen = 0;
+      for (const k in this._tiles) {
+        const bild = this._tiles[k].el;
+        if (!bild || bild._fbpWeg || !bild._fbpGrob || bild._fbpNachlauf) continue;
+        if (!alle && (bild._fbpGrob !== 'frist' || bild._fbpNachversucht)) continue;
+        bild._fbpNachlauf = true;
+        bild._fbpNachversucht = true;
+        laeufe.push(new Promise(fertig => {
+          const probe = new Image();
+          if (this.options.crossOrigin) probe.crossOrigin = this.options.crossOrigin;
+          const ende = geholt => {
+            clearTimeout(uhr);
+            probe.onload = probe.onerror = null;
+            bild._fbpNachlauf = false;
+            if (geholt && !bild._fbpWeg) {
+              angekommen++;
+              if (bild._fbpBlobAdresse) URL.revokeObjectURL(bild._fbpBlobAdresse);
+              bild._fbpBlobAdresse = null;
+              bild._fbpGrob = null;
+              if (this.options.crossOrigin) bild.crossOrigin = this.options.crossOrigin;
+              bild.src = bild._fbpAdresse;
+            }
+            fertig();
+          };
+          const uhr = setTimeout(() => { probe.src = ''; ende(false); }, NACHLADE_FRIST);
+          /* Wird die Kachel abgeräumt (Zoomen, Verschieben), ist der Abruf für
+             niemanden mehr: er gibt seine Verbindung frei, statt sie bis zur
+             Frist zu halten und die Kacheln des neuen Ausschnitts auszubremsen. */
+          bild._fbpNachladenAbbruch = () => { probe.src = ''; ende(false); };
+          probe.onload = () => ende(true);
+          probe.onerror = () => ende(false);
+          probe.src = bild._fbpAdresse;
+        }));
+      }
+      if (!laeufe.length) return Promise.resolve(0);
+      return Promise.all(laeufe).then(() => {
+        let offen = 0;
+        for (const k in this._tiles) {
+          const bild = this._tiles[k].el;
+          if (bild && !bild._fbpWeg && bild._fbpGrob) offen++;
+        }
+        if (this._map) this._map.fire('fbp:nachgeladen', { offen, angekommen });
+        return offen;
+      });
     }
   });
   const ebene = new Ebene(url, optionen);
@@ -464,6 +538,7 @@ function vorratsEbene(url, optionen) {
     const bild = e.tile;
     if (!bild) return;
     bild._fbpWeg = true;
+    if (bild._fbpNachlauf && bild._fbpNachladenAbbruch) bild._fbpNachladenAbbruch();
     if (bild._fbpBlobAdresse) {
       URL.revokeObjectURL(bild._fbpBlobAdresse);
       bild._fbpBlobAdresse = null;
@@ -513,6 +588,15 @@ function kachelWacht(karte, ebene) {
       if (fehler < AUSFALL_AB && navigator.onLine !== false) melden(false);
     });
   }
+}
+
+/** Nach der Rückkehr des Netzes: alle gröber gezeigten Kacheln neu holen */
+export function kartenNachladen(karte) {
+  const basis = karte._fbpBasis;
+  if (!basis) return Promise.resolve(0);
+  const ebenen = basis.getLayers ? basis.getLayers() : [basis];
+  return Promise.all(ebenen.filter(e => e.nachladen).map(e => e.nachladen(true)))
+    .then(r => r.reduce((a, b) => a + b, 0));
 }
 
 export function setzeBasiskarte(karte, id) {
@@ -589,19 +673,34 @@ function dopBuendel(karte, def) {
 
 /** Wartet, bis die aktuelle Kachelebene fertig geladen ist (für den Druck).
  *  Beim Länder-Luftbild sind das mehrere Ebenen – gewartet wird auf jede, die
- *  im Ausschnitt tatsächlich lädt. */
+ *  im Ausschnitt tatsächlich lädt.
+ *
+ *  Liefert, wie viele Kacheln dabei nicht kamen (`fehler`) und wie viele
+ *  geladen wurden (`geladen`). Leaflet meldet `load` auch dann, wenn jede
+ *  Kachel gescheitert ist: ohne Netz war der Druckknopf nach vier Sekunden
+ *  frei, als wäre die Karte da, und das Blatt ging mit leerem Kartengrund
+ *  zum Trupp. */
 export function warteAufKacheln(karte, timeoutMs = 8000) {
   const basis = karte._fbpBasis;
-  if (!basis) return Promise.resolve();
+  if (!basis) return Promise.resolve({ fehler: 0, geladen: 0 });
   const ebenen = basis.getLayers ? basis.getLayers() : [basis];
+  const zaehl = { fehler: 0, geladen: 0 };
   return Promise.all(ebenen.map(layer => new Promise(resolve => {
     let fertig = false;
     const beiLoad = () => setTimeout(ende, 150);
-    const ende = () => { if (fertig) return; fertig = true; layer.off('load', beiLoad); resolve(); };
+    const beiFehler = () => { zaehl.fehler++; };
+    const beiKachel = () => { zaehl.geladen++; };
+    const ende = () => {
+      if (fertig) return;
+      fertig = true;
+      layer.off('load', beiLoad); layer.off('tileerror', beiFehler); layer.off('tileload', beiKachel);
+      resolve();
+    };
+    layer.on('tileerror', beiFehler); layer.on('tileload', beiKachel);
     if (layer.isLoading && !layer.isLoading()) { setTimeout(ende, 120); return; }
     layer.on('load', beiLoad);
     setTimeout(ende, timeoutMs);
-  }))).then(() => undefined);
+  }))).then(() => zaehl);
 }
 
 // ---------------------------------------------------------------- Funksicht

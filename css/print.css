@@ -461,6 +461,16 @@ body.druckansicht { overflow: hidden; }
   padding: .6mm 1.6mm; font-size: .68em; color: #333;
 }
 
+/* Der Kartengrund kam nicht (`kartengrundMelden`). Mitten oben, in einem
+   Rahmen: so fällt es auf dem Blatt auf, das weitergegeben wird, und nicht nur
+   im Dialog, den der Trupp nie sieht. */
+.karten-fehlt {
+  position: absolute; left: 50%; top: 2mm; transform: translateX(-50%); z-index: 950; margin: 0;
+  background: #fff; border: 1pt solid #111; border-radius: 1mm; padding: 1mm 3mm;
+  font-weight: 700; font-size: .9em; white-space: nowrap;
+}
+.lageblatt .karten-fehlt { top: .66em; padding: .33em 1.2em; border-radius: .33em; border-width: var(--strich); }
+
 .karten-uebersicht {
   position: absolute; right: 2mm; bottom: 2mm; z-index: 900;
   width: 38mm; height: 30mm; border: .8pt solid #111; background: #fff; overflow: hidden;

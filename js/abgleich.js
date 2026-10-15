@@ -39,6 +39,11 @@ import {
    bevor die Arbeit draußen ist. */
 const RUHE = 12000;
 
+/* Nach einer Anfrage ohne Antwort (Frist in `cloud.js`) wird später noch
+   einmal versucht, aber nicht nach zwölf Sekunden: ein Funkloch dauert länger,
+   und jeder Versuch hält das Gerät bis zur Frist am Netz. */
+const NACHVERSUCH = 60000;
+
 const zustandSchluessel = pid => 'abgleich:' + pid;
 
 // ---------------------------------------------------------------- Zustand
@@ -106,11 +111,11 @@ export async function abgleichStarten() {
 }
 
 /** Eine Änderung vormerken – übertragen wird erst, wenn Ruhe eingekehrt ist */
-export function vormerken() {
+export function vormerken(wartezeit = RUHE) {
   if (lage.stand === 'aus' || lage.stand === 'konflikt') return;
   if (lage.stand !== 'laeuft') setzen({ stand: 'ausstehend', meldung: '' });
   clearTimeout(ruheTimer);
-  ruheTimer = setTimeout(() => { jetztAbgleichen().catch(() => {}); }, RUHE);
+  ruheTimer = setTimeout(() => { jetztAbgleichen().catch(() => {}); }, wartezeit);
 }
 
 /** Jetzt abgleichen – aus dem Knopf, beim Start und wenn das Netz zurückkommt */
@@ -173,6 +178,17 @@ async function durchgang() {
     if (e instanceof KonfliktFehler) {
       setzen({ stand: 'ausstehend', meldung: 'Am Speicher kam etwas dazwischen – gleich noch einmal.' });
       vormerken();
+      return;
+    }
+    /* Ein Speicher, der nicht antwortet, ist am Bauort derselbe Fall wie kein
+       Netz: das Netzsymbol steht, und es kommt nichts. Er wird nicht „Fehler“,
+       und er wird nicht vergessen – ohne den Nachversuch bliebe er bis zum
+       nächsten Änderungsereignis ausstehend, und wer nichts mehr ändert, hätte
+       ein Gerät, das nie mehr überträgt. */
+    if (e instanceof CloudFehler && e.zeitueberschreitung) {
+      vormerken(NACHVERSUCH);          // setzt die Meldung zurück – deshalb davor
+      setzen({ stand: 'ausstehend',
+        meldung: 'Der Speicher antwortet nicht – der Versuch wird wiederholt.' });
       return;
     }
     /* Ausstehend und nicht „Fehler“, wenn schlicht kein Netz da ist: am
@@ -249,7 +265,11 @@ async function planungAbgleichen(rs, projekt, verzeichnis) {
          geben der Datei bei den meisten Anbietern eine neue Marke. Ein Konflikt
          wäre hier eine Rückfrage ohne zweites Gerät. */
       const dort = await gelesen(fern);
-      if (dort && (dort.geaendert || '') === z.lokalGeaendert) {
+      /* Ebenso, wenn dort genau der heutige Stand liegt: eine Übertragung, deren
+         Antwort ausblieb (Frist), ist angekommen, ohne dass dieses Gerät die
+         neue Marke erfuhr. Ein Konflikt wäre eine Rückfrage gegen sich selbst. */
+      if (dort && ((dort.geaendert || '') === z.lokalGeaendert ||
+          ((dort.geaendert || '') === lokalGeaendert && kern(dort) === kern(projekt)))) {
         return hochladen(rs, projekt, ordner, { ...z, planungMarke: fremdeMarke }, fremdeMarke);
       }
       return konfliktStellen(projekt, ordner, fern, z);
@@ -523,13 +543,16 @@ export async function konfliktEntscheiden(wahl) {
   if (!k) return;
   const rs = await rueckseite();
   if (!rs) throw new CloudFehler('Es ist keine Verbindung eingerichtet.');
+
+  const roh = k.pid === store.projekt.id ? store.projekt : ladeAlle()[k.pid];
+  if (!roh) {
+    setzen({ stand: 'ausstehend', meldung: '', konflikt: null });
+    throw new CloudFehler('Die Planung liegt auf diesem Gerät nicht mehr vor.');
+  }
+  const meins = k.pid === store.projekt.id ? roh : migrieren(roh);
   setzen({ stand: 'laeuft', meldung: 'Konflikt wird aufgelöst …' });
 
   try {
-    const roh = k.pid === store.projekt.id ? store.projekt : ladeAlle()[k.pid];
-    if (!roh) throw new CloudFehler('Die Planung liegt auf diesem Gerät nicht mehr vor.');
-    const meins = k.pid === store.projekt.id ? roh : migrieren(roh);
-
     if (wahl === 'fremde') {
       /* Der eigene Stand wird als eigenständige Planung danebengelegt, bevor
          der fremde ihn ersetzt. Ohne diesen Schritt wäre die Entscheidung
@@ -549,15 +572,36 @@ export async function konfliktEntscheiden(wahl) {
         { blob: new Blob([JSON.stringify(k.fremdesProjekt)]), marke: k.marke },
         { ...k.zustand, lokalGeaendert: meins.geaendert || '' });
     } else if (wahl === 'beide') {
-      danebenlegen(k.fremdesProjekt, 'anderes Gerät');
+      /* Erst übertragen, dann die Kopie: schlägt das Hinaufladen im Funkloch
+         fehl, wäre sonst bei jedem Wiederholen eine weitere gleiche Planung
+         entstanden. */
       await hochladenGegen(rs, meins, k);
+      danebenlegen(k.fremdesProjekt, 'anderes Gerät');
     } else {
       await hochladenGegen(rs, meins, k);
     }
 
     setzen({ stand: 'bereit', meldung: '', konflikt: null, seit: new Date().toISOString() });
   } catch (e) {
-    setzen({ stand: 'fehler', meldung: e.message, konflikt: null });
+    /* Ein dritter Stand am Speicher: der Konflikt von eben stimmt nicht mehr,
+       der nächste Durchgang stellt ihn neu. */
+    if (e instanceof KonfliktFehler) {
+      setzen({ stand: 'ausstehend', konflikt: null,
+        meldung: 'Am Speicher kam etwas dazwischen – gleich noch einmal.' });
+      vormerken();
+      throw e;
+    }
+    /* Der Konflikt bleibt stehen, auch im Fehlerfall: wurde er hier verworfen,
+       stellte der nächste Durchgang ihn neu, und jede Wiederholung legte eine
+       weitere Kopie an. Ohne Netz ist es auch kein Fehler, sondern eine
+       Entscheidung, die noch wartet – das Netz-Ereignis führt sie nicht aus,
+       sie bleibt beim Nutzer, und der Dialog ist über den Speicherknopf wieder
+       da. */
+    const ohneNetz = !navigator.onLine || (e instanceof CloudFehler && e.zeitueberschreitung);
+    setzen({
+      stand: ohneNetz ? 'ausstehend' : 'fehler',
+      meldung: ohneNetz ? 'Kein Netz – die Entscheidung zum Konflikt ist noch offen.' : e.message
+    });
     throw e;
   }
 }
@@ -571,12 +615,20 @@ async function hochladenGegen(rs, projekt, k) {
 }
 
 /** Eine Planung als eigenständige Kopie in den Browserspeicher legen */
+const kopien = new Map();        // Stand → Kennung der Kopie, die davon schon besteht
+
 function danebenlegen(projekt, herkunft) {
+  /* Dieselbe Fassung wird nur einmal danebengelegt: wer die Entscheidung nach
+     einem Fehlschlag wiederholt, bekommt nicht eine zweite gleiche Planung. */
+  const schluessel = [projekt.id, projekt.geaendert || '', herkunft].join('|');
+  const vorhanden = kopien.get(schluessel);
+  if (vorhanden && ladeAlle()[vorhanden]) return ladeAlle()[vorhanden];
   const kopie = migrieren(projekt);
   kopie.id = neueKennung();
   const stempel = new Date().toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
   kopie.name = `${projekt.name} (${herkunft}, ${stempel})`;
   projektAblegen(kopie);
+  kopien.set(schluessel, kopie.id);
   return kopie;
 }
 

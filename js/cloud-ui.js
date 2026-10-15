@@ -57,8 +57,11 @@ const STAND_TEXT = {
   aus:        () => '',
   bereit:     l => 'Speicher: ' + zeitKurz(l.seit),
   laeuft:     () => 'Speicher: wird übertragen …',
-  ausstehend: () => 'Speicher: ausstehend',
-  fehler:     () => 'Speicher: Fehler',
+  /* Mit der Uhrzeit des letzten sicheren Stands: „ausstehend“ allein sagt nicht,
+     seit wann nichts mehr hinausgeht, und im Funkloch ist das die Frage. Es
+     steht im Text und nicht nur im Tooltip, den am Telefon niemand sieht. */
+  ausstehend: l => 'Speicher: ausstehend' + (l.seit ? ' · zuletzt ' + zeitKurz(l.seit) : ''),
+  fehler:     l => 'Speicher: Fehler' + (l.seit ? ' · zuletzt ' + zeitKurz(l.seit) : ''),
   anmeldung:  () => 'Speicher: Anmeldung erneuern',
   konflikt:   () => 'Speicher: Konflikt'
 };
@@ -66,7 +69,9 @@ const STAND_TEXT = {
 const STAND_TITEL = {
   bereit:     l => `Zuletzt vollständig übertragen: ${zeitKurz(l.seit)}`,
   laeuft:     () => 'Die Planung wird gerade zum Speicher übertragen.',
-  ausstehend: () => 'Änderungen warten auf die Übertragung.',
+  ausstehend: l => (l.meldung ? l.meldung + ' ' : '') +
+    'Änderungen warten auf die Übertragung' +
+    (l.seit ? `; zuletzt vollständig übertragen: ${zeitKurz(l.seit)}.` : '.'),
   fehler:     l => l.meldung || 'Die Übertragung ist fehlgeschlagen.',
   anmeldung:  l => l.meldung || 'Die Anmeldung am Speicher muss erneuert werden.',
   konflikt:   () => 'Dieselbe Planung wurde auf einem zweiten Gerät geändert.'
@@ -464,7 +469,16 @@ function konfliktDialog(k) {
      <div class="konflikt-paar">
        ${fassung('Auf diesem Gerät', k.meine)}
        ${fassung('Am Speicher', k.fremde)}
-     </div>`;
+     </div>
+     <ul class="konflikt-folgen klein">
+       <li><b>Beide behalten:</b> der Stand vom Speicher kommt als zweite Planung
+           hierher, dieses Gerät bleibt an den Speicher gebunden.</li>
+       <li><b>Dieses Gerät gilt:</b> der Stand am Speicher wird <b>überschrieben</b>; eine
+           Kopie davon legt diese Anwendung nicht an.</li>
+       <li><b>Speicher gilt:</b> der Stand dieses Geräts wird ersetzt und liegt
+           als zweite Planung daneben.</li>
+       <li><b>Später entscheiden:</b> nichts ändert sich, die Übertragung ruht.</li>
+     </ul>`;
 
   dialog({
     titel: 'Zwei Stände derselben Planung',
@@ -473,7 +487,7 @@ function konfliktDialog(k) {
     fuss: [
       { text: 'Später entscheiden', tun: () => { konfliktVertagen(); } },
       { text: 'Beide behalten', primaer: true, tun: () => entscheiden('beide') },
-      { text: 'Dieses Gerät gilt', tun: () => entscheiden('meine') },
+      { text: 'Dieses Gerät gilt', gefahr: true, tun: () => entscheiden('meine') },
       { text: 'Speicher gilt', tun: () => entscheiden('fremde') }
     ]
   });

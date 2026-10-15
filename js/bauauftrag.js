@@ -1157,6 +1157,13 @@ function aufbauen(ziel, auftrag, opt, karten, druckKnopf) {
     Promise.all(kartenbau.map(bau => bau().then(gezaehlt, gezaehlt))).then(() => {
       druckKnopf.disabled = false;
       druckKnopf.textContent = 'Drucken / Als PDF speichern';
+      const fehlt = ziel.querySelectorAll('.karten-fehlt').length;
+      druckKnopf.title = fehlt ? 'Der Kartengrund fehlt oder ist lückenhaft – das steht auch auf dem Blatt' : '';
+      if (fehlt) {
+        hinweis(`${fehlt === 1 ? 'Ein Blatt hat' : `${fehlt} Blätter haben`} keinen vollständigen ` +
+          'Kartengrund – Kacheln nicht geladen. Das steht auf dem Blatt; erst mit Netz neu öffnen, ' +
+          'wenn es so nicht weitergegeben werden soll.');
+      }
     });
   });
 }
@@ -1185,7 +1192,7 @@ function streckenblaetter(ziel, strecke, auftrag, opt, mass, sw, sammlung, karte
     const uk = ukBuehne ? baueUebersichtskarte(ukBuehne, strecke, mass, sw, karten, sammlung) : null;
     massstabSchreiben(b1, karte);
     return Promise.all([warteAufKacheln(karte, kachelfrist(mass)), uk ? warteAufKacheln(uk) : null])
-      .then(() => massstabSchreiben(b1, karte));
+      .then(([grund]) => { massstabSchreiben(b1, karte); kartengrundMelden(b1, grund); });
   });
 }
 
@@ -1213,7 +1220,8 @@ function deckblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
   kartenbau.push(() => {
     const karte = baueSammelkarte(el.querySelector('.karten-buehne'), auftrag, opt, mass, sw, karten);
     massstabSchreiben(el, karte);
-    return warteAufKacheln(karte, kachelfrist(mass)).then(() => massstabSchreiben(el, karte));
+    return warteAufKacheln(karte, kachelfrist(mass))
+      .then(grund => { massstabSchreiben(el, karte); kartengrundMelden(el, grund); });
   });
 }
 
@@ -1266,8 +1274,31 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
     const karte = baueLagekarte(el.querySelector('.karten-buehne'), blattauftrag, opt, mass, sw,
       karten, mitte, stand);
     massstabSchreiben(el, karte);
-    return warteAufKacheln(karte, kachelfrist(mass)).then(() => massstabSchreiben(el, karte));
+    return warteAufKacheln(karte, kachelfrist(mass))
+      .then(grund => { massstabSchreiben(el, karte); kartengrundMelden(el, grund); });
   });
+}
+
+/**
+ * Sagt auf dem Blatt, wenn der Kartengrund nicht kam.
+ *
+ * Leaflet meldet das Ende des Ladens auch dann, wenn jede Kachel gescheitert
+ * ist; der Druckknopf wurde frei, die Fußzeile nannte die Kartengrundlage, und
+ * das Blatt mit leerem Grund ging an den Trupp. Die Warnung steht im Blatt
+ * selbst und nicht nur im Dialog: das Blatt ist das, was weitergegeben wird.
+ * (Das ist keine Frist – die Druckkarten warten weiter auf die feine Kachel,
+ * siehe `kachelfrist`; es geht um Kacheln, die endgültig ausblieben.)
+ */
+function kartengrundMelden(blattEl, grund) {
+  if (!grund || !grund.fehler) return;
+  const rahmen = blattEl.querySelector('.karten-rahmen');
+  if (!rahmen || rahmen.querySelector('.karten-fehlt')) return;
+  const hinweisEl = document.createElement('p');
+  hinweisEl.className = 'karten-fehlt';
+  hinweisEl.textContent = grund.geladen
+    ? `Kartengrund lückenhaft – ${grund.fehler} ${grund.fehler === 1 ? 'Kachel' : 'Kacheln'} nicht geladen`
+    : 'Kartengrund fehlt – keine Kachel geladen';
+  rahmen.appendChild(hinweisEl);
 }
 
 /** Kartenrahmen samt Nordpfeil und Maßstabsleiste – auf jedem Blatt gleich.
@@ -1510,11 +1541,12 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null, sta
   const karte = neueDruckkarte(buehne, mass, { zoomSnap: 0.05 });
   setzeBasiskarte(karte, sw ? grauVariante(p.ansicht.basemap) : p.ansicht.basemap);
 
+  let sl = null;
   if (opt.strecken !== false) {
     /* Die Lagekarte trägt den Baustand im Schild jeder Strecke: sie ist das
        Blatt der Führungsstelle, und im Audit sahen darauf alle Strecken gleich
        aus. Die Auftragsblätter bekommen ihn nicht – sie zeigen den Auftrag. */
-    const sl = new StreckenLayer(karte, {
+    sl = new StreckenLayer(karte, {
       interaktiv: false, sw, strichFaktor: strichFaktor(mass), strichbreite: strichbreite(opt),
       nurStrecken: auftrag.strecken.map(s => s.id),
       punktzeichen: opt.punktzeichen !== false,
@@ -1583,6 +1615,11 @@ function baueLagekarte(buehne, auftrag, opt, mass, sw, karten, mitte = null, sta
       dichter: true
     }).zeichne({ gitter: true });
   }
+  /* Die Gitterangabe steht erst jetzt auf dem Blatt, Nordpfeil und Maßstab
+     kommen mit den Kacheln zu ihrer Größe (`massstabSchreiben`): die Schilder
+     sind beim ersten Setzen an beiden vorbeigeplant worden, ohne sie zu
+     sehen. Die Platzsuche läuft deshalb hier und mit dem Maßstab noch einmal. */
+  if (sl) { karte._fbpStrecken = sl; sl.schilderNeu(); }
   karten.push(karte);
   return karte;
 }
@@ -2056,7 +2093,10 @@ function sammelStammHTML(p, auftrag, opt = null) {
         : [['Umfang', auftrag.umfang === 'ohne'
             ? 'Strecken ohne Einsatzabschnitt' : 'alle Strecken der Planung']]),
     ...(mitte ? [['Eingemittet auf', abschnittPfad(p, mitte.id)]] : []),
-    ['Erstellt von', p.kopf.ersteller]
+    /* Ein Strich las sich wie ein Druckfehler. Auf einem Blatt, das an der Wand
+       der Führungsstelle hängt, ist „wer hat das erstellt, wen frage ich“ die
+       erste Nachfrage – dass es niemand eingetragen hat, soll dort stehen. */
+    ['Erstellt von', p.kopf.ersteller || 'nicht angegeben (Kopfdaten)']
   ]);
 }
 
@@ -2191,6 +2231,9 @@ function standmarkenLegendeHTML(strecken, stand = Date.now()) {
   const abw = [...warn].find(w => / Abw\.$/.test(w));
   if (abw) teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ ' + escapeHtml(abw))}` +
     'Punkte abweichend vom Plan gebaut</span>');
+  if (warn.has('Prüfung nicht bestanden')) teile.push(
+    `<span class="lg-eintrag">${marke('bz-warn bz-fehl', '✖ Prüfung nicht bestanden')}` +
+    'Übernahmemessung durchgefallen – nicht zu übergeben</span>');
   if (warn.has('abseits')) teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ abseits')}` +
     'Punkt weit neben der Trasse</span>');
   if (zeilen.some(z => z.meldung)) teile.push(`<span class="lg-eintrag">${marke('bz-s6', '✉ S&nbsp;6 (1)')}` +
@@ -2198,8 +2241,17 @@ function standmarkenLegendeHTML(strecken, stand = Date.now()) {
   /* Die zweite Zeile des Schildes und das Wort für die Überfälligkeit: beides
      erklärt sich nicht von selbst, und „zuletzt“ allein sagt nicht, wessen
      Eintrag gemeint ist. */
+  /* Als Beispiel gekennzeichnet: die Probe stand nach dem Lagestand und sah
+     aus wie ein echter Eintrag – „1. FmTr · zuletzt 21:28“ wurde als Meldung
+     gelesen. Die Uhrzeit gilt für den Tag des Lagestandes, ein früherer Tag
+     steht mit Datum im Schild. */
   if (zeilen.some(z => z.trupp || z.zuletzt)) teile.push('<span class="lg-eintrag">' +
-    '<span class="lg-zeitzeile">1. FmTr · zuletzt&nbsp;21:28</span>Trupp und Uhrzeit des letzten Eintrags</span>');
+    '<span class="lg-zeitzeile">z.&nbsp;B. 1. FmTr · zuletzt&nbsp;21:28</span>' +
+    'Trupp und Uhrzeit des letzten Eintrags am Tag des Lagestandes, sonst mit Datum</span>');
+  if (zeilen.some(z => z.ausfall)) {
+    teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ Gerät ausgefallen – Papier')}` +
+      'Der Trupp baut auf Papier; es kommt keine Meldung, bis nachgetragen wird</span>');
+  }
   if (strecken.some(s => ueberfaelligSeit(s, stand))) {
     teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ seit&nbsp;3&nbsp;h ohne Meldung')}` +
       'Strecke im Bau, seit der genannten Zeit kein Eintrag</span>');
@@ -3287,6 +3339,9 @@ function massstabSchreiben(blattEl, karte) {
   el.querySelector('.ms-text').innerHTML =
     `<b>${stufe >= 1000 ? (stufe / 1000).toLocaleString('de-DE') + ' km' : stufe + ' m'}</b>` +
     `<span>Maßstab ca. 1 : ${rundNenner(nenner).toLocaleString('de-DE')}</span>`;
+  /* Der Kasten hat jetzt seine Breite – die Schilder der Lagekarte weichen ihm
+     erst von hier an richtig aus. */
+  if (karte._fbpStrecken) karte._fbpStrecken.schilderNeu();
 }
 
 function rundNenner(n) {
@@ -3403,7 +3458,7 @@ function baudokublaetter(ziel, strecke, opt, mass, sw, karten, kartenbau) {
     const uk = ukBuehne ? baueUebersichtskarte(ukBuehne, strecke, mass, sw, karten, null, beide) : null;
     massstabSchreiben(b1, karte);
     return Promise.all([warteAufKacheln(karte, kachelfrist(mass)), uk ? warteAufKacheln(uk) : null])
-      .then(() => massstabSchreiben(b1, karte));
+      .then(([grund]) => { massstabSchreiben(b1, karte); kartengrundMelden(b1, grund); });
   });
 }
 
@@ -3654,14 +3709,21 @@ function baudokuKennzahlenHTML(k, strecke) {
      als hätte der Trupp kürzer gebaut. Die Zeile sagt, wo die Meter fehlen:
      nicht gebaut ist nicht aufgenommen, und das Stück liegt zwischen zwei
      Abschnitten. */
+  /* Jede Lücke nennt ihre Punktnummern, die der Planung: am Bauort wird nach
+     „Pkt. 4–6“ gesucht und nicht nach „zwischen zwei Punkten“. Ein Punkt ohne
+     Planbezug hat keine Nummer – dann steht dort ein Fragezeichen. */
+  const plannr = pt => {
+    const i = pt && pt.sollPunkt ? strecke.punkte.findIndex(q => q.id === pt.sollPunkt) : -1;
+    return i >= 0 ? i + 1 : '?';
+  };
   const lueckenZeile = k.bauluecken.length
     ? `<p class="bl-luecke">${k.bauluecken.map(l => {
         const a = bauabschnittById(strecke, l.von.abschnitt), b = bauabschnittById(strecke, l.bis.abschnitt);
         const wo = a && b && a.id !== b.id
           ? `zwischen den Abschnitten ${escapeHtml(a.trupp || a.name)} und ${escapeHtml(b.trupp || b.name)}`
           : 'zwischen zwei aufgenommenen Punkten';
-        return `<b>Lücke ${wo}:</b> ${escapeHtml(formatLaenge(l.laenge))} nicht aufgenommen – ` +
-          'kein Minderbau, sondern noch offen.';
+        return `<b>Lücke ${wo} (Pkt.&nbsp;${plannr(l.von)}–${plannr(l.bis)}):</b> ` +
+          `${escapeHtml(formatLaenge(l.laenge))} nicht aufgenommen – kein Minderbau, sondern noch offen.`;
       }).join(' ')}</p>` : '';
   return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>
     `<div class="kz"><span class="kz-titel">${escapeHtml(t)}</span>` +
@@ -3932,8 +3994,15 @@ function bauabschnittHTML(s) {
 function vonBisText(s, a) {
   const nr = pid => { const i = s.punkte.findIndex(pt => pt.id === pid); return i >= 0 ? i + 1 : null; };
   const von = nr(a.vonPunkt), bis = nr(a.bisPunkt);
-  if (!von && !bis) return '–';
-  return `Pkt. ${von || '?'}–${bis || '?'}`;
+  if (von || bis) return `Pkt. ${von || '?'}–${bis || '?'}`;
+  /* Hat der Trupp „von … bis …“ nicht erklärt, steht dort, was er aufgenommen
+     hat – statt eines Striches, der aussah wie „nichts gebaut“. */
+  const eigene = istPunkte(s).filter(pt => pt.abschnitt === a.id);
+  if (!eigene.length) return '–';
+  const nummern = eigene.map(pt => s.punkte.findIndex(q => q.id === pt.sollPunkt) + 1).filter(n => n > 0);
+  const zahl = `${eigene.length} aufgenommen`;
+  return nummern.length
+    ? `${zahl} (Pkt. ${Math.min(...nummern)}–${Math.max(...nummern)})` : zahl;
 }
 
 /* „14:20 nach Pkt. 3“ – der Geräteausfall am Abschnitt oder am Bau-Block */
