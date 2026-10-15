@@ -44,6 +44,15 @@ const RUHE = 12000;
    und jeder Versuch hält das Gerät bis zur Frist am Netz. */
 const NACHVERSUCH = 60000;
 
+/* Bis wann die Pause nach einer Anfrage ohne Antwort gilt. Ohne diese Marke
+   überschrieb jede Änderung, die während des hängenden Durchgangs kam, die
+   Pause von 60 s mit den 12 s der Ruhezeit (`.finally` in `jetztAbgleichen`,
+   ebenso jede Eingabe danach): ein Speicher, der nicht antwortet, wurde so
+   alle zwölf Sekunden neu belagert, und das Gerät hing bei jedem Versuch bis
+   zur Frist am Netz. Die Pause gilt für das Vormerken – ein Griff des Nutzers
+   („Jetzt abgleichen“) und die Rückkehr des Netzes setzen sich darüber hinweg. */
+let pauseBis = 0;
+
 const zustandSchluessel = pid => 'abgleich:' + pid;
 
 // ---------------------------------------------------------------- Zustand
@@ -58,7 +67,8 @@ let lage = {
   stand: 'aus',        // aus | bereit | laeuft | ausstehend | fehler | konflikt | anmeldung
   meldung: '',
   seit: null,          // Zeitpunkt der letzten vollständigen Übertragung
-  konflikt: null       // { pid, name, meine, fremde, fremdesProjekt }
+  konflikt: null,      // { pid, name, meine, fremde, fremdesProjekt }
+  vertagt: false       // der Konflikt steht, „Später entscheiden“ war gedrückt
 };
 
 export const abgleichLage = () => lage;
@@ -113,7 +123,14 @@ export async function abgleichStarten() {
 /** Eine Änderung vormerken – übertragen wird erst, wenn Ruhe eingekehrt ist */
 export function vormerken(wartezeit = RUHE) {
   if (lage.stand === 'aus' || lage.stand === 'konflikt') return;
-  if (lage.stand !== 'laeuft') setzen({ stand: 'ausstehend', meldung: '' });
+  /* Die Pause nach einer Anfrage ohne Antwort wird nie verkürzt, nur verlängert;
+     mit ihr bleibt auch die Auskunft stehen, warum nichts hinausgeht. */
+  const rest = pauseBis - Date.now();
+  const inPause = rest > 0;
+  if (inPause) wartezeit = Math.max(wartezeit, rest);
+  if (lage.stand !== 'laeuft') {
+    setzen({ stand: 'ausstehend', meldung: inPause ? lage.meldung : '' });
+  }
   clearTimeout(ruheTimer);
   ruheTimer = setTimeout(() => { jetztAbgleichen().catch(() => {}); }, wartezeit);
 }
@@ -165,6 +182,7 @@ async function durchgang() {
 
     const jetzt = new Date().toISOString();
     await ablageSchreiben('abgleich-stand', jetzt);
+    pauseBis = 0;
     setzen({ stand: 'bereit', meldung: '', seit: jetzt });
   } catch (e) {
     if (e instanceof CloudFehler && e.erneuern) {
@@ -186,6 +204,7 @@ async function durchgang() {
        nächsten Änderungsereignis ausstehend, und wer nichts mehr ändert, hätte
        ein Gerät, das nie mehr überträgt. */
     if (e instanceof CloudFehler && e.zeitueberschreitung) {
+      pauseBis = Date.now() + NACHVERSUCH;
       vormerken(NACHVERSUCH);          // setzt die Meldung zurück – deshalb davor
       setzen({ stand: 'ausstehend',
         meldung: 'Der Speicher antwortet nicht – der Versuch wird wiederholt.' });
@@ -500,6 +519,7 @@ async function konfliktStellen(projekt, ordner, fern, z) {
   }
   setzen({
     stand: 'konflikt',
+    vertagt: false,
     meldung: `„${projekt.name}“ wurde auch auf einem anderen Gerät geändert.`,
     konflikt: {
       pid: projekt.id,
@@ -526,8 +546,23 @@ const umfang = p => ({
   /* Zwei Stände, die sich nur in der Baudokumentation unterscheiden, sind
      nicht gleich groß. Ohne diese Zeile stünden im Konfliktdialog zwei
      scheinbar identische Planungen, zwischen denen niemand entscheiden kann. */
-  istPunkte: (p.strecken || []).reduce((n, s) => n + ((s.bau && s.bau.punkte) || []).length, 0)
+  istPunkte: (p.strecken || []).reduce((n, s) => n + ((s.bau && s.bau.punkte) || []).length, 0),
+  /* Wer hinter dem Stand steht. Die Planungsdatei kennt kein Gerät – was sich
+     sagen lässt, sind die Trupps in den Bauabschnitten und der Absender der
+     zuletzt eingespielten Meldung. Bei gleichen Zahlen ist das das Einzige,
+     woran der Nutzer erkennt, WESSEN Stand er gleich überschreibt. */
+  trupps: truppsVon(p)
 });
+
+function truppsVon(p) {
+  const namen = new Set();
+  for (const s of p.strecken || []) {
+    const bau = s.bau || {};
+    for (const a of bau.abschnitte || []) if (a.trupp) namen.add(String(a.trupp));
+    if (bau.gemeldetVon) namen.add(String(bau.gemeldetVon));
+  }
+  return [...namen];
+}
 
 /**
  * Den Konflikt entscheiden.
@@ -581,7 +616,9 @@ export async function konfliktEntscheiden(wahl) {
       await hochladenGegen(rs, meins, k);
     }
 
-    setzen({ stand: 'bereit', meldung: '', konflikt: null, seit: new Date().toISOString() });
+    pauseBis = 0;
+    setzen({ stand: 'bereit', meldung: '', konflikt: null, vertagt: false,
+      seit: new Date().toISOString() });
   } catch (e) {
     /* Ein dritter Stand am Speicher: der Konflikt von eben stimmt nicht mehr,
        der nächste Durchgang stellt ihn neu. */
@@ -634,7 +671,14 @@ function danebenlegen(projekt, herkunft) {
 
 /** Einen anstehenden Konflikt fallen lassen, ohne zu entscheiden */
 export function konfliktVertagen() {
-  setzen({ stand: 'ausstehend', meldung: 'Der Konflikt ist noch offen.', konflikt: null });
+  /* Der Konflikt bleibt in der Lage stehen. Vorher wurde er hier auf `null`
+     gesetzt: der Knopf „Konflikt klären“ im Dialog „Eigener Speicher“ war weg,
+     die Zeile glich einem gewöhnlichen Warten, und erst der nächste Durchgang
+     stellte denselben Konflikt neu und warf den Dialog wieder auf – mitten in
+     die Arbeit. Jetzt ruht die Übertragung (`durchgang` und `vormerken` lassen
+     den Stand `konflikt` in Ruhe), und der Weg zurück ist der Speicherknopf. */
+  setzen({ stand: 'konflikt', vertagt: true,
+    meldung: 'Konflikt offen – später entscheiden.' });
 }
 
 // ---------------------------------------------------------------- Speicherliste
@@ -706,7 +750,8 @@ export async function abgleichVergessen() {
   for (const p of Object.values(ladeAlle())) await ablageLoeschen(zustandSchluessel(p.id));
   await ablageLoeschen('abgleich-stand');
   clearTimeout(ruheTimer);
-  setzen({ stand: 'aus', meldung: '', seit: null, konflikt: null });
+  pauseBis = 0;
+  setzen({ stand: 'aus', meldung: '', seit: null, konflikt: null, vertagt: false });
 }
 
 /** Wann zuletzt vollständig übertragen wurde – überlebt das Neuladen der Seite */

@@ -1046,6 +1046,57 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   b.pruefe(griffErgebnis.length >= 2 && griffErgebnis.every(z => z === 'punkt'),
     `Der Finger auf dem Punkt trifft den Punkt (${griffErgebnis.length} Berührungen: `
     + `${[...new Set(griffErgebnis)].join(', ') || 'keine'})`);
+  /* Nach jedem Neuzeichnen stand `zu-nah` wieder auf „aus“, bis jemand zoomte:
+     das `add` der Griffe kommt, bevor ihre Gruppe an der Karte hängt. Hier
+     Umbenennen, Punkt ändern und Rückgängig – danach muss die Klasse stehen,
+     und der Randstreifen 24 bis 33 px neben dem Punkt (dort lag die Zone des
+     Griffes über der des Punktes) darf nach dem Neuzeichnen keinen Griff mehr
+     treffen, der als zu nah markiert ist. */
+  const griffStand = () => seite.auswerten(`
+    const marken = [...document.querySelectorAll('.fbp-punkt')].map(e => {
+      const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    return [...document.querySelectorAll('.fbp-einfuegen')].map(e => {
+      const r = e.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const m = marken.reduce((a, q) => !a || Math.hypot(q.x - x, q.y - y) < Math.hypot(a.x - x, a.y - y) ? q : a, null);
+      return { x, y, mx: m.x, my: m.y, d: Math.hypot(m.x - x, m.y - y), zuNah: e.classList.contains('zu-nah'),
+        im: x > 30 && x < innerWidth - 30 && y > 140 && y < innerHeight - 140 };
+    });`);
+  const falsch = g => g.filter(x => (x.d < 28) !== x.zuNah).length;
+  const schritte = [
+    ['Umbenennen', `const st = window.fbp.store.projekt.strecken[0]; window.fbp.store.aendern(() => { st.name = 'Umbenannt'; }, 'strecke'); return 1`],
+    ['Punkt ändern', `const st = window.fbp.store.projekt.strecken[0]; window.fbp.store.aendern(() => { st.punkte[1].lat += 0.000004; }, 'strecke'); return 1`],
+    ['Rückgängig', null]
+  ];
+  for (const [name, code] of schritte) {
+    if (code) await seite.auswerten(code); else await seite.klick('#btn-undo');
+    await seite.ruhe();
+    const g = await griffStand();
+    b.pruefe(g.length >= 2 && falsch(g) === 0,
+      `Nach „${name}“ tragen genau die Griffe unter 28 px am Punkt noch „zu-nah“ `
+      + `(${g.length} Griffe, falsch markiert: ${falsch(g)})`);
+  }
+  /* Zum Messen müssen Griffe abgerückt sein: in dieser Lage stehen sie weiter
+     als 28 px auseinander. Herausgezoomt rücken sie an die Punkte heran. */
+  let rand = await griffStand();
+  for (let i = 0; i < 4 && !rand.some(x => x.zuNah && x.im); i++) {
+    await seite.auswerten('window.fbp.karte.zoomOut(1, { animate: false }); return 1');
+    await seite.ruhe();
+    rand = await griffStand();
+  }
+  const randZiele = [];
+  for (const g of rand.filter(x => x.zuNah && x.im)) {
+    for (const weg of [24, 28, 33]) {
+      const dx = (g.x - g.mx) / g.d, dy = (g.y - g.my) / g.d;
+      await seite.auswerten('window._griffZiele.length = 0; return 1');
+      await seite.tippe(Math.round(g.mx + dx * weg), Math.round(g.my + dy * weg));
+      randZiele.push(...await seite.auswerten('return window._griffZiele.slice()'));
+      await seite.auswerten(`window.fbp.sl.waehle(window.fbp.store.projekt.strecken[0].id); return 1`);
+    }
+  }
+  b.pruefe(randZiele.length >= 3 && randZiele.every(z => z !== 'griff'),
+    `Im Randstreifen 24 bis 33 px neben dem Punkt nimmt ein abgerückter Griff keine Berührung an `
+    + `(${randZiele.length} Berührungen: ${[...new Set(randZiele)].join(', ') || 'keine'}; `
+    + `Griffe ${rand.length}, abgerückt ${rand.filter(x => x.zuNah).length}, im Bild ${rand.filter(x => x.im).length})`);
   await seite.ruhe();
 
   b.abschnitt('Aus der Übersicht wird in Stufen herangeholt, Suche und Standort stehen bereit');
@@ -1387,13 +1438,20 @@ const seitenGriffe = await zuKleineGriffe('.seite',
       return await t.alsLink(io.streckeAlsProjekt(window.fbp.store.projekt.strecken[0].id));`);
     await seite.auswerten(`location.hash = ${JSON.stringify(link.split('#')[1])}; return true;`);
   };
-  /* Nach „Verwerfen“ einer Baumeldung steht die Funkformel für den Trupp da;
-     sie geht wie jeder gewöhnliche Dialog mit Esc zu. */
+  /* Nach „Verwerfen“ einer Baumeldung steht die Funkformel für den Trupp da.
+     Sie geht NICHT mit Esc zu – ein Tipp neben den Dialog nahm sie ungelesen
+     weg (Runde 8) –, sondern mit ihrem Knopf, und zwar erst nach der Sperre
+     von 400 ms. Dass Esc sie stehen lässt, wird hier mitgeprüft. */
   const meldungVerwerfen = async () => {
     await fussKnopfDruecken('Verwerfen');
     await seite.warteAuf('!document.getElementById("dialog").hidden && ' +
       'document.getElementById("dialog-titel").textContent === "Dem Trupp durchgeben"', 5000);
     await seite.taste('Escape');
+    if (await seite.auswerten('return document.getElementById("dialog").hidden')) {
+      throw new Error('Die Funkformel ging auf Esc zu');
+    }
+    await new Promise(r => setTimeout(r, 450));
+    await fussKnopfDruecken('Schließen');
   };
   /* Der Gerätestandort für „Punkt hier“ – ohne ihn gäbe es keine Punktkarte
      zu messen. */
@@ -2197,6 +2255,62 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   b.pruefe(menue.rollt, `Alle ${menue.anzahl} Einträge sind durch Rollen erreichbar`);
   await seite.taste('Escape');
 
+  b.abschnitt('Telefon quer: Zeichenleiste, Meldung und Zielmerker lassen Karte und Reiter frei');
+  /* Drei Befunde der achten Runde, quer bei 844×390 und 667×375: die Leiste
+     des Zeichnens stand dreizeilig (84 px) auf dem unteren Kartenband, und der
+     dritte von drei Tipps fiel auf sie statt auf die Karte; die Meldung „oben“
+     lag über der Reiterzeile; der Merker „an Strecke A“ ragte in die
+     Unterkante der Bauleiste. */
+  for (const [breite, hoehe] of [[844, 390], [667, 375]]) {
+    await stelleEin(breite, hoehe);
+    if (await seite.auswerten(`return document.body.classList.contains('baumodus')`)) {
+      await seite.klick('#btn-modus');
+      await new Promise(r => setTimeout(r, 500));
+    }
+    await karteVorn();
+    await seite.auswerten(`window.fbp.karte.setView([51.8020, 10.6180], 16, { animate: false }); return true;`);
+    await seite.klick('#wz-strecke');
+    await seite.tippe(Math.round(breite * 0.45), Math.round(hoehe * 0.4));
+    await seite.tippe(Math.round(breite * 0.6), Math.round(hoehe * 0.4));
+    const leiste = await seite.auswerten(`
+      const r = document.getElementById('zeichen-hinweis').getBoundingClientRect();
+      return { hoch: Math.round(r.height), oben: Math.round(r.top) };`);
+    const vor = await seite.auswerten('return window.fbp.store.projekt.strecken.at(-1).punkte.length');
+    await seite.tippe(Math.round(breite * 0.5), hoehe - 150);
+    const nach = await seite.auswerten('return window.fbp.store.projekt.strecken.at(-1).punkte.length');
+    b.pruefe(leiste.hoch <= 62 && nach === vor + 1,
+      `${breite}×${hoehe}: die Zeichenleiste misst ${leiste.hoch} px (höchstens 62), `
+      + `und ein Tipp im unteren Kartenband setzt den Punkt (${vor} → ${nach})`);
+    await seite.taste('Escape');
+    await seite.ruhe();
+
+    await seite.klick('#btn-modus');
+    await new Promise(r => setTimeout(r, 600));
+    await karteVorn();
+    await seite.klick('#aw-liste');
+    await new Promise(r => setTimeout(r, 450));
+    await seite.auswerten(`const m = await import('./js/ui.js'); m.hinweis('Punkt 2 bestätigt', 'info oben'); return true;`);
+    await new Promise(r => setTimeout(r, 300));
+    const pille = await seite.auswerten(`
+      const p = document.getElementById('hinweisbox').getBoundingClientRect();
+      const r = document.querySelector('.reiter').getBoundingClientRect();
+      return { pilleOben: Math.round(p.top), reiterUnten: Math.round(r.bottom), reiterBreit: r.width > 0 };`);
+    b.pruefe(pille.reiterBreit && pille.pilleOben >= pille.reiterUnten,
+      `${breite}×${hoehe}: die Meldung oben beginnt bei ${pille.pilleOben} px, unter der Reiterzeile (bis ${pille.reiterUnten})`);
+    await seite.auswerten(`const m = await import('./js/ui.js'); m.hinweisAus(); return true;`);
+    await karteVorn();
+
+    const chip = await seite.auswerten(`
+      const z = document.getElementById('bau-ziel'), w = document.querySelector('.werkzeuge');
+      if (!z || z.hidden) return null;
+      return { chipOben: Math.round(z.getBoundingClientRect().top), leisteUnten: Math.round(w.getBoundingClientRect().bottom) };`);
+    b.pruefe(chip && chip.chipOben >= chip.leisteUnten + 2,
+      chip ? `${breite}×${hoehe}: der Zielmerker beginnt ${chip.chipOben - chip.leisteUnten} px unter der Bauleiste`
+           : `${breite}×${hoehe}: der Zielmerker steht nicht da`);
+    await seite.klick('#btn-modus');
+    await new Promise(r => setTimeout(r, 500));
+  }
+
   b.abschnitt('Querformat: ein hoher Dialog verliert seinen Fuß nicht');
   await seite.klick('#btn-hilfe');
   await seite.warteAuf('!document.getElementById("dialog").hidden');
@@ -2217,6 +2331,35 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   b.pruefe(dialog.erreichbar,
     `Der Fußknopf ist erreichbar (Unterkante ${dialog.unten}, Fenster ${dialog.schirm})`);
   await seite.taste('Escape');
+
+  /* „Trupp wechseln“ mit Einträgen: drei Fußknöpfe liefen auf dem Telefon
+     ineinander (gemessen 125 von 89 px). Der Dialog wird mit dem Rahmen und den
+     drei Beschriftungen des echten aufgebaut – das Maß hängt an der Klasse
+     `trupp-wechseln` im Inhalt und an den Fußknöpfen. */
+  b.abschnitt('Trupp wechseln: die drei Fußknöpfe laufen schmal nicht ineinander');
+  for (const [w, h] of [[320, 568], [360, 740], [390, 844], [844, 390]]) {
+    await stelleEin(w, h);
+    await seite.auswerten(`
+      const ui = await import('./js/ui.js');
+      ui.dialog({ titel: 'Trupp wechseln', inhalt: '<div class="trupp-wechseln"><p>Probe</p></div>',
+        fuss: [{ text: 'Abbrechen' }, { text: 'Anderer Trupp übernimmt', tun: () => {} },
+          { text: 'Nur Namen korrigieren', tun: () => {} }] });
+      await new Promise(r => setTimeout(r, 450)); return true;`);
+    const knoepfe = await seite.auswerten(`return [...document.querySelectorAll('#dialog-fuss .knopf')]
+      .map(k => { const r = k.getBoundingClientRect();
+        return { t: k.textContent, ueber: k.scrollWidth > k.clientWidth, h: Math.round(r.height),
+          y: Math.round(r.top), x: Math.round(r.left), b: Math.round(r.width) }; })`);
+    b.pruefe(knoepfe.length === 3 && knoepfe.every(k => !k.ueber),
+      `${w}×${h}: kein Fußknopf läuft über (${knoepfe.map(k => k.b).join('/')} px breit)`);
+    b.pruefe(knoepfe.every(k => k.h >= 44), `${w}×${h}: jeder Fußknopf trägt Handschuhmaß`);
+    if (w < 600 && h > 500) {
+      b.pruefe(knoepfe.every((k, i) => i === 0 || knoepfe[i - 1].y !== k.y || knoepfe[i - 1].t === 'Abbrechen'),
+        `${w}×${h}: die Wege stehen untereinander`);
+      b.pruefe(knoepfe[0].y > knoepfe[2].y, `${w}×${h}: „Abbrechen“ steht zuletzt`);
+    }
+    await seite.taste('Escape');
+    await seite.ruhe();
+  }
 
   // ------------------------------------------------------------ Tablet nebeneinander
 

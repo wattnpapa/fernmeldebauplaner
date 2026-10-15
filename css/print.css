@@ -578,6 +578,8 @@ body.druckansicht { overflow: hidden; }
   color: #fff; font-size: .62em; font-weight: 700; font-style: normal;
 }
 .lg-punkt-ist.mit-kurz { width: 4mm; height: 4mm; }
+.lg-eintrag .ist-abschnitt { font-size: .75em; font-style: normal; border-width: .6pt;
+  margin-right: 1mm; padding: 0 .8mm; }
 .druck-doku.sw .lg-linie.lg-abw { border-top-color: #444; }
 
 /* Baudokumentation: die Aufteilung des Materials je Abschnitt unter der Summe.
@@ -586,7 +588,7 @@ body.druckansicht { overflow: hidden; }
 .mat-unter td { color: #333; border-top: .4pt dotted #888; }
 .mat-einzug { padding-left: 4mm; }
 /* Die Lücke zwischen zwei Abschnitten, in einem Satz unter den Kennzahlen */
-.bl-luecke { margin: 1.2mm 0 0; font-size: .85em; line-height: 1.35; }
+.bl-luecke, .bl-truppzeile { margin: 1.2mm 0 0; font-size: .85em; line-height: 1.35; }
 /* Musterstück der Kabelart: das Zeichen sitzt im Linienzug, genau wie auf
    der Karte – die Linie läuft als Hintergrund hinter Strichen und Ziffern. */
 .lg-kabel {
@@ -1274,11 +1276,19 @@ body.druckansicht { overflow: hidden; }
 .karten-inner .strecken-mass b { font-size: calc(8.5px * var(--karten-schrift)); }
 .karten-inner .strecken-mass .wert { font-size: calc(9px * var(--karten-schrift)); }
 .karten-inner .strecken-mass .zus { font-size: calc(7px * var(--karten-schrift)); }
-.karten-inner .strecken-mass .schild-bau { font-size: calc(7px * var(--karten-schrift)); color: #333; }
+/* 8 statt 7 px: Trupp und Uhrzeit sind das, was an der Wand zuerst gelesen
+   wird, und standen im Review „sehr klein“ unter dem Schild. */
+.karten-inner .strecken-mass .schild-bau { font-size: calc(8px * var(--karten-schrift)); color: #333; }
 .karten-inner .schild-nr, .karten-inner .linien-nr {
   border-width: calc(1px * var(--karten-schrift));
 }
 .karten-inner .linien-nr { font-size: calc(8.5px * var(--karten-schrift)); }
+.karten-inner .ist-abschnitt {
+  font-size: calc(8.5px * var(--karten-schrift));
+  border-width: calc(1px * var(--karten-schrift));
+  border-radius: calc(2px * var(--karten-schrift));
+}
+.karten-inner .strecken-mass .bz-luecke { font-size: calc(8px * var(--karten-schrift)); }
 /* Der Baustand im Schild der Lagekarte: in der Größe der Längenangabe und
    als Block mit eigener Zeilenhöhe. Mit den 10 px der Arbeitskarte stand er im
    Audit winzig auf der Unterkante des Schildes und wurde dort angeschnitten. */

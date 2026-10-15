@@ -722,7 +722,15 @@ const gehoertZu = (a, ich) =>
  * sie hängt von nichts ab.
  */
 export function truppSchluessel(name) {
-  return String(name || '').toLowerCase().replace(/[\s.\u00a0]+/g, '');
+  /* Ziffer, Punkt, Ziffer ist eine Nummer („1.2 FmTr“), kein Gliederungspunkt:
+     der Schlüssel strich ihn mit allen anderen Punkten und machte „1.2 FmTr“
+     zu „12 FmTr“. Er bleibt hier als Komma stehen. Der Bindestrich gilt wie
+     das Leerzeichen („FmTr-1“ = „FmTr 1“), zwischen Ziffern aber ebenso als
+     Trenner. Bestehende Zuordnungen bleiben: alles, was vorher gleich war,
+     und nichts als diese Nummern, ist weiter gleich. */
+  return String(name || '').normalize('NFKC').toLowerCase()
+    .replace(/(\d)[.\-–](?=\d)/g, '$1,')
+    .replace(/[\s.\u00a0\-–_\u00ad]+/g, '');
 }
 
 /** Hieß dieses Gerät früher so? (Siehe `truppAmGeraetSetzen`.) */
@@ -791,7 +799,8 @@ export function absenderText(strecken) {
          „1. FmTr“ eines anderen Geräts nicht zu unterscheiden – im Audit
          baute ein zweiter Trupp unter der vorgewählten Bezeichnung des ersten,
          und die Warnung vor einem anderen Absender schlug nicht an. */
-      const fuehrer = a.fuehrer || (a.trupp === v.trupp ? v.fuehrer : '');
+      const fuehrer = a.fuehrer ||
+        (truppSchluessel(a.trupp) === truppSchluessel(v.trupp) ? v.fuehrer : '');
       ausAbschnitten.add([a.trupp, fuehrer].filter(Boolean).join(' · '));
     }
   }
@@ -1155,7 +1164,8 @@ function ortZurTrasse(b, punkte, nurIst) {
  * das, was nach dem Auftrag noch zu bauen ist, und so lang ist sie auch.
  *
  * @returns {{stuecke: object[][], luecken: {von:object, bis:object,
- *   punkte:object[], laenge:number}[], laenge:number, lueckeLaenge:number}}
+ *   punkte:object[], laenge:number}[], laenge:number, lueckeLaenge:number,
+ *   treffpunkte: {nummer:number, abschnitte:string[]}[]}}
  */
 export function istVerlauf(strecke) {
   const ist = istPunkte(strecke);
@@ -1222,7 +1232,21 @@ export function istVerlauf(strecke) {
 
   const laenge = stuecke.reduce((n, st) => n + (st.length >= 2 ? streckenlaenge(st) : 0), 0);
   const lueckeLaenge = luecken.reduce((n, l) => n + l.laenge, 0);
-  return { stuecke, luecken, laenge, lueckeLaenge };
+  /* Die Treffpunkte: Planpunkte, die zwei Bauabschnitte bestätigt haben. Auf
+     dem Blatt der Baudokumentation stand bisher nur die Lücke – wo sich die
+     Trupps trafen, war dort so wenig zu lesen wie, wer welches Stück gebaut
+     hat. `nummer` ist die Nummer des Planpunktes (ab 1), `abschnitte` die
+     Kennungen der Abschnitte, in der Reihenfolge ihrer Bauabschnitte. */
+  const bestaetiger = new Map();
+  for (const pt of ist) {
+    const r = rang(pt);
+    if (r === null || !pt.abschnitt) continue;
+    if (!bestaetiger.has(r)) bestaetiger.set(r, new Set());
+    bestaetiger.get(r).add(pt.abschnitt);
+  }
+  const treffpunkte = [...bestaetiger.entries()].filter(([, a]) => a.size > 1)
+    .sort((a, b) => a[0] - b[0]).map(([r, a]) => ({ nummer: r + 1, abschnitte: [...a] }));
+  return { stuecke, luecken, laenge, lueckeLaenge, treffpunkte };
 }
 
 /**
@@ -1300,6 +1324,7 @@ export function baukennzahlen(strecke) {
        kleiner ist als die geplante. */
     bauluecken: verlauf.luecken,
     lueckeLaenge: verlauf.lueckeLaenge,
+    treffpunkte: verlauf.treffpunkte,
     /* Der Unterschied der Trassenlängen – die Zahl, die im Bauauftrag neben der
        geplanten steht. Ohne Vorzeichenspiel: kürzer ist so wenig „besser“ wie
        länger „schlechter“, beides ist eine Abweichung vom Auftrag. */
@@ -1446,8 +1471,10 @@ export function bauzeile(strecke) {
   const zurueck = b.uebergabeZurueckZeit && b.stand !== 'uebergeben'
     ? { zeit: b.uebergabeZurueckZeit,
         staemme: String(b.uebergabeZurueckStaemme || '').split('\n').filter(Boolean) } : null;
+  /* Die Länge der Lücke auch einzeln: die Lagekarte trägt sie im Schild, und
+     dort lässt sich aus dem Fließtext oben nichts herauslesen. */
   return { stand: k.stand, text: teile.join(' · '), warnungen, meldung, zuletzt, trupp: truppText,
-    ausfall, zurueck };
+    ausfall, zurueck, luecke: k.lueckeLaenge || 0 };
 }
 
 /** Ist das Gerät ausgefallen – am Bau-Block oder an einem Bauabschnitt? Dann

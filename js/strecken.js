@@ -4,7 +4,7 @@ import { distanz, kumuliert, formatLaenge, meter, punktBeiLaenge, standortText }
 import { store, neuerPunkt, punktartById, kabelById, streckeSichtbar, bauBegonnen, baustandById } from './state.js';
 import {
   istPunkte, sollZuIst, istPunktSetzen, sollPunktGeloescht, ABWEICHUNG_SCHWELLE,
-  istKurz, punktartText, istVerlauf, bauzeile, uhrzeit
+  istKurz, punktartText, istVerlauf, bauzeile, uhrzeit, bauabschnittById
 } from './baudoku.js';
 import { auslegung, querschnittText } from './strom.js';
 import { querungsartById, bauweiseById, querungsMinuten, reichweite, abbindeBedarf,
@@ -739,9 +739,39 @@ export function ueberfaelligSeit(s, jetzt = Date.now()) {
   return min >= MELDUNG_UEBERFAELLIG_MIN ? min : 0;
 }
 
+/* Ein Trupp mit ausgefallenem Gerät schweigt planmäßig und ist deshalb nicht
+   überfällig (`ueberfaelligSeit`). Aber auch Papier hat ein Ende: im Review
+   stand die Notstrom-Strecke nach 4 h 11 min Schweigen unverändert als „Gerät
+   ausgefallen – Papier“, und die Führung hatte keinen Anlass nachzufragen. Nach
+   dieser Zeit heißt es „Papier nachfragen“. Länger als die zwei Stunden der
+   gewöhnlichen Überfälligkeit, weil ein Trupp auf Papier nicht jede Aufnahme
+   funkt, sondern abschnittsweise abschreibt – die Annahme ist ein Richtwert aus
+   dem Review und keine Vorschrift, deshalb steht sie hier und nicht in
+   `vorschrift.js` ohne Fundstelle. Eine Stelle für Liste, Summenband, Schild
+   und Lagekarte. */
+export const AUSFALL_NACHFRAGE_MIN = 180;
+
+/** Wie viele Minuten ein Trupp mit ausgefallenem Gerät schon nichts mehr von
+ *  sich hat hören lassen – 0, wenn das Gerät nicht ausgefallen ist, die Strecke
+ *  nicht im Bau steht oder gar kein Eintrag da ist, von dem aus zu rechnen wäre. */
+export function ausfallSchweigtSeit(s, jetzt = Date.now()) {
+  if (!bauBegonnen(s) || !['offen', 'laeuft'].includes(s.bau.stand)) return 0;
+  const bz = bauzeile(s) || {};
+  if (!bz.ausfall || !bz.zuletzt) return 0;
+  const min = (jetzt - Date.parse(bz.zuletzt)) / 60000;
+  return min > 0 ? min : 0;
+}
+
+/** Wie viele Minuten schweigt ein Trupp auf Papier über die Nachfrageschwelle
+ *  hinaus – 0, solange es noch nicht an der Zeit ist, nachzufragen. */
+export function ausfallNachfrageSeit(s, jetzt = Date.now()) {
+  const min = ausfallSchweigtSeit(s, jetzt);
+  return min >= AUSFALL_NACHFRAGE_MIN ? min : 0;
+}
+
 /** „seit 3 h“ – auf volle Stunden abgerundet, denn am Funk wird „drei Stunden
  *  nichts gehört“ gesagt und nicht „drei Stunden zwölf“. */
-const seitText = min => min >= 1440 ? `seit ${Math.floor(min / 1440)}\u00a0d`
+export const seitText = min => min >= 1440 ? `seit ${Math.floor(min / 1440)}\u00a0d`
   : `seit ${Math.floor(min / 60)}\u00a0h`;
 
 /* Die Strichmuster der Schwarz-Weiß-Lagekarte. Im Schwarz-Weiß-Druck sind alle
@@ -1235,8 +1265,14 @@ export class StreckenLayer {
     }
     this._schilderZoom = null;
     this._schilderVersuche = 0;
+    this._schilderKompaktLauf = 0;
     this._kabelzeichenSetzen();
     this._schilderSetzen();
+    /* Das `add` der Griffe kommt, bevor ihre Gruppe an der Karte hängt: dort
+       gibt es noch kein Element, und die Klasse `zu-nah` blieb nach jedem
+       Neuzeichnen (Umbenennen, Punkt ändern, Rückgängig) auf „aus“, bis
+       jemand zoomte. Erst hier stehen alle Griffe. */
+    this._griffeAbruecken();
   }
 
   /**
@@ -1529,12 +1565,33 @@ export class StreckenLayer {
          und „seit 3 h ohne Meldung“ neben einem Trupp, der planmäßig
          abschreibt, ließ die Führungsstelle nach einem Trupp suchen, der
          nicht verloren ist. Die Marke sagt statt dessen, warum nichts kommt. */
+      /* Auf Papier mit dem Alter des Schweigens: „seit 4 h“ sagt, wie lange
+         nichts kam, und ab `AUSFALL_NACHFRAGE_MIN` heißt es, nachzufragen. Das
+         Alter steht nur auf dem Blatt – die Arbeitskarte zeichnet nicht jede
+         Minute neu, ihr Signal ‚nachfragen‘ kommt aus `kartenSignale`. */
+      const schweigt = bz && bz.ausfall && !this.interaktiv && this.lagestand
+        ? ausfallSchweigtSeit(s, this.lagestand) : 0;
+      const nachfragen = schweigt >= AUSFALL_NACHFRAGE_MIN || (bz && bz.ausfall &&
+        signale.includes('nachfragen'));
       const ausfall = bz && bz.ausfall
-        ? '<span class="bz-marke bz-warn">⚠ Gerät ausgefallen – Papier</span>' : '';
+        ? `<span class="bz-marke bz-warn">⚠ Gerät ausgefallen – ${nachfragen ? 'Papier nachfragen' : 'Papier'}${
+          schweigt >= 60 ? `&nbsp;(${seitText(schweigt)})` : ''}</span>` : '';
+      /* Die aufgehobene Übergabe steht auf dem Blatt, solange die Strecke nicht
+         wieder übergeben ist – anders als in der Liste hängt sie hier nicht an
+         „gesehen“: das Blatt hat keinen Haken, und die Wand der Führungsstelle
+         zeigte im Review „0 von 9 übergeben“ und darunter „gebaut“, ohne dass
+         irgendwo stand, dass eine davon zurückgefallen war. */
+      const zurueck = bz && bz.zurueck && this.mitStand && !this.interaktiv
+        ? `<span class="bz-marke bz-warn bz-zurueck">↩ Übergabe zurückgenommen ${
+          escapeHtml(uhrzeit(bz.zurueck.zeit))}</span>` : '';
+      /* Die Lücke zwischen zwei Bauabschnitten ist offen, aber kein Fehler:
+         sie steht als Wort neben dem Stand, nicht als Warnung. */
+      const lueckeSchild = bz && bz.luecke && this.mitStand && !this.interaktiv
+        ? `<span class="bz-luecke">Lücke&nbsp;${escapeHtml(formatLaenge(bz.luecke))}</span>` : '';
       const signalSchild =
         (signale.includes('neu') ? '<span class="bz-marke bz-neu">neu</span>' : '') +
         (signale.includes('spaet') ? '<span class="bz-marke bz-warn">⚠ ohne Meldung</span>' : '') +
-        ausfall +
+        ausfall + zurueck +
         (seit ? `<span class="bz-marke bz-warn">⚠ ${seitText(seit)} ohne Meldung</span>` : '');
       /* Wer baut und wann zuletzt etwas kam, in einer zweiten, kleinen Zeile:
          im Review trug das Schild weder Trupp noch Zeit, und an der Wand der
@@ -1544,15 +1601,20 @@ export class StreckenLayer {
          (Gruppenführer Wolf)“) läuft im Schild über den Rand, wenn die Zeile
          als Ganzes nicht umbricht – und mit ihm ging die Uhrzeit, die einzig
          Wichtige, über die Kante. Der Trupp bricht um, die Zeit bleibt heil. */
+      /* Jedes Stück in einer eigenen Zeile und ohne „·“ dazwischen: das Schild
+         steht in einem Kasten ohne Breite und nimmt die schmalste Fassung an.
+         „3. FmTr · zuletzt 19:59“ brach an dem Punkt in zwei Zeilen – „3. FmTr
+         ·“ und „zuletzt 19:59“ –, und im Review las sich der Trennpunkt als
+         Satzzeichen eines Schildes mit zwei Trupps. */
       const bauZeile = this.mitStand && bz && (bz.trupp || bz.zuletzt)
         ? `<span class="schild-bau">${[
             bz.trupp ? `<span class="sb-trupp">${escapeHtml(bz.trupp)}</span>` : '',
             bz.zuletzt
               ? `<span class="sb-zeit">zuletzt&nbsp;${escapeHtml(this._zeitText(bz.zuletzt))}</span>` : ''
-          ].filter(Boolean).join(' · ')}</span>` : '';
+          ].filter(Boolean).join('')}</span>` : '';
       const nr = this.sw && this.nummern && this.nummern.has(s.id)
         ? `<i class="schild-nr">${this.nummern.get(s.id)}</i>` : '';
-      const vorrang = !!(bz && (bz.warnungen.length || bz.ausfall)) ||
+      const vorrang = !!(bz && (bz.warnungen.length || bz.ausfall || bz.zurueck)) ||
         signale.includes('spaet') || !!seit;
       /* Die Druckkarte kennt die eigene Schilderebene nicht; dort liegen die
          Griffe ohnehin unter den Beschriftungen. */
@@ -1570,8 +1632,8 @@ export class StreckenLayer {
                      <span class="wert">${formatLaenge(k.trasse)}</span>
                      ${k.zuschlag || k.reserve ? `<span class="zus">${bedarfsHerkunft(k)} → ${formatLaenge(k.bedarf)}</span>` : ''}
                      ${bauZeile}
-                     ${standSchild || warnung || signalSchild
-                       ? `<span class="schild-stand">${standSchild}${warnung}${signalSchild}</span>` : ''}
+                     ${standSchild || warnung || signalSchild || lueckeSchild
+                       ? `<span class="schild-stand">${standSchild}${lueckeSchild}${warnung}${signalSchild}</span>` : ''}
                    </span>
                  </span>`,
           iconSize: null
@@ -1623,6 +1685,24 @@ export class StreckenLayer {
     }
   }
 
+  /** Die Lücken zwischen den gebauten Stücken, lang gestrichelt und schmal.
+   *  Auf der Arbeitskarte, der Baudokumentation und der Lagekarte dieselbe. */
+  _zeichneLuecken(verlauf, st, zu) {
+    for (const l of verlauf.luecken) {
+      const lpfad = l.punkte.map(pt => [pt.lat, pt.lng]);
+      L.polyline(lpfad, {
+        pane: 'fbp-strecken', color: '#ffffff', weight: 2.5 * zu + 4 * zu,
+        opacity: 0.9, lineCap: 'butt', lineJoin: 'round', interactive: false,
+        className: 'fbp-fassung'
+      }).addTo(this._ziel.gruppe);
+      nachtLinie(L.polyline(lpfad, {
+        pane: 'fbp-strecken', color: st.farbe, weight: 2.5 * zu, opacity: 1,
+        dashArray: [12 * zu, 7 * zu].join(' '), lineCap: 'butt', lineJoin: 'round',
+        interactive: false, className: 'fbp-ist-luecke fbp-linie'
+      }), st.farbe).addTo(this._ziel.gruppe);
+    }
+  }
+
   /**
    * Die gebaute Trasse neben die geplante legen.
    *
@@ -1637,7 +1717,15 @@ export class StreckenLayer {
    * Drucken nicht aus (siehe `css/print.css`).
    */
   _zeichneIst(s, o, st) {
-    if (!this.mitIst) return;
+    /* Die Lagekarte zeigt keine gebaute Trasse, wohl aber die Lücke: im Review
+       stand „Lücke 691 m“ in der Liste und „im Bau“ auf der Wand der
+       Führungsstelle – wo der Trupp noch hin muss, ist die Lage. */
+    if (!this.mitIst) {
+      if (this.mitStand && !this.interaktiv && bauBegonnen(s)) {
+        this._zeichneLuecken(istVerlauf(s), st, this.strichFaktor * this.strichbreite);
+      }
+      return;
+    }
     const ist = istPunkte(s);
     if (!ist.length) return;
     /* Gezeichnet wird Stück für Stück, wie es zusammenhängend gebaut ist
@@ -1653,19 +1741,7 @@ export class StreckenLayer {
        schmal, zwischen der Punktreihe der Planung und der durchgezogenen
        Ist-Linie und weit genug vom kurzen `3 4` der Abweichung, um auch im
        Schwarz-Weiß-Druck für sich zu stehen. */
-    for (const l of verlauf.luecken) {
-      const lpfad = l.punkte.map(pt => [pt.lat, pt.lng]);
-      L.polyline(lpfad, {
-        pane: 'fbp-strecken', color: '#ffffff', weight: 2.5 * zu + 4 * zu,
-        opacity: 0.9, lineCap: 'butt', lineJoin: 'round', interactive: false,
-        className: 'fbp-fassung'
-      }).addTo(this._ziel.gruppe);
-      nachtLinie(L.polyline(lpfad, {
-        pane: 'fbp-strecken', color: st.farbe, weight: 2.5 * zu, opacity: 1,
-        dashArray: [12 * zu, 7 * zu].join(' '), lineCap: 'butt', lineJoin: 'round',
-        interactive: false, className: 'fbp-ist-luecke fbp-linie'
-      }), st.farbe).addTo(this._ziel.gruppe);
-    }
+    this._zeichneLuecken(verlauf, st, zu);
 
     for (const stueck of verlauf.stuecke) {
       if (stueck.length < 2) continue;
@@ -1689,6 +1765,34 @@ export class StreckenLayer {
         opacity: 1, lineCap: 'round', lineJoin: 'round',
         interactive: false, className: 'fbp-ist-linie fbp-linie'
       }), st.farbe).addTo(this._ziel.gruppe);
+    }
+
+    /* Wer welches Stück gebaut hat, steht an der Linie: bei zwei Trupps war
+       die gebaute Trasse im Schwarz-Weiß-Druck EINE durchgezogene Linie, und
+       aus Treffpunkt und Trupp-Zuordnung auf dem Blatt war nichts zu lesen.
+       Ein Strichmuster je Abschnitt hätte die Regel gebrochen, dass „gebaut“
+       durchgezogen ist und nur die Planung Muster trägt – das Kürzel in der
+       Mitte jedes Abschnitts lässt die Linie, wie sie ist. Nur auf dem Blatt:
+       auf der Arbeitskarte wäre es ein zweites Schild neben jedem Punkt. */
+    const abschnittIds = [...new Set(ist.map(pt => pt.abschnitt).filter(Boolean))];
+    if (!this.interaktiv && abschnittIds.length > 1) {
+      for (const aid of abschnittIds) {
+        const a = bauabschnittById(s, aid);
+        const reihe = ist.filter(pt => pt.abschnitt === aid);
+        const text = ((a && (a.trupp || a.name)) || '').trim();
+        if (!text || !reihe.length) continue;
+        const gesamt = reihe.length > 1 ? kumuliert(reihe).pop() : 0;
+        const mitte = gesamt > 0 ? punktBeiLaenge(reihe, gesamt / 2) : reihe[0];
+        if (!mitte) continue;
+        L.marker([mitte.lat, mitte.lng], {
+          pane: 'fbp-labels', interactive: false,
+          icon: L.divIcon({
+            className: 'fbp-label',
+            html: `<span class="ist-abschnitt">${escapeHtml(text.length > 16 ? text.slice(0, 15) + '…' : text)}</span>`,
+            iconSize: null
+          })
+        }).addTo(this._ziel.gruppe);
+      }
     }
 
     for (const pt of ist) {
@@ -1914,7 +2018,7 @@ export class StreckenLayer {
     for (const e of wurzel.querySelectorAll(this.interaktiv
       ? '.kartenoptionen, .statusleiste, .werkzeuge, .zeichen-hinweis, ' +
         '.leaflet-control-zoom, .leaflet-control-scale, .leaflet-control-attribution'
-      : '.gitter-info, .karten-nord, .karten-massstab, .karten-quelle')) {
+      : '.gitter-info, .karten-nord, .karten-massstab, .karten-quelle, .karten-fehlt')) {
       const r = e.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) continue;
       const x1 = Math.max(r.left, r0.left), y1 = Math.max(r.top, r0.top);
@@ -1937,7 +2041,22 @@ export class StreckenLayer {
   schilderNeu() {
     this._schilderZoom = null;
     this._schilderVersuche = 0;
+    this._schilderKompaktLauf = 0;
     this._schilderSetzen();
+  }
+
+  /** Wie viele Schilder die Platzsuche verkürzen musste (siehe `kompakt`) */
+  kompakteSchilder() {
+    return this._schilder.filter(x => x.kompakt).length;
+  }
+
+  /** Steht das Schild trotz der Suche auf einem stehenden, unter einer
+   *  Sperrfläche oder über der Blattkante? */
+  _schildEng(feld, belegt, ecke, gegenecke) {
+    if (belegt.some(r => ueberdeckung(feld, r) > 0)) return true;
+    if (this.interaktiv) return false;
+    return feld.x < ecke.x - 0.5 || feld.y < ecke.y - 0.5 ||
+      feld.x + feld.breite > gegenecke.x + 0.5 || feld.y + feld.hoehe > gegenecke.y + 0.5;
   }
 
   _schilderSetzen() {
@@ -1978,6 +2097,9 @@ export class StreckenLayer {
        und das abgerückte zahlt zusätzlich `KOST_SPERRE`. */
     const belegt = [...sperren];
     let gesetzt = 0;
+    /* Schilder, die auch nach der Suche auf einem anderen oder unter einer
+       Sperrfläche stehen oder über der Blattkante – siehe unten. */
+    const eng = [];
     /* Das Blatt in Kartenpunkten. Auf der Druckkarte ist das die Kante, an der
        der Ausdruck aufhört; am Bildschirm der Ausschnitt, den man gerade sieht
        (und der beim Schieben nicht neu gesucht wird – siehe oben). */
@@ -2037,6 +2159,7 @@ export class StreckenLayer {
             kasten.style.left = `${schub.x.toFixed(1)}px`;
             kasten.style.top = `${schub.y.toFixed(1)}px`;
           }
+          if (this._schildEng(feld, belegt, ecke, gegenecke)) eng.push({ schild, kasten });
           belegt.push(feld);
           gesetzt++;
           continue;
@@ -2189,8 +2312,34 @@ export class StreckenLayer {
       fahne.style.setProperty('--laenge', `${Math.max(0, bestes.stiel).toFixed(1)}px`);
       fahne.style.setProperty('--winkel',
         `${(Math.atan2(bestes.vy, bestes.vx) * 180 / Math.PI).toFixed(1)}deg`);
+      if (this._schildEng(bestes.feld, belegt, ecke, gegenecke)) eng.push({ schild, kasten });
       belegt.push(bestes.feld);
       gesetzt++;
+    }
+
+    /* Wo das Blatt zu dicht ist, wird das Schild kleiner und nicht verdeckt.
+       Im Review standen auf A4 quer bei 36 Strecken Schilder übereinander und
+       unter dem Hinweis „Kartengrund fehlt“, und auf dem Papier fehlten für
+       fünf Strecken Name und Stand – genau in der Lage, für die die Lagekarte
+       da ist. Das verkürzte Schild behält Name, Stand und Warnungen und lässt
+       Länge, Bedarf und die Zeile von Trupp und Uhrzeit weg; es greift nur dort,
+       wo auch nach der Suche nichts frei ist, und nur auf dem Blatt – am
+       Bildschirm hilft Zoomen. Danach läuft die Suche von vorn, denn die
+       kleineren Schilder lassen den späteren Platz. Höchstens dreimal: ein
+       Blatt, das auch verkürzt nicht aufgeht, bleibt, wie es ist. */
+    if (this._schildRueckbar && eng.length && (this._schilderKompaktLauf || 0) < 3) {
+      let neu = 0;
+      for (const { schild, kasten } of eng) {
+        if (schild.kompakt) continue;
+        schild.kompakt = true; neu++;
+        kasten.classList.add('kompakt');
+      }
+      if (neu) {
+        this._schilderKompaktLauf = (this._schilderKompaktLauf || 0) + 1;
+        this._schilderZoom = null;
+        this._schilderSetzen();
+        return;
+      }
     }
 
     /* Erst wenn wirklich etwas gesetzt wurde, gilt die Zoomstufe als erledigt.

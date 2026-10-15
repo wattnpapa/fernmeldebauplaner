@@ -181,6 +181,7 @@ function bauVerschlanken(s, nur = null) {
   /* Und der Vermerk, dass eine Meldung die Übergabe aufgehoben hat. */
   delete raus.uebergabeZurueckZeit;
   delete raus.uebergabeZurueckStaemme;
+  delete raus.uebergabeZurueckWar;
 
   if (bau.abschnitte.length) {
     raus.abschnitte = bau.abschnitte.map((a, i) => {
@@ -269,6 +270,9 @@ function bauVerschlanken(s, nur = null) {
       weg.staemme = pr.staemme.map(z => {
         const w = entruempeln(z, neuePruefzeile(), ['zeit']);
         delete w.id;
+        /* Wessen Messung eine Zeile ist, weiß der Planer beim Einspielen – wie
+           `gemeldetVon` eine Notiz über den Empfang, die nicht mit hinausgeht. */
+        delete w.von;
         return w;
       });
     }
@@ -725,8 +729,9 @@ export const neuereMeldungFehler = fassung => Object.assign(
 
 const neuereMeldungText = fassung =>
   `Diese Baumeldung stammt von einer neueren Version des FMBauplaners (Fassung ${fassung}, ` +
-  'diese Seite kennt 1). Sie wird nicht gelesen und nichts davon eingespielt – die Seite ' +
-  'neu laden und den Link bzw. die Datei noch einmal öffnen, oder den Trupp bitten, mit ' +
+  'diese Seite kennt 1). Sie wird nicht gelesen und nichts davon eingespielt – alle Fenster ' +
+  'dieser Seite schließen und neu öffnen (erst dann gilt die neue Version), dann den Link ' +
+  'bzw. die Datei noch einmal öffnen, oder den Trupp bitten, mit ' +
   'derselben Version zu melden.';
 
 /**

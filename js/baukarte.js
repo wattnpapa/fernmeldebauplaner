@@ -563,7 +563,8 @@ export function bauzielNachfuehren() {
      hoch. */
   /* Vorn und nicht hinten: der Merker kürzt von rechts, und der Nachtrag ist
      das, was nicht untergehen darf. */
-  const text = !s ? '' : (nachtragTag() ? `Nachtrag vom ${tagKurz(nachtragTag())} · ` : '') +
+  const tagKopf = s && nachtragTag() ? `Nachtrag vom ${tagKurz(nachtragTag())}` : '';
+  const text = !s ? '' : (tagKopf ? tagKopf + ' · ' : '') +
     `an ${s.name}` +
     (a ? ` · ${a.trupp || a.name}` : ohneAbschnitt ? ' · kein Bauabschnitt gewählt' : '');
   /* Ruht die Frage „Welcher Trupp seid ihr?“ nach zweimal „Später“, steht sie
@@ -571,10 +572,54 @@ export function bauzielNachfuehren() {
      Karte steht am Bauort vorn, und der Reiter zeigt sie nur dem, der dort ist. */
   const wahlOffen = !!s && !a && truppWahlOffen(s) && truppFrageRuht(s);
   const gesamt = wahlOffen ? text + ' · Trupp wählen' : text;
-  if (z.textContent !== gesamt) z.textContent = gesamt;
+  if (z.textContent !== gesamt || (!!tagKopf !== !!z.querySelector('.bau-ziel-tag'))) {
+    if (tagKopf) {
+      /* Der Tag ist das, woran sich der Nachtrag von einem gewöhnlichen
+         Eintrag unterscheidet: er steht in einem eigenen Feld, das nicht
+         schrumpft, und gekürzt wird der Rest. „Nachtrag vom 15.1…“ nannte
+         nachts gerade das Datum nicht mehr. */
+      const tag = document.createElement('span');
+      tag.className = 'bau-ziel-tag';
+      tag.textContent = tagKopf;
+      const rest = document.createElement('span');
+      rest.className = 'bau-ziel-rest';
+      rest.textContent = gesamt.slice(tagKopf.length);
+      z.replaceChildren(tag, rest);
+    } else {
+      z.textContent = gesamt;
+    }
+  }
   z.hidden = !gesamt;
   z.classList.toggle('bau-ziel-offen', ohneAbschnitt || wahlOffen || (!!s && !!nachtragTag()));
+  /* Nur mit offener Wahl ist der Merker ein Griff (css/app.css, `bau-ziel-wahl`);
+     die Strecke dazu trägt er als Merkmal, damit der Tipp sie nicht erst suchen
+     muss. */
+  z.classList.toggle('bau-ziel-wahl', wahlOffen);
+  if (wahlOffen) {
+    z.setAttribute('role', 'button'); z.tabIndex = 0; z.dataset.strecke = s.id;
+    z.setAttribute('aria-label', gesamt);
+  } else {
+    z.removeAttribute('role'); z.removeAttribute('tabindex'); delete z.dataset.strecke;
+    z.removeAttribute('aria-label');
+  }
 }
+
+/* Der Tipp auf die Marke öffnet dieselbe Wahl wie der Knopf im Bau-Reiter
+   (Ereignis `fbp:truppwahl`, gehört app.js). Einmal angehängt, am Merker selbst:
+   er bleibt im Dokument stehen. */
+(() => {
+  const z = document.getElementById('bau-ziel');
+  if (!z || z.dataset.griff) return;
+  z.dataset.griff = '1';
+  const los = () => {
+    if (!z.classList.contains('bau-ziel-wahl')) return;
+    document.dispatchEvent(new CustomEvent('fbp:truppwahl', { detail: { id: z.dataset.strecke } }));
+  };
+  z.addEventListener('click', los);
+  z.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); los(); }
+  });
+})();
 
 /** „Punkt hier“: Standort des Geräts als zusätzlichen Punkt aufnehmen */
 export function punktHierAufnehmen() {

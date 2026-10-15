@@ -27,8 +27,16 @@ const KANTE = 256;
    bleibt als `null` stehen – ein Dienst, der gerade nicht antwortet, soll
    nicht bei jeder Mausbewegung erneut angefragt werden. */
 const kacheln = new Map();
-const fehlversuche = new Set();
+/* Schlüssel → Zeitpunkt des Fehlschlags. Ein Zeitpunkt statt einer bloßen Menge,
+   weil der Fehlschlag nur eine Weile gelten soll: sonst blieb eine Kachel
+   (rund 10 km im Umkreis) nach einem Funkloch bis zum Neuladen leer, und auch
+   die Nachbarpunkte lasen „keine Höhe“, obwohl das Netz längst wieder da war. */
+const fehlversuche = new Map();
 const HOECHSTENS = 64;
+/* So lange gilt ein Fehlschlag als Auskunft. Kürzer als diese Minute fragte jede
+   Mausbewegung über einer Lücke erneut an (siehe oben); länger lässt der Grund
+   „Höhe –“ stehen, den der Nutzer längst behoben hat. */
+const FEHLER_GEDAECHTNIS = 60000;
 /* Wie bei den COG-Kacheln (`cog.js`): ohne Frist blieb ein Abruf, den das Netz
    nur hielt, für immer im Zwischenspeicher – als noch ladendes Versprechen, das
    `kachelfehlerVergessen` nicht kennt. Gelände, Profil und Relais-Grundhöhe
@@ -40,6 +48,11 @@ function kachelSchluessel(x, y) { return `${ZOOM}/${x}/${y}`; }
 
 function kachelHolen(x, y) {
   const schluessel = kachelSchluessel(x, y);
+  const gescheitert = fehlversuche.get(schluessel);
+  if (gescheitert !== undefined && Date.now() - gescheitert > FEHLER_GEDAECHTNIS) {
+    kacheln.delete(schluessel);
+    fehlversuche.delete(schluessel);
+  }
   if (kacheln.has(schluessel)) {
     // Zuletzt Gebrauchtes ans Ende, damit die Verdrängung das Älteste trifft
     const p = kacheln.get(schluessel);
@@ -59,7 +72,7 @@ function kachelHolen(x, y) {
       return ctx.getImageData(0, 0, KANTE, KANTE).data;
     })
     .catch(() => null);
-  p.then(daten => { if (!daten) fehlversuche.add(schluessel); });
+  p.then(daten => { if (!daten) fehlversuche.set(schluessel, Date.now()); });
   kacheln.set(schluessel, p);
   if (kacheln.size > HOECHSTENS) kacheln.delete(kacheln.keys().next().value);
   return p;
@@ -72,10 +85,11 @@ function kachelHolen(x, y) {
  * fragte jede Mausbewegung über einer Lücke erneut an. Hinter einem Knopf
  * „Erneut versuchen“ steht aber kein Zufall, sondern jemand, der gerade
  * gesehen hat, dass es nicht ging: für ihn wäre der gemerkte Fehlschlag eine
- * Sackgasse bis zum Neuladen der Seite.
+ * Sackgasse bis zum Neuladen der Seite. Ebenso, wenn der Browser das Netz
+ * zurückmeldet (`online` in app.js): dann ist der Grund des Fehlschlags weg.
  */
 export function kachelfehlerVergessen() {
-  for (const k of fehlversuche) kacheln.delete(k);
+  for (const k of fehlversuche.keys()) kacheln.delete(k);
   fehlversuche.clear();
 }
 

@@ -48,34 +48,70 @@ const zeitKurz = iso => {
     : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
+/* Mit Datum, immer. Im Konfliktdialog stehen zwei Stände nebeneinander, und
+   beide „14:20“ zu nennen – die Kurzform lässt das Datum für heute weg – sagt
+   nicht, welcher von gestern ist. */
+const zeitVoll = iso => {
+  const d = new Date(iso);
+  if (!iso || isNaN(d)) return '—';
+  return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit' }) + ' Uhr';
+};
+
 // ---------------------------------------------------------------- Standanzeige
 
 /* Sechs Zustände, und jeder sagt in wenigen Worten, woran der Nutzer ist.
    „bereit“ nennt die Uhrzeit: „gesichert“ ohne Zeitpunkt ist eine Behauptung,
-   die sich nicht prüfen lässt. */
+   die sich nicht prüfen lässt.
+
+   „Cloud“ und nicht „Speicher“: „Speicher“ heißt im Rest der Anwendung das
+   Gerät („Im Gerät gespeichert“, „Speicher voll“), und zwei Zeilen
+   untereinander – „Im Gerät gespeichert“ und „Speicher: ausstehend“ – sagten
+   dem Trupp nicht, welche von beiden das Funkloch betrifft. */
 const STAND_TEXT = {
   aus:        () => '',
-  bereit:     l => 'Speicher: ' + zeitKurz(l.seit),
-  laeuft:     () => 'Speicher: wird übertragen …',
+  bereit:     l => 'Cloud: ' + zeitKurz(l.seit),
+  /* Bis zu 45 s stand hier nur „wird übertragen …“, ohne Hinweis und ohne den
+     letzten sicheren Stand. Nach `LANG_AB` kommt der Zusatz: dass es länger
+     dauert und was bis dahin sicher ist. */
+  laeuft:     (l, lang) => lang
+    ? 'Cloud: dauert länger' + (l.seit ? ' – zuletzt gesichert ' + zeitKurz(l.seit) : '')
+    : 'Cloud: wird übertragen …',
   /* Mit der Uhrzeit des letzten sicheren Stands: „ausstehend“ allein sagt nicht,
      seit wann nichts mehr hinausgeht, und im Funkloch ist das die Frage. Es
      steht im Text und nicht nur im Tooltip, den am Telefon niemand sieht. */
-  ausstehend: l => 'Speicher: ausstehend' + (l.seit ? ' · zuletzt ' + zeitKurz(l.seit) : ''),
-  fehler:     l => 'Speicher: Fehler' + (l.seit ? ' · zuletzt ' + zeitKurz(l.seit) : ''),
-  anmeldung:  () => 'Speicher: Anmeldung erneuern',
-  konflikt:   () => 'Speicher: Konflikt'
+  ausstehend: l => 'Cloud: ausstehend' + (l.seit ? ' · zuletzt ' + zeitKurz(l.seit) : ''),
+  fehler:     l => 'Cloud: Fehler' + (l.seit ? ' · zuletzt ' + zeitKurz(l.seit) : ''),
+  anmeldung:  () => 'Cloud: Anmeldung erneuern',
+  /* „Später entscheiden“ ist eine Entscheidung, die noch aussteht, und die
+     Zeile sagt es mit dem Weg zurück. Sie glich vorher dem gewöhnlichen Warten:
+     nichts wies darauf hin, dass der Stand dieses Geräts den der Cloud
+     nirgends erreicht. */
+  konflikt:   l => l.vertagt ? 'Cloud: Konflikt offen – antippen zum Entscheiden'
+                             : 'Cloud: Konflikt – antippen zum Entscheiden'
 };
+
+/* Ab wann „wird übertragen“ um den Hinweis ergänzt wird. Zehn Sekunden: eine
+   gewöhnliche Übertragung ist längst durch, eine hängende hat bis zur Frist
+   von 45 s noch zwei Drittel vor sich. */
+const LANG_AB = 10000;
 
 const STAND_TITEL = {
   bereit:     l => `Zuletzt vollständig übertragen: ${zeitKurz(l.seit)}`,
-  laeuft:     () => 'Die Planung wird gerade zum Speicher übertragen.',
+  laeuft:     l => 'Die Planung wird gerade zur Cloud übertragen.' +
+    (l.seit ? ` Zuletzt vollständig übertragen: ${zeitKurz(l.seit)}.` : ''),
   ausstehend: l => (l.meldung ? l.meldung + ' ' : '') +
     'Änderungen warten auf die Übertragung' +
     (l.seit ? `; zuletzt vollständig übertragen: ${zeitKurz(l.seit)}.` : '.'),
   fehler:     l => l.meldung || 'Die Übertragung ist fehlgeschlagen.',
-  anmeldung:  l => l.meldung || 'Die Anmeldung am Speicher muss erneuert werden.',
-  konflikt:   () => 'Dieselbe Planung wurde auf einem zweiten Gerät geändert.'
+  anmeldung:  l => l.meldung || 'Die Anmeldung an der Cloud muss erneuert werden.',
+  konflikt:   l => l.vertagt
+    ? 'Die Planung wurde auf einem zweiten Gerät geändert. Die Entscheidung steht noch aus – antippen, um sie zu treffen.'
+    : 'Dieselbe Planung wurde auf einem zweiten Gerät geändert.'
 };
+
+let laeuftSeit = 0;
+let langUhr = null;
 
 /** Der Knopf in der Kopfzeile und die Zeile im Band darunter */
 function standZeigen(lage) {
@@ -88,17 +124,37 @@ function standZeigen(lage) {
   if (bandEl) bandEl.hidden = aus;
   if (aus) return;
 
-  const text = (STAND_TEXT[lage.stand] || STAND_TEXT.bereit)(lage);
-  const mahnen = lage.stand === 'ausstehend' || lage.stand === 'anmeldung';
-  const stoerung = lage.stand === 'fehler' || lage.stand === 'konflikt';
+  /* Wie lange der Durchgang schon läuft, wird hier mitgeführt: die Lage kennt
+     keinen Beginn, und ohne Timer änderte sich die Zeile nie, solange der
+     Durchgang hängt. */
+  if (lage.stand === 'laeuft') {
+    if (!laeuftSeit) {
+      laeuftSeit = Date.now();
+      langUhr = setTimeout(() => standZeigen(abgleichLage()), LANG_AB + 50);
+    }
+  } else {
+    laeuftSeit = 0;
+    clearTimeout(langUhr);
+  }
+  const lang = lage.stand === 'laeuft' && laeuftSeit > 0 && Date.now() - laeuftSeit >= LANG_AB;
+  const text = (STAND_TEXT[lage.stand] || STAND_TEXT.bereit)(lage, lang);
+  const mahnen = lage.stand === 'ausstehend' || lage.stand === 'anmeldung' || lang ||
+    (lage.stand === 'konflikt' && lage.vertagt);
+  const stoerung = lage.stand === 'fehler' || (lage.stand === 'konflikt' && !lage.vertagt);
   knopfEl.textContent = text;
   knopfEl.title = (STAND_TITEL[lage.stand] || (() => ''))(lage);
   knopfEl.classList.toggle('mahnung', mahnen);
   knopfEl.classList.toggle('fehler', stoerung);
   if (bandEl) {
     bandEl.textContent = text;
+    bandEl.title = knopfEl.title;
     bandEl.classList.toggle('mahnung', mahnen);
     bandEl.classList.toggle('fehler', stoerung);
+    /* Im Band ist die Zeile kein Knopf, sondern ein Satz – und schmal die
+       einzige Zeile, die auf den Konflikt hinweist. Sie öffnet denselben
+       Dialog wie der Knopf oben, wo er sichtbar ist. */
+    bandEl.setAttribute('role', 'button');
+    bandEl.tabIndex = 0;
   }
 
   zeichneSpeicherAbschnitt();
@@ -138,6 +194,13 @@ export function cloudUiStarten() {
   });
   const knopfEl = $('#cloudstatus');
   if (knopfEl) knopfEl.onclick = speicherDialog;
+  const bandEl = $('#sb-cloud');
+  if (bandEl) {
+    bandEl.onclick = speicherDialog;
+    bandEl.onkeydown = e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); speicherDialog(); }
+    };
+  }
   // Erst mit bestehender Verbindung: ohne sie gäbe der Knopf nur eine leere Liste
   speicherlisteAnmelden(() => verbindung() ? speicherlisteDialog : null);
   standZeigen(abgleichLage());
@@ -402,12 +465,15 @@ function standDialog(v) {
 function standSatz(lage) {
   switch (lage.stand) {
     case 'bereit': return `Zuletzt vollständig übertragen: ${zeitKurz(lage.seit)}.`;
-    case 'laeuft': return 'Es wird gerade übertragen …';
+    case 'laeuft': return 'Es wird gerade übertragen …' +
+      (lage.seit ? ` Zuletzt vollständig übertragen: ${zeitKurz(lage.seit)}.` : '');
     case 'ausstehend': return lage.meldung ||
       'Änderungen warten auf die Übertragung – sie geht von selbst hinaus, sobald Netz da ist.';
     case 'fehler': return 'Die letzte Übertragung ist fehlgeschlagen: ' + lage.meldung;
     case 'anmeldung': return lage.meldung || 'Die Anmeldung am Speicher muss erneuert werden.';
-    case 'konflikt': return lage.meldung || 'Es steht ein Konflikt an.';
+    case 'konflikt': return lage.vertagt
+      ? 'Konflikt offen – später entscheiden. Die Übertragung ruht, bis er geklärt ist.'
+      : lage.meldung || 'Es steht ein Konflikt an.';
     default: return 'Noch nichts übertragen.';
   }
 }
@@ -458,8 +524,22 @@ function trennenDialog() {
 // ---------------------------------------------------------------- Konflikt
 
 /* Nicht zusammenführen, sondern nebeneinanderstellen und fragen. Der Dialog
-   nennt zu beiden Ständen dasselbe: wann zuletzt geändert und wie viel darin
-   steckt. Mehr braucht die Entscheidung nicht, und weniger reicht nicht. */
+   nennt zu beiden Ständen dasselbe: wann zuletzt geändert (mit Datum), wie viel
+   darin steckt und welcher Trupp dahintersteht. Mehr braucht die Entscheidung
+   nicht, und weniger reicht nicht.
+
+   Die Wege stehen in der Reihenfolge der Knöpfe da, und der eine, der etwas
+   vernichtet, steht nicht unter ihnen: „Dieses Gerät gilt“ überschreibt den
+   Stand in der Cloud, ohne dass die Anwendung eine Kopie anlegt, und lag mit
+   8 px Abstand neben „Beide behalten“ – ein Tipp daneben genügte. Es steht jetzt
+   abgesetzt im Inhalt und verlangt eine zweite Bestätigung, die beide Stände
+   noch einmal mit Datum nebeneinanderlegt.
+
+   Eine Sicherungskopie des Cloud-Stands VOR dem Überschreiben gibt es bewusst
+   nicht: mit ihr wäre „Dieses Gerät gilt“ von „Beide behalten“ nicht mehr zu
+   unterscheiden – beide ließen den eigenen Stand in der Cloud und den fremden
+   als zweite Planung hier (BAUDOKU.md, siebte Runde). Wer den Cloud-Stand noch
+   braucht, hat dafür den Knopf; die Rückfrage sagt es in ihrem letzten Satz. */
 function konfliktDialog(k) {
   const box = el('div', 'konflikt');
   box.innerHTML =
@@ -467,45 +547,82 @@ function konfliktDialog(k) {
         geändert. <b>Zusammengeführt wird nichts</b> – eine falsch verschmolzene Trasse
         wäre schlimmer als zwei Stände, zwischen denen du entscheidest.</p>
      <div class="konflikt-paar">
-       ${fassung('Auf diesem Gerät', k.meine)}
-       ${fassung('Am Speicher', k.fremde)}
+       ${fassung('Dieses Gerät', k.meine)}
+       ${fassung('Cloud-Stand', k.fremde)}
      </div>
      <ul class="konflikt-folgen klein">
-       <li><b>Beide behalten:</b> der Stand vom Speicher kommt als zweite Planung
-           hierher, dieses Gerät bleibt an den Speicher gebunden.</li>
-       <li><b>Dieses Gerät gilt:</b> der Stand am Speicher wird <b>überschrieben</b>; eine
-           Kopie davon legt diese Anwendung nicht an.</li>
-       <li><b>Speicher gilt:</b> der Stand dieses Geräts wird ersetzt und liegt
-           als zweite Planung daneben.</li>
-       <li><b>Später entscheiden:</b> nichts ändert sich, die Übertragung ruht.</li>
+       <li><b>Später entscheiden:</b> nichts ändert sich, die Übertragung ruht.
+           Der Konflikt bleibt über die Zeile „Cloud“ oben erreichbar.</li>
+       <li><b>Cloud-Stand gilt:</b> der Cloud-Stand ersetzt die Planung auf diesem
+           Gerät; der Stand dieses Geräts liegt als zweite Planung daneben.</li>
+       <li><b>Beide behalten:</b> der Cloud-Stand kommt als zweite Planung
+           hierher, dieses Gerät bleibt an die Cloud gebunden.</li>
      </ul>`;
+
+  /* Der Weg, der etwas vernichtet, steht abgesetzt unter den Erklärungen – nicht
+     im Fuß, wo der Daumen den Hauptweg trifft. */
+  const gefahr = el('div', 'konflikt-gefahr');
+  gefahr.appendChild(el('p', 'klein',
+    `<b>Nur wenn der Cloud-Stand verworfen werden soll:</b> der Stand dieses Geräts
+     ersetzt ihn in der Cloud. Eine Kopie des Cloud-Stands entsteht dabei nicht.`));
+  gefahr.appendChild(knopf('Dieses Gerät gilt …', () => ueberschreibenFrage(k), 'gefahr'));
+  box.appendChild(gefahr);
 
   dialog({
     titel: 'Zwei Stände derselben Planung',
     inhalt: box,
     breit: true,
+    /* Getrennt: „Später entscheiden“ links, der Hauptweg rechts – dazwischen
+       „Cloud-Stand gilt“, das den eigenen Stand zur Kopie macht und nichts
+       vernichtet. */
+    geteilt: true,
     fuss: [
       { text: 'Später entscheiden', tun: () => { konfliktVertagen(); } },
-      { text: 'Beide behalten', primaer: true, tun: () => entscheiden('beide') },
-      { text: 'Dieses Gerät gilt', gefahr: true, tun: () => entscheiden('meine') },
-      { text: 'Speicher gilt', tun: () => entscheiden('fremde') }
+      { text: 'Cloud-Stand gilt', tun: () => entscheiden('fremde') },
+      { text: 'Beide behalten', primaer: true, tun: () => entscheiden('beide') }
     ]
   });
+}
 
-  function entscheiden(wahl) {
-    konfliktEntscheiden(wahl)
-      .then(() => hinweis(MELDUNG[wahl]))
-      .catch(e => hinweis('Auflösen fehlgeschlagen: ' + e.message, 'fehler'));
-  }
+/* Der zweite Schritt für den Weg ohne Rückweg. Hauptknopf ist „Zurück“: wer
+   hier Enter tippt, überschreibt nichts. */
+function ueberschreibenFrage(k) {
+  const box = el('div', 'konflikt');
+  box.innerHTML =
+    `<p><b>Den Cloud-Stand wirklich überschreiben?</b> Der Stand dieses Geräts ersetzt
+        ihn in der Cloud. Der Cloud-Stand ist danach <b>weg</b> – diese Anwendung legt
+        keine Kopie davon an.</p>
+     <div class="konflikt-paar">
+       ${fassung('Wird überschrieben: Cloud-Stand', k.fremde, 'gefahr')}
+       ${fassung('Bleibt: Dieses Gerät', k.meine)}
+     </div>
+     <p class="klein">Wer den Cloud-Stand noch braucht: „Zurück“ und dann
+        <b>Beide behalten</b> – er kommt als zweite Planung hierher.</p>`;
+  dialog({
+    titel: 'Cloud-Stand überschreiben?',
+    inhalt: box,
+    breit: true,
+    geteilt: true,
+    fuss: [
+      { text: 'Zurück', primaer: true, tun: () => { konfliktDialog(k); return false; } },
+      { text: 'Cloud-Stand überschreiben', gefahr: true, tun: () => entscheiden('meine') }
+    ]
+  });
+}
+
+function entscheiden(wahl) {
+  konfliktEntscheiden(wahl)
+    .then(() => hinweis(MELDUNG[wahl]))
+    .catch(e => hinweis('Auflösen fehlgeschlagen: ' + e.message, 'fehler'));
 }
 
 const MELDUNG = {
-  meine: 'Der Stand dieses Geräts gilt und wurde übertragen.',
-  fremde: 'Der Stand vom Speicher gilt – der eigene liegt als zweite Planung daneben.',
+  meine: 'Der Stand dieses Geräts gilt und wurde zur Cloud übertragen.',
+  fremde: 'Der Cloud-Stand gilt – der Stand dieses Geräts liegt als zweite Planung daneben.',
   beide: 'Beide Stände liegen jetzt als eigene Planungen vor.'
 };
 
-function fassung(titel, u) {
+function fassung(titel, u, art = '') {
   const teile = [
     u.strecken && `${u.strecken} ${u.strecken === 1 ? 'Strecke' : 'Strecken'}`,
     u.punkte && `${u.punkte} Punkte`,
@@ -515,10 +632,17 @@ function fassung(titel, u) {
     u.bilder && `${u.bilder} ${u.bilder === 1 ? 'Bild' : 'Bilder'}`,
     u.istPunkte && `${u.istPunkte} Ist-Punkte`
   ].filter(Boolean);
-  return `<div class="konflikt-fassung">
+  /* Die Planungsdatei kennt kein Gerät; was sich über den Stand sagen lässt, sind
+     die Trupps in den Bauabschnitten. Bei gleichen Zahlen ist das, neben dem
+     Datum, das Einzige, woran sich die beiden Stände unterscheiden. */
+  const trupps = (u.trupps || []).length
+    ? `${u.trupps.length === 1 ? 'Trupp' : 'Trupps'}: ${u.trupps.join(', ')}`
+    : 'Kein Trupp eingetragen';
+  return `<div class="konflikt-fassung${art ? ' ' + art : ''}">
             <b>${escapeHtml(titel)}</b>
-            <span class="klein">Geändert: ${escapeHtml(zeitKurz(u.geaendert))}</span>
+            <span class="klein">Geändert: ${escapeHtml(zeitVoll(u.geaendert))}</span>
             <span class="klein">${escapeHtml(teile.join(' · ') || 'leer')}</span>
+            <span class="klein">${escapeHtml(trupps)}</span>
           </div>`;
 }
 

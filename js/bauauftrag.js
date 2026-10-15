@@ -9,7 +9,7 @@ import {
 } from './state.js';
 import {
   StreckenLayer, kennzahlen, gesamtKennzahlen, segmentLaengen, kumuliert, escapeHtml, kabelzeichen,
-  standmarkeKurz, ueberfaelligSeit, swMuster
+  standmarkeKurz, ueberfaelligSeit, ausfallNachfrageSeit, AUSFALL_NACHFRAGE_MIN, swMuster
 } from './strecken.js';
 import { ZeichenLayer, gezeichneteZeichen } from './zeichen.js';
 import { FlaechenLayer, flaechenEcken } from './flaechen.js';
@@ -211,13 +211,40 @@ const profilVon = auftrag =>
   PROFILE[auftrag.modus === 'lage' ? 'lage'
     : auftrag.modus === 'baudoku' ? 'baudoku' : 'auftrag'];
 
+function gespeichertesFormat(profil) {
+  try { return JSON.parse(localStorage.getItem(profil.schluessel) || '{}').format; }
+  catch (e) { return undefined; }
+}
+
+/* A4 für eine kleine Lage, A3 für eine mittlere, A1 erst, wenn es nicht anders
+   geht. Die Schwellen folgen dem, was auf dem Blatt Platz hat: auf A4 quer
+   stehen neun Schilder ohne Überdeckung (Prüfung `baumodus-pruefen`), auf A3
+   gut doppelt so viele; darüber und bei mehr als 15 km Ausdehnung braucht das
+   Blatt die Fläche. Gewählt wird nur der Vorschlag – ein einmal gewähltes
+   Format bleibt, wie bei jeder Einstellung. */
+function lageFormatVorschlag(auftrag) {
+  const punkte = auftrag.strecken.flatMap(s => s.punkte).map(pt => L.latLng(pt.lat, pt.lng));
+  const n = auftrag.strecken.length;
+  const ausdehnung = punkte.length > 1
+    ? L.latLngBounds(punkte).getNorthEast().distanceTo(L.latLngBounds(punkte).getSouthWest()) : 0;
+  if (n <= 9 && ausdehnung <= 6000) return 'a4';
+  if (n <= 20 && ausdehnung <= 15000) return 'a3';
+  return 'a1';
+}
+
 function ladeOptionen(profil) {
   try { return { ...profil.standard, ...JSON.parse(localStorage.getItem(profil.schluessel) || '{}') }; }
   catch (e) { return { ...profil.standard }; }
 }
 function speicherOptionen(profil, o) {
-  try { localStorage.setItem(profil.schluessel, JSON.stringify(o)); } catch (e) { /* egal */ }
+  /* Ein Format, das nur der Vorschlag war, wird nicht mitgemerkt: sonst stünde
+     die Lagekarte nach dem ersten Haken für immer auf A4, auch wenn die Lage
+     inzwischen auf zwanzig Strecken gewachsen ist. */
+  const rest = profil === PROFILE.lage && o.format === lageVorschlagWert
+    ? Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'format')) : o;
+  try { localStorage.setItem(profil.schluessel, JSON.stringify(rest)); } catch (e) { /* egal */ }
 }
+let lageVorschlagWert = null;
 
 let aktiv = null;   // {wurzel, karten:[], opt, auftrag}
 
@@ -410,6 +437,13 @@ function oeffneDruckansicht(auftrag) {
   const baudoku = auftrag.modus === 'baudoku';
   const profil = profilVon(auftrag);
   const opt = ladeOptionen(profil);
+  /* Hat noch niemand ein Format gewählt, richtet es sich nach der Lage: die
+     Lagekarte öffnete im Review jedes Mal auf A1 – für drei Strecken am
+     Ortsrand ein Plakat, das keiner Druckerei im Ortsverband passt. */
+  lageVorschlagWert = null;
+  if (lage && gespeichertesFormat(profil) === undefined) {
+    opt.format = lageVorschlagWert = lageFormatVorschlag(auftrag);
+  }
   /* Die Kennung eines Einsatzabschnitts gilt nur in der Planung, in der sie
      vergeben wurde. Aus dem Ausdruck einer anderen stammt sie ins Leere und
      würde den Ausschnitt auf nichts einengen. */
@@ -1267,7 +1301,7 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
     (opt.legende ? lageLegendeHTML(blattauftrag, opt, sw, mass, stand) : '') +
     zonenLegendeHTML(blattauftrag, opt) +
     (opt.kennzahlen && blattauftrag.strecken.length
-      ? sammelKennzahlenHTML(gesamtKennzahlen(blattauftrag.strecken), blattauftrag.strecken) : '') +
+      ? sammelKennzahlenHTML(gesamtKennzahlen(blattauftrag.strecken), blattauftrag.strecken, stand) : '') +
     (opt.fuss ? fussHTML(p, opt) : '');
 
   kartenbau.push(() => {
@@ -1275,8 +1309,32 @@ function lageblatt(ziel, auftrag, opt, mass, sw, karten, kartenbau) {
       karten, mitte, stand);
     massstabSchreiben(el, karte);
     return warteAufKacheln(karte, kachelfrist(mass))
-      .then(grund => { massstabSchreiben(el, karte); kartengrundMelden(el, grund); });
+      .then(grund => {
+        massstabSchreiben(el, karte);
+        kartengrundMelden(el, grund);
+        /* Der Hinweis „Kartengrund fehlt“ entsteht erst jetzt und liegt über der
+           Karte: die Schilder darunter standen im Review „gestapelt mit
+           abgeschnittenen Zeilen“. Die Platzsuche kennt ihn als Sperrfläche und
+           läuft deshalb noch einmal; danach steht fest, ob Schilder verkürzt
+           werden mussten, und die Zeichenerklärung sagt es. */
+        if (karte._fbpStrecken) karte._fbpStrecken.schilderNeu();
+        kompaktMelden(el, karte);
+      });
   });
+}
+
+/** Die Zeichenerklärung nennt die verkürzten Schilder – sonst fehlten auf dem
+ *  Blatt Länge und Trupp, ohne dass ein Wort sagt, warum. */
+function kompaktMelden(blattEl, karte) {
+  const sl = karte._fbpStrecken;
+  const n = sl ? sl.kompakteSchilder() : 0;
+  const legende = blattEl.querySelector('.bl-legende:not(.bl-s6):not(.bl-zonen)');
+  if (!n || !legende || legende.querySelector('.lg-kompakt')) return;
+  const e = document.createElement('span');
+  e.className = 'lg-eintrag lg-hinweis lg-kompakt';
+  e.textContent = `${n} ${n === 1 ? 'Schild ist' : 'Schilder sind'} verkürzt (nur Name und Stand): ` +
+    'Länge, Trupp und Zeit stehen in der Streckenliste der Planung.';
+  legende.appendChild(e);
 }
 
 /**
@@ -1651,8 +1709,19 @@ function lageNummern(auftrag) {
  */
 function lageMeldungenHTML(auftrag, opt) {
   if (opt.strecken === false || !opt.beschriftung) return '';
-  const { s6 } = lageNummern(auftrag);
-  if (!s6.size) return '';
+  const { s6, nummern } = lageNummern(auftrag);
+  /* Die aufgehobene Übergabe im Wortlaut: das Schild trägt Marke und Uhrzeit,
+     welche Prüfung sie aufgehoben hat, steht hier. Ohne Meldung an den S 6
+     gäbe es sonst keine Fußnote, in der es zu finden wäre. */
+  const zurueckZeilen = auftrag.strecken.map(s => [s, bauzeile(s)])
+    .filter(([, bz]) => bz && bz.zurueck).slice(0, 6).map(([s, bz]) =>
+      `<span class="lm-zeile"><b>↩&nbsp;${nummern.get(s.id)}</b> ${escapeHtml(s.name)}: ` +
+      `Übergabe zurückgenommen ${escapeHtml(uhrzeit(bz.zurueck.zeit))}` +
+      `${bz.zurueck.staemme.length ? ` (${escapeHtml(bz.zurueck.staemme.join(', '))})` : ''}</span>`)
+    .join('');
+  const zurueckBlock = zurueckZeilen
+    ? `<div class="bl-legende bl-s6"><span class="lg-titel">Übergabe zurückgenommen</span>${zurueckZeilen}</div>` : '';
+  if (!s6.size) return zurueckBlock;
   const kurz = t => t.length > 110 ? t.slice(0, 109).trimEnd() + '…' : t;
   const gezeigt = auftrag.strecken.filter(s => s6.has(s.id)).slice(0, 6);
   const zeilen = gezeigt.map(s => {
@@ -1662,7 +1731,8 @@ function lageMeldungenHTML(auftrag, opt) {
   }).join('');
   const mehr = s6.size - gezeigt.length;
   return `<div class="bl-legende bl-s6"><span class="lg-titel">Meldungen an den S 6</span>${zeilen}${
-    mehr > 0 ? `<span class="lm-zeile">… und ${mehr} weitere – Wortlaut auf der Baudokumentation der Strecke</span>` : ''}</div>`;
+    mehr > 0 ? `<span class="lm-zeile">… und ${mehr} weitere – Wortlaut auf der Baudokumentation der Strecke</span>` : ''}</div>` +
+    zurueckBlock;
 }
 
 /**
@@ -2252,6 +2322,22 @@ function standmarkenLegendeHTML(strecken, stand = Date.now()) {
     teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ Gerät ausgefallen – Papier')}` +
       'Der Trupp baut auf Papier; es kommt keine Meldung, bis nachgetragen wird</span>');
   }
+  if (strecken.some(s => ausfallNachfrageSeit(s, stand))) {
+    teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ Papier nachfragen (seit&nbsp;4&nbsp;h)')}` +
+      `Gerät ausgefallen und seit mehr als ${AUSFALL_NACHFRAGE_MIN / 60}&nbsp;h kein Eintrag – ` +
+      'beim Trupp nach dem Papier fragen</span>');
+  }
+  /* Die aufgehobene Übergabe und die Lücke: beides stand im Review in Liste und
+     Summenband, auf der Wand der Führungsstelle aber nicht. */
+  if (zeilen.some(z => z.zurueck)) {
+    teile.push(`<span class="lg-eintrag">${marke('bz-warn bz-zurueck', '↩ Übergabe zurückgenommen hh:mm')}` +
+      'Eine Meldung hat die Übergabe aufgehoben – die Strecke ist wieder „gebaut“, nicht übergeben</span>');
+  }
+  if (zeilen.some(z => z.luecke)) {
+    teile.push(`<span class="lg-eintrag"><i class="lg-linie lg-luecke" style="--farbe:#111"></i>` +
+      '<b>Lücke …&nbsp;m</b> Stück zwischen zwei Bauabschnitten, noch nicht aufgenommen – ' +
+      'lang gestrichelt auf der Karte</span>');
+  }
   if (strecken.some(s => ueberfaelligSeit(s, stand))) {
     teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ seit&nbsp;3&nbsp;h ohne Meldung')}` +
       'Strecke im Bau, seit der genannten Zeit kein Eintrag</span>');
@@ -2296,7 +2382,7 @@ function zonenLegendeHTML(auftrag, opt) {
    Führungsstelle Trassen, Bedarf und Bauzeit, aber kein Wort darüber, was
    davon steht; für die Lagebesprechung schrieb jemand die Stände aus der Liste
    ab. */
-function baustandKachel(strecken) {
+function baustandKachel(strecken, stand = Date.now()) {
   if (!strecken || !strecken.some(bauBegonnen)) return null;
   const zahl = { offen: 0, laeuft: 0, gebaut: 0, uebergeben: 0 };
   for (const s of strecken) {
@@ -2307,15 +2393,22 @@ function baustandKachel(strecken) {
      Review stand die Strecke auf der Lagekarte nur als eine von „2 gebaut“ –
      die Kachel ist das, was an der Wand zuerst gelesen wird. */
   const durch = strecken.filter(s => bauBegonnen(s) && uebergabestand(s).durchgefallen).length;
+  /* Wie im Summenband der Liste: zurückgenommene Übergaben und Trupps, bei
+     denen es Zeit ist, nach dem Papier zu fragen. „0 von 9 übergeben“ ohne
+     diese Zeile las sich im Review, als stünde bloß noch nichts. */
+  const zurueck = strecken.filter(s => (bauzeile(s) || {}).zurueck).length;
+  const papier = strecken.filter(s => ausfallNachfrageSeit(s, stand)).length;
   const unter = [
     zahl.gebaut && `${zahl.gebaut} gebaut`, zahl.laeuft && `${zahl.laeuft} im Bau`,
     zahl.offen && `${zahl.offen} offen`,
-    durch && `⚠ ${durch} Prüfung nicht bestanden`
+    durch && `⚠ ${durch} Prüfung nicht bestanden`,
+    zurueck && `↩ ${zurueck} Übergabe${zurueck === 1 ? '' : 'n'} zurückgenommen`,
+    papier && `⚠ ${papier} Papier nachfragen`
   ].filter(Boolean).join(' · ');
   return ['Baustand', `${zahl.uebergeben} von ${strecken.length} übergeben`, unter || 'alle übergeben'];
 }
 
-function sammelKennzahlenHTML(ges, strecken = null) {
+function sammelKennzahlenHTML(ges, strecken = null, stand = Date.now()) {
   const kacheln = [
     ['Strecken', String(ges.anzahl), `${ges.punkte} Trassenpunkte`],
     ['Trassenlänge', formatLaenge(ges.trasse),
@@ -2326,7 +2419,7 @@ function sammelKennzahlenHTML(ges, strecken = null) {
       ? gewichtText(ges.gewicht) + (ges.gewichtVollstaendig ? '' : ' (soweit bekannt)')
       : 'je Strecke aufgerundet'],
     ['Richtwert Bauzeit', stundenText(ges.bauzeitStunden), 'Summe, ohne Parallelbau'],
-    baustandKachel(strecken)
+    baustandKachel(strecken, stand)
   ].filter(Boolean);
   return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>
     `<div class="kz"><span class="kz-titel">${t}</span><span class="kz-wert">${escapeHtml(w)}</span><span class="kz-unter">${escapeHtml(u)}</span></div>`
@@ -3568,7 +3661,7 @@ function baudokuStammHTML(p, s, k) {
     /* „Baustand“ und nicht „Stand“: im Kopf darüber steht schon der
        Planungsstand als Datum-Zeit-Gruppe, und zwei Angaben gleichen Namens auf
        einem Blatt sind eine zu viel. */
-    ['Baustand', k.stand.name]
+    ['Baustand', k.stand.name + (zurueckSatz(s) ? ` – ↩ ${zurueckSatz(s)}` : '')]
   ]);
 }
 
@@ -3633,6 +3726,10 @@ function baudokuLegendeHTML(s, sw, opt) {
       `gebaute Trasse</span>`);
     zeilen.push(`<span class="lg-eintrag"><i class="lg-punkt-ist" style="--farbe:${farbe}"></i>` +
       `aufgenommener Punkt</span>`);
+    if (new Set(ist.map(pt => pt.abschnitt).filter(Boolean)).size > 1) {
+      zeilen.push('<span class="lg-eintrag"><i class="ist-abschnitt">Trupp</i>' +
+        'Kürzel an der gebauten Trasse: wer das Stück gebaut hat</span>');
+    }
     const buchstaben = new Map();
     for (const pt of ist) {
       const k = istKurz(pt);
@@ -3682,6 +3779,18 @@ function baudokuLegendeHTML(s, sw, opt) {
     zeilen.join('') + '</div>';
 }
 
+/** „1–3“ oder „1, 3, 5“ – zusammenhängende Nummern als Bereich */
+function nummernBereich(nr) {
+  const teile = [];
+  for (let i = 0; i < nr.length; i++) {
+    let j = i;
+    while (j + 1 < nr.length && nr[j + 1] === nr[j] + 1) j++;
+    teile.push(j - i >= 2 ? `${nr[i]}–${nr[j]}` : nr.slice(i, j + 1).join(', '));
+    i = j;
+  }
+  return teile.join(', ');
+}
+
 function baudokuKennzahlenHTML(k, strecke) {
   /* Die geplante Länge kommt aus derselben Rechnung wie auf dem Bauauftrag und
      nicht aus der Baudokumentation: bei einer Funkstrecke zählt dort die
@@ -3697,8 +3806,12 @@ function baudokuKennzahlenHTML(k, strecke) {
        „gebaut“ nicht (`istVerlauf` in baudoku.js). */
     ['gebaut', k.laenge ? formatLaenge(k.laenge) : '–',
       k.lueckeLaenge ? `Lücke ${formatLaenge(k.lueckeLaenge)} offen` : 'Trasse nach Aufnahme'],
+    /* Ohne Vorzeichen, wenn der Unterschied auf den Meter gerundet null ist:
+       gleich lange Trassen stehen als „−0 m“ da, wenn der Rest hinter dem
+       Komma negativ war. */
     ['Unterschied', (geplant && k.laenge)
-      ? ((k.laenge - geplant) > 0 ? '+' : '−') + formatLaenge(Math.abs(k.laenge - geplant))
+      ? (formatLaenge(Math.abs(k.laenge - geplant)) === formatLaenge(0) ? ''
+        : (k.laenge - geplant) > 0 ? '+' : '−') + formatLaenge(Math.abs(k.laenge - geplant))
       : '–', k.lueckeLaenge ? 'gebaut gegen geplant, mit Lücke' : 'gebaut gegen geplant'],
     ['Punkte', `${k.bestaetigt} von ${k.sollPunkte}`,
       k.zusaetzlich ? `${k.zusaetzlich} zusätzlich` : 'bestätigt'],
@@ -3725,10 +3838,27 @@ function baudokuKennzahlenHTML(k, strecke) {
         return `<b>Lücke ${wo} (Pkt.&nbsp;${plannr(l.von)}–${plannr(l.bis)}):</b> ` +
           `${escapeHtml(formatLaenge(l.laenge))} nicht aufgenommen – kein Minderbau, sondern noch offen.`;
       }).join(' ')}</p>` : '';
+  /* Wer welches Stück gebaut hat und wo sich die Trupps trafen: im
+     Schwarz-Weiß-Druck war die gebaute Trasse zweier Trupps eine einzige Linie,
+     und ein Treffpunkt stand nirgends auf dem Blatt – nur die Lücke hatte einen
+     Satz. Die Kürzel an der Linie (`ist-abschnitt`) tragen denselben Namen. */
+  const ist = istPunkte(strecke);
+  const name = id => { const a = bauabschnittById(strecke, id); return a ? (a.trupp || a.name) : '?'; };
+  const beteiligte = bauabschnitte(strecke).filter(a => ist.some(pt => pt.abschnitt === a.id));
+  const von = beteiligte.length > 1
+    ? `<b>Gebaut von:</b> ${beteiligte.map(a => {
+        const nr = [...new Set(ist.filter(pt => pt.abschnitt === a.id).map(plannr)
+          .filter(n => n !== '?'))].sort((x, y) => x - y);
+        return `${escapeHtml(a.trupp || a.name)}${nr.length ? ` (Pkt.&nbsp;${nummernBereich(nr)})` : ''}`;
+      }).join(', ')}. ` : '';
+  const treff = (k.treffpunkte || []).length
+    ? k.treffpunkte.map(t => `<b>Treffpunkt Pkt.&nbsp;${t.nummer}:</b> ` +
+        `${t.abschnitte.map(a => escapeHtml(name(a))).join(' und ')}.`).join(' ') : '';
+  const truppZeile = von || treff ? `<p class="bl-truppzeile">${von}${treff}</p>` : '';
   return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>
     `<div class="kz"><span class="kz-titel">${escapeHtml(t)}</span>` +
     `<span class="kz-wert">${escapeHtml(w)}</span>` +
-    `<span class="kz-unter">${escapeHtml(u)}</span></div>`).join('')}</div>${lueckenZeile}`;
+    `<span class="kz-unter">${escapeHtml(u)}</span></div>`).join('')}</div>${truppZeile}${lueckenZeile}`;
 }
 
 /* Die Karte des Blattes: die gebaute Trasse kräftig, die geplante daneben.
@@ -3854,7 +3984,7 @@ function baudokuNachweise(ziel, p, strecke, k, opt) {
      der ganzen Leitung und wandert nicht mit den Stämmen von Blatt zu Blatt. */
   if (opt.pruefung) {
     tabelleFliessen(fluss, pruefungRahmenHTML, pruefungZeilenHTML(strecke));
-    fluss.setze(elementAus(uebergabeHTML(k)));
+    fluss.setze(elementAus(uebergabeHTML(k, strecke)));
   }
   if (opt.abweichungen) fluss.setze(elementAus(baudokuAbweichungHTML(strecke, k)));
   /* Die Bilder vor den Unterschriften: bestätigt wird der ganze Nachweis, und
@@ -4213,8 +4343,21 @@ function pruefungZeilenHTML(s) {
 /* Die Übergabe. Sie steht unter den Prüfzeilen und nicht in ihnen: nach 3.5
    ist sie erst beendet, wenn die befohlenen Übernahmemessungen abgeschlossen
    sind – sie gilt der Leitung und nicht einem einzelnen Stamm. */
-function uebergabeHTML(k) {
+/** „Übergabe zurückgenommen 20:00 (Stamm 1)“ – oder leer, wenn keine Meldung
+ *  die Übergabe aufgehoben hat oder die Strecke wieder übergeben ist. */
+function zurueckSatz(s) {
+  const z = (bauzeile(s) || {}).zurueck;
+  return z ? `Übergabe zurückgenommen ${uhrzeit(z.zeit)}` +
+    `${z.staemme.length ? ` (${z.staemme.join(', ')})` : ''}` : '';
+}
+
+function uebergabeHTML(k, s) {
   const u = k.uebergabe;
+  /* Die aufgehobene Übergabe gehört zur Strecke und steht im Blatt, das ihre
+     Übergabe dokumentiert: im Review zeigte die Baudokumentation einer
+     zurückgefallenen Strecke ein leeres Übergabefeld, als wäre nie etwas
+     gewesen. */
+  const zurueck = zurueckSatz(s);
   return `<section class="bl-abschnitt">
     <h2>Übergabe</h2>
     <div class="bl-stamm bd-uebergabe">
@@ -4225,6 +4368,8 @@ function uebergabeHTML(k) {
       <div class="st-feld"><span class="st-titel">Übergeben durch</span>
         <span class="st-wert">${escapeHtml(u.durch || '\u00a0')}</span></div>
     </div>
+    ${zurueck ? `<p class="tab-fussnote"><b>↩ ${escapeHtml(zurueck)}:</b> die Strecke gilt
+      wieder als gebaut, nicht als übergeben.</p>` : ''}
     <p class="tab-fussnote">Übergeben ist die Leitung erst, wenn die befohlenen
       Übernahmemessungen abgeschlossen sind (Hdb Feldfernkabelbau, 3.5).</p>
   </section>`;

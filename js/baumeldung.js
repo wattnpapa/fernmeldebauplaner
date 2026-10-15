@@ -28,7 +28,7 @@ import {
   bauNormalisieren, BAUSTAENDE, id as neueKennung, neuerBauabschnitt, bauBegonnen
 } from './state.js';
 import {
-  bauabschnitte, istPunkte, baukennzahlen, abstandZurLinie, ABSEITS_SCHWELLE, truppName
+  bauabschnitte, istPunkte, baukennzahlen, abstandZurLinie, ABSEITS_SCHWELLE, truppName, uhrzeit
 } from './baudoku.js';
 import { bauAbdruck, meldungsCodeAus } from './teilen.js';
 import { materialById } from './vorschrift.js';
@@ -199,8 +199,12 @@ export function befund(projekt, meldung, zuordnung) {
     const hierPapier = papierOhneAbschnitt(ziel && ziel.bau);
     const andererAbsender = ganzeStrecke && !!ziel && !!ziel.bau && !!meldung.von &&
       (hierAbsender ? !gleicherTrupp(hierAbsender, meldung.von) : hierPapier);
-    const aelter = !schonDa && !andererAbsender &&
-      !!(standMeldung && standHier && standMeldung < standHier);
+    /* „Älter“ erst ab spürbarem Abstand: „0 s älter als der Stand hier“ stand
+       im Audit über einer Meldung, die der Trupp unmittelbar nach dem Planer-
+       Stand aufgenommen hatte – zwei Uhren, die um eine Sekunde auseinander
+       liegen, sagen nichts über veraltet. */
+    const aelter = !schonDa && !andererAbsender && !!(standMeldung && standHier) &&
+      Date.parse(standHier) - Date.parse(standMeldung) >= AELTER_ABSTAND;
     /* Was danach nicht mehr dasteht – gezählt über den Inhalt der Einträge und
        nicht über ihre Zahl. „Dabei weichen 3 Punkte“ stand auch dann da, wenn
        dieselben drei Punkte gleich wieder hereinkamen, und wer das einmal
@@ -223,17 +227,7 @@ export function befund(projekt, meldung, zuordnung) {
        `ABSEITS_SCHWELLE` daneben, gehört die Meldung nicht hierher; liegen nur
        einzelne daneben, ist es eine Ortung am falschen Platz, und das ist eine
        Nachfrage, kein Grund zu verwerfen. */
-    const lage = (ziel && (ziel.punkte || []).length)
-      ? ((m.bau && m.bau.punkte) || [])
-          .filter(pt => pt && Number.isFinite(pt.lat) && Number.isFinite(pt.lng))
-          .map(pt => abstandZurLinie(pt, ziel.punkte))
-      : [];
-    const daneben = lage.length ? {
-      naechster: Math.min(...lage),
-      weitester: Math.max(...lage),
-      zahl: lage.filter(d => d >= ABSEITS_SCHWELLE).length,
-      alle: lage.every(d => d >= ABSEITS_SCHWELLE)
-    } : null;
+    const daneben = danebenVon(ziel, m);
 
     /* „Übergeben“ ohne Messung kam beim Planer als fertige Leitung an. Beim
        Trupp fragt die Auswahl nach (`bauUebergabeBlock` in ui.js) – sie lässt
@@ -293,9 +287,18 @@ export function befund(projekt, meldung, zuordnung) {
       ? probeEinspielen(ziel, m, { ...ctxVon(meldung, wahl), ersetzen: [] }) : versuch;
     const verdacht = probe ? Math.max(0,
       mehrfachBelegt(probe.bau).length - mehrfachBelegt(ziel.bau).length) : 0;
+    /* Was das Ersetzen kostet, steht VOR dem Haken: ausprobiert mit genau diesem
+       Abschnitt. Der Verlust erschien im Audit erst, nachdem der Planer
+       angekreuzt hatte. */
     const ersetzbar = (ziel && ohneWahl)
       ? ersetzbareAbschnitte(ziel, ohneWahl.kopie, abschnitteDerMeldung)
-        .map(a => ({ ...a, gewaehlt: wahl.ersetzen.includes(a.id) })) : [];
+        .map(a => {
+          const mit = probeEinspielen(ziel, m, { ...ctxVon(meldung, wahl), ersetzen: [a.id] });
+          const v = mit ? verlust(ziel.bau, mit.kopie.bau) : null;
+          if (v) v.material = Math.max(0, v.material - mengenAenderung(ziel.bau, mit.kopie.bau).length);
+          return { ...a, gewaehlt: wahl.ersetzen.includes(a.id),
+            kostet: v ? { punkte: v.punkte, meldungen: v.meldungen, material: v.material } : null };
+        }) : [];
     const verdachtOrte = (probe && verdacht) ? ortsnamen(probe.bau, mehrfachBelegt(probe.bau)) : [];
     const hinweisArt = art => (versuch ? versuch.pruefhinweise : []).find(h => h[art]);
 
@@ -317,7 +320,7 @@ export function befund(projekt, meldung, zuordnung) {
       hierPapier,
       /* Steht hier etwas ohne Abschnitt? Sonst träte nichts „an die Stelle“. */
       hierOhneAbschnitt: !!(ziel && ziel.bau && ohneAbschnitt(ziel.bau)),
-      pruefAbgelehnt: abgelehnt, nichtsGeaendert,
+      pruefAbgelehnt: abgelehnt, nichtsGeaendert, papierGemeldet: papierDerMeldung(m),
       standMeldung, standHier, schonDa, aelter, verloren, geaendert,
       daneben, uebergabeFraglich, neueMeldungen, bisher, danach,
       eigenerAbschnittMoeglich, alsEigener, gedeckelt, offeneAbschnitte,
@@ -361,6 +364,43 @@ export function befund(projekt, meldung, zuordnung) {
               abschnitteDerMeldung.includes(a.name))).length) : 0
     };
   });
+}
+
+/* Ab wann eine Meldung „älter“ als der Stand hier heißt (ms). Eine Minute: so
+   fein stellt am Bauort niemand zwei Geräte, und darunter ist es dieselbe
+   Aufnahme. */
+const AELTER_ABSTAND = 60 * 1000;
+
+/* Wie weit die Punkte einer Meldung neben der Trasse liegen – für die Vorschau
+   und für die Rückfragen nach dem Einspielen. */
+function danebenVon(ziel, m) {
+  const lage = (ziel && (ziel.punkte || []).length)
+    ? ((m.bau && m.bau.punkte) || [])
+        .filter(pt => pt && Number.isFinite(pt.lat) && Number.isFinite(pt.lng))
+        .map(pt => abstandZurLinie(pt, ziel.punkte))
+    : [];
+  return lage.length ? {
+    naechster: Math.min(...lage),
+    weitester: Math.max(...lage),
+    zahl: lage.filter(d => d >= ABSEITS_SCHWELLE).length,
+    alle: lage.every(d => d >= ABSEITS_SCHWELLE)
+  } : null;
+}
+
+/* Was die Meldung selbst vom Papier mitbringt (Nachtrag am Gerät): der Planer
+   liest „3 Punkte“ und hält sie für Aufnahmen vom Bauort. */
+function papierDerMeldung(m) {
+  const bau = (m && m.bau) || {};
+  const papier = [...(Array.isArray(bau.punkte) ? bau.punkte : []),
+    ...(Array.isArray(bau.meldungen) ? bau.meldungen : [])].filter(x => x && x.nachgetragen);
+  return { zahl: papier.length, ohneZeit: papier.filter(x => !x.zeit).length };
+}
+
+/** „davon 1 Eintrag vom Papier, ohne Uhrzeit“ – oder leer, wenn nichts vom Papier ist */
+export function papierText(pa) {
+  if (!pa || !pa.zahl) return '';
+  return `davon ${pa.zahl} ${pa.zahl === 1 ? 'Eintrag' : 'Einträge'} vom Papier` + (pa.ohneZeit
+    ? (pa.ohneZeit === pa.zahl ? ', ohne Uhrzeit' : `, ${pa.ohneZeit} ohne Uhrzeit`) : '');
 }
 
 /* Wie viele Eintragungen dieses Bogens keinem Bauabschnitt zugeordnet sind.
@@ -564,9 +604,17 @@ function verdraengtNachInhalt(vorher, nachher, verloren) {
   const pv = v.pruefung || {}, pn = n.pruefung || {};
   const namen = new Set((n.abschnitte || []).map(a => a.name));
   const zeilenNachher = new Set((pn.staemme || []).map(inhaltVon));
+  /* Eine Prüfzeile desselben Stammes mit neuem Ergebnis oder neuer Zeit ist
+     berichtigt und nicht verloren – bei Material gibt es den Abzug „geändert“
+     längst, die Prüfzeile stand im Audit als „⚠ Verlust … 1 Prüfzeile“ da, wo
+     der Trupp nur nachgemessen hatte. Ein Stamm ohne Namen zählt nicht als
+     Treffer: „leer“ passt zu jedem anderen leeren. */
+  const stammVon = z => String((z && z.stamm) || '').trim().toLowerCase();
+  const staemmeNachher = new Set((pn.staemme || []).map(stammVon).filter(Boolean));
   return {
     abschnitte: (v.abschnitte || []).filter(a => !namen.has(a.name)).length,
-    pruefzeilen: (pv.staemme || []).filter(z => !zeilenNachher.has(inhaltVon(z))).length,
+    pruefzeilen: (pv.staemme || []).filter(z => !zeilenNachher.has(inhaltVon(z)) &&
+      !staemmeNachher.has(stammVon(z))).length,
     uebergabe: !!pv.uebergabeAn && (pv.uebergabeAn !== pn.uebergabeAn || pv.uebergabeZeit !== pn.uebergabeZeit),
     material: verloren.material,
     abweichung: !!v.abweichung && v.abweichung !== n.abweichung
@@ -771,13 +819,13 @@ function traegtEintraege(strecke, aid) {
  */
 export function einspielen(projekt, meldung, zuordnung) {
   const bericht = { strecken: 0, punkte: 0, bestand: 0, abschnitte: 0, uebersprungen: 0,
-    unveraendert: 0, pruefhinweise: [] };
+    unveraendert: 0, pruefhinweise: [], ausgelassen: [], verluste: [], rueckfragen: [] };
   const code = meldungsCodeAus(meldung);
   (meldung.strecken || []).forEach((m, i) => {
     const zielId = zuordnung ? zuordnung[i] : undefined;
     const ziel = zielId === null ? null
       : (projekt.strecken || []).find(s => s.id === zielId) || vorschlag(projekt, m.name);
-    if (!ziel) { bericht.uebersprungen++; return; }
+    if (!ziel) { bericht.uebersprungen++; bericht.ausgelassen.push(String(m.name || '')); return; }
     const wahl = wahlVon(zuordnung, i);
     if (wahl.alsEigener) m = alsEigenerAbschnitt(m, meldung.von);
 
@@ -788,15 +836,23 @@ export function einspielen(projekt, meldung, zuordnung) {
        alten und brächte sie nicht mit. Deshalb vorher gemerkt. */
     const codesAlt = { gemeldetCode: ziel.bau && ziel.bau.gemeldetCode,
       gemeldetCodes: ziel.bau && ziel.bau.gemeldetCodes };
+    const bauVorher = ziel.bau ? JSON.parse(JSON.stringify(ziel.bau)) : null;
+    const absenderAlt = ziel.bau ? ziel.bau.gemeldetVon : '';
     const getan = anwenden(ziel, m, ctxVon(meldung, wahl));
-    if (!getan) { bericht.uebersprungen++; return; }
+    if (!getan) { bericht.uebersprungen++; bericht.ausgelassen.push(String(m.name || '')); return; }
     const frisch = getan.frisch;
     bericht.pruefhinweise.push(...getan.hinweise);
     /* Der Absender bleibt an der Strecke stehen: die Streckenliste nennt ihn,
        und die nächste Meldung sagt damit, WESSEN Aufnahme sie ersetzt. */
     /* Ohne Absender steht das auch so da: ein leeres Feld ließ die nächste
        Meldung nicht mehr sagen, wessen Aufnahme sie ersetzt. */
-    ziel.bau.gemeldetVon = meldung.von ? String(meldung.von).slice(0, 120) : 'unbekannter Absender';
+    /* Aber nur, wenn die Meldung hier etwas bewirkt hat: eine, die nichts
+       änderte (ihre Prüfung wurde nicht übernommen, der Rest war schon da),
+       machte ihren Absender sonst zum „letzten“ und damit eine Nachmessung des
+       Trupps, dessen Aufnahme weiter hier steht, zu der eines Fremden. */
+    const wirkte = !(abdruckVorher && bauAbdruck(ziel) === abdruckVorher);
+    ziel.bau.gemeldetVon = (!wirkte && absenderAlt) ? absenderAlt
+      : meldung.von ? String(meldung.von).slice(0, 120) : 'unbekannter Absender';
     /* Und der Rückgabe-Code, gerechnet über die Meldung, wie sie ankam – derselbe,
        den der Trupp am Gerät sieht. Er steht danach an der Strecke neben
        „zuletzt“, damit eine Nachfrage über Funk auch Stunden später noch zu
@@ -810,8 +866,32 @@ export function einspielen(projekt, meldung, zuordnung) {
        „gebaut“. Jede weitere Meldung überschreibt den Vermerk: er gilt für
        den letzten Empfang, nicht für alle. */
     const aufgehoben = getan.hinweise.find(h => h.uebergabeAufgehoben);
-    ziel.bau.uebergabeZurueckZeit = aufgehoben ? new Date().toISOString() : '';
-    ziel.bau.uebergabeZurueckStaemme = aufgehoben ? aufgehoben.staemme.join('\n') : '';
+    /* Auch die nicht übernommene Übergabe kann eine hiesige aufgehoben haben
+       (`war` am Hinweis). */
+    const hatWar = aufgehoben || getan.hinweise.find(h => h.uebergabeNichtUebernommen && h.war);
+    ziel.bau.uebergabeZurueckZeit = hatWar ? new Date().toISOString() : '';
+    ziel.bau.uebergabeZurueckStaemme = hatWar ? hatWar.staemme.join('\n') : '';
+    ziel.bau.uebergabeZurueckWar = (hatWar && hatWar.war)
+      ? [hatWar.war.an, hatWar.war.name, hatWar.war.zeit].join('\n') : '';
+
+    /* Was der Trupp wissen muss und die Pille nicht trägt: was beim Planer
+       entfallen ist und was beim Trupp nachzufragen bleibt. Gerechnet an den
+       Ständen vor und nach dem Einspielen – dieselben Zahlen, die der Dialog
+       vorher nannte, nur jetzt für die Funkformel. */
+    if (bauVorher) {
+      const v = verlust(bauVorher, ziel.bau);
+      v.material = Math.max(0, v.material - mengenAenderung(bauVorher, ziel.bau).length);
+      if (v.punkte || v.meldungen || v.material) {
+        bericht.verluste.push({ strecke: ziel.name, ...v,
+          von: bisherVon({ bau: bauVorher }, [], true) });
+      }
+      const doppelt = Math.max(0, mehrfachBelegt(ziel.bau).length - mehrfachBelegt(bauVorher).length);
+      if (doppelt) bericht.rueckfragen.push({ strecke: ziel.name, doppelt });
+    }
+    const abseits = danebenVon(ziel, m);
+    if (abseits && abseits.zahl) {
+      bericht.rueckfragen.push({ strecke: ziel.name, abseits: abseits.zahl, weit: abseits.weitester });
+    }
 
     bericht.strecken++;
     if (abdruckVorher && bauAbdruck(ziel) === abdruckVorher) bericht.unveraendert++;
@@ -1231,14 +1311,25 @@ function pruefungZusammenfuehren(bau, frisch, ctx, hier, ganze) {
   const gemessen = z => z.bestanden !== null || !!String(z.ergebnis || '').trim();
   const vonHier = new Set(hier ? hier.staemme : []);
   let ergebnis = hier || neu || null;
+  /* Jede Zeile, die hier danach gilt, trägt den Absender der Meldung, aus der
+     sie kommt. „Derselbe Trupp“ hing vorher am letzten Absender der ganzen
+     Strecke – meldete der zweite Trupp dazwischen, galt die Nachmessung des
+     ersten als fremd (und, umgekehrt, die abgelehnte Messung des zweiten beim
+     nächsten Einspielen als eigene). Die Zeile weiß selbst, wessen Messung sie
+     ist. Zeilen aus der Zeit davor tragen keinen Absender; für sie gilt wie
+     bisher der letzte Absender an der Strecke (`ctx.gleich`). */
+  const absender = String(ctx.von || '').slice(0, 120);
+  const gemerkt = z => { z.von = absender; return z; };
+  const desselben = h => !!ctx.von && (h.von ? gleicherTrupp(h.von, ctx.von) : !!ctx.gleich);
+  if (!hier && neu) (neu.staemme || []).forEach(gemerkt);
 
   if (hier && neu) {
     for (const g of neu.staemme || []) {
       const stelle = hier.staemme.findIndex(h => schluessel(h) === schluessel(g));
-      if (stelle < 0) { hier.staemme.push(g); continue; }
+      if (stelle < 0) { hier.staemme.push(gemerkt(g)); continue; }
       const h = hier.staemme[stelle];
       let nehmen, fraglich = false, nachmessung = false;
-      if (ctx.gleich && gemessen(g) && gemessen(h) && g.zeit) {
+      if (desselben(h) && gemessen(g) && gemessen(h) && g.zeit) {
         /* Gleiche oder spätere Zeit: dieselbe Zeile desselben Trupps, deren
            Ergebnis er geändert hat, ist die NEUE Messung. Die Zeile behielt
            bisher die Zeit der ersten (die Oberfläche setzte sie beim Ändern des
@@ -1258,7 +1349,7 @@ function pruefungZusammenfuehren(bau, frisch, ctx, hier, ganze) {
           hier: ergebnisWort(h), gemeldet: ergebnisWort(g), uebernommen: nehmen, fraglich,
           nachmessung });
       }
-      if (nehmen) hier.staemme[stelle] = g;
+      if (nehmen) hier.staemme[stelle] = gemerkt(g);
     }
   }
 
@@ -1287,14 +1378,25 @@ function pruefungZusammenfuehren(bau, frisch, ctx, hier, ganze) {
   }
 
   if (ergebnis) bau.pruefung = ergebnis;
-  if (durchgefallen.length && bau.stand === 'uebergeben') {
-    bau.stand = 'gebaut';
+  /* Neben einem durchgefallenen Stamm gilt keine Übergabe (3.5). Der Stand fiel
+     bisher auf „gebaut“, die Übergabe aber blieb eingetragen – die Dokumentation
+     führte „übergeben an …“ neben „Prüfung nicht bestanden“, und im Abschnittsfall
+     (Stand schon vorher „gebaut“, Übergabe aus einer früheren Meldung) erfuhr der
+     Planer von der Aufhebung gar nichts. Jetzt wird sie geleert und als `war`
+     festgehalten: nicht still gelöscht, aber auch nicht als gültige Übergabe
+     weitergeführt. */
+  if (durchgefallen.length && (bau.stand === 'uebergeben' || hatUebergabe(ergebnis))) {
+    const war = hatUebergabe(ergebnis) ? {
+      an: ergebnis.uebergabeAn, name: ergebnis.uebergabeName, zeit: ergebnis.uebergabeZeit } : null;
+    if (war) { ergebnis.uebergabeAn = ''; ergebnis.uebergabeZeit = ''; ergebnis.uebergabeName = ''; }
+    if (bau.stand === 'uebergeben') bau.stand = 'gebaut';
+    const staemme = durchgefallen.map(z => name(z) || 'ein Stamm');
     /* Wurde die gemeldete Übergabe ohnehin nicht übernommen, sagt das schon der
-       Hinweis darüber – zweimal dasselbe liest niemand. */
-    if (!hinweise.some(h => h.uebergabeNichtUebernommen)) {
-      hinweise.push({ uebergabeAufgehoben: true,
-        staemme: durchgefallen.map(z => name(z) || 'ein Stamm') });
-    }
+       Hinweis darüber – zweimal dasselbe liest niemand. Was hier stand, trägt
+       er dann mit. */
+    const schon = hinweise.find(h => h.uebergabeNichtUebernommen);
+    if (schon) { if (war) schon.war = war; }
+    else hinweise.push({ uebergabeAufgehoben: true, staemme, war });
   }
   return hinweise;
 }
@@ -1321,22 +1423,81 @@ function teilText(bericht) {
  * hält die Übergabe sonst für verbucht.
  */
 export function nichtUebernommen(bericht) {
+  return [...pruefungNicht(bericht), ...ausgelasseneStrecken(bericht)];
+}
+
+/** Die Übergabe, die aufgehoben wurde, in einem Satzteil – leer, wenn nichts stand */
+export function uebergabeWarText(war) {
+  if (!war) return '';
+  return [war.an && `an ${war.an}`, war.name && `durch ${war.name}`,
+    war.zeit && uhrzeit(war.zeit)].filter(Boolean).join(', ');
+}
+
+/* Prüfung und Übergabe, die nicht galten – das, was der Trupp neu messen oder
+   neu melden muss. */
+function pruefungNicht(bericht) {
   const liste = [];
   const staemme = h => h.staemme.join(', ');
+  const ist = h => (h.staemme.length === 1 ? 'ist' : 'sind');
+  const war = h => { const t = uebergabeWarText(h.war); return t ? ` – eingetragen war: ${t}` : ''; };
   for (const h of bericht.pruefhinweise || []) {
     if (h.stamm && !h.uebernommen) {
       liste.push(`Prüfung ${h.stamm} (hier ${h.hier}, gemeldet ${h.gemeldet})`);
     } else if (h.uebergabeNichtUebernommen) {
-      liste.push(`Übergabe (${staemme(h)} ${h.staemme.length === 1 ? 'ist' : 'sind'} durchgefallen)`);
+      liste.push(`Übergabe (${staemme(h)} ${ist(h)} durchgefallen)${war(h)}`);
     } else if (h.uebergabeAufgehoben) {
-      liste.push(`Übergabe aufgehoben (${staemme(h)} ${h.staemme.length === 1 ? 'ist' : 'sind'} durchgefallen)`);
+      liste.push(`Übergabe aufgehoben (${staemme(h)} ${ist(h)} durchgefallen)${war(h)}`);
     }
   }
-  if (bericht.uebersprungen) {
-    liste.push(`${bericht.uebersprungen} ${bericht.uebersprungen === 1
-      ? 'Strecke ausgelassen' : 'Strecken ausgelassen'}`);
-  }
   return liste;
+}
+
+/* Eine Strecke, die der Planer im Dialog bewusst abgewählt hat, wird mit
+   Namen genannt: „1 Strecke ausgelassen“ ließ den Trupp raten, welche – und
+   schien zu verlangen, dass er etwas neu misst. */
+function ausgelasseneStrecken(bericht) {
+  if (!bericht.uebersprungen) return [];
+  const namen = (bericht.ausgelassen || []).filter(Boolean);
+  if (namen.length === bericht.uebersprungen) {
+    return namen.map(n => `Strecke „${n}“ nicht eingespielt (ausgelassen)`);
+  }
+  return [`${bericht.uebersprungen} ${bericht.uebersprungen === 1
+    ? 'Strecke ausgelassen' : 'Strecken ausgelassen'}`];
+}
+
+/** „3 aufgenommene Punkte, 1 Baumeldung und 2 Materialzeilen“ aus einem Verlust */
+export const zaehlText = v => [
+  v.punkte && `${v.punkte} ${v.punkte === 1 ? 'aufgenommener Punkt' : 'aufgenommene Punkte'}`,
+  v.meldungen && `${v.meldungen} ${v.meldungen === 1 ? 'Baumeldung' : 'Baumeldungen'}`,
+  v.material && `${v.material} ${v.material === 1 ? 'Materialzeile' : 'Materialzeilen'}`
+].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' und $1');
+
+/**
+ * Alles, was der Trupp nach dem Einspielen über Funk hören muss, nach Gewicht
+ * geordnet: zuerst, was beim Planer entfallen ist (`verlust`), dann Prüfung und
+ * Übergabe, die nicht galten (`nicht`), dann die abgewählten Strecken
+ * (`ausgelassen`) und zuletzt die Rückfragen. Die Formel „übernommen“ kannte
+ * nur Prüfung und Übergabe – eine Meldung, die einen Punkt beim Planer
+ * verdrängte oder einen geplanten Punkt doppelt bestätigte, kam als „übernommen“
+ * zurück, und die Nachfrage blieb beim Planer liegen, der sie nicht stellen kann.
+ *
+ * `neuMessen` gilt nur für `nicht`: eine bewusst ausgelassene Strecke verlangt
+ * vom Trupp nichts.
+ */
+export function durchgabe(bericht) {
+  const nicht = pruefungNicht(bericht);
+  const raus = u => (u || []).map(e => {
+    const bruch = e.von ? ` (Aufnahme von ${e.von})` : '';
+    return `Strecke „${e.strecke}“: ${zaehlText(e)} ${e.punkte + e.meldungen + e.material === 1
+      ? 'entfällt' : 'entfallen'} beim Planer${bruch}`;
+  });
+  const frage = (bericht.rueckfragen || []).map(e => e.doppelt
+    ? `Strecke „${e.strecke}“: ${e.doppelt} ${e.doppelt === 1 ? 'geplanter Punkt wäre' : 'geplante Punkte wären'} ` +
+      'doppelt bestätigt – ist es dieselbe Aufnahme?'
+    : `Strecke „${e.strecke}“: ${e.abseits} ${e.abseits === 1 ? 'Punkt liegt' : 'Punkte liegen'} bis ` +
+      `${Math.round(e.weit).toLocaleString('de-DE')}\u00a0m neben der Trasse – stimmt die Ortung?`);
+  return { verlust: raus(bericht.verluste), nicht, ausgelassen: ausgelasseneStrecken(bericht),
+    rueckfragen: frage, neuMessen: nicht.length > 0 };
 }
 
 /** Kurzfassung für die Meldung nach dem Einspielen */

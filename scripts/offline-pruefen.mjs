@@ -500,14 +500,21 @@ try {
     while (!ereignis && Date.now() < ende) await new Promise(f => setTimeout(f, 50));
     const nachher = [...document.querySelectorAll('#karte img.leaflet-tile')]
       .filter(i => i.src.startsWith('blob:')).length;
-    await new Promise(f => setTimeout(f, 4500));
+    /* Fünf Sekunden nach dem Ereignis steht „Netz wieder da“ noch (sieben stehen
+       ihm zu), nach weiteren dreieinhalb ist es weg. */
+    await new Promise(f => setTimeout(f, 5000));
+    const m = document.getElementById('sl-netz');
+    const mitte = { text: m.hidden ? '' : m.textContent, gut: m.classList.contains('netz-gut') };
+    await new Promise(f => setTimeout(f, 3500));
     window.Image = echt;
     const n = document.getElementById('sl-netz');
-    return { vorher, nachher, ereignis, sofort, spaeter: n.hidden ? '' : n.textContent };`);
+    return { vorher, nachher, ereignis, sofort, mitte, spaeter: n.hidden ? '' : n.textContent };`);
   const nachFehl = await nachholen(false);
   b.gleich(nachFehl.vorher, 12, 'Vorher steht jede Kachel gröber da (12)');
-  b.pruefe(/^Netz wieder da/.test(nachFehl.sofort),
+  b.pruefe(/^✓ Netz wieder da/.test(nachFehl.sofort),
     `Das Netz-Ereignis wird gesagt, statt die Zeile still zu räumen („${nachFehl.sofort}“)`);
+  b.pruefe(/Netz wieder da/.test(nachFehl.mitte.text) && nachFehl.mitte.gut,
+    `Es steht auch nach fünf Sekunden noch da, mit dem Häkchen im grünen Ton („${nachFehl.mitte.text}“)`);
   b.gleich(nachFehl.nachher, 12, 'Antwortet der Server weiter nicht, bleiben die gröberen Kacheln stehen');
   b.pruefe(nachFehl.ereignis && nachFehl.ereignis.offen === 12, 'Und das Nachladen meldet, dass 12 offen sind');
   b.pruefe(/gröber/.test(nachFehl.spaeter) && !/Netz wieder da/.test(nachFehl.spaeter),
@@ -517,6 +524,110 @@ try {
     `Antwortet er, ist jede Kachel wieder die feine (${nachOk.nachher} gröbere übrig)`);
   b.pruefe(nachOk.spaeter === '', `Und die Zeile ist danach weg („${nachOk.spaeter}“)`);
   await seite.haengenEnde().catch(() => {});
+
+  b.abschnitt('Antwortet der Server erst nach der Frist, schärft sich die Karte von selbst');
+  /* Der eine Nachversuch gab auf: nach einer Frist-Rückgriff-Runde blieben 17 von
+     29 Kacheln unscharf, auch nach dem Verschieben, und die Leiste meldete
+     „gröber“ ohne Aussicht. Jetzt wiederholt die Ebene nach 15 s, 45 s und
+     2 min, auch ohne dass irgendeine andere Kachel aus dem Netz kommt – genau
+     das tut ein hängender Server nicht. Der Server wird hier gespielt: das
+     Bild für den Nachversuch antwortet, sobald `antwortet` gesetzt ist. */
+  await seite.auswerten('return (await import("./js/ui.js")).hinweisAus();');
+  await seite.haengen('*geodatenzentrum.de*');
+  await seite.auswerten(`
+    const k = window.fbp.karte;
+    k.setView([51.8031, 10.6003], 18, { animate: false });
+    k._fbpBasis.redraw();
+    return true;`);
+  await seite.warteAuf(`
+    const bilder = [...document.querySelectorAll('#karte img.leaflet-tile')];
+    return bilder.length > 0 && bilder.every(i => i.src.startsWith('blob:') && i.complete)
+      && !document.getElementById('sl-netz').hidden;`, 12000).catch(() => {});
+  await seite.haengenEnde().catch(() => {});
+  const spaet = await seite.auswerten(`
+    const k = window.fbp.karte;
+    const echt = window.Image;
+    window.__antwortet = false;
+    window.Image = function () {
+      const probe = { set src(v) { if (!v) return; setTimeout(() => {
+        if (window.__antwortet) probe.onload && probe.onload(); else probe.onerror && probe.onerror();
+      }, 60); } };
+      return probe;
+    };
+    const zaehle = () => [...document.querySelectorAll('#karte img.leaflet-tile')]
+      .filter(i => i.src.startsWith('blob:')).length;
+    const gesamt = document.querySelectorAll('#karte img.leaflet-tile').length;
+    const ereignisse = [];
+    k.on('fbp:nachgeladen', e => ereignisse.push({ offen: e.offen, angekommen: e.angekommen }));
+    const r = { gesamt, anfang: zaehle() };
+    /* Der Server „antwortet“ nach den vier Sekunden – aber noch vor der ersten
+       Pause von 15 s. Bis dahin darf nichts geschehen, danach muss es. */
+    await new Promise(f => setTimeout(f, 6000));
+    window.__antwortet = true;
+    r.vorPause = zaehle();
+    const ende = Date.now() + 14000;
+    while (zaehle() > 0 && Date.now() < ende) await new Promise(f => setTimeout(f, 250));
+    r.nachPause = zaehle();
+    await new Promise(f => setTimeout(f, 500));
+    const n = document.getElementById('sl-netz');
+    r.leiste = n.hidden ? '' : n.textContent;
+    r.letztes = ereignisse[ereignisse.length - 1] || null;
+    window.Image = echt;
+    return r;`);
+  b.pruefe(spaet.gesamt > 0 && spaet.anfang === spaet.gesamt,
+    `Vorher steht jede Kachel gröber da (${spaet.anfang} von ${spaet.gesamt})`);
+  b.gleich(spaet.vorPause, spaet.gesamt, 'Vor der ersten Pause von 15 s ändert sich nichts');
+  b.gleich(spaet.nachPause, 0, 'Danach holt die Ebene jede Kachel nach, ohne Zutun und ohne Verschieben');
+  b.pruefe(spaet.letztes && spaet.letztes.offen === 0, 'Und meldet, dass nichts mehr offen ist');
+  b.pruefe(spaet.leiste === '', `Die Leiste ist dann weg („${spaet.leiste}“)`);
+
+  b.abschnitt('Die Höhe wird nach dem Funkloch wieder gefragt');
+  /* Eine gescheiterte Höhenkachel (rund 10 km) wurde bis zum Neuladen gemerkt:
+     „Höhe –“ blieb auch für die Nachbarpunkte stehen, als das Netz längst
+     zurück war. Jetzt fällt der Fehlschlag, wenn der Browser das Netz meldet,
+     und nach einer Minute von selbst. Gespielt wird mit einer Abrufattrappe,
+     die zuerst scheitert und dann ein gültiges Höhenbild liefert. */
+  const hoehe = await seite.auswerten(`
+    const h = await import('./js/hoehe.js');
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const ctx = c.getContext('2d'); ctx.fillStyle = 'rgb(130,0,0)'; ctx.fillRect(0, 0, 256, 256);
+    const png = await new Promise(f => c.toBlob(f, 'image/png'));
+    const echt = window.fetch;
+    const echtJetzt = Date.now;
+    let netz = false, abrufe = 0;
+    window.fetch = (url, opt) => {
+      if (!/elevation-tiles-prod/.test(String(url))) return echt(url, opt);
+      abrufe++;
+      return netz ? Promise.resolve(new Response(png)) : Promise.reject(new TypeError('offline'));
+    };
+    const r = {};
+    try {
+      /* Eine Stelle, die kein anderer Abschnitt abgefragt hat. */
+      r.ohne = await h.hoeheAn(48.1, 11.5);
+      netz = true;
+      r.nochImGedaechtnis = await h.hoeheAn(48.1, 11.5);
+      r.abrufeVorher = abrufe;
+      /* Der Nachbarpunkt derselben Kachel. */
+      r.nachbar = await h.hoeheAn(48.102, 11.502);
+      window.dispatchEvent(new Event('online'));
+      r.nachOnline = await h.hoeheAn(48.102, 11.502);
+      /* Und die zweite Art: eine Minute später ohne Ereignis. */
+      netz = false;
+      h.kachelfehlerVergessen();
+      r.wieder = await h.hoeheAn(47.5, 12.5);
+      netz = true;
+      r.vorMinute = await h.hoeheAn(47.5, 12.5);
+      Date.now = () => echtJetzt.call(Date) + 61000;
+      r.nachMinute = await h.hoeheAn(47.5, 12.5);
+    } finally { window.fetch = echt; Date.now = echtJetzt; }
+    return r;`);
+  b.gleich(hoehe.ohne, null, 'Ohne Netz gibt es keine Höhe');
+  b.gleich(hoehe.nochImGedaechtnis, null, 'Der Fehlschlag wird kurz gemerkt, statt bei jeder Bewegung neu zu fragen');
+  b.gleich(hoehe.nachbar, null, 'Auch der Nachbarpunkt derselben Kachel liest noch nichts');
+  b.pruefe(typeof hoehe.nachOnline === 'number',
+    `Mit dem Netz-Ereignis ist die Höhe wieder da (${hoehe.nachOnline})`);
+  b.gleich(hoehe.vorMinute, null, 'Ohne Ereignis gilt der Fehlschlag innerhalb der Minute weiter');
+  b.pruefe(typeof hoehe.nachMinute === 'number', 'Nach einer Minute wird von selbst erneut gefragt');
 
   b.abschnitt('Springt eine gröbere Stufe ein, sagt die Leiste es auch mit Netz');
   /* Ein Server, der Kacheln abweist, ist für den Trupp von einem Funkloch nicht

@@ -579,7 +579,12 @@ export function neuerBau() {
        öffnet leer, `bauNormalisieren()` stellt sie her, und der Codec lässt
        sie zu Hause – es ist eine Notiz des Planers über den Empfang. */
     uebergabeZurueckZeit: '',
-    uebergabeZurueckStaemme: ''
+    uebergabeZurueckStaemme: '',
+    /* Was an der aufgehobenen Übergabe stand (an, durch, Zeit – je Zeile). Die
+       Übergabe selbst gilt nicht mehr und wird in der Prüfung geleert; ohne
+       diese Notiz wäre „an wen war übergeben?“ nach dem Einspielen weg. Wie die
+       beiden Felder davor ohne Schemaerhöhung. */
+    uebergabeZurueckWar: ''
   };
 }
 
@@ -893,6 +898,11 @@ class Store {
     this.redoHerkunft = [];
     this._speicherTimer = null;
     this._letzterSchnappschuss = null;
+    /* Der letzte Verlaufsschritt, der etwas quittiert hat, das es nur einmal
+       gibt (eine eingespielte Baumeldung; gesetzt von ui.js, gelesen von
+       `rueckgaengig` in app.js). Er gehört nicht in die Planung: er sagt, was
+       am Funk gesagt wurde, nicht, was geplant ist. */
+    this.quittung = null;
   }
 
   on(fn) { this.horcher.add(fn); return () => this.horcher.delete(fn); }
@@ -927,15 +937,28 @@ class Store {
     const vorher = JSON.stringify(this.projekt);
     const tiefe = this.undoStapel.length;
     const letzter = this._letzterSchnappschuss;
+    /* `schnappschuss` leert den Redo-Stapel – bei einem Fehlschlag muss er samt
+       Herkunftsmarken zurückkommen, sonst fehlt dem Planer nach einem
+       Einspielen, das gar nicht stattfand, sein „↷“. */
+    const redo = [...this.redoStapel], redoHerkunft = [...this.redoHerkunft];
     this.aendern(fn, grund);
     clearTimeout(this._speicherTimer);
-    if (this.speichern()) return true;
+    /* Still: ein Fehlschlag HIER ist kein Verlust, denn die Änderung wird gleich
+       zurückgenommen. Die Meldung `speicherfehler` ließ die Oberfläche
+       „Aufnahmen nur im Fenster“ rechnen, wo nichts im Fenster stand. */
+    if (this.speichern({ still: true })) return true;
     const alt = JSON.parse(vorher);
     for (const k of Object.keys(this.projekt)) delete this.projekt[k];
     Object.assign(this.projekt, alt);
     while (this.undoStapel.length > tiefe) { this.undoStapel.pop(); this.undoHerkunft.pop(); }
+    this.redoStapel.length = 0; this.redoHerkunft.length = 0;
+    this.redoStapel.push(...redo);
+    this.redoHerkunft.push(...redoHerkunft);
     this._letzterSchnappschuss = letzter;
-    this.melden('undo');
+    /* Ein eigener Grund und nicht `undo`: die Oberfläche zeichnet wie nach
+       einem Rückgängig, setzt aber die Speicheranzeige auf den Stand VOR dem
+       Versuch zurück, statt „wird gespeichert …“ stehen zu lassen. */
+    this.melden('zurueckgenommen');
     return false;
   }
 
@@ -1065,7 +1088,7 @@ class Store {
     this.speichern();
   }
 
-  speichern() {
+  speichern({ still = false } = {}) {
     this._speicherOffen = false;
     try {
       const alle = ladeAlle();
@@ -1077,7 +1100,7 @@ class Store {
       return true;
     } catch (e) {
       console.error('Speichern fehlgeschlagen', e);
-      this.melden('speicherfehler');
+      if (!still) this.melden('speicherfehler');
       return false;
     }
   }
@@ -1090,6 +1113,7 @@ class Store {
     this.projekt = migrieren(p);
     this.undoStapel.length = 0; this.redoStapel.length = 0;
     this.undoHerkunft.length = 0; this.redoHerkunft.length = 0;
+    this.quittung = null;
     localStorage.setItem(KEY_AKTIV, pid);
     this.melden('geladen');
     return true;
@@ -1099,6 +1123,7 @@ class Store {
     this.projekt = neuesProjekt(name);
     this.undoStapel.length = 0; this.redoStapel.length = 0;
     this.undoHerkunft.length = 0; this.redoHerkunft.length = 0;
+    this.quittung = null;
     this.speichern();
     this.melden('geladen');
   }
@@ -1108,6 +1133,7 @@ class Store {
     this.projekt.id = this.projekt.id || id();
     this.undoStapel.length = 0; this.redoStapel.length = 0;
     this.undoHerkunft.length = 0; this.redoHerkunft.length = 0;
+    this.quittung = null;
     this.speichern();
     this.melden('geladen');
   }
@@ -1350,7 +1376,11 @@ function pruefungNormalisieren(roh) {
       ergebnis: String(z?.ergebnis || ''),
       bestanden: z?.bestanden === true ? true : (z?.bestanden === false ? false : null),
       zeit: String(z?.zeit || ''),
-      pruefer: String(z?.pruefer || '')
+      pruefer: String(z?.pruefer || ''),
+      /* Wessen Messung das ist – vom Planer beim Einspielen gesetzt, am Gerät
+         leer. Ohne Schemaerhöhung: ein Stand ohne das Feld öffnet leer, und
+         dann gilt wie bisher der letzte Absender an der Strecke. */
+      von: String(z?.von || '').slice(0, 120)
     })),
     uebergabeAn: String(roh.uebergabeAn || ''),
     uebergabeZeit: String(roh.uebergabeZeit || ''),
@@ -1422,7 +1452,8 @@ export function bauNormalisieren(roh) {
     gemeldetCode: String(roh.gemeldetCode || '').slice(0, 8),
     gemeldetCodes: String(roh.gemeldetCodes || '').slice(0, 420),
     uebergabeZurueckZeit: String(roh.uebergabeZurueckZeit || '').slice(0, 40),
-    uebergabeZurueckStaemme: String(roh.uebergabeZurueckStaemme || '').slice(0, 400)
+    uebergabeZurueckStaemme: String(roh.uebergabeZurueckStaemme || '').slice(0, 400),
+    uebergabeZurueckWar: String(roh.uebergabeZurueckWar || '').slice(0, 300)
   };
 }
 

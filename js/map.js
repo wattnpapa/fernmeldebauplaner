@@ -316,6 +316,16 @@ const ABRUF_FRIST = 4000;
    blieb die Kachel dann unscharf, bis jemand schob oder zoomte. */
 const NACHLADE_FRIST = 20000;
 
+/* Wann der Nachversuch für gröbere Kacheln wiederholt wird, wenn der erste
+   nicht ankam: 15 s, 45 s, 2 min nach dem jeweils letzten Lauf, danach nur
+   noch bei einem Ereignis (Netz zurück, eine Kachel kommt doch aus dem Netz,
+   neuer Ausschnitt). Der eine Versuch von früher gab auf: antwortete der
+   Server erst nach der Frist, blieben 17 von 29 Kacheln unscharf, auch nach
+   dem Verschieben, und die Leiste meldete „gröber“ ohne Aussicht auf Besserung.
+   Eine feste Folge und kein Dauerfeuer, weil jeder Lauf das Gerät am Netz hält
+   und ein Server, der Kacheln nicht führt, nicht belagert werden soll. */
+const NACHLADE_PAUSEN = [15000, 45000, 120000];
+
 /* Eine Kachelebene, die erst im Vorrat des Geräts nachsieht und nur dann ins
    Netz geht, wenn dort nichts liegt.
 
@@ -360,6 +370,8 @@ function vorratsEbene(url, optionen) {
         if (!bild._fbpGrob && !bild._fbpBlobAdresse && this._map) {
           clearTimeout(this._nachladeUhr);
           this._nachladeUhr = setTimeout(() => this.nachladen(false), 2000);
+          /* Der Server lebt: die Folge der Wiederholungen beginnt von vorn. */
+          this._nachSchritt = 0;
         }
       });
       /* Kommt die Kachel weder aus dem Vorrat noch aus dem Netz, springt die
@@ -463,6 +475,10 @@ function vorratsEbene(url, optionen) {
           bild.src = bild._fbpBlobAdresse;
           bild._fbpGrob = grund;
           if (this._map) this._map.fire('fbp:kachelgrob', { z, aus: z - stufen, grund });
+          /* Aus der Frist heraus gibt es immer einen Nachversuch, auch wenn
+             keine andere Kachel aus dem Netz kommt: genau dann hängt der
+             Server, und kein `load` stößt das Nachladen an. */
+          if (grund === 'frist') this._nachPlanen();
           return true;
         } catch (e) {
           return false;
@@ -479,13 +495,23 @@ function vorratsEbene(url, optionen) {
        jede gröbere Kachel; sonst nur für die, die an der Frist gescheitert
        waren, und jede nur einmal – eine Kachel, die der Anbieter nicht führt,
        soll nicht bei jedem Schub erneut angefragt werden. */
-    nachladen(alle) {
+    nachladen(modus) {
+      const alle = modus === true;
+      const runde = modus === 'runde';
+      /* Nach der Rückkehr des Netzes beginnt die Folge der Wiederholungen neu. */
+      if (alle) this._nachSchritt = 0;
       const laeufe = [];
       let angekommen = 0;
       for (const k in this._tiles) {
         const bild = this._tiles[k].el;
         if (!bild || bild._fbpWeg || !bild._fbpGrob || bild._fbpNachlauf) continue;
-        if (!alle && (bild._fbpGrob !== 'frist' || bild._fbpNachversucht)) continue;
+        /* `modus` false: die Kachel kommt erst jetzt dran, die Frist war ihr
+           Grund. `'runde'` ist die zeitgesteuerte Wiederholung und fragt jede
+           an der Frist gescheiterte Kachel erneut – die Folge begrenzt sie. */
+        if (!alle) {
+          if (bild._fbpGrob !== 'frist') continue;
+          if (!runde && bild._fbpNachversucht) continue;
+        }
         bild._fbpNachlauf = true;
         bild._fbpNachversucht = true;
         laeufe.push(new Promise(fertig => {
@@ -517,14 +543,47 @@ function vorratsEbene(url, optionen) {
       }
       if (!laeufe.length) return Promise.resolve(0);
       return Promise.all(laeufe).then(() => {
-        let offen = 0;
-        for (const k in this._tiles) {
-          const bild = this._tiles[k].el;
-          if (bild && !bild._fbpWeg && bild._fbpGrob) offen++;
+        const offen = this.grobSichtbar();
+        /* Ein Rest, der nur gröber dasteht, bekommt den nächsten Versuch nach
+           der nächsten Pause; ist die Folge durch, sagt das Ereignis es. */
+        const geplant = offen > 0 && this._nachPlanen();
+        if (this._map) {
+          this._map.fire('fbp:nachgeladen', { offen, angekommen, aufgegeben: offen > 0 && !geplant });
         }
-        if (this._map) this._map.fire('fbp:nachgeladen', { offen, angekommen });
         return offen;
       });
+    },
+
+    /* Wie viele der gröber gezeigten Kacheln im Bild stehen. Gezählt wird, was
+       zu sehen ist: Leaflet hält Kacheln rund um den Ausschnitt vor, und eine
+       gröbere am Rand, die niemand sieht, ließ die Leiste „gröber“ melden, obwohl
+       das Bild scharf war – und umgekehrt blieb sie nach dem Verschieben stehen. */
+    grobSichtbar() {
+      if (!this._map) return 0;
+      const rahmen = this._map.getContainer().getBoundingClientRect();
+      let n = 0;
+      for (const k in this._tiles) {
+        const bild = this._tiles[k].el;
+        if (!bild || bild._fbpWeg || !bild._fbpGrob) continue;
+        const r = bild.getBoundingClientRect();
+        if (r.right > rahmen.left && r.left < rahmen.right &&
+            r.bottom > rahmen.top && r.top < rahmen.bottom) n++;
+      }
+      return n;
+    },
+
+    /* Den nächsten zeitgesteuerten Lauf anberaumen, falls die Folge noch nicht
+       durch ist. @returns {boolean} ob einer steht */
+    _nachPlanen() {
+      if (this._nachUhr) return true;
+      const pause = NACHLADE_PAUSEN[this._nachSchritt || 0];
+      if (pause === undefined || !this._map) return false;
+      this._nachSchritt = (this._nachSchritt || 0) + 1;
+      this._nachUhr = setTimeout(() => {
+        this._nachUhr = null;
+        if (this._map) this.nachladen('runde');
+      }, pause);
+      return true;
     }
   });
   const ebene = new Ebene(url, optionen);
@@ -546,6 +605,13 @@ function vorratsEbene(url, optionen) {
   };
   ebene.on('tileunload', wegraeumen);
   ebene.on('tileabort', wegraeumen);
+  /* Ein neuer Ausschnitt oder eine neue Stufe lädt neue Kacheln: für sie
+     beginnt die Folge der Wiederholungen neu. */
+  ebene.on('loading', () => { ebene._nachSchritt = 0; });
+  ebene.on('remove', () => {
+    clearTimeout(ebene._nachUhr); ebene._nachUhr = null;
+    clearTimeout(ebene._nachladeUhr);
+  });
   return ebene;
 }
 
@@ -591,6 +657,13 @@ function kachelWacht(karte, ebene) {
 }
 
 /** Nach der Rückkehr des Netzes: alle gröber gezeigten Kacheln neu holen */
+export function kartenGrobSichtbar(karte) {
+  const basis = karte._fbpBasis;
+  if (!basis) return 0;
+  const ebenen = basis.getLayers ? basis.getLayers() : [basis];
+  return ebenen.reduce((n, e) => n + (e.grobSichtbar ? e.grobSichtbar() : 0), 0);
+}
+
 export function kartenNachladen(karte) {
   const basis = karte._fbpBasis;
   if (!basis) return Promise.resolve(0);

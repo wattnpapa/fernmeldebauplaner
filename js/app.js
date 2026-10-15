@@ -5,7 +5,9 @@ import {
   dateisicherung, istGehaltvoll, ladeAlle, migrieren, planKennung, baustandDerPlanung,
   SCHEMA, stammtVonNeuerer
 } from './state.js';
-import { erstelleKarte, setzeBasiskarte, setzeVorrang, kartenNachladen, BASISKARTEN } from './map.js';
+import {
+  erstelleKarte, setzeBasiskarte, setzeVorrang, kartenNachladen, kartenGrobSichtbar, BASISKARTEN
+} from './map.js';
 import { sichtStarten, sichtSetzen, istEinfach, gemerkteSicht } from './sicht.js';
 import { bestand as kachelBestand, ZOOM_BIS } from './kacheln.js';
 import { StreckenLayer, escapeHtml, ZEICHNEN_AB_ZOOM } from './strecken.js';
@@ -16,7 +18,7 @@ import { BilderLayer, uebernahmeLaeuft } from './bilder.js';
 import { aufraeumen as bilderAufraeumen } from './bildspeicher.js';
 import { GitterLayer } from './gitter.js';
 import { toMGRS, toDDM, alleFormate, formatLaenge } from './geo.js';
-import { hoeheAn } from './hoehe.js';
+import { hoeheAn, kachelfehlerVergessen } from './hoehe.js';
 import * as io from './io.js';
 import * as teilen from './teilen.js';
 import {
@@ -120,7 +122,7 @@ let fehlstartGesagt = -Infinity;
 document.addEventListener('fbp:ziehen-fehlstart', () => {
   if (performance.now() - fehlstartGesagt < 30000) return;
   fehlstartGesagt = performance.now();
-  hinweis('Zum Verschieben ruhig halten, bis der Ring steht.');
+  hinweis('Zum Verschieben ruhig halten, bis der Ring steht – der Punkt folgt dann etwas über dem Finger.');
 });
 
 // ---------------------------------------------------------------- Karte & Layer
@@ -701,6 +703,27 @@ let angetippt = null;
    können Antworten in anderer Reihenfolge eintreffen als die Anfragen –
    nur die jüngste darf in die Leiste, sonst zeigt sie eine alte Position. */
 let hoehenLauf = 0;
+let hoehePos = null;     // die Position, deren Höhe zuletzt gefragt wurde
+
+/* Wenn keine Höhe kommt, sagt die Leiste warum. Ein nacktes „–“ ließ offen, ob
+   dort nichts liegt, das Netz fehlt oder der Dienst schweigt – und blieb nach
+   einem Funkloch stehen, weil die gescheiterte Kachel (rund 10 km) gemerkt
+   wurde. Der Grund steht als `data-grund` am Feld (gezeigt über css/app.css,
+   nicht in der schmalen Leiste) und als Tooltip. */
+function hoeheZeigen(h) {
+  const feld = slElev.parentElement;
+  if (h === null) {
+    const grund = navigator.onLine === false ? 'kein Netz' : 'Höhenkachel nicht erreichbar';
+    slElev.textContent = '–';
+    feld.dataset.grund = grund;
+    feld.title = `Höhe: ${grund} – nach der Rückkehr des Netzes und nach etwa einer ` +
+      'Minute wird erneut gefragt';
+  } else {
+    slElev.textContent = `${Math.round(h)} m`;
+    delete feld.dataset.grund;
+    feld.removeAttribute('title');
+  }
+}
 
 function koordZeigen(ll, quelle) {
   slMgrs.textContent = toMGRS(ll.lat, ll.lng, 5);
@@ -708,9 +731,10 @@ function koordZeigen(ll, quelle) {
   slDez.textContent = `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
   slQuelle.textContent = quelle;
   const lauf = ++hoehenLauf;
+  hoehePos = ll;
   hoeheAn(ll.lat, ll.lng).then(h => {
     if (lauf !== hoehenLauf) return;
-    slElev.textContent = h === null ? '–' : `${Math.round(h)} m`;
+    hoeheZeigen(h);
   });
 }
 
@@ -731,7 +755,14 @@ const slNetz = $('#sl-netz');
    Netz hat, und ob gerade eine gröbere Stufe aus dem Vorrat einspringt
    (`fbp:kachelgrob`). Sie werden hier gesammelt, damit jeder Anlass dieselbe
    Zeile schreibt und keiner die Aussage des anderen überschreibt. */
-const netzlage = { kachelAus: false, grob: null, vorrat: '', zurueck: false };
+const netzlage = {
+  kachelAus: false, grob: null, vorrat: '', zurueck: false, aufgegeben: false
+};
+/* Das Band unter der Kopfzeile trägt dieselbe Auskunft für die Listenansicht
+   (`bandNachfuehren`, weiter unten). Es meldet sich hier an, statt direkt
+   gerufen zu werden: die Leiste wird schon beim Aufbau der Seite geführt, und
+   die Zustände des Bandes sind dann noch nicht deklariert. */
+let netzBandHaken = null;
 let bestandLauf = 0;
 function netzstandZeigen(aus) {
   if (aus !== undefined) netzlage.kachelAus = aus;
@@ -747,7 +778,8 @@ function netzstandZeigen(aus) {
      390 px in zwei Zeilen um und nimmt der Karte 21 px – dauerhaft, denn der
      Ausfall dauert die ganze Baustelle. */
   slNetz.parentElement.classList.toggle('ohne-netz', zeigen);
-  if (!zeigen) { slNetz.hidden = true; return; }
+  if (netzBandHaken) netzBandHaken();
+  if (!zeigen) { slNetz.hidden = true; slNetz.removeAttribute('title'); return; }
   slNetz.hidden = false;
   /* „kein Netz“ hieß es auch, wenn nur der Kartenserver schwieg – dann ist
      aber Netz da, und wer das Telefon hochhält und Balken sieht, glaubt der
@@ -763,11 +795,22 @@ function netzstandZeigen(aus) {
      noch gröbere Kacheln dastehen: „Netz wieder da“ allein ließe eine unscharfe
      Karte wie einen Fehler der Anwendung aussehen, und eine Zeile, die einfach
      verschwindet, wie „alles gut“. */
-  const was = offline ? 'kein Netz'
-    : netzlage.kachelAus ? 'Karte nicht erreichbar'
-    : netzlage.zurueck ? 'Netz wieder da'
-    : netzlage.grob === 'langsam' ? 'Karte langsam'
-    : feiner ? 'feiner nicht mitgenommen' : 'Rand: gröber';
+  /* „Netz wieder da“ trägt ein Häkchen und die Farbe der guten Nachricht: im
+     Mahnton stand es neben „Karte nicht erreichbar“ und las sich wie noch ein
+     Mangel. Dazu die kurze Form für die schmale Leiste (`data-kurz`, gezeigt
+     über css/app.css): „Karte nicht erreichbar“ und „feiner nicht mitgenommen“
+     liefen hochkant ins Abgeschnittene und nahmen dem Vorrat den Platz. Im
+     Text bleibt die lange Form – für Sprachausgabe und Prüfungen. */
+  const [was, wasKurz] = offline ? ['kein Netz', 'kein Netz']
+    : netzlage.kachelAus ? ['Karte nicht erreichbar', 'Karte fehlt']
+    : netzlage.zurueck ? ['✓ Netz wieder da', '✓ Netz da']
+    : netzlage.grob === 'langsam' ? ['Karte langsam', 'Karte langsam']
+    : feiner ? ['feiner nicht mitgenommen', 'feiner fehlt'] : ['Rand: gröber', 'Rand: gröber'];
+  slNetz.classList.toggle('netz-gut', !gebremst && netzlage.zurueck);
+  slNetz.title = netzlage.grob
+    ? 'Die Karte steht an einigen Stellen gröber da' +
+      (netzlage.aufgegeben ? '. Zoomen lädt sie neu.' : ' und wird nachgeladen.')
+    : '';
   const grob = !netzlage.grob ? ''
     : netzlage.zurueck && !gebremst ? 'lädt nach'
     : !gebremst && netzlage.grob !== 'langsam' ? ''
@@ -780,13 +823,14 @@ function netzstandZeigen(aus) {
      schrumpfte – bei 320 px blieb von „kein Netz“ nichts übrig. */
   const zeile = vorrat => {
     netzlage.vorrat = vorrat;
-    const feld = (klasse, text) => {
+    const feld = (klasse, text, kurz) => {
       const el = document.createElement('span');
       el.className = klasse;
       el.textContent = text;
+      if (kurz) el.dataset.kurz = kurz;
       return el;
     };
-    slNetz.replaceChildren(feld('sl-netz-was', was),
+    slNetz.replaceChildren(feld('sl-netz-was', was, wasKurz),
       ...(vorrat ? [feld('sl-netz-vorrat', '\u200a·\u200a' + vorrat)] : []),
       ...(grob ? [feld('sl-netz-grob', '\u200a·\u200a' + grob)] : []));
   };
@@ -807,12 +851,16 @@ karte.on('fbp:kachelnot', e => netzstandZeigen(e.aus));
    nächste geglückte Kachel zu warten hieße, sie bis zur nächsten Bewegung der
    Karte stehen zu lassen. */
 let zurueckUhr = null;
+/* Sieben Sekunden: wer die Karte gerade bewegte oder aufs Telefon sah, las die
+   Meldung in 3,5 s nicht mit – und ein „Netz wieder da“, das niemand gesehen
+   hat, lässt die Leiste einfach verschwinden. */
+const ZURUECK_STEHT = 7000;
 function netzZurueckEnde() {
   clearTimeout(zurueckUhr);
   zurueckUhr = setTimeout(() => {
     netzlage.zurueck = false;
     netzstandZeigen();
-  }, 3500);
+  }, ZURUECK_STEHT);
 }
 window.addEventListener('online', () => {
   /* Auch die Erinnerung der Kachelwacht fällt: sie meldet einen Ausfall nur,
@@ -821,6 +869,12 @@ window.addEventListener('online', () => {
   karte._fbpKachelAus = undefined;
   netzlage.zurueck = true;
   netzstandZeigen(false);
+  /* Auch die gescheiterte Höhenkachel fällt: sie wird gemerkt, damit eine
+     Mausbewegung über einer Lücke nicht jedes Mal neu fragt – das Netz ist aber
+     zurück, und mit ihm der Grund weg. Ohne das blieb „Höhe –“ bis zum Neuladen,
+     auch für alle Nachbarpunkte derselben Kachel (rund 10 km). */
+  kachelfehlerVergessen();
+  if (hoehePos && slElev.textContent === '–') koordZeigen(hoehePos, slQuelle.textContent);
   /* Was in der Lücke nur gröber ankam, bleibt sonst bis zur nächsten Bewegung
      der Karte so stehen – die Leiste war weg, das Bild unscharf. Die Kacheln
      werden still nachgeholt; ist nichts zu holen, endet die Meldung nach ein
@@ -834,7 +888,17 @@ window.addEventListener('online', () => {
 /* Das Nachladen ist durch: bleibt nichts mehr gröber, ist die Karte wieder
    scharf und die Zeile darf gehen; sonst bleibt sie ehrlich bei „gröber“. */
 karte.on('fbp:nachgeladen', e => {
-  if (e.offen === 0) netzlage.grob = null;
+  /* `offen` zählt, was im Bild steht (map.js, `grobSichtbar`): eine gröbere
+     Kachel am Rand außerhalb des Ausschnitts hielt die Leiste auf „gröber“,
+     obwohl alles Sichtbare scharf war. */
+  if (e.offen === 0) { netzlage.grob = null; netzlage.aufgegeben = false; }
+  /* Die Folge der Wiederholungen ist durch und es steht noch Unscharfes da: das
+     wird einmal gesagt – mit dem Ausweg. Zoomen baut die Kacheln neu auf und
+     fragt den Server frisch. */
+  if (e.aufgegeben && !netzlage.aufgegeben) {
+    netzlage.aufgegeben = true;
+    hinweis('Karte noch unscharf – Zoomen lädt sie neu.');
+  }
   /* Kamen Kacheln wirklich aus dem Netz nach, schweigt der Server nicht: ohne
      diesen Schritt bliebe „Karte nicht erreichbar“ bis zum nächsten vollen Lauf.
      Nur dann – dass nichts mehr gröber dasteht, sagt über den Server nichts. */
@@ -862,9 +926,21 @@ karte.on('zoomstart', () => {
      bezog, abgeräumt. */
   const war = netzlage.zurueck;
   netzlage.zurueck = false;
+  netzlage.aufgegeben = false;
   if (!netzlage.grob && !war) return;
   netzlage.grob = null;
   netzstandZeigen();
+});
+/* Nach dem Verschieben zählt wieder das, was im Bild steht: war die gröbere
+   Gegend aus dem Ausschnitt gerollt, bleibt „gröber“ sonst bis zum nächsten
+   Nachladen stehen. Kommen im neuen Ausschnitt gröbere Kacheln, meldet sich
+   `fbp:kachelgrob` von selbst. */
+karte.on('moveend', () => {
+  if (!netzlage.grob || netzlage.zurueck) return;
+  if (kartenGrobSichtbar(karte) === 0) {
+    netzlage.grob = null; netzlage.aufgegeben = false;
+    netzstandZeigen();
+  }
 });
 /* Nach „Karte holen“ und „Vorrat löschen“ zählt die Leiste neu. Ein Abruf legt
    Kachel um Kachel ab – gezählt wird erst, wenn eine halbe Sekunde Ruhe ist,
@@ -1143,10 +1219,35 @@ function rueckgaengig(richtung) {
     return false;
   }
   const vorher = baumodus ? store.projekt : null;
+  /* Eine eingespielte Baumeldung ist am Funk quittiert: der Trupp hält sie für
+     übernommen. „↶“ nahm sie still zurück – die Pille sagte nur
+     „Zurückgenommen“, Ist-Punkte und Rückgabe-Code waren weg. Erkannt wird der
+     Schritt an dem, was `ui.js` beim Einspielen hinterlegt (`store.quittung`),
+     und zwar am Stand und nicht an der Tiefe allein: ein neuer Schritt an
+     gleicher Tiefe ist nicht derselbe. */
+  const q = store.quittung;
+  let quittungsSchritt = null;
+  if (q) {
+    if (zurueck && store.undoStapel.length === q.tiefe &&
+        store.undoStapel[q.tiefe - 1] === q.vor) {
+      quittungsSchritt = 'zurueck';
+      q.nach = JSON.stringify(store.projekt);
+    } else if (!zurueck && q.nach && store.redoStapel.at(-1) === q.nach) {
+      quittungsSchritt = 'vor';
+    }
+  }
   const ok = zurueck ? store.undo() : store.redo();
   if (!ok) {
     hinweis(zurueck ? 'Nichts zum Rückgängigmachen.' : 'Nichts zum Wiederholen.');
     return false;
+  }
+  if (quittungsSchritt) {
+    hinweis(quittungsSchritt === 'zurueck'
+      ? `Baumeldung ${q.code} zurückgenommen – der Trupp hält sie für übernommen. ` +
+        '↷ stellt sie wieder her.'
+      : `Baumeldung ${q.code} wieder eingespielt – der Rückgabe-Code gilt wieder.`,
+      'warnung');
+    return true;
   }
   /* Ebenso „Trupp wechseln“: der Abschnitt liegt im Verlauf, der Trupp am
      Gerät nicht (`truppSchrittMerken` in baudoku.js). Ohne diese Zeile hieß
@@ -2137,8 +2238,8 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
          Anfang bei „Bau beginnen“, ist noch kein Lästigwerden. */
       if (beiAufnahme) truppFrageVertagen(s);
       if (beiAufnahme && truppFrageRuht(s)) {
-        hinweis('Ich frage nicht mehr nach jedem Punkt – „Trupp wählen“ steht oben in der ' +
-          'Bauleiste und im Bau-Reiter, bis ihr gewählt habt.', 'info oben');
+        hinweis('Ich frage nicht mehr nach jedem Punkt – tippt „Trupp wählen“ an der ' +
+          'Bauleiste (oder im Bau-Reiter), sobald ihr wählen wollt.', 'info oben');
       }
       bauzielNachfuehren();
       zeichneBauListe();
@@ -2162,6 +2263,18 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
     schutz: 'Bitte den eigenen Trupp antippen – oder „Später“.',
     fuss
   });
+  /* `dialog()` räumt nur die Pille weg, die beim Öffnen schon steht. Die
+     Bestätigung der Aufnahme („Punkt steht, die Art fehlt …“) kommt oft erst,
+     wenn die Ortung antwortet – nach dem Dialog – und deckte dann ~28 px von
+     „Später“. Solange die Frage steht, bleibt keine Auskunft der Art „info“
+     darüber; Warnungen und Fehler dürfen. */
+  const pille = document.getElementById('hinweisbox');
+  const wacht = new MutationObserver(() => {
+    if (document.getElementById('dialog').hidden || !box.isConnected) { wacht.disconnect(); return; }
+    if (!pille.hidden && pille.classList.contains('info') &&
+        !pille.classList.contains('fortschritt') && !pille.classList.contains('geht')) hinweisAus();
+  });
+  wacht.observe(pille, { attributes: true, attributeFilter: ['class', 'hidden'] });
   weiter = [...document.querySelectorAll('#dialog-fuss .knopf')].find(k => k.textContent === 'Weiter');
   /* Im Fremdfall gibt es „Weiter“ erst mit einer Wahl: ein ausgegrauter Knopf
      in einer zweiten Reihe neben dem Hauptweg las sich wie eine Pflicht. */
@@ -2863,16 +2976,26 @@ function speicherstatusZeigen(zustand = 'ruhe') {
     return;
   }
   if (zustand === 'fehler') {
-    st.textContent = 'nicht gespeichert';
-    st.dataset.kurz = 'nicht gespeichert';
+    /* Der Fehler hat eine eigene Form und nicht nur einen anderen Text: in Band
+       und Kopf stand er im selben Amber wie der Normalfall „Im Gerät
+       gespeichert · keine Datei“, und das Kopffeld verlor im Fehlerfall sogar
+       seine Pille. Jetzt ist es eine gefüllte Rotfläche mit „✖“ – wie die
+       durchgefallene Prüfung –, die im Schwarz-Weiß-Druck und für Farbenblinde
+       an der Form zu erkennen ist (`.speicherfehler` und `.fehler` in
+       css/app.css). „Im Fenster“ ist die Sprache des Browsers; gesagt wird, was
+       der Trupp weiß: im Gerät gespeichert oder nicht. */
+    st.textContent = '✖ nicht im Gerät gespeichert';
+    st.dataset.kurz = 'nicht im Gerät gespeichert';
     st.classList.add('fehler');
     /* Der rote Hinweis geht nach Sekunden; das Band bleibt, bis ein Schreiben
        gelingt, und sagt, was auf dem Spiel steht und wohin es geht. */
-    stand.textContent = 'Nicht gespeichert · nur im Fenster';
-    band.classList.add('mahnung');
+    stand.textContent = '✖ Nicht im Gerät gespeichert' + (nurImFenster > 0
+      ? ` – ${nurImFenster} ${nurImFenster === 1 ? 'Aufnahme steht' : 'Aufnahmen stehen'} nur auf dem Bildschirm`
+      : ' – Änderungen stehen nur auf dem Bildschirm');
+    band.classList.add('mahnung', 'speicherfehler');
     st.title = nurImFenster > 0
-      ? `Nicht im Gerät gespeichert – ${nurImFenster} ${nurImFenster === 1 ? 'Aufnahme steht' : 'Aufnahmen stehen'} nur im Fenster`
-      : 'Nicht im Gerät gespeichert – Änderungen stehen nur im Fenster';
+      ? `Nicht im Gerät gespeichert – ${nurImFenster} ${nurImFenster === 1 ? 'Aufnahme steht' : 'Aufnahmen stehen'} nur auf dem Bildschirm und gehen mit dem Schließen verloren`
+      : 'Nicht im Gerät gespeichert – Änderungen stehen nur auf dem Bildschirm und gehen mit dem Schließen verloren';
     return;
   }
   st.removeAttribute('title');
@@ -2913,10 +3036,30 @@ function bandNachfuehren() {
      erfuhr es erst, wenn Suche oder „Karte holen“ scheiterten. Das Band trägt
      es deshalb in der Listenansicht der Schmalansicht, und nur dort: auf der
      Karte wäre es ein zweiter Streifen für dieselbe Auskunft, der ihr Höhe nimmt. */
-  const ohneNetzListe = navigator.onLine === false &&
-    window.matchMedia('(max-width: 759px)').matches &&
+  const inListe = window.matchMedia('(max-width: 759px)').matches &&
     !document.body.classList.contains('seite-zu');
-  band.classList.toggle('mahnung', mahnenNoetig() || ohneNetzListe);
+  /* Drei Lagen, und jede sagt dem Trupp etwas anderes: kein Netz, Netzsymbol da
+     aber der Kartenserver schweigt (das Telefon zeigt Balken – „Kein Netz“
+     wäre gelogen), und „Netz wieder da“, das in der Statusleiste unter der
+     Liste stand und dort niemand sah. */
+  const netzListe = !inListe ? null
+    : navigator.onLine === false ? 'weg'
+    : netzlage.kachelAus ? 'stumm'
+    : netzlage.zurueck ? 'zurueck' : null;
+  const netzVorn = {
+    weg: 'Kein Netz · Karte nur aus dem Vorrat · ',
+    stumm: ''
+  }[netzListe] || '';
+  const mahnt = mahnenNoetig();
+  band.classList.toggle('speicherfehler', speicherfehlerAktiv);
+  band.classList.toggle('mahnung',
+    mahnt || speicherfehlerAktiv || netzListe === 'weg' || netzListe === 'stumm');
+  band.classList.toggle('netz-gut', netzListe === 'zurueck' && !mahnt);
+  /* Mit einer Netzauskunft darf das Band umbrechen: eingezeilt und gekürzt las
+     man bei 360 px „Kein Netz · Im Gerät gespeiche…“, und ausgerechnet „keine
+     Datei“ und die Folge fürs Netz fehlten. In der Liste kostet die zweite
+     Zeile der Karte nichts. */
+  band.classList.toggle('netz-liste', netzListe === 'weg');
   if (speicherfehlerAktiv) return;
   /* Immer ein ganzer Satz: schmal ist dieses Band die einzige Auskunft über
      den Verbleib der Arbeit, und eine leere Stelle liest sich wie „gesichert“. */
@@ -2925,11 +3068,29 @@ function bandNachfuehren() {
      was sicher ist und was fehlt. */
   /* Kurz genug für 360 px: „… · noch keine Sicherungsdatei“ endete dort im
      Audit als „noch ke…“, und ausgerechnet das Fehlende war abgeschnitten. */
-  stand.textContent = (ohneNetzListe ? 'Kein Netz · ' : '') + (zeit
+  /* „Netz wieder da“ steht für sieben Sekunden allein und in einer Zeile: mit dem
+     ganzen Satz dahinter brach das Band um und schob die Liste 23 px nach unten –
+     und wieder zurück. */
+  /* Schweigt nur der Kartenserver, steht das allein und einzeilig: ein Satz mit
+     dem Speicherstand dahinter bräche das Band um, und die Liste rutschte – oft
+     dauerhaft, denn ein stummer Server dauert die ganze Baustelle – um eine
+     Zeile nach unten. */
+  if (netzListe === 'stumm') {
+    stand.textContent = 'Kartenserver antwortet nicht';
+    stand.title = 'Das Netz ist da, aber der Kartenserver antwortet nicht. Die Planung liegt im Gerät.';
+    return;
+  }
+  if (netzListe === 'zurueck') {
+    stand.textContent = '✓ Netz wieder da';
+    stand.title = '';
+    return;
+  }
+  stand.textContent = netzVorn + (zeit
     ? 'Im Gerät gespeichert · Datei vom ' + zeitpunktKurz(zeit)
     : 'Im Gerät gespeichert · keine Datei');
   stand.title = zeit ? '' : 'Im Gerät gespeichert, aber noch nie als Datei gesichert';
 }
+netzBandHaken = bandNachfuehren;
 
 /* Netz und Ansicht wechseln, ohne dass die Planung sich ändert – das Band
    folgt beiden. */
@@ -2956,6 +3117,12 @@ function speicherwarnungFuehren(stand) {
   if (speicherfehlerSetzen(stand) && baumodus) zeichneBauListe();
 }
 store.on((p, grund) => {
+  /* Ein gescheitertes „Einspielen“ nimmt sich selbst zurück
+     (`aendernGesichert`): gezeichnet wird wie nach „↶“, aber die Speicher-
+     anzeige geht auf den Stand vor dem Versuch zurück. Vorher blieb sie bei
+     „wird gespeichert …“ stehen, weil ein Schreibvorgang folgte, der nie kam. */
+  const zurueckgenommen = grund === 'zurueckgenommen';
+  if (zurueckgenommen) grund = 'undo';
   if (grund === 'gespeichert') {
     istGesichert = istZahl();
     speicherfehlerAktiv = false;
@@ -2974,7 +3141,20 @@ store.on((p, grund) => {
     return;
   }
 
-  speicherstatusZeigen('laeuft');
+  if (zurueckgenommen) {
+    /* Gilt ein früherer Fehlschlag noch, zählt n die echten Aufnahmen seit dem
+       letzten gelungenen Schreiben; sonst ist nichts verloren und der Stand
+       „gesichert“. */
+    if (speicherfehlerAktiv) {
+      nurImFenster = Math.max(0, istZahl() - istGesichert);
+      speicherwarnungFuehren({ n: nurImFenster });
+      speicherstatusZeigen('fehler');
+    } else {
+      speicherstatusZeigen('ruhe');
+    }
+  } else {
+    speicherstatusZeigen('laeuft');
+  }
 
   sl.zeichne();
   zl.zeichne();
@@ -3044,7 +3224,11 @@ window.addEventListener('beforeunload', e => {
   // Nachfragen nur, wenn eine nie gesicherte Planung mit echtem Arbeitsstand
   // im Spiel ist – bei geteilten Rechnern und beim Beenden mit Löschen des
   // Browserspeichers ist das die letzte Gelegenheit.
-  if (!dateisicherung(store.projekt.id) && istGehaltvoll(store.projekt)) {
+  /* Und IMMER, solange ein Schreibvorgang gescheitert ist: dann steht Arbeit
+     nur im Fenster, gleich ob irgendwann eine Datei gesichert wurde. `allesSichern`
+     lief eben und hat den Fehler gelöscht, wenn der Speicher doch noch Platz hatte. */
+  if (speicherfehlerAktiv ||
+      (!dateisicherung(store.projekt.id) && istGehaltvoll(store.projekt))) {
     e.preventDefault();
     e.returnValue = '';
   }

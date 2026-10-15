@@ -65,6 +65,18 @@
   --warnung-auf-blau-linie: rgba(255,224,138,.45);
   --warnung-auf-blau-flaeche: rgba(255,224,138,.12);
   --gefahr-auf-blau: #ffd0d0;
+  /* Der Fehlerzustand als Fläche – nicht nur als Schriftfarbe: gefülltes Rot
+     mit weißer Schrift (5,6:1), dunklem Rand und „✖“. Dieselbe Sprache wie die
+     durchgefallene Prüfung (`bz-fehl`). Im Schwarz-Weiß-Druck und für
+     Farbenblinde trägt die Form (dunkel gefülltes Feld, Zeichen), nicht der
+     Ton. Der Mahnton daneben bleibt hell und umrandet. */
+  --fehler-flaeche: #c62828;
+  --fehler-rand: #7f1414;
+  --fehler-text: #ffffff;
+  /* Grün als SCHRIFT auf hellem Grund (--gut ist eine Fläche für weiße Schrift):
+     „✓ Netz wieder da“ – die gute Nachricht, die nicht im Ton des Ausfalls
+     stehen darf. 6,0:1 auf Weiß. */
+  --gut-text: #14602f;
   /* Text auf hellblauem Grund – Summenband und Kartenschilder. Ein Marineton
      mit mehr Blau darin als --text, damit er zur Fläche gehört, auf der er
      steht (10,75:1 auf THW-Blass). */
@@ -222,6 +234,16 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
 @media (min-width: 761px) and (max-width: 1100px) {
   .marke-text, .speicherstatus { display: none; }
   .kopf .projektname { min-width: 160px; }
+  /* Der Speicherfehler bleibt: er ist hier die einzige Stelle, die ihn nennt
+     (das Band steht erst unter 760 px, und der rote Hinweis geht nach Sekunden).
+     Gezeigt wird der kurze Satz aus `data-kurz`; der lange bleibt für die
+     Sprachausgabe im Knopf. */
+  .kopf .kopf-projekt .speicherstatus.fehler:not(.cloudstatus) {
+    display: inline-flex; align-items: center; flex-shrink: 0; font-size: 0;
+  }
+  .kopf .kopf-projekt .speicherstatus.fehler:not(.cloudstatus)::before {
+    content: '✖ ' attr(data-kurz); font-size: 12px; white-space: nowrap;
+  }
 }
 /* Zurückgenommen: die Nummer soll ablesbar sein, wenn man sie sucht, und den
    Namen der Planung nicht um Aufmerksamkeit bringen. Ziffernbreite fest, damit
@@ -261,7 +283,15 @@ button:focus-visible { outline: 2px solid var(--thw-hell); outline-offset: 1px; 
   border-color: var(--warnung-auf-blau-linie); background: var(--warnung-auf-blau-flaeche);
 }
 .speicherstatus.mahnung:hover { background: rgba(255,224,138,.24); border-color: rgba(255,224,138,.7); }
-.speicherstatus.fehler { color: var(--gefahr-auf-blau); font-weight: 700; opacity: 1; }
+.speicherstatus.fehler {
+  opacity: 1; font-weight: 700; color: var(--fehler-text);
+  background: var(--fehler-flaeche); border: 2px solid var(--fehler-rand);
+  padding: 2px 6px;
+}
+.speicherstatus.fehler:hover { background: var(--fehler-flaeche); border-color: var(--fehler-rand); }
+/* Bei Tag liegt das Rot auf THW-Blau und braucht den hellen Rand; nachts
+   trägt --fehler-rand ihn schon. */
+body:not(.nacht) .speicherstatus.fehler { border-color: #ffd0d0; }
 
 /* ---------------------------------------------------------------- Speicherband */
 
@@ -1387,6 +1417,14 @@ body.punktkarte-offen .leaflet-control-zoom { visibility: hidden; }
   white-space: nowrap;
 }
 .sl-netz[hidden] { display: none; }
+/* „✓ Netz wieder da“ ist die gute Nachricht und steht nicht im Mahnton des
+   Ausfalls: zwei Zeilen gleicher Farbe lasen sich als zwei Mängel. */
+.sl-netz.netz-gut { color: var(--gut-text); }
+/* Die Höhe nennt, warum sie fehlt – mit Platz im Feld; in der schmalen Leiste
+   steht der Grund im Tooltip. */
+.sl-elev[data-grund]::after {
+  content: '(' attr(data-grund) ')'; font-size: 11px; font-weight: 500; color: var(--text-schwach);
+}
 /* Die Trenner tragen nur Haarspatien (schmal fehlt jeder Bildpunkt, siehe
    unten); mit Platz bekommen sie Luft. */
 .sl-netz-vorrat, .sl-netz-grob { margin-left: 4px; }
@@ -1532,6 +1570,7 @@ body.punktkarte-offen .leaflet-control-zoom { visibility: hidden; }
      lief „4. FmTr (Gruppenführer Wolf) · zuletzt 14:20“ über den Rand des
      Schildes. Der Trupp bricht um, die Uhrzeit bleibt als Ganzes zusammen. */
   white-space: normal; overflow-wrap: anywhere; }
+.strecken-mass .sb-trupp, .strecken-mass .sb-zeit { display: block; }
 .strecken-mass .sb-zeit { white-space: nowrap; }
 body.nacht #karte .strecken-mass .schild-bau { color: var(--text-schwach); }
 /* Streckennummer im Schild und an der Linie – nur im Schwarz-Weiß-Druck der
@@ -1545,6 +1584,27 @@ body.nacht #karte .strecken-mass .schild-bau { color: var(--text-schwach); }
 }
 .schild-nr { margin-right: .35em; font-size: .92em; }
 .linien-nr { font-size: 11px; }
+/* Das Kürzel des Trupps in der Mitte seines Stücks der gebauten Trasse
+   (Baudokumentation mit zwei Bauabschnitten) – dieselbe Machart wie die Nummer
+   der Linie, nur mit Wort statt Zahl. */
+.ist-abschnitt {
+  display: inline-block; font-weight: 800; color: #000; background: #fff;
+  border: 1.5px solid #000; border-radius: 3px; padding: 0 .35em; line-height: 1.3;
+  font-size: 11px; white-space: nowrap;
+}
+/* Die Lücke im Schild der Lagekarte: ein Wort neben dem Baustand, keine Marke –
+   sie ist kein Fehler, nur das, was noch fehlt. */
+.strecken-mass .bz-luecke { margin-top: 2px; font-size: 11px; font-weight: 700;
+  color: #101820; white-space: nowrap; }
+/* „↩ Übergabe zurückgenommen 20:00“ ist länger als jede andere Marke des
+   Schildes. Es bricht um, statt das Schild zu verbreitern – die Platzsuche der
+   Lagekarte rechnet mit dem Kasten, wie er ist. */
+.strecken-mass .bz-marke.bz-zurueck { white-space: normal; border-radius: 10px; max-width: 14em; }
+/* Das verkürzte Schild einer dichten Lagekarte (`kompakt` in der Platzsuche):
+   Name, Stand und Warnungen bleiben, Länge, Bedarf und die Zeile von Trupp und
+   Uhrzeit entfallen. */
+.strecken-mass.kompakt .wert, .strecken-mass.kompakt .zus,
+.strecken-mass.kompakt .schild-bau { display: none; }
 .strecken-mass.aktiv { box-shadow: 0 0 0 1px var(--hof-saum), 0 0 0 3px var(--hof-leicht), 0 2px 8px rgba(0,0,0,.22); }
 
 /* Bezeichnung eines Trassenpunktes. Der Versatz steht in em und nicht in
@@ -1953,6 +2013,8 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
    Enden. Bricht die Zeile schmal doch um, hält `gap` sie weiter auseinander,
    und der Hauptknopf bleibt der untere – dort, wo der Daumen zuletzt hinsieht. */
 .dialog-fuss.geteilt { justify-content: space-between; gap: 8px 24px; }
+/* Bricht die Zeile um, bleibt der Hauptknopf rechts statt links in der zweiten. */
+.dialog-fuss.geteilt .knopf.primaer { margin-left: auto; }
 /* Drei Knöpfe, und der Hauptknopf soll nicht unter „Verwerfen“ rutschen, wenn
    die Zeile schmal umbricht: er schiebt sich an den rechten Rand, die beiden
    anderen bleiben links beisammen. */
@@ -2024,6 +2086,11 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 .sb-cloud.mahnung { color: var(--warnung-tief); font-weight: 650; }
 .sb-cloud.fehler { color: var(--gefahr); font-weight: 650; }
 .sb-stand[hidden] { display: none; }
+/* Die Zeile im Band öffnet den Dialog „Eigener Speicher“ (js/cloud-ui.js): bei
+   „Konflikt offen“ ist sie der Weg zurück. Die Trefferfläche reicht über die
+   Zeile hinaus – 12 px Schrift allein wären mit Handschuh nicht zu treffen. */
+.sb-cloud[role="button"] { position: relative; cursor: pointer; }
+.sb-cloud[role="button"]::after { content: ''; position: absolute; inset: -12px -6px; }
 
 .speicher-dialog { display: flex; flex-direction: column; gap: 12px; }
 
@@ -2110,6 +2177,16 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
 }
 .konflikt-fassung .klein { margin: 0; }
 .konflikt-folgen { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+/* Der Weg, der etwas vernichtet, steht abgesetzt von den Erklärungen und weit
+   weg vom Fuß, wo der Daumen den Hauptweg trifft. */
+.konflikt-gefahr {
+  margin-top: 18px; padding: 12px 12px 14px; display: flex; flex-direction: column;
+  align-items: flex-start; gap: 10px;
+  border: 1px dashed var(--gefahr-linie); border-radius: var(--radius);
+}
+.konflikt-gefahr p { margin: 0; }
+/* Die Fassung, die verloren geht, ist als solche gezeichnet. */
+.konflikt-fassung.gefahr { border-color: var(--gefahr-linie); background: var(--gefahr-flaeche); }
 
 /* Suchfeld und Kategorie bleiben stehen, das Gitter rollt – und zwar als
    einziges. Zwei ineinander rollende Bereiche hatten dazu geführt, dass die
@@ -2329,6 +2406,15 @@ body.baumodus .wz.nur-bau { display: flex; }
    keine fünfte Spalte bekommt. Er nimmt keinen Tipp an – sonst finge er ihn
    über „Punkt hier“ ab. */
 .bau-ziel { display: none; }
+/* Steht „Trupp wählen“ im Merker, ist er der Griff dorthin: ein Tipp öffnet die
+   Wahl. Nur dann – sonst finge er Tipps über „Punkt hier“ ab. Das Handschuhmaß
+   trägt er in der Fläche: eine ::after-Aufweitung würde vom `overflow: hidden`
+   des Merkers abgeschnitten, das die Kürzung mit „…“ braucht. */
+body.baumodus .bau-ziel.bau-ziel-wahl:not([hidden]) {
+  pointer-events: auto; cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+  padding-top: 13px; padding-bottom: 13px; font-size: 13px; line-height: 18px;
+}
+
 body.baumodus .bau-ziel:not([hidden]) {
   display: block; position: absolute; left: 8px; top: 0; transform: translateY(-85%);
   max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2339,6 +2425,10 @@ body.baumodus .bau-ziel:not([hidden]) {
 body.baumodus .bau-ziel.bau-ziel-offen {
   background: var(--warnung-flaeche); border-color: var(--warnung-linie); color: var(--warnung-tief);
 }
+/* Mit Nachtrag zwei Felder: der Tag schrumpft nicht, der Rest wird gekürzt. */
+body.baumodus .bau-ziel:has(.bau-ziel-tag) { display: flex; }
+.bau-ziel-tag { flex: 0 0 auto; white-space: nowrap; }
+.bau-ziel-rest { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Die Planungszeilen der Kartenoptionen gehen im Baumodus vom Schirm – bleiben
    die vier, die am Bauort umgestellt werden: Karte, Gitter, Nummern, Namen. */
 body.baumodus .ko-zeile.nur-planung { display: none; }
@@ -2592,9 +2682,22 @@ body.baumodus .sichtwahl { display: none; }
    sich die Breite und brechen in sich um. */
 .trupp-wechseln .feld { gap: 6px; margin-top: 12px; }
 .trupp-wechseln .trupp-chips + .feld { margin-top: 4px; }
-.dialog:has(.trupp-wechseln) .dialog-fuss { flex-wrap: nowrap; }
-.dialog:has(.trupp-wechseln) .dialog-fuss .knopf {
-  flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px;
+/* Die Reihe aus drei Fußknöpfen passt erst ab etwa 560 px Dialogbreite: auf dem
+   Telefon liefen die Beschriftungen ineinander (gemessen 125 von 89 px), denn
+   `.knopf` bricht nicht um. Schmal stehen die Wege deshalb untereinander, je in
+   voller Breite; die beiden Wege mit Folge zuerst, „Abbrechen“ zuletzt und mit
+   Abstand, damit es nicht zwischen ihnen getroffen wird. Breit bleibt die Reihe. */
+.dialog:has(.trupp-wechseln) .dialog-fuss .knopf { white-space: normal; text-wrap: balance; }
+@media (max-width: 600px) {
+  .dialog:has(.trupp-wechseln) .dialog-fuss { flex-direction: column; align-items: stretch; }
+  .dialog:has(.trupp-wechseln) .dialog-fuss .knopf { width: 100%; min-height: 44px; }
+  .dialog:has(.trupp-wechseln) .dialog-fuss .knopf:first-child { order: 9; margin-top: 8px; }
+}
+@media (min-width: 601px) {
+  .dialog:has(.trupp-wechseln) .dialog-fuss { flex-wrap: nowrap; }
+  .dialog:has(.trupp-wechseln) .dialog-fuss .knopf {
+    flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px;
+  }
 }
 /* Je Knopf eine Zeile Folge, unter dem, was hereinkommt. */
 .folge-liste { margin: 0; padding-left: 18px; }
@@ -2687,7 +2790,20 @@ body.baumodus .sichtwahl { display: none; }
   color: var(--warnung-tief); font-weight: 600;
 }
 .bau-warnung[hidden] { display: none; }
-.bau-warnung.fehler { border-color: var(--gefahr); color: var(--gefahr); }
+.bau-warnung.fehler {
+  background: var(--fehler-flaeche); border: 2px solid var(--fehler-rand);
+  border-left-width: 6px; color: var(--fehler-text);
+}
+/* „✖“ vor dem Satz, wie vor der durchgefallenen Prüfung auf der Karte: der
+   Block hatte einen roten Rand auf amberfarbenem Grund und sah aus wie die
+   Vorwarnung darüber. Gefüllt und mit Zeichen unterscheidet er sich auch ohne
+   Farbe (S/W) – ebenso die durchgefallene Prüfung im Empfangsdialog. */
+.bau-warnung.fehler::before { content: '✖ '; font-weight: 700; }
+.bau-warnung.fehler b { color: inherit; }
+.bau-warnung.fehler .knopf {
+  background: rgba(255,255,255,.16); border: 1.5px solid #fff; color: #fff; font-weight: 650;
+}
+.bau-warnung.fehler .knopf:hover:not(:disabled) { background: rgba(255,255,255,.3); }
 .bau-speicherwarnung p { margin: 0 0 6px; }
 
 /* Der Materialnachweis. Zwei Spalten wie bei den Punktfeldern, aber mit der
@@ -2869,6 +2985,16 @@ body.nacht .bau-nachtrag > .gruppen-titel {
   color: var(--text-schwach);
 }
 .mv-erklaerung { margin: 4px 0 0; }
+/* Quer und niedrig liegt „Bisher … → danach …“ hinter drei Kästchen und dem
+   Auswahlfeld, unterhalb des Bildrandes – der Hauptknopf im festen Fuß ließ sich
+   tippen, ohne dass die Folge je im Bild stand. Sie rückt per `order` hinter den
+   Kopf der Zeile; der Wortlaut und die Reihenfolge im Aufbau bleiben. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .mv-zeile { display: flex; flex-direction: column; }
+  .mv-zeile > * { order: 2; }
+  .mv-zeile > .mv-kopf { order: 0; }
+  .mv-zeile > .mv-verlauf { order: 1; }
+}
 /* Die Fußknöpfe des Empfangsdialogs: „Verwerfen“ links, „Einspielen“ rechts,
    gleich unter welchem Befund, und alles Weitere („Erst als Datei sichern“,
    „Planung wählen“) in einer Zeile darunter über die ganze Breite. Vorher
@@ -3459,11 +3585,28 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
      Planungen“ und unter „Datenschutz“, und „Noch nie als Datei gesichert.“
      sagt daneben das Handfeste. Gesichert wird weiterhin über das Dateimenü. */
   .speicherband { display: none; }
-  .speicherband.mahnung, .speicherband:has(.sb-cloud:not([hidden])) { display: flex; }
+  .speicherband.mahnung, .speicherband.netz-gut, .speicherband:has(.sb-cloud:not([hidden])) { display: flex; }
   .speicherband .sb-text { display: none; }
   .speicherband.mahnung { background: var(--warnung-flaeche); border-bottom-color: var(--warnung-linie); color: var(--warnung-tief); }
+  /* „✓ Netz wieder da“ in der Liste: grün und nur für die Standzeit. */
+  .speicherband.netz-gut { color: var(--gut-text); font-weight: 650; }
+  .speicherband.netz-liste { flex-wrap: wrap; }
   .speicherband.mahnung .sb-stand { font-weight: 650; }
   .speicherband.mahnung .knopf { border-color: var(--warnung-linie-stark); color: var(--warnung-tief); }
+  /* Der Speicherfehler im Band: gefüllte Rotfläche mit „✖“, nicht der Amber des
+     Normalfalls („Im Gerät gespeichert · keine Datei“ stand im selben Ton).
+     Das Band darf dabei umbrechen – ein Fehler, der abgeschnitten dasteht, ist
+     keiner, der gelesen wird. Nur schmal: breit trägt die Kopfzeile ihn. */
+  .speicherband.speicherfehler {
+    display: flex; flex-wrap: wrap; background: var(--fehler-flaeche);
+    border-bottom: 2px solid var(--fehler-rand); color: var(--fehler-text);
+  }
+  .speicherband.speicherfehler .sb-stand {
+    color: var(--fehler-text); font-weight: 700; white-space: normal; flex-basis: 12ch;
+  }
+  .speicherband.speicherfehler .knopf {
+    background: rgba(255,255,255,.16); border: 1.5px solid #fff; color: #fff; font-weight: 650;
+  }
 
   /* Seitenleiste und Karte teilen sich den Platz nicht, sie lösen einander ab.
      Ohne .seite-zu liegt die Seitenleiste über der Karte, mit .seite-zu die Karte frei. */
@@ -3597,7 +3740,9 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
     gap: 8px;
   }
   /* Oben ist hier der Kartenrand – der Merker hängt an der Unterkante. */
-  body.baumodus .bau-ziel:not([hidden]) { top: auto; bottom: 0; transform: translateY(85%); }
+  /* 100 % plus ein Spalt und nicht 85 %: der Merker ragte quer in die Unterkante
+     der Leiste hinein, deren Schatten und Rand ihn überlappten. */
+  body.baumodus .bau-ziel:not([hidden]) { top: auto; bottom: 0; transform: translateY(calc(100% + 4px)); }
 
   /* Der Umschalter Liste/Karte steht quer als Spalte am linken Rand statt als
      Band am Fuß. Quer fehlt Höhe, nicht Breite: das Band nahm 52 der 375 bis
@@ -3642,6 +3787,10 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
      sobald das Fenster breit genug dafür ist. */
   .speicherband { gap: 4px 10px; }
   .sb-stand { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Mit Netzauskunft oder Speicherfehler bricht der Satz um, statt zu enden –
+     „Kein Netz · Im Gerät gespeiche…“ nannte weder die Folge noch das Fehlende. */
+  .speicherband.netz-liste .sb-stand:not(.sb-cloud),
+  .speicherband.speicherfehler .sb-stand { white-space: normal; overflow: visible; }
   .speicherband .knopf { margin: 0 0 0 auto; }
   /* Nur MGRS in die Leiste: die GPS-Angabe passt daneben nicht mehr in eine
      Zeile und steht beim Antippen ohnehin im Popup und in der Punktliste. */
@@ -3664,6 +3813,12 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   .sl-netz { flex: 1 1 0; min-width: 0; display: flex; overflow: hidden; }
   .sl-netz[hidden] { display: none; }
   .sl-netz-was { flex: 0 1000 auto; margin-left: auto; min-width: 8ch; overflow: hidden; text-overflow: ellipsis; }
+  /* Die kurze Form aus `data-kurz` (js/app.js, `netzstandZeigen`): „Karte nicht
+     erreichbar“ lief hochkant ins Abgeschnittene, noch vor dem Vorrat. Der lange
+     Text bleibt im Knoten für Sprachausgabe; getauscht wird nur die Schrift. */
+  .sl-netz-was[data-kurz] { font-size: 0; }
+  .sl-netz-was[data-kurz]::before { content: attr(data-kurz); font-size: 12px; }
+  .sl-elev[data-grund]::after { content: none; }
   .sl-netz-vorrat, .sl-netz-grob { margin-left: 0; }
   .sl-netz-vorrat { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .sl-netz-grob { flex: 0 100000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -3930,6 +4085,22 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   body:not(.ist-setzen) .zeichen-hinweis .knopf { min-width: 72px; }
 }
 
+/* Quer und niedrig steht die Modusleiste des Zeichnens einzeilig: Merker links,
+   die drei Knöpfe rechts daneben. Gestapelt maß sie bei 844×390 rund 84 px und
+   deckte das untere Kartenband – von drei Tipps kamen im Review nur zwei als
+   Punkt an, der dritte fiel auf die Leiste. Die Knöpfe behalten 44 px Höhe; die
+   Beschriftung bricht im Knopf um, statt dass die Leiste wächst. Beim Setzen
+   eines Ist-Punktes gilt weiter die Regel mit dem einen Knopf. */
+@media (orientation: landscape) and (max-height: 500px) {
+  body:not(.ist-setzen) .zeichen-hinweis { flex-wrap: nowrap; padding: 6px 10px; gap: 8px; }
+  body:not(.ist-setzen) .zeichen-hinweis .zh-text {
+    flex: 1 1 0; min-width: 0; text-align: left; font-size: 12px; line-height: 1.25;
+  }
+  body:not(.ist-setzen) .zeichen-hinweis .knopf {
+    flex: 0 0 auto; min-width: 84px; padding: 6px 8px; line-height: 1.15;
+  }
+}
+
 /* Quer steht die Zoomsteuerung rechts bis in die untere Hälfte der Karte und
    deckte bei 667×375 den rechten Teil von „Abbrechen“. Die Leiste lässt ihr
    dort die Spalte frei, statt dass die Steuerung weicht – mit Handschuh ist
@@ -3993,6 +4164,10 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   @media (max-width: 800px) {
     .kopf .kopf-projekt .speicherstatus.mahnung:not(.fehler)::before { content: '⚠ nicht gesichert'; }
   }
+  /* Der Speicherfehler trägt „✖“ und nicht „⚠“ und im Quer-Merker die Rotfläche
+     (`.speicherstatus.fehler`): dieselbe Form wie Band und Kopf. */
+  .kopf .kopf-projekt .speicherstatus.fehler { padding: 0 8px; }
+  .kopf .kopf-projekt .speicherstatus.fehler::before { content: '✖ ' attr(data-kurz); }
 
   #sl-gps-kopie, .sl-dez, .sl-elev, .sl-quelle { display: none; }
   .statusleiste { flex-wrap: nowrap; padding-top: 2px; padding-bottom: 2px; }
@@ -4022,7 +4197,9 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   .werkzeuge .wz-icon { font-size: 16px; height: 17px; }
   .werkzeuge .wz-taste { display: none; }
   /* Oben ist hier der Kartenrand – der Merker hängt an der Unterkante. */
-  body.baumodus .bau-ziel:not([hidden]) { top: auto; bottom: 0; transform: translateY(85%); }
+  /* 100 % plus ein Spalt und nicht 85 %: der Merker ragte quer in die Unterkante
+     der Leiste hinein, deren Schatten und Rand ihn überlappten. */
+  body.baumodus .bau-ziel:not([hidden]) { top: auto; bottom: 0; transform: translateY(calc(100% + 4px)); }
 
   .leaflet-control-zoom { display: flex; }
   .leaflet-control-zoom a.leaflet-control-zoom-in {
@@ -4394,6 +4571,12 @@ body.nacht {
   --warnung-linie-stark: #b88a3a;
   /* „✓ gebaut“ ist weiße Schrift auf diesem Grün – #2f8d58 gab nur 4,1:1. */
   --gut: #24744a;
+  /* Nachts wie --gefahr aufgehellt wäre die weiße Schrift auf dem Rot unter
+     4,5:1 (#ff7b7b: 2,5:1); die Fläche bleibt deshalb dunkel (6,5:1), und der
+     helle Rand hebt sie vom Grund ab – wie bei `bz-fehl`. */
+  --fehler-flaeche: #b71c1c;
+  --fehler-rand: #ffd0d0;
+  --gut-text: #7fd99a;
   --schatten: 0 1px 2px rgba(0,0,0,.5), 0 4px 9px rgba(0,0,0,.45);
   --schatten-stark: 0 2px 4px rgba(0,0,0,.55), 0 8px 14px rgba(0,0,0,.5);
   --schatten-oben: 0 -1px 2px rgba(0,0,0,.5), 0 -4px 9px rgba(0,0,0,.45);
