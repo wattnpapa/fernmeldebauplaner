@@ -2431,7 +2431,8 @@ export class StreckenLayer {
             `<rect x="0" y="7.5" width="34" height="5"></rect><path d="${zeichen.stufe}"></path></svg></span>`
           : `<span class="kabel-zeichen" style="${stil}">${'<i></i>'.repeat(zeichen.striche)}</span>`;
       L.marker([pos.lat, pos.lng], {
-        pane: 'fbp-strecken', interactive: false, keyboard: false,
+        pane: this.karte.getPane('fbp-kabelzeichen') ? 'fbp-kabelzeichen' : 'fbp-strecken',
+        interactive: false, keyboard: false,
         icon: L.divIcon({ className: 'fbp-kabelzeichen', html: inhalt, iconSize: null })
       }).addTo(this.zeichenGruppe);
     }

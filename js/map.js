@@ -253,6 +253,10 @@ export function erstelleKarte(el, ansicht = {}) {
      läuft darüber – ein Kabel, das in den Anhänger führt, endet auf ihm. */
   karte.createPane('fbp-flaechen').style.zIndex = 410;
   karte.createPane('fbp-strecken').style.zIndex = 420;
+  /* Die Kabelzeichen („LWL“, Querstriche) liegen in einer eigenen Ebene über
+     den Linien: in derselben Ebene malt der SVG-Zug der Strecken über sie. */
+  karte.createPane('fbp-kabelzeichen').style.zIndex = 425;
+  karte.getPane('fbp-kabelzeichen').style.pointerEvents = 'none';
   karte.createPane('fbp-griffe').style.zIndex = GRIFFE_UNTEN;
   karte.createPane('fbp-labels').style.zIndex = 620;
   karte.getPane('fbp-labels').style.pointerEvents = 'none';

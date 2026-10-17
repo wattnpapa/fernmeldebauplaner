@@ -1421,6 +1421,7 @@ function neueDruckkarte(buehne, mass, zusatz = {}) {
   schatten.style.pointerEvents = 'none';
   karte.createPane('fbp-flaechen').style.zIndex = 410;
   karte.createPane('fbp-strecken').style.zIndex = 420;
+  karte.createPane('fbp-kabelzeichen').style.zIndex = 425;   // über den Linien, s. map.js
   karte.createPane('fbp-griffe').style.zIndex = 470;
   const lbl = karte.createPane('fbp-labels');
   lbl.style.zIndex = 620; lbl.style.pointerEvents = 'none';
