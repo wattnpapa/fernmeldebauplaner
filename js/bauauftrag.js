@@ -2324,15 +2324,15 @@ function standmarkenLegendeHTML(strecken, stand = Date.now()) {
       'Der Trupp baut auf Papier; es kommt keine Meldung, bis nachgetragen wird</span>');
   }
   if (strecken.some(s => ausfallNachfrageSeit(s, stand))) {
-    teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ Papier nachfragen (seit&nbsp;4&nbsp;h)')}` +
+    teile.push(`<span class="lg-eintrag">${marke('bz-warn', '⚠ Papier nachfragen (z.&nbsp;B. seit&nbsp;4&nbsp;h)')}` +
       `Gerät ausgefallen und seit mehr als ${AUSFALL_NACHFRAGE_MIN / 60}&nbsp;h kein Eintrag – ` +
       'beim Trupp nach dem Papier fragen</span>');
   }
   /* Die aufgehobene Übergabe und die Lücke: beides stand im Review in Liste und
      Summenband, auf der Wand der Führungsstelle aber nicht. */
   if (zeilen.some(z => z.zurueck)) {
-    teile.push(`<span class="lg-eintrag">${marke('bz-warn bz-zurueck', '↩ Übergabe zurückgenommen hh:mm')}` +
-      'Eine Meldung hat die Übergabe aufgehoben – die Strecke ist wieder „gebaut“, nicht übergeben</span>');
+    teile.push(`<span class="lg-eintrag">${marke('bz-warn bz-zurueck', '↩ zurückgen. hh:mm')}` +
+      'Übergabe zurückgenommen: eine Meldung hat die Übergabe aufgehoben – die Strecke ist wieder „gebaut“, nicht übergeben</span>');
   }
   if (zeilen.some(z => z.luecke)) {
     teile.push(`<span class="lg-eintrag"><i class="lg-linie lg-luecke" style="--farbe:#111"></i>` +
@@ -3635,14 +3635,22 @@ function baudokuStammHTML(p, s, k) {
   const eintraege = (eins && eintragszeiten(s, eins.id).length)
     ? eintragszeiten(s, eins.id) : eintragszeiten(s);
   const gebaut = ['gebaut', 'uebergeben'].includes(s.bau && s.bau.stand);
-  const beginn = zeiten.length ? dtgOderStrich(zeiten[0])
-    : eintraege.length ? `${dtgOderStrich(eintraege[0])} (aus Aufnahmen)` : '';
-  const ende = alleZu ? dtgOderStrich(enden[enden.length - 1])
+  /* Die Datum-Zeit-Gruppe „151946OKT26“ sagt dem Truppführer am Bauplatz nichts,
+     solange sie nicht daneben im Klartext steht: das Blatt ist für den Trupp
+     und die Prüfung, nicht für den Fernsprecher. */
+  const dtgKlar = w => {
+    const d = dtgOderStrich(w), t = new Date(w);
+    return isNaN(t) ? d : `${d} (${t.toLocaleString('de-DE', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(', ', ' ')})`;
+  };
+  const beginn = zeiten.length ? dtgKlar(zeiten[0])
+    : eintraege.length ? `${dtgKlar(eintraege[0])} (aus Aufnahmen)` : '';
+  const ende = alleZu ? dtgKlar(enden[enden.length - 1])
     : abs.length > 1 && enden.length
       /* Nennt, wer fehlt: „1 von 2 beendet“ sagte nicht, auf wen gewartet wird. */
       ? `${enden.length} von ${abs.length} beendet – offen: ${
         abs.filter(a => !gueltigeZeit(a.ende)).map(a => a.trupp || a.name).join(', ')}`
-    : eintraege.length ? `${dtgOderStrich(eintraege[eintraege.length - 1])}` +
+    : eintraege.length ? `${dtgKlar(eintraege[eintraege.length - 1])}` +
         (gebaut ? ' (aus Aufnahmen)' : '') : '';
   /* Solange gebaut wird, ist die jüngste Aufnahme kein Bauende – das Feld
      heißt dann so, wie es ist. Im Review stand „Bauende 14:20 (letzter
@@ -3656,7 +3664,9 @@ function baudokuStammHTML(p, s, k) {
     ['Einheit', p.kopf.einheit],
     ['Auftrags-Nr.', p.kopf.auftragNr],
     ['Trupp', trupp || leer],
-    ['Truppführer', fuehrer || leer],
+    /* Bei mehreren Abschnitten und ohne eingetragenen Führer stand hier „–“, das
+       sich wie „keiner“ las; die Tabelle darunter führt die Führer je Abschnitt. */
+    ['Truppführer', fuehrer || (abs.length > 1 ? 'siehe Bauabschnitte' : leer)],
     ['Baubeginn', beginn || leer],
     [endeTitel, ende || leer],
     /* „Baustand“ und nicht „Stand“: im Kopf darüber steht schon der
@@ -3730,6 +3740,10 @@ function baudokuLegendeHTML(s, sw, opt) {
     if (new Set(ist.map(pt => pt.abschnitt).filter(Boolean)).size > 1) {
       zeilen.push('<span class="lg-eintrag"><i class="ist-abschnitt">Trupp</i>' +
         'Kürzel an der gebauten Trasse: wer das Stück gebaut hat</span>');
+    }
+    if ((kz.treffpunkte || []).length) {
+      zeilen.push(`<span class="lg-eintrag"><i class="lg-punkt-ist treffpunkt" style="--farbe:${farbe}"></i>` +
+        'Treffpunkt: beide Trupps haben diesen Punkt bestätigt</span>');
     }
     const buchstaben = new Map();
     for (const pt of ist) {
@@ -3852,9 +3866,11 @@ function baudokuKennzahlenHTML(k, strecke) {
           .filter(n => n !== '?'))].sort((x, y) => x - y);
         return `${escapeHtml(a.trupp || a.name)}${nr.length ? ` (Pkt.&nbsp;${nummernBereich(nr)})` : ''}`;
       }).join(', ')}. ` : '';
+  /* Ein Satz statt zweier Angaben: „Treffpunkt Pkt. 4“ und im selben Absatz
+     „Lücke Pkt. 2–4“ las sich wie zwei Orte. */
   const treff = (k.treffpunkte || []).length
-    ? k.treffpunkte.map(t => `<b>Treffpunkt Pkt.&nbsp;${t.nummer}:</b> ` +
-        `${t.abschnitte.map(a => escapeHtml(name(a))).join(' und ')}.`).join(' ') : '';
+    ? k.treffpunkte.map(t => `<b>Treffpunkt:</b> ` +
+        `${t.abschnitte.map(a => escapeHtml(name(a))).join(' und ')} treffen sich bei Pkt.&nbsp;${t.nummer} (auf der Karte doppelt umrandet).`).join(' ') : '';
   const truppZeile = von || treff ? `<p class="bl-truppzeile">${von}${treff}</p>` : '';
   return `<div class="bl-kennzahlen">${kacheln.map(([t, w, u]) =>
     `<div class="kz"><span class="kz-titel">${escapeHtml(t)}</span>` +
@@ -4116,8 +4132,8 @@ function bauabschnittHTML(s) {
       <tbody>${zeilen}</tbody>
     </table>
     <p class="tab-fussnote">Zeiten „(aus Aufnahmen)“ sind aus den Einträgen des Abschnitts
-      abgeleitet, nicht vom Trupp erklärt. Nach einem Geräteausfall ist vom Baunachweis auf
-      Papier nachgetragen.</p>
+      abgeleitet, nicht vom Trupp erklärt.${[s.bau, ...bauabschnitte(s)].some(x => x && (x.ausfallZeit || x.ausfallNach))
+        ? ' Nach einem Geräteausfall ist vom Baunachweis auf Papier nachgetragen.' : ''}</p>
   </section>`;
 }
 

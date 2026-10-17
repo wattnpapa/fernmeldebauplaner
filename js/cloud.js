@@ -475,12 +475,14 @@ export async function anfrage(adresse, o = {}) {
   } catch (e) {
     if (e && e.name === 'TimeoutError') {
       throw new CloudFehler(
-        'Der Speicher antwortet nicht – die Verbindung steht, es kommt aber nichts an.',
+        'Die Cloud antwortet nicht – die Verbindung steht, es kommt aber nichts an.',
         { zeitueberschreitung: true });
     }
+    /* „(CORS)“ sagt dem Trupp nichts; wer den Server einrichtet, findet die
+       Regel in der Einrichtung (cloud-ui.js, „CORS-Regel“). */
     throw new CloudFehler(
-      'Der Speicher ist nicht erreichbar – kein Netz, oder der Server lässt den Zugriff ' +
-      'aus dem Browser nicht zu (CORS).');
+      'Cloud nicht erreichbar – kein Netz, oder der Server lässt den Zugriff ' +
+      'aus dem Browser nicht zu.');
   }
 }
 

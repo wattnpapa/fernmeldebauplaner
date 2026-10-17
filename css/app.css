@@ -434,7 +434,7 @@ body.seite-zu .seite { display: none; }
 .seite-kopf-zeile .knopf { flex: 1 1 auto; }
 
 .summe {
-  display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 10px; margin-bottom: 10px;
+  display: flex; flex-wrap: wrap; gap: 3px 12px; padding: 6px 10px; margin-bottom: 8px;
   background: var(--thw-blass); border-radius: var(--radius); font-size: 12.5px; color: var(--text-blau);
 }
 /* Ohne Strecken steht in der Summenzeile nichts – dann ist auch kein blaues
@@ -445,7 +445,7 @@ body.seite-zu .seite { display: none; }
    Mahnton – nicht im Blau und nicht fett wie „4 im Bau“. Jede Marke bricht
    nirgends um, und das Wort ⚠ trägt sie auch im Graudruck. */
 .summe-warnungen {
-  flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 6px;
+  flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 3px 6px;
 }
 /* „4 neu“ ist ein Zeichen für Meldungen und kein Baustand: neben „2 im Bau, 3
    gebaut“ addierte es sich im Review zu 13 bei neun Strecken. Als Marke
@@ -1701,8 +1701,19 @@ body.nacht #karte .strecken-mass .schild-bau { color: var(--text-schwach); }
   background: rgba(255,255,255,.85); border: 2px dashed #4a5768; cursor: grab;
 }
 /* Zu nah an einem Punkt (`_griffeAbruecken` in js/strecken.js): sichtbar, aber
-   ohne Zone – der Punkt daneben gewinnt jede Berührung. */
-.fbp-einfuegen.zu-nah { pointer-events: none !important; opacity: .45; }
+   nicht greifbar – und so gezeichnet, dass er nicht wie ein greifbarer
+   aussieht (gepunktet und ungefüllt statt gestrichelt auf Weiß). Er fängt die
+   Berührung auf seiner eigenen Fläche ab und sagt „heranzoomen“; vorher ging
+   sie an den Punkt dahinter und verschob ihn. Über den Punkten, damit die
+   Fläche sicher ihm gehört, aber ohne die Aufweitung der Touch-Fassung: wer
+   den Punkt anpeilt, trifft ihn bis auf die paar Bildpunkte, die der Griff
+   selbst deckt. */
+.fbp-einfuegen.zu-nah { z-index: 100000 !important; }
+.fbp-einfuegen.zu-nah::before { content: none !important; }
+.fbp-einfuegen.zu-nah i {
+  background: transparent; border: 2px dotted #4a5768; opacity: .6; cursor: help;
+}
+.fbp-einfuegen.zu-nah:hover i { background: transparent; border-style: dotted; border-color: #4a5768; }
 .fbp-einfuegen:hover i { background: #fff; border-color: var(--thw); border-style: solid; }
 
 /* Halten, bevor eine Marke dem Finger folgt (`ziehen.js`). Der Ring zieht sich
@@ -2019,6 +2030,17 @@ body.karte-dunkel .strecken-mass { box-shadow: 0 1px 6px rgba(0,0,0,.55); }
    die Zeile schmal umbricht: er schiebt sich an den rechten Rand, die beiden
    anderen bleiben links beisammen. */
 .dialog-fuss.hauptknopf-rechts .knopf.primaer { margin-left: auto; }
+/* Der Konfliktdialog bei 320×568: drei untereinander stehende Fußknöpfe nahmen
+   rund 40 % der Höhe, und der Vergleich der beiden Stände – der Grund des
+   Dialogs – lag dahinter. Zwei Knöpfe je Zeile, jeder auf Handschuhmaß, und der
+   Fuß wird dadurch zwei statt drei Zeilen hoch. */
+@media (max-width: 420px) {
+  .dialog:has(.konflikt) .dialog-fuss { gap: 6px; padding: 8px 12px; }
+  .dialog:has(.konflikt) .dialog-fuss .knopf {
+    flex: 1 1 40%; min-height: 44px; padding-inline: 8px; white-space: normal; text-wrap: balance;
+    margin-left: 0;
+  }
+}
 
 /* Quer bleibt vom Dialog ein Guckloch: bei 844×390 sind 88 dvh 343 px, davon
    nahmen Hülle, Kopf und Fuß 185 px – für den Inhalt blieben 184 bis 197 px,
@@ -2411,8 +2433,19 @@ body.baumodus .wz.nur-bau { display: flex; }
    trägt er in der Fläche: eine ::after-Aufweitung würde vom `overflow: hidden`
    des Merkers abgeschnitten, das die Kürzung mit „…“ braucht. */
 body.baumodus .bau-ziel.bau-ziel-wahl:not([hidden]) {
-  pointer-events: auto; cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+  pointer-events: auto; cursor: pointer;
   padding-top: 13px; padding-bottom: 13px; font-size: 13px; line-height: 18px;
+  /* Ein Knopf und kein Statusschild: kräftiger Rand, Fuß-Schatten und der
+     Pfeil am Ende des Textes (`bauzielNachfuehren`). Die Unterstreichung allein
+     war der einzige Hinweis, dass ein Tipp etwas tut. */
+  border-width: 2px; box-shadow: 0 2px 0 rgba(0, 0, 0, .22);
+  /* Eine Spanne über der Bauleiste statt 85 % der Höhe: der untere Rand lag
+     3 px in „Punkt hier“, und dort gewann „Punkt hier“. Quer hängt der Merker
+     unter der Leiste und behält sein Maß (Regeln weiter unten). */
+  transform: translateY(calc(-100% - 3px));
+}
+body.baumodus .bau-ziel.bau-ziel-wahl:not(.bau-ziel-offen):not([hidden]) {
+  border-color: var(--thw); color: var(--thw-text);
 }
 
 body.baumodus .bau-ziel:not([hidden]) {
@@ -2545,6 +2578,9 @@ body.baumodus .sichtwahl { display: none; }
    füllt sie ihren 18-px-Kasten – in 14 px wäre er nicht zu lesen. Der Anker
    der Marke bleibt derselbe, sie wächst um ihre Mitte. */
 .fbp-istpunkt.mit-kurz { width: 18px; height: 18px; margin: 0; }
+/* Treffpunkt zweier Trupps: ein zweiter Ring in Schwarz um den weißen. Es ist
+   die Form, die ihn trägt – in Schwarz-Weiß unterscheidet keine Farbe. */
+.fbp-istpunkt.treffpunkt { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #000; }
 
 .bau-wahl { margin: 0; }
 .bau-wahl select { font-weight: 650; }
@@ -2658,7 +2694,7 @@ body.baumodus .sichtwahl { display: none; }
    ausgebreitet da und nicht in einem Auswahlfeld. Auf Handschuhmaß, weil sie
    am Bauort und mitten in der Aufnahme kommen kann. */
 .trupp-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
-.trupp-chips:focus { outline: none; }
+.trupp-chips:focus, .trupp-wechseln:focus { outline: none; }
 .trupp-chip {
   min-height: 48px; padding: 8px 16px; border: 1px solid var(--linie-stark);
   border-radius: 999px; background: var(--flaeche); color: var(--text); cursor: pointer;
@@ -2691,7 +2727,9 @@ body.baumodus .sichtwahl { display: none; }
 @media (max-width: 600px) {
   .dialog:has(.trupp-wechseln) .dialog-fuss { flex-direction: column; align-items: stretch; }
   .dialog:has(.trupp-wechseln) .dialog-fuss .knopf { width: 100%; min-height: 44px; }
-  .dialog:has(.trupp-wechseln) .dialog-fuss .knopf:first-child { order: 9; margin-top: 8px; }
+  .dialog:has(.trupp-wechseln:not(.trupp-wechseln-wege)) .dialog-fuss .knopf:first-child {
+    order: 9; margin-top: 8px;
+  }
 }
 @media (min-width: 601px) {
   .dialog:has(.trupp-wechseln) .dialog-fuss { flex-wrap: nowrap; }
@@ -2699,6 +2737,32 @@ body.baumodus .sichtwahl { display: none; }
     flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px;
   }
 }
+/* Mit den beiden Wegen, die Einträge anfassen, steht „Abbrechen“ in jeder Breite
+   zuletzt und abgesetzt – bisher nur bis 600 px. Breiter, also quer und auf dem
+   Tablet, stand es links, 8 px neben „Anderer Trupp übernimmt“, und der
+   Handschuh traf einen Weg, der Einträge umhängt, statt abzubrechen. Die
+   Reihe bleibt, damit die Folge-Sätze davor Platz haben; der Abstand
+   davor ist mehr als eine Fingerbreite, und „Abbrechen“ schrumpft auf sein Wort. */
+.dialog:has(.trupp-wechseln-wege) .dialog-fuss .knopf:last-child { margin-top: 16px; }
+@media (min-width: 601px) {
+  .dialog:has(.trupp-wechseln-wege) .dialog-fuss .knopf:last-child {
+    flex: 0 0 auto; min-width: 104px; margin-top: 0; margin-left: 32px;
+  }
+}
+/* Der Dialog beginnt mit dem Satz und nicht mit einer Leerzeile: der Absatz
+   trug seinen Rand zusätzlich zur Polsterung des Dialogs (gemessen 16 + 16 px
+   über der ersten Zeile). */
+.trupp-wechseln > p:first-child, .trupp-wahl > p:first-child { margin-top: 0; }
+/* Zeilen je Strecke: eng gesetzt, damit zwölf Strecken nicht den Dialog füllen. */
+.tw-strecken { margin: 0 0 8px; padding-left: 18px; }
+.tw-strecken li { margin: 2px 0; }
+/* Meldung am Feld statt in der Pille: die lag über dem Fußknopf. Mit ✖ vorn,
+   damit sie ohne Farbe als Fehler zu lesen ist. */
+.feld-meldung { color: var(--gefahr); font-size: 13px; font-weight: 700; }
+.tw-haken { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 6px 0; cursor: pointer; }
+.tw-haken input { flex: 0 0 auto; width: 24px; height: 24px; margin: 0; }
+.tw-ueberschneidung:empty { display: none; }
+.tw-ueberschneidung .bau-warnung p, .tw-ueberschneidung .klein p { margin: 4px 0; }
 /* Je Knopf eine Zeile Folge, unter dem, was hereinkommt. */
 .folge-liste { margin: 0; padding-left: 18px; }
 .folge-liste li { margin: 3px 0; }
@@ -2799,11 +2863,19 @@ body.baumodus .sichtwahl { display: none; }
    Vorwarnung darüber. Gefüllt und mit Zeichen unterscheidet er sich auch ohne
    Farbe (S/W) – ebenso die durchgefallene Prüfung im Empfangsdialog. */
 .bau-warnung.fehler::before { content: '✖ '; font-weight: 700; }
+/* Ein Block mit Absätzen (Speicherfehler im Bau-Reiter) trägt das Zeichen am
+   ersten Satz: am Block selbst stand „✖“ allein in einer Zeile über dem Text. */
+div.bau-warnung.fehler::before { content: none; }
+div.bau-warnung.fehler > p:first-child::before { content: '✖ '; font-weight: 700; }
+/* `.klein` setzt --text-schwach: grau auf Rot war nachts 2,7:1, bei Tag 1:1. */
+.bau-warnung.fehler .klein, .bau-warnung.fehler p { color: inherit; }
 .bau-warnung.fehler b { color: inherit; }
+/* Knopf dunkler als der Grund statt halbtransparent weiß aufgehellt: aufgehellt
+   fiel die weiße Schrift bei Tag auf 4,44:1, abgedunkelt bleibt sie über 5,6:1. */
 .bau-warnung.fehler .knopf {
-  background: rgba(255,255,255,.16); border: 1.5px solid #fff; color: #fff; font-weight: 650;
+  background: rgba(0,0,0,.22); border: 1.5px solid #fff; color: #fff; font-weight: 650;
 }
-.bau-warnung.fehler .knopf:hover:not(:disabled) { background: rgba(255,255,255,.3); }
+.bau-warnung.fehler .knopf:hover:not(:disabled) { background: rgba(0,0,0,.38); }
 .bau-speicherwarnung p { margin: 0 0 6px; }
 
 /* Der Materialnachweis. Zwei Spalten wie bei den Punktfeldern, aber mit der
@@ -2938,6 +3010,14 @@ body.nacht .bau-nachtrag > .gruppen-titel {
    der Punktliste weiter oben in dieser Datei. */
 .pz-abschluss { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
 .bu-felder { margin-top: 10px; }
+/* Schmal je Feld eine Zeile: in zwei Spalten maß das Feld „Zeitpunkt“ bei
+   390 px 118 px für Datum, Kalenderzeichen und „Jetzt“ – die Uhrzeit des
+   `datetime-local` lag außerhalb, und der Platzhalter „Einheit, für die gebaut
+   wurde“ daneben war abgeschnitten. Gemessen am Datum, das der Trupp am
+   Bauort ohnehin mit „Jetzt“ setzt, und an dem Namen, den er liest. */
+@media (max-width: 520px) {
+  .bu-felder { grid-template-columns: 1fr; }
+}
 
 /* Die Vorschau einer eingegangenen Baumeldung. Sie ist der einzige Empfang,
    der etwas überschreibt – deshalb steht je Strecke nicht nur, was kommt,
@@ -2965,6 +3045,14 @@ body.nacht .bau-nachtrag > .gruppen-titel {
 .mv-eigener input { width: 20px; height: 20px; flex: none; margin: 0; }
 /* Die Funkformel nach dem Verwerfen wird abgelesen, während gesprochen wird. */
 .mv-funkformel { font-size: 16px; line-height: 1.45; }
+/* Die Erklärung zum Dialog ist keine Zeile des Funkspruchs: klein, leiser,
+   durch eine Linie abgesetzt. */
+.mv-funk-meta {
+  font-size: 11.5px; color: var(--text-schwach); margin: 10px 0 0; padding-top: 6px;
+  border-top: 1px solid var(--linie);
+}
+.mv-funk-meta + .mv-funk-meta { border-top: 0; margin-top: 2px; padding-top: 0; }
+.mv-sprung { margin-left: 6px; min-height: 44px; }
 .mv-s6 {
   margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--warnung);
   background: var(--warnung-flaeche); color: var(--warnung-tief); font-weight: 600;
@@ -3002,9 +3090,16 @@ body.nacht .bau-nachtrag > .gruppen-titel {
    mit den anderen. Die Hervorhebung (`primaer`) darf wechseln, die Stelle
    nicht. */
 .dialog-fuss.meldung-fuss {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; justify-content: stretch;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; justify-content: stretch;
 }
 .meldung-fuss .knopf { margin: 0; min-width: 0; white-space: normal; line-height: 1.25; }
+/* Der Hauptknopf trägt `margin-left: auto` aus `.geteilt` und
+   `.hauptknopf-rechts` (vier Klassen) – im Raster zieht ein automatischer Rand
+   die Spalte auf den Inhalt zusammen: quer maß „Einspielen“ 233 px gegen
+   306 px für „Verwerfen“, und der verwerfende Knopf, der die Meldung wegwirft,
+   war das größte Ziel. Beide stehen gleich breit, 16 px auseinander: sie tun
+   das Gegenteil voneinander, und der Daumen trifft sonst den Nachbarn. */
+.dialog-fuss.meldung-fuss .knopf.primaer { margin: 0; }
 .meldung-fuss .fuss-verwerfen { grid-column: 1; grid-row: 1; }
 .meldung-fuss .fuss-einspielen { grid-column: 2; grid-row: 1; }
 .meldung-fuss .fuss-weiter { grid-column: 1 / -1; grid-row: 2; }
@@ -3605,7 +3700,7 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
     color: var(--fehler-text); font-weight: 700; white-space: normal; flex-basis: 12ch;
   }
   .speicherband.speicherfehler .knopf {
-    background: rgba(255,255,255,.16); border: 1.5px solid #fff; color: #fff; font-weight: 650;
+    background: rgba(0,0,0,.22); border: 1.5px solid #fff; color: #fff; font-weight: 650;
   }
 
   /* Seitenleiste und Karte teilen sich den Platz nicht, sie lösen einander ab.
@@ -3742,7 +3837,10 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   /* Oben ist hier der Kartenrand – der Merker hängt an der Unterkante. */
   /* 100 % plus ein Spalt und nicht 85 %: der Merker ragte quer in die Unterkante
      der Leiste hinein, deren Schatten und Rand ihn überlappten. */
-  body.baumodus .bau-ziel:not([hidden]) { top: auto; bottom: 0; transform: translateY(calc(100% + 4px)); }
+  body.baumodus .bau-ziel:not([hidden]),
+  body.baumodus .bau-ziel.bau-ziel-wahl:not([hidden]) {
+    top: auto; bottom: 0; transform: translateY(calc(100% + 4px));
+  }
 
   /* Der Umschalter Liste/Karte steht quer als Spalte am linken Rand statt als
      Band am Fuß. Quer fehlt Höhe, nicht Breite: das Band nahm 52 der 375 bis
@@ -3791,6 +3889,13 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
      „Kein Netz · Im Gerät gespeiche…“ nannte weder die Folge noch das Fehlende. */
   .speicherband.netz-liste .sb-stand:not(.sb-cloud),
   .speicherband.speicherfehler .sb-stand { white-space: normal; overflow: visible; }
+  /* Die Cloud-Zeile bricht um, sobald sie etwas zu sagen hat (Konflikt, Fehler,
+     „wird in 1 min wiederholt“): neben der Netzauskunft wurde sie abgeschnitten,
+     und „antippen zum Entscheiden“ fehlte ausgerechnet beim Konflikt. */
+  .speicherband:has(.sb-cloud.fehler, .sb-cloud.mahnung) { flex-wrap: wrap; }
+  .speicherband .sb-cloud.fehler, .speicherband .sb-cloud.mahnung {
+    white-space: normal; overflow: visible; flex-basis: 100%;
+  }
   .speicherband .knopf { margin: 0 0 0 auto; }
   /* Nur MGRS in die Leiste: die GPS-Angabe passt daneben nicht mehr in eine
      Zeile und steht beim Antippen ohnehin im Popup und in der Punktliste. */
@@ -3924,6 +4029,11 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   /* Der Kopf ist bei zugeklappter Tafel der einzige Griff und trägt deshalb
      das volle Maß, nicht das der Zeilen darunter. */
   .ko-kopf { min-height: 44px; }
+  /* Zugeklappt trägt die Tafel keine Polsterung oben und unten: der Kopf hat
+     seine 44 px selbst, und die 8 + 8 px darum machten daraus ein Feld von
+     60 px mit leerer Fläche über und unter einer Zeile – am Kartenrand der
+     einfachen Ansicht, wo jeder Streifen dem Trassenverlauf fehlt. */
+  .kartenoptionen.zu { padding-top: 0; padding-bottom: 0; }
   .mini-input { padding: 10px 8px; }
   .koord-knopf { padding: 10px 6px; }
   /* Das Namensfeld der Planung maß 38 px – es ist das einzige Feld im Kopf,
@@ -4167,7 +4277,14 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   /* Der Speicherfehler trägt „✖“ und nicht „⚠“ und im Quer-Merker die Rotfläche
      (`.speicherstatus.fehler`): dieselbe Form wie Band und Kopf. */
   .kopf .kopf-projekt .speicherstatus.fehler { padding: 0 8px; }
-  .kopf .kopf-projekt .speicherstatus.fehler::before { content: '✖ ' attr(data-kurz); }
+  .kopf .kopf-projekt .speicherstatus.fehler:not(.cloudstatus)::before { content: '✖ ' attr(data-kurz) ' – Sichern'; }
+  /* Der Merker ist der Ausweg quer: der Block mit „Als Datei sichern“ liegt im
+     Bau-Reiter, der quer nur einen Streifen hoch ist. Das Wort sagt, dass ein
+     Tipp darauf sichert; unter 800 px ohne „im Gerät“, damit das Namensfeld
+     bleibt. */
+  @media (max-width: 800px) {
+    .kopf .kopf-projekt .speicherstatus.fehler:not(.cloudstatus)::before { content: '✖ nicht gespeichert – Sichern'; }
+  }
 
   #sl-gps-kopie, .sl-dez, .sl-elev, .sl-quelle { display: none; }
   .statusleiste { flex-wrap: nowrap; padding-top: 2px; padding-bottom: 2px; }
@@ -4199,7 +4316,10 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   /* Oben ist hier der Kartenrand – der Merker hängt an der Unterkante. */
   /* 100 % plus ein Spalt und nicht 85 %: der Merker ragte quer in die Unterkante
      der Leiste hinein, deren Schatten und Rand ihn überlappten. */
-  body.baumodus .bau-ziel:not([hidden]) { top: auto; bottom: 0; transform: translateY(calc(100% + 4px)); }
+  body.baumodus .bau-ziel:not([hidden]),
+  body.baumodus .bau-ziel.bau-ziel-wahl:not([hidden]) {
+    top: auto; bottom: 0; transform: translateY(calc(100% + 4px));
+  }
 
   .leaflet-control-zoom { display: flex; }
   .leaflet-control-zoom a.leaflet-control-zoom-in {

@@ -73,6 +73,9 @@ let lage = {
 
 export const abgleichLage = () => lage;
 
+/** Bis wann die Pause nach einer Anfrage ohne Antwort gilt (0: keine) */
+export const abgleichPauseBis = () => (pauseBis > Date.now() ? pauseBis : 0);
+
 export function aufAbgleich(fn) {
   HORCHER.add(fn);
   return () => HORCHER.delete(fn);
@@ -194,7 +197,7 @@ async function durchgang() {
        die beiden Stände ordentlich nebeneinander. Als roter Fehler gemeldet
        schickte es den Nutzer auf die Suche nach einer Störung, die es nicht gibt. */
     if (e instanceof KonfliktFehler) {
-      setzen({ stand: 'ausstehend', meldung: 'Am Speicher kam etwas dazwischen – gleich noch einmal.' });
+      setzen({ stand: 'ausstehend', meldung: 'In der Cloud kam etwas dazwischen – gleich noch einmal.' });
       vormerken();
       return;
     }
@@ -207,7 +210,7 @@ async function durchgang() {
       pauseBis = Date.now() + NACHVERSUCH;
       vormerken(NACHVERSUCH);          // setzt die Meldung zurück – deshalb davor
       setzen({ stand: 'ausstehend',
-        meldung: 'Der Speicher antwortet nicht – der Versuch wird wiederholt.' });
+        meldung: 'Die Cloud antwortet nicht – der Versuch wird wiederholt.' });
       return;
     }
     /* Ausstehend und nicht „Fehler“, wenn schlicht kein Netz da ist: am
@@ -624,7 +627,7 @@ export async function konfliktEntscheiden(wahl) {
        der nächste Durchgang stellt ihn neu. */
     if (e instanceof KonfliktFehler) {
       setzen({ stand: 'ausstehend', konflikt: null,
-        meldung: 'Am Speicher kam etwas dazwischen – gleich noch einmal.' });
+        meldung: 'In der Cloud kam etwas dazwischen – gleich noch einmal.' });
       vormerken();
       throw e;
     }

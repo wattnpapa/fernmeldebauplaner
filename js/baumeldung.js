@@ -180,7 +180,7 @@ export function befund(projekt, meldung, zuordnung) {
        Meldung, die an der Prüfung scheitert; sie bleibt mit ihren Hinweisen
        sichtbar (`nichtsGeaendert`). */
     const abgelehnt = versuch ? versuch.pruefhinweise.filter(h =>
-      (h.stamm && !h.uebernommen) || h.uebergabeNichtUebernommen) : [];
+      (h.stamm && !h.uebernommen) || h.uebergabeNichtUebernommen || h.uebergabeVeraltet) : [];
     const schonDa = gleichAbdruck && !abgelehnt.length;
     const nichtsGeaendert = gleichAbdruck && abgelehnt.length > 0;
     /* Ohne Bauabschnitt und von einem anderen Absender sagen zwei Zeitpunkte
@@ -205,13 +205,19 @@ export function befund(projekt, meldung, zuordnung) {
        liegen, sagen nichts über veraltet. */
     const aelter = !schonDa && !andererAbsender && !!(standMeldung && standHier) &&
       Date.parse(standHier) - Date.parse(standMeldung) >= AELTER_ABSTAND;
+    /* Ändert das Einspielen nichts, WEIL hier inzwischen ein jüngerer Stand
+       steht, ist es nicht „genau dieser Stand“: nach der neueren Meldung C gilt
+       die ältere A als „schon eingespielt“, obwohl der Stand hier ein anderer
+       ist. Der Dialog und die Funkformel sagen dann „älter als der Stand hier“. */
+    const ueberholt = schonDa && !!(standMeldung && standHier) &&
+      Date.parse(standHier) - Date.parse(standMeldung) >= AELTER_ABSTAND;
     /* Was danach nicht mehr dasteht – gezählt über den Inhalt der Einträge und
        nicht über ihre Zahl. „Dabei weichen 3 Punkte“ stand auch dann da, wenn
        dieselben drei Punkte gleich wieder hereinkamen, und wer das einmal
        gesehen hat, liest es beim nächsten Mal nicht mehr. */
-    const verloren = probe ? verlust(ziel.bau, probe.bau)
+    const verloren = probe ? verlust(ziel.bau, probe.bau, ziel.punkte)
       : { punkte: 0, meldungen: 0, material: 0, punkteGeaendert: 0, meldungenGeaendert: 0,
-          papier: 0 };
+          papier: 0, orte: [] };
     /* Eine Materialzeile desselben Artikels ist kein Verlust, sondern eine
        Änderung – und die Änderung ist genau das, was der Planer sehen muss:
        im Audit nannte der Dialog bei der berichtigten Meldung „1 Materialzeile
@@ -321,7 +327,7 @@ export function befund(projekt, meldung, zuordnung) {
       /* Steht hier etwas ohne Abschnitt? Sonst träte nichts „an die Stelle“. */
       hierOhneAbschnitt: !!(ziel && ziel.bau && ohneAbschnitt(ziel.bau)),
       pruefAbgelehnt: abgelehnt, nichtsGeaendert, papierGemeldet: papierDerMeldung(m),
-      standMeldung, standHier, schonDa, aelter, verloren, geaendert,
+      standMeldung, standHier, schonDa, ueberholt, aelter, verloren, geaendert,
       daneben, uebergabeFraglich, neueMeldungen, bisher, danach,
       eigenerAbschnittMoeglich, alsEigener, gedeckelt, offeneAbschnitte,
       pruefhinweise: versuch ? versuch.pruefhinweise : [],
@@ -514,9 +520,14 @@ function anwenden(ziel, m, ctx) {
   /* Wer vorher gemeldet hat, wird gemerkt, bevor die Strecke sich ändert. */
   const gleich = !!(ctx.von && ziel.bau && ziel.bau.gemeldetVon &&
     gleicherTrupp(ziel.bau.gemeldetVon, ctx.von));
+  const sperreVorher = uebergabeSperre(ziel.bau);
   const frisch = aufloesen(ziel, m, planAbweicht);
   if (!frisch) return null;
-  const c = { ...ctx, gleich };
+  /* Eine Übergabe, die diese Strecke schon einmal aufgehoben hat, gilt nur
+     durch eine NEUERE Eintragung wieder (`pruefungZusammenfuehren`). Gemerkt
+     wird sie hier, vor dem Ersetzen: bei der Meldung der ganzen Strecke tritt
+     ihr Bogen an die Stelle des alten und brächte den Vermerk nicht mit. */
+  const c = { ...ctx, gleich, sperre: sperreVorher };
   const hinweise = !frisch.abschnitte.length
     ? ganzeStreckeErsetzen(ziel, frisch, c)
     : abschnitteErsetzen(ziel, frisch, { ...c, ersetzeOhne: ctx.alsEigener && gleich });
@@ -550,7 +561,7 @@ function paaren(vorher, nachher, feld) {
 
 const neuNachInhalt = (vorher, nachher, feld) => paaren(vorher, nachher, feld).neu;
 
-function verlust(vorher, nachher) {
+function verlust(vorher, nachher, plan = []) {
   /* Ein Punkt, dem der Trupp nach der ersten Meldung eine Bezeichnung
      nachgetragen hat, ist nicht verloren, sondern geändert. Seit ein Verlust
      „Verwerfen“ nach vorn stellt, wäre das sonst bei jeder gewöhnlichen
@@ -563,6 +574,10 @@ function verlust(vorher, nachher) {
      gilt), und „kennt 1 aufgenommenen Punkt nicht“ stellte einen Verlust fest,
      wo keiner ist. */
   let papier = 0;
+  /* Welche Punkte es sind, mit der Nummer in der Planung: die Funkformel nennt
+     sie („Punkt 4 und 5“), und der Trupp weiß damit, was er erneut melden soll. */
+  const orte = [];
+  const nummerIn = id => (plan || []).findIndex(pt => pt.id === id) + 1;
   const zaehle = (feld, ueberZeit) => {
     const { weg, neu } = paaren(vorher, nachher, feld);
     if (!ueberZeit) return { weg: weg.length, geaendert: 0 };
@@ -576,12 +591,13 @@ function verlust(vorher, nachher) {
       if (gleicheStelle) { geaendert++; continue; }
       verloren++;
       if (x && x.nachgetragen) papier++;
+      if (feld === 'punkte') orte.push({ nr: x && x.sollPunkt ? nummerIn(x.sollPunkt) : 0, papier: !!(x && x.nachgetragen) });
     }
     return { weg: verloren, geaendert };
   };
   const p = zaehle('punkte', true), m = zaehle('meldungen', true), z = zaehle('material', false);
   return { punkte: p.weg, meldungen: m.weg, material: z.weg,
-           punkteGeaendert: p.geaendert, meldungenGeaendert: m.geaendert, papier };
+           punkteGeaendert: p.geaendert, meldungenGeaendert: m.geaendert, papier, orte };
 }
 
 function mengenAenderung(vorher, nachher) {
@@ -775,6 +791,40 @@ export function eigenerVorgabe(projekt, meldung, i, zielId) {
   return hier !== 'unbekannter Absender' && !gleicherTrupp(hier, von) && bauBegonnen(ziel);
 }
 
+// ------------------------------------------------ Aufgehobene Übergabe merken
+
+/* Die zuletzt aufgehobene Übergabe dieser Strecke, `{ an, name, zeit }`, oder
+   `null`. Sie steht in `uebergabeZurueckWar` und bleibt dort stehen, auch wenn
+   der sichtbare Vermerk längst erledigt ist: erst sie verhindert, dass dieselbe
+   alte Meldung die Übergabe später still zurückbringt. */
+export function uebergabeSperre(bau) {
+  const t = String((bau && bau.uebergabeZurueckWar) || '').split('\n');
+  return (t[0] || t[1] || t[2]) ? { an: t[0] || '', name: t[1] || '', zeit: t[2] || '' } : null;
+}
+
+/* Zu welchem Trupp gehört der Truppführer, der die aufgehobene Übergabe
+   gemacht hat? Der Planer soll „Schulz (2. FmTr)“ funken können: die Übergabe
+   gehörte nicht dem Melder, und ohne Trupp weiß der Funker nicht, wen er ruft. */
+function truppDesFuehrers(name, boegen) {
+  const n = String(name || '').trim().toLowerCase();
+  if (!n) return '';
+  for (const bau of boegen) {
+    if (!bau) continue;
+    for (const a of bau.abschnitte || []) {
+      if (a.trupp && String(a.fuehrer || '').trim().toLowerCase() === n) return a.trupp;
+    }
+    const quellen = [bau.gemeldetVon, ...codesLesen(bau).map(z => z.von),
+      ...((bau.pruefung && bau.pruefung.staemme) || []).map(z => z.von)];
+    for (const q of quellen) {
+      for (const teil of String(q || '').split(',')) {
+        const [t, f = ''] = teil.split(' · ').map(x => x.trim());
+        if (t && f.toLowerCase() === n) return t;
+      }
+    }
+  }
+  return '';
+}
+
 // ---------------------------------------------------- Rückgabe-Codes je Absender
 
 /* Je Absender der zuletzt eingespielte Code, als Zeilen „CODE Absender“ in
@@ -798,6 +848,14 @@ export function codesVermerken(bau, code, von) {
   return liste.slice(-MAX_CODES).map(z => (z.code + ' ' + z.von).trim()).join('\n');
 }
 
+/* Alles, was `einspielen` neben dem Inhalt der Strecke an ihr vermerkt – zum
+   Vergleichen vorher/nachher, ob das Einspielen irgendetwas getan hat. */
+const notizenVon = bau => JSON.stringify(bau ? [bau.gemeldetVon, bau.gemeldetCode,
+  bau.gemeldetCodes, bau.uebergabeZurueckZeit, bau.uebergabeZurueckStaemme,
+  bau.uebergabeZurueckWar, bau.letzteMeldungNichtUebernommen || null] : null);
+
+const uebergabeDa = pr => !!(pr && (pr.uebergabeAn || pr.uebergabeZeit || pr.uebergabeName));
+
 /** Hängt an diesem Bauabschnitt überhaupt etwas? */
 function traegtEintraege(strecke, aid) {
   const bau = strecke.bau;
@@ -819,7 +877,13 @@ function traegtEintraege(strecke, aid) {
  */
 export function einspielen(projekt, meldung, zuordnung) {
   const bericht = { strecken: 0, punkte: 0, bestand: 0, abschnitte: 0, uebersprungen: 0,
-    unveraendert: 0, pruefhinweise: [], ausgelassen: [], verluste: [], rueckfragen: [] };
+    unveraendert: 0, pruefhinweise: [], ausgelassen: [], verluste: [], rueckfragen: [],
+    /* `geaendert`: steht danach irgendetwas anderes in der Planung als vorher –
+       der Inhalt der Strecken oder auch nur die Notizen des Empfangs (Code, Vermerke).
+       Ist es `false`, hat das Einspielen nichts getan, und es gehört kein Schritt
+       in den Verlauf. `wirksam`/`unwirksam`: die Strecken, an denen die Meldung etwas
+       bewirkt hat – nur an ihnen ist etwas „neu“. `von`: wer gemeldet hat. */
+    geaendert: false, wirksam: [], unwirksam: [], von: String(meldung.von || '') };
   const code = meldungsCodeAus(meldung);
   (meldung.strecken || []).forEach((m, i) => {
     const zielId = zuordnung ? zuordnung[i] : undefined;
@@ -837,6 +901,11 @@ export function einspielen(projekt, meldung, zuordnung) {
     const codesAlt = { gemeldetCode: ziel.bau && ziel.bau.gemeldetCode,
       gemeldetCodes: ziel.bau && ziel.bau.gemeldetCodes };
     const bauVorher = ziel.bau ? JSON.parse(JSON.stringify(ziel.bau)) : null;
+    const notizenVorher = notizenVon(bauVorher);
+    const zurueckAlt = { zeit: (bauVorher && bauVorher.uebergabeZurueckZeit) || '',
+      staemme: (bauVorher && bauVorher.uebergabeZurueckStaemme) || '',
+      war: (bauVorher && bauVorher.uebergabeZurueckWar) || '' };
+    const nichtAlt = (bauVorher && bauVorher.letzteMeldungNichtUebernommen) || null;
     const absenderAlt = ziel.bau ? ziel.bau.gemeldetVon : '';
     const getan = anwenden(ziel, m, ctxVon(meldung, wahl));
     if (!getan) { bericht.uebersprungen++; bericht.ausgelassen.push(String(m.name || '')); return; }
@@ -863,23 +932,67 @@ export function einspielen(projekt, meldung, zuordnung) {
     ziel.bau.gemeldetCodes = codesVermerken(codesAlt, code, meldung.von);
     /* Hat diese Meldung eine Übergabe aufgehoben, steht das an der Strecke –
        die Pille nannte es nur kurz, und der Stand sagte danach wieder bloß
-       „gebaut“. Jede weitere Meldung überschreibt den Vermerk: er gilt für
-       den letzten Empfang, nicht für alle. */
+       „gebaut“. Der Vermerk bleibt, bis die Strecke wieder übergeben ist oder
+       die durchgefallene Prüfung besteht: jede weitere Meldung überschrieb ihn
+       bisher, auch die harmlose eines anderen Trupps oder derselbe Link noch
+       einmal – die Strecke stand weiter auf „gebaut, nicht übergeben“, und die
+       Führung verlor die Warnung. Ersetzt wird er nur von einer Meldung, die
+       selbst eine Rücknahme enthält. */
     const aufgehoben = getan.hinweise.find(h => h.uebergabeAufgehoben);
     /* Auch die nicht übernommene Übergabe kann eine hiesige aufgehoben haben
-       (`war` am Hinweis). */
-    const hatWar = aufgehoben || getan.hinweise.find(h => h.uebergabeNichtUebernommen && h.war);
-    ziel.bau.uebergabeZurueckZeit = hatWar ? new Date().toISOString() : '';
-    ziel.bau.uebergabeZurueckStaemme = hatWar ? hatWar.staemme.join('\n') : '';
-    ziel.bau.uebergabeZurueckWar = (hatWar && hatWar.war)
-      ? [hatWar.war.an, hatWar.war.name, hatWar.war.zeit].join('\n') : '';
+       (`war` am Hinweis). Die veraltete (`uebergabeVeraltet`) hebt nichts auf. */
+    const hatWar = aufgehoben ||
+      getan.hinweise.find(h => h.uebergabeNichtUebernommen && !h.uebergabeVeraltet && h.war);
+    if (hatWar && hatWar.war) hatWar.war.trupp = truppDesFuehrers(hatWar.war.name, [bauVorher, ziel.bau]);
+    const bauJetzt = ziel.bau;
+    if (hatWar) {
+      bauJetzt.uebergabeZurueckZeit = new Date().toISOString();
+      bauJetzt.uebergabeZurueckStaemme = hatWar.staemme.join('\n');
+      /* Die Notiz, WAS aufgehoben wurde, bleibt auch dann, wenn diese Rücknahme
+         nichts Eingetragenes traf: sie ist die Sperre gegen die Wiederkehr. */
+      bauJetzt.uebergabeZurueckWar = hatWar.war
+        ? [hatWar.war.an, hatWar.war.name, hatWar.war.zeit].join('\n') : zurueckAlt.war;
+    } else {
+      bauJetzt.uebergabeZurueckZeit = zurueckAlt.zeit;
+      bauJetzt.uebergabeZurueckStaemme = zurueckAlt.staemme;
+      bauJetzt.uebergabeZurueckWar = zurueckAlt.war;
+      const pr = bauJetzt.pruefung;
+      if (bauJetzt.stand === 'uebergeben' && uebergabeDa(pr)) {
+        /* Wieder übergeben: durch eine neuere Eintragung (die Sperre lässt keine
+           andere durch), der Vermerk ist erledigt – und die Sperre mit ihm. */
+        bauJetzt.uebergabeZurueckZeit = ''; bauJetzt.uebergabeZurueckStaemme = '';
+        bauJetzt.uebergabeZurueckWar = '';
+      } else if (!((pr && pr.staemme) || []).some(z => z.bestanden === false)) {
+        /* Die Prüfung besteht wieder: die Warnung hat ihren Grund verloren. Die
+           Sperre (`uebergabeZurueckWar`) bleibt, bis eine neuere Übergabe kommt. */
+        bauJetzt.uebergabeZurueckZeit = ''; bauJetzt.uebergabeZurueckStaemme = '';
+      }
+    }
+    /* Eine Meldung, die nichts übernommen hat, ist nicht angekommen im Sinne
+       der Planung: der Code gehört trotzdem an die Strecke, aber mit der
+       Kennzeichnung, dass sie nachzufragen ist. Ein Wiederholer mit gleichem
+       Code und Absender frischt die Zeit nicht auf (kein neuer Verlaufsschritt).
+       Eine wirksame Meldung desselben Trupps erledigt die Notiz. */
+    const abgewiesen = getan.hinweise.some(h =>
+      (h.stamm && !h.uebernommen) || h.uebergabeNichtUebernommen);
+    const vonText = meldung.von ? String(meldung.von).slice(0, 120) : '';
+    if (!wirkte && abgewiesen) {
+      bauJetzt.letzteMeldungNichtUebernommen = (nichtAlt && nichtAlt.code === code && nichtAlt.von === vonText)
+        ? nichtAlt : { code, zeit: new Date().toISOString(), von: vonText };
+    } else if (wirkte && nichtAlt && vonText && nichtAlt.von && gleicherTrupp(nichtAlt.von, vonText)) {
+      bauJetzt.letzteMeldungNichtUebernommen = null;
+    } else {
+      bauJetzt.letzteMeldungNichtUebernommen = nichtAlt;
+    }
+    bericht[wirkte ? 'wirksam' : 'unwirksam'].push(ziel.id);
+    if (wirkte || notizenVon(bauJetzt) !== notizenVorher) bericht.geaendert = true;
 
     /* Was der Trupp wissen muss und die Pille nicht trägt: was beim Planer
        entfallen ist und was beim Trupp nachzufragen bleibt. Gerechnet an den
        Ständen vor und nach dem Einspielen – dieselben Zahlen, die der Dialog
        vorher nannte, nur jetzt für die Funkformel. */
     if (bauVorher) {
-      const v = verlust(bauVorher, ziel.bau);
+      const v = verlust(bauVorher, ziel.bau, ziel.punkte);
       v.material = Math.max(0, v.material - mengenAenderung(bauVorher, ziel.bau).length);
       if (v.punkte || v.meldungen || v.material) {
         bericht.verluste.push({ strecke: ziel.name, ...v,
@@ -1345,9 +1458,11 @@ function pruefungZusammenfuehren(bau, frisch, ctx, hier, ganze) {
       else if (!gemessen(h)) nehmen = true;
       else nehmen = (g.zeit || '') > (h.zeit || '');
       if (ergebnisWort(g) !== ergebnisWort(h)) {
+        /* `hierVon`: wessen Messung hier steht – bei einer fremden Messung
+           verlangt die Funkformel nicht, neu zu messen, sondern nennt sie. */
         hinweise.push({ stamm: name(g) || 'Stamm ohne Namen', schluessel: schluessel(g),
           hier: ergebnisWort(h), gemeldet: ergebnisWort(g), uebernommen: nehmen, fraglich,
-          nachmessung });
+          nachmessung, hierVon: String(h.von || '') });
       }
       if (nehmen) hier.staemme[stelle] = gemerkt(g);
     }
@@ -1359,7 +1474,23 @@ function pruefungZusammenfuehren(bau, frisch, ctx, hier, ganze) {
      sagt der Dialog schon vorher (`uebergabeFraglich`). */
   const sperrend = ganze ? durchgefallen.filter(z => vonHier.has(z)) : durchgefallen;
 
-  if (neu && hatUebergabe(neu)) {
+  /* Die aufgehobene Übergabe kommt nicht durch das Wiedereinspielen eines
+     älteren Standes zurück: Meier misst nach, die Prüfung besteht – und
+     Schulz schickt seine alte, unveränderte Meldung noch einmal. Ohne die
+     Sperre stand die Übergabe still wieder da, der Planer wurde nicht gefragt.
+     Gilt nur eine Eintragung mit späterer Zeit als die aufgehobene. */
+  const sperre = ctx.sperre || null;
+  const veraltet = !!(sperre && neu && hatUebergabe(neu) &&
+    !(neu.uebergabeZeit && neu.uebergabeZeit > sperre.zeit));
+  let blockiert = false;
+  if (veraltet) {
+    if (!hier) { neu.uebergabeAn = ''; neu.uebergabeZeit = ''; neu.uebergabeName = ''; }
+    if (!hier || !hatUebergabe(hier)) {
+      blockiert = true;
+      hinweise.push({ uebergabeNichtUebernommen: true, uebergabeVeraltet: true, staemme: [],
+        war: sperre });
+    }
+  } else if (neu && hatUebergabe(neu)) {
     const staemme = sperrend.map(z => name(z) || 'ein Stamm');
     if (!hier) {
       if (sperrend.length) {
@@ -1378,6 +1509,9 @@ function pruefungZusammenfuehren(bau, frisch, ctx, hier, ganze) {
   }
 
   if (ergebnis) bau.pruefung = ergebnis;
+  /* Stand und Übergabe bleiben synchron: die alte Meldung nannte „übergeben“,
+     die Übergabe gilt aber nicht mehr. */
+  if (blockiert && bau.stand === 'uebergeben' && !hatUebergabe(ergebnis)) bau.stand = 'gebaut';
   /* Neben einem durchgefallenen Stamm gilt keine Übergabe (3.5). Der Stand fiel
      bisher auf „gebaut“, die Übergabe aber blieb eingetragen – die Dokumentation
      führte „übergeben an …“ neben „Prüfung nicht bestanden“, und im Abschnittsfall
@@ -1394,7 +1528,7 @@ function pruefungZusammenfuehren(bau, frisch, ctx, hier, ganze) {
     /* Wurde die gemeldete Übergabe ohnehin nicht übernommen, sagt das schon der
        Hinweis darüber – zweimal dasselbe liest niemand. Was hier stand, trägt
        er dann mit. */
-    const schon = hinweise.find(h => h.uebergabeNichtUebernommen);
+    const schon = hinweise.find(h => h.uebergabeNichtUebernommen && !h.uebergabeVeraltet);
     if (schon) { if (war) schon.war = war; }
     else hinweise.push({ uebergabeAufgehoben: true, staemme, war });
   }
@@ -1433,6 +1567,20 @@ export function uebergabeWarText(war) {
     war.zeit && uhrzeit(war.zeit)].filter(Boolean).join(', ');
 }
 
+/* „Meier (1. FmTr)“ aus „1. FmTr · Meier“ – so wird ein Trupp über Funk gerufen */
+const absenderKurz = von => {
+  const [trupp = '', fuehrer = ''] = String(von || '').split(',')[0].split(' · ').map(x => x.trim());
+  return fuehrer && trupp ? `${fuehrer} (${trupp})` : (fuehrer || trupp);
+};
+
+const esc = t => String(t).replace(/[&<>"]/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* Wem gehörte die aufgehobene Übergabe? `war.name` ist, wer sie gemacht hat;
+   der Trupp dazu steht dabei, wenn die Strecke ihn kennt (`truppDesFuehrers`). */
+const warBesitzer = war => !war || !war.name ? ''
+  : (war.trupp ? `${war.name} (${war.trupp})` : war.name);
+
 /* Prüfung und Übergabe, die nicht galten – das, was der Trupp neu messen oder
    neu melden muss. */
 function pruefungNicht(bericht) {
@@ -1442,11 +1590,60 @@ function pruefungNicht(bericht) {
   const war = h => { const t = uebergabeWarText(h.war); return t ? ` – eingetragen war: ${t}` : ''; };
   for (const h of bericht.pruefhinweise || []) {
     if (h.stamm && !h.uebernommen) {
-      liste.push(`Prüfung ${h.stamm} (hier ${h.hier}, gemeldet ${h.gemeldet})`);
+      /* Eine fremde Messung wird genannt, nicht nur das Ergebnis: bei „hier
+         durchgefallen, gemeldet bestanden“ zählt, WESSEN Messung beim Planer steht. */
+      const fremd = h.fraglich && h.hierVon
+        ? `hier gilt die Messung von ${absenderKurz(h.hierVon)}: ` : 'hier ';
+      liste.push(`Prüfung ${h.stamm} (${fremd}${h.hier}, gemeldet ${h.gemeldet})`);
+    } else if (h.uebergabeVeraltet) {
+      liste.push('Übergabe (die aufgehobene Übergabe kehrt nicht durch eine ' +
+        `ältere Meldung zurück)${war(h)}`);
     } else if (h.uebergabeNichtUebernommen) {
       liste.push(`Übergabe (${staemme(h)} ${ist(h)} durchgefallen)${war(h)}`);
     } else if (h.uebergabeAufgehoben) {
-      liste.push(`Übergabe aufgehoben (${staemme(h)} ${ist(h)} durchgefallen)${war(h)}`);
+      const von = warBesitzer(h.war);
+      liste.push(`Übergabe${von ? ' von ' + von : ''} aufgehoben ` +
+        `(${staemme(h)} ${ist(h)} durchgefallen)${war(h)}`);
+    }
+  }
+  return liste;
+}
+
+/* Was welcher Trupp jetzt tun soll, getrennt nach Adressat. Die Formel sprach
+   bei aufgehobener Übergabe den MELDER an („muss neu messen“) – die Übergabe
+   gehörte aber einem anderen Trupp, und der erfuhr nichts. Bei einer fremden
+   Messung hieß es „neu messen“, obwohl die Messung beim Planer steht und nur
+   übernommen werden muss. */
+function aufgaben(bericht) {
+  const liste = [];
+  const melder = absenderKurz(bericht.von) || 'Der Melder';
+  const gleich = war => !!war && !!war.name &&
+    String(bericht.von || '').toLowerCase().includes(String(war.name).toLowerCase());
+  for (const h of bericht.pruefhinweise || []) {
+    if (h.stamm && !h.uebernommen) {
+      if (h.fraglich) {
+        liste.push(`${melder}: Neu messen ist nicht nötig – beim Planer gilt ${h.hierVon
+          ? 'die Messung von ' + absenderKurz(h.hierVon) : 'eine andere Messung'} (${h.hier}); ` +
+          `der Planer kann „${h.stamm}“ übernehmen, wenn er die Meldung noch einmal öffnet`);
+      } else {
+        liste.push(`${melder}: Prüfung „${h.stamm}“ neu messen und melden`);
+      }
+    } else if (h.uebergabeVeraltet) {
+      const von = warBesitzer(h.war);
+      liste.push(`${von || melder}: Die Übergabe${h.war && h.war.an ? ' an ' + h.war.an : ''} ` +
+        'ist beim Planer aufgehoben und gilt nur durch eine neue Übergabe – ' +
+        'nach bestandener Prüfung neu übergeben und melden');
+    } else if (h.uebergabeNichtUebernommen || h.uebergabeAufgehoben) {
+      const ist = h.staemme.length === 1 ? 'ist' : 'sind';
+      liste.push(`${melder}: ${h.staemme.join(', ')} ${ist} durchgefallen – ` +
+        'nach der Reparatur neu messen und melden');
+      const von = warBesitzer(h.war);
+      if (h.war && !gleich(h.war) && von) {
+        liste.push(`${von}: Die Übergabe${h.war.an ? ' an ' + h.war.an : ''} ist beim Planer ` +
+          'aufgehoben – erst nach bestandener Prüfung neu übergeben und melden');
+      } else if (h.uebergabeAufgehoben) {
+        liste.push(`${melder}: Danach die Übergabe neu melden`);
+      }
     }
   }
   return liste;
@@ -1472,6 +1669,31 @@ export const zaehlText = v => [
   v.material && `${v.material} ${v.material === 1 ? 'Materialzeile' : 'Materialzeilen'}`
 ].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' und $1');
 
+/* Was beim Planer entfallen ist, in einem Satz je Strecke: welche Punkte (mit
+   der Nummer in der Planung), und woher sie stammten. „1 aufgenommener Punkt
+   entfällt“ ließ den Trupp raten, welcher – und dass es die Abschrift des
+   Planers vom Papier war, stand nirgends. Der Name der Strecke steht ohne
+   Anführungszeichen: „Strecke „Strecke 1““ ließ sich nicht sprechen. */
+function verlustSatz(e) {
+  const orte = e.orte || [];
+  const nummern = [...new Set(orte.filter(o => o.nr).map(o => o.nr))].sort((a, b) => a - b);
+  const ohne = orte.filter(o => !o.nr).length;
+  const teile = [];
+  if (nummern.length) teile.push('Punkt ' + nummern.join(', ').replace(/, ([^,]*)$/, ' und $1'));
+  if (ohne) teile.push(`${ohne} ${ohne === 1 ? 'Punkt' : 'Punkte'} ohne Planbezug`);
+  if (!orte.length && e.punkte) {
+    teile.push(`${e.punkte} ${e.punkte === 1 ? 'aufgenommener Punkt' : 'aufgenommene Punkte'}`);
+  }
+  if (e.meldungen) teile.push(`${e.meldungen} ${e.meldungen === 1 ? 'Baumeldung' : 'Baumeldungen'}`);
+  if (e.material) teile.push(`${e.material} ${e.material === 1 ? 'Materialzeile' : 'Materialzeilen'}`);
+  const papier = orte.filter(o => o.papier).length;
+  const quelle = !e.punkte ? ''
+    : (papier && papier === orte.length) ? ' (Abschrift vom Papier)'
+    : papier ? ` (davon ${papier} Abschrift vom Papier)`
+    : e.von ? ` (Aufnahme von ${String(e.von).replace(/ · /g, ", ")})` : '';
+  return `Strecke ${e.strecke}: ${teile.join(', ').replace(/, ([^,]*)$/, ' und $1')}${quelle}`;
+}
+
 /**
  * Alles, was der Trupp nach dem Einspielen über Funk hören muss, nach Gewicht
  * geordnet: zuerst, was beim Planer entfallen ist (`verlust`), dann Prüfung und
@@ -1481,23 +1703,97 @@ export const zaehlText = v => [
  * verdrängte oder einen geplanten Punkt doppelt bestätigte, kam als „übernommen“
  * zurück, und die Nachfrage blieb beim Planer liegen, der sie nicht stellen kann.
  *
- * `neuMessen` gilt nur für `nicht`: eine bewusst ausgelassene Strecke verlangt
- * vom Trupp nichts.
+ * `aufgaben` sagt je Adressat, was zu tun ist. `neuMessen` gilt nur, wo wirklich
+ * eine eigene Messung fehlt: eine bewusst ausgelassene Strecke verlangt vom
+ * Trupp nichts, und eine fremde Messung beim Planer verlangt keine neue.
  */
 export function durchgabe(bericht) {
   const nicht = pruefungNicht(bericht);
-  const raus = u => (u || []).map(e => {
-    const bruch = e.von ? ` (Aufnahme von ${e.von})` : '';
-    return `Strecke „${e.strecke}“: ${zaehlText(e)} ${e.punkte + e.meldungen + e.material === 1
-      ? 'entfällt' : 'entfallen'} beim Planer${bruch}`;
-  });
   const frage = (bericht.rueckfragen || []).map(e => e.doppelt
-    ? `Strecke „${e.strecke}“: ${e.doppelt} ${e.doppelt === 1 ? 'geplanter Punkt wäre' : 'geplante Punkte wären'} ` +
+    ? `Strecke ${e.strecke}: ${e.doppelt} ${e.doppelt === 1 ? 'geplanter Punkt wäre' : 'geplante Punkte wären'} ` +
       'doppelt bestätigt – ist es dieselbe Aufnahme?'
-    : `Strecke „${e.strecke}“: ${e.abseits} ${e.abseits === 1 ? 'Punkt liegt' : 'Punkte liegen'} bis ` +
-      `${Math.round(e.weit).toLocaleString('de-DE')}\u00a0m neben der Trasse – stimmt die Ortung?`);
-  return { verlust: raus(bericht.verluste), nicht, ausgelassen: ausgelasseneStrecken(bericht),
-    rueckfragen: frage, neuMessen: nicht.length > 0 };
+    : `Strecke ${e.strecke}: ${e.abseits} ${e.abseits === 1 ? 'Punkt liegt' : 'Punkte liegen'} bis ` +
+      `${Math.round(e.weit).toLocaleString('de-DE')} m neben der Trasse – stimmt die Ortung?`);
+  const neuMessen = (bericht.pruefhinweise || []).some(h =>
+    (h.stamm && !h.uebernommen && !h.fraglich) || h.uebergabeNichtUebernommen || h.uebergabeAufgehoben);
+  return { verlust: (bericht.verluste || []).map(verlustSatz), nicht,
+    aufgaben: aufgaben(bericht), ausgelassen: ausgelasseneStrecken(bericht),
+    rueckfragen: frage, neuMessen };
+}
+
+/**
+ * Der Funkspruch nach „Einspielen“: `{ satz, hilfe, laut }`, beides als HTML.
+ * Gebaut wird er hier und nicht in der Oberfläche, damit Wortlaut und Befund
+ * an einer Stelle stehen. Ein Verlust steht in der Kopfzeile selbst („angekommen,
+ * ABER beim Planer entfallen“) und nicht dahinter: die Kopfzeile „übernommen“
+ * mit einem Entfallen dahinter widersprach sich und war schlecht zu sprechen.
+ */
+export function funkformel(bericht, code) {
+  const d = durchgabe(bericht);
+  const mitCode = `Meldung <b class="meldungscode">${esc(code)}</b>`;
+  const nichtsNeu = bericht.strecken && bericht.unveraendert === bericht.strecken;
+  const absatz = (titel, eintraege) => eintraege.length
+    ? ` <b>${titel}</b> ${esc(eintraege.join('; '))}.` : '';
+  const verlustImKopf = !!bericht.strecken && d.verlust.length > 0 && !d.nicht.length;
+  /* Was fehlt, nennt der Handlungssatz: nur die Arten, die wirklich entfallen. */
+  const v = bericht.verluste || [];
+  const arten = [v.some(e => e.punkte) && 'Punkte', v.some(e => e.meldungen) && 'Baumeldungen',
+    v.some(e => e.material) && 'Materialzeilen'].filter(Boolean)
+    .join(', ').replace(/, ([^,]*)$/, ' und $1');
+  const bitte = ` Bitte ${arten} erneut melden oder mit dem Papier abgleichen.`;
+  const kopf = !bericht.strecken
+    ? `${mitCode} NICHT übernommen – keine Strecke zugeordnet.`
+    : d.nicht.length && nichtsNeu
+    ? `${mitCode} angekommen, aber <b>NICHTS übernommen</b> – der Stand hier ist unverändert.`
+    : d.nicht.length
+    ? `${mitCode} nur teilweise übernommen.`
+    : verlustImKopf
+    ? `${mitCode} angekommen, <b>ABER beim Planer entfallen:</b> ${esc(d.verlust.join('; '))}.${bitte}`
+    : nichtsNeu
+    ? `${mitCode} angekommen – nichts Neues, dieser Stand war schon eingespielt.`
+    : `${mitCode} übernommen.`;
+  const satz = kopf
+    + (verlustImKopf ? '' : absatz('Beim Planer entfallen:', d.verlust) + (d.verlust.length ? bitte : ''))
+    + absatz('NICHT übernommen:', d.nicht)
+    + absatz('Bitte:', d.aufgaben)
+    + absatz('Ausgelassen:', d.ausgelassen)
+    + absatz('Rückfrage an den Trupp:', d.rueckfragen);
+  /* „Rückfrage“ nur, wo es eine gibt: bei bloßem Verlust ist keine zu beantworten. */
+  const hilfe = d.nicht.length
+    ? 'Sonst hält der Trupp Prüfung oder Übergabe für verbucht.'
+    : d.verlust.length
+    ? 'Sonst weiß der Trupp nicht, dass seine Einträge beim Planer fehlen.'
+    : d.rueckfragen.length ? 'Der Trupp soll die Rückfrage beantworten.' : '';
+  return { satz, hilfe, laut: !!(d.nicht.length || d.verlust.length || !bericht.strecken) };
+}
+
+/* Der Grund nach „Verwerfen“, wenn die Meldung genau den Stand brachte, der
+   schon da war. */
+export const GRUND_SCHON_DA = 'schon eingespielt';
+
+/** Das, was nach „Verwerfen“ über Funk zu sagen ist – `{ satz, hilfe }` als HTML */
+export function verwerfFormel(grund, code, herkunft) {
+  const mitCode = `Meldung <b class="meldungscode">${esc(code)}</b>`;
+  /* „Übernommen“ stimmte nicht: der Planer hat verworfen. Der Stand war nur
+     schon da – das ist die ganze Aussage. */
+  if (grund === GRUND_SCHON_DA) {
+    return { satz: `${mitCode} nicht eingespielt – dieser Stand war schon eingespielt.`, hilfe: '' };
+  }
+  return { satz: `${mitCode} nicht übernommen – Grund: ${esc(grund)}.`,
+    hilfe: (herkunft === 'Datei' ? 'Dieselbe Datei lässt sich noch einmal laden,'
+      : 'Derselbe Link öffnet die Meldung wieder,') + ' falls doch eingespielt werden soll.' };
+}
+
+/** Was nach einer abgelehnten Prüfung zu tun ist (für „Verwerfen“) */
+export function ablehnungsHinweis(pruefhinweise) {
+  if ((pruefhinweise || []).some(h => h.uebergabeVeraltet)) {
+    return 'nach bestandener Prüfung neu übergeben und melden';
+  }
+  const liste = (pruefhinweise || []).filter(h => h.stamm && !h.uebernommen);
+  if (liste.length && liste.every(h => h.fraglich)) {
+    return 'neu messen ist nicht nötig, der Planer kann die Messung übernehmen (Meldung noch einmal öffnen)';
+  }
+  return 'bitte neu messen und melden';
 }
 
 /** Kurzfassung für die Meldung nach dem Einspielen */

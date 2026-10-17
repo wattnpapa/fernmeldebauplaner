@@ -182,6 +182,8 @@ function bauVerschlanken(s, nur = null) {
   delete raus.uebergabeZurueckZeit;
   delete raus.uebergabeZurueckStaemme;
   delete raus.uebergabeZurueckWar;
+  /* Ebenso der Vermerk „Meldung nicht übernommen“ – eine Notiz des Planers. */
+  delete raus.letzteMeldungNichtUebernommen;
 
   if (bau.abschnitte.length) {
     raus.abschnitte = bau.abschnitte.map((a, i) => {

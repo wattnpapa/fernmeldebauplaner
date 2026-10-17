@@ -469,7 +469,7 @@ try {
   b.gleich(haengt18.online, true, 'Der Browser hält das Netz für da');
   b.pruefe(haengt18.bilder > 0 && haengt18.sichtbar === haengt18.bilder,
     `Nach der Frist zeigt jede Kachel die gröbere Stufe aus dem Vorrat (${haengt18.sichtbar} von ${haengt18.bilder})`);
-  b.pruefe(/^Karte nicht erreichbar/.test(haengt18.leiste) && /gröber/.test(haengt18.leiste),
+  b.pruefe(/^Karte langsam/.test(haengt18.leiste) && /gröber/.test(haengt18.leiste),
     `Die Leiste nennt den Ausfall und dass es gröber ist („${haengt18.leiste}“)`);
   b.pruefe(!/kein Netz/.test(haengt18.leiste), 'Und behauptet nicht, das Netz sei weg');
   b.pruefe(haengt18.pille, 'Ohne Hinweispille');
@@ -580,6 +580,64 @@ try {
   b.gleich(spaet.nachPause, 0, 'Danach holt die Ebene jede Kachel nach, ohne Zutun und ohne Verschieben');
   b.pruefe(spaet.letztes && spaet.letztes.offen === 0, 'Und meldet, dass nichts mehr offen ist');
   b.pruefe(spaet.leiste === '', `Die Leiste ist dann weg („${spaet.leiste}“)`);
+
+  b.abschnitt('Nach Ende der Folge nennt die Leiste den Ausweg, und ein Ereignis versucht es erneut');
+  /* Nach Aufgabe der Folge blieb ein Flickenteppich: die Leiste „gröber“ ohne
+     Ausweg (er stand nur im Tooltip), und der Server antwortete wieder, aber
+     Verschieben ohne Stufenwechsel holte nur die neuen Kacheln scharf. Die Folge
+     wird hier für beendet erklärt (`_nachSchritt` über dem Ende), statt drei
+     Minuten zu warten. */
+  await seite.auswerten('return (await import("./js/ui.js")).hinweisAus();');
+  await seite.haengen('*geodatenzentrum.de*');
+  await seite.auswerten(`
+    const k = window.fbp.karte;
+    k.setView([51.8031, 10.6003], 18, { animate: false });
+    k._fbpBasis.redraw();
+    return true;`);
+  await seite.warteAuf(`
+    const bilder = [...document.querySelectorAll('#karte img.leaflet-tile')];
+    return bilder.length > 0 && bilder.every(i => i.src.startsWith('blob:') && i.complete)
+      && !document.getElementById('sl-netz').hidden;`, 12000).catch(() => {});
+  await seite.haengenEnde().catch(() => {});
+  const aufgabe = await seite.auswerten(`
+    const k = window.fbp.karte;
+    const ebene = k._fbpBasis;
+    const echt = window.Image;
+    window.__antwortet = false;
+    window.Image = function () {
+      const probe = { set src(v) { if (!v) return; setTimeout(() => {
+        if (window.__antwortet) probe.onload && probe.onload(); else probe.onerror && probe.onerror();
+      }, 40); } };
+      return probe;
+    };
+    const zaehle = () => [...document.querySelectorAll('#karte img.leaflet-tile')]
+      .filter(i => i.src.startsWith('blob:')).length;
+    const r = { gesamt: document.querySelectorAll('#karte img.leaflet-tile').length, anfang: zaehle() };
+    clearTimeout(ebene._nachUhr); ebene._nachUhr = null; ebene._nachSchritt = 99;
+    await ebene.nachladen('runde');
+    const n = document.getElementById('sl-netz');
+    r.leiste = n.hidden ? '' : n.textContent;
+    r.nochGrob = zaehle();
+    /* Der Server antwortet wieder; kein Stufenwechsel, nur eine Bewegung. */
+    window.__antwortet = true;
+    ebene._erneutLauf = 0;
+    k.fire('moveend');
+    const ende = Date.now() + 4000;
+    while (zaehle() > 0 && Date.now() < ende) await new Promise(f => setTimeout(f, 100));
+    r.nachBewegung = zaehle();
+    /* Und nicht öfter als einmal je 60 s: ein zweites Ereignis tut nichts. */
+    const stempel = ebene._erneutLauf;
+    k.fire('moveend');
+    r.gedrosselt = ebene._erneutLauf === stempel;
+    window.Image = echt;
+    return r;`);
+  b.pruefe(aufgabe.gesamt > 0 && aufgabe.anfang === aufgabe.gesamt,
+    `Vorher steht jede Kachel gröber da (${aufgabe.anfang} von ${aufgabe.gesamt})`);
+  b.pruefe(/zoomen lädt neu/.test(aufgabe.leiste),
+    `Nach Aufgabe der Folge nennt die Leiste selbst den Ausweg („${aufgabe.leiste}“)`);
+  b.gleich(aufgabe.nochGrob, aufgabe.gesamt, 'Die Kacheln stehen dabei weiter gröber da');
+  b.gleich(aufgabe.nachBewegung, 0, 'Antwortet der Server wieder, holt schon eine Bewegung die gröberen Kacheln nach');
+  b.pruefe(aufgabe.gedrosselt, 'Und ein Ereignis löst höchstens einmal je 60 s einen Lauf aus');
 
   b.abschnitt('Die Höhe wird nach dem Funkloch wieder gefragt');
   /* Eine gescheiterte Höhenkachel (rund 10 km) wurde bis zum Neuladen gemerkt:

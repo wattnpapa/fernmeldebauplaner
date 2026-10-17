@@ -3,7 +3,7 @@
 import {
   store, neueStrecke, neuerPunkt, neuesZeichen, abschnittById, abschnitteGeordnet, abschnittPfad,
   dateisicherung, istGehaltvoll, ladeAlle, migrieren, planKennung, baustandDerPlanung,
-  SCHEMA, stammtVonNeuerer
+  SCHEMA, stammtVonNeuerer, speicherBelegung, SPEICHER_KONTINGENT
 } from './state.js';
 import {
   erstelleKarte, setzeBasiskarte, setzeVorrang, kartenNachladen, kartenGrobSichtbar, BASISKARTEN
@@ -26,10 +26,11 @@ import {
   zeichneFlaechenListe, flaechenPalette,
   zeichneRelaisListe, relaisZielAntwort, ueberdeckungUmschalten,
   symbolPalette, koordinatenSuche, hilfeDialog, projektDialog, dialog, schliesseDialog,
-  dialogAbweisen, hinweis, hinweisAus,
+  dialogAbweisen, dialogGeschuetzt, hinweis, hinweisAus,
   abschnittAnlegen, zeichengruppeAnlegen, bilderUebernehmen, zeichneBauListe, karteDabei,
   baumeldungDialog, rueckwegNachfuehren, kartenSignale, formularSchreiben, nachtragBeenden,
-  netzHinweisFuehren, speicherfehlerSetzen
+  netzHinweisFuehren, speicherfehlerSetzen, funkDialog, funkformelMerken, truppWechselnDialog,
+  SPEICHER_VORWARNUNG
 } from './ui.js';
 import {
   baustrecke, baustreckeSetzen, truppAmGeraet, truppAmGeraetSetzen, bauBegonnen as bauBegonnenAn,
@@ -37,7 +38,8 @@ import {
   nachtragTag, nachtragSetzen, nachtragBeobachten, tagKurz,
   truppWahlOffen, truppNichtAufgetragen, truppFrageAnmelden, istPunkte,
   eigenenAbschnittSichern, ohneAbschnittZuordnen, truppSchrittMerken, truppSchrittNachfuehren,
-  aufgetragenerTrupp, truppSchluessel, truppFrageVertagen, truppFrageRuht
+  aufgetragenerTrupp, truppSchluessel, truppFrageVertagen, truppFrageRuht, aehnlicherTrupp,
+  truppGewaehltMerken, TRUPPWAHL_FENSTER_MS
 } from './baudoku.js';
 import {
   initBaukarte, punktkarteOeffnen, punktkarteSchliessen, punktkarteOffen, punktkarteNachfuehren,
@@ -122,7 +124,15 @@ let fehlstartGesagt = -Infinity;
 document.addEventListener('fbp:ziehen-fehlstart', () => {
   if (performance.now() - fehlstartGesagt < 30000) return;
   fehlstartGesagt = performance.now();
-  hinweis('Zum Verschieben ruhig halten, bis der Ring steht – der Punkt folgt dann etwas über dem Finger.');
+  /* Der Einfügegriff meint etwas anderes als ein Punkt: wer ihn hält, will einen
+     Punkt EINFÜGEN. „Zum Verschieben“ stand dort und schickte den Trupp zum
+     falschen Griff. Das Ziehen meldet nicht, welche Marke es war – sie trägt
+     aber noch die Klasse des Haltens, solange das Ereignis läuft
+     (`ziehen.js` ruft es vor dem Aufräumen). */
+  const griff = document.querySelector('.leaflet-marker-icon.haelt');
+  hinweis(griff && griff.classList.contains('fbp-einfuegen')
+    ? 'Zum Einfügen ruhig halten, bis der Ring steht – dann den neuen Punkt an seinen Ort ziehen.'
+    : 'Zum Verschieben ruhig halten, bis der Ring steht – der Punkt folgt dann etwas über dem Finger.');
 });
 
 // ---------------------------------------------------------------- Karte & Layer
@@ -150,6 +160,7 @@ const sl = new StreckenLayer(karte, {
     gebaut ? 'warnung' : 'info'),
   aufHaltenUngewaehlt: s => hinweis('Erst die Strecke antippen, dann halten – ' +
     `so folgt ein Punkt von ${s.name} dem Finger.`),
+  aufGriffZuNah: () => hinweis('Zum Einfügen heranzoomen – hier liegt der Griff zu dicht am Punkt.'),
   aufPlanTipp: (art, i) => {
     modusAnzeigen();
     hinweis(art === 'verschieben' ? `Punkt ${i + 1} neu gesetzt – ${RUECKGAENGIG_KURZ}`
@@ -310,13 +321,27 @@ function weiterzeichnen(sid) {
    geteilter Link mit der Planung darin, und die gehört nicht in den Verlauf
    (siehe `fragmentRaeumen` in teilen.js). */
 let zurueckEintrag = false;
-function zurueckFangen() {
-  if (zurueckEintrag || location.hash) return;
-  try { history.pushState({ fbpZurueck: true }, ''); zurueckEintrag = true; }
+let letzterPopstate = -Infinity;
+/* Ein geschützter Dialog legt den Eintrag auch über einem Fragment an
+   (`mitFragment`): ohne ihn verließ „Zurück“ die Seite, und der Empfangsdialog
+   stand genau dort, wo das Fragment steht. Der Eintrag trägt dann dieselbe
+   Adresse; kommt ein späteres Zurück auf sie, ist das kein neuer Link
+   (`geteiltenLinkPruefen`). */
+function zurueckFangen(e) {
+  const mitFragment = !!(e && e.detail && e.detail.mitFragment) || dialogGeschuetzt();
+  if (zurueckEintrag || (location.hash && !mitFragment)) return;
+  try {
+    /* Der Eintrag darunter trägt das Fragment und wird markiert: ein Zurück
+       auf ihn ist kein eingefügter Link (siehe `geteiltenLinkPruefen`). */
+    if (location.hash) history.replaceState({ fbpRest: true }, '');
+    history.pushState({ fbpZurueck: true }, '');
+    zurueckEintrag = true;
+  }
   catch (e) { /* ohne Verlauf bleibt es beim Verhalten des Browsers */ }
 }
 document.addEventListener('fbp:ebene', zurueckFangen);
-window.addEventListener('popstate', () => {
+window.addEventListener('popstate', e => {
+  if (e.state && e.state.fbpRest) letzterPopstate = performance.now();
   if (!zurueckEintrag) return;
   zurueckEintrag = false;
   if (!$('#dialog').hidden) dialogAbweisen();
@@ -801,7 +826,12 @@ function netzstandZeigen(aus) {
      über css/app.css): „Karte nicht erreichbar“ und „feiner nicht mitgenommen“
      liefen hochkant ins Abgeschnittene und nahmen dem Vorrat den Platz. Im
      Text bleibt die lange Form – für Sprachausgabe und Prüfungen. */
+  /* Steht bei Netz eine gröbere Karte da, ist der Server langsam und nicht
+     fort: „nicht erreichbar“ / „Karte fehlt“ log neben einer sichtbaren Karte,
+     und „Karte langsam“ war durch `kachelAus` verdeckt. */
+  const langsamDa = !offline && netzlage.kachelAus && netzlage.grob === 'langsam';
   const [was, wasKurz] = offline ? ['kein Netz', 'kein Netz']
+    : langsamDa ? ['Karte langsam', 'Karte langsam']
     : netzlage.kachelAus ? ['Karte nicht erreichbar', 'Karte fehlt']
     : netzlage.zurueck ? ['✓ Netz wieder da', '✓ Netz da']
     : netzlage.grob === 'langsam' ? ['Karte langsam', 'Karte langsam']
@@ -815,6 +845,10 @@ function netzstandZeigen(aus) {
     : netzlage.zurueck && !gebremst ? 'lädt nach'
     : !gebremst && netzlage.grob !== 'langsam' ? ''
     : feiner ? 'gröber' : netzlage.grob === 'langsam' ? 'gröber' : 'Rand gröber';
+  /* Nach Aufgabe der Folge stand der Ausweg nur im `title` und einmal in der
+     Pille – am Telefon unsichtbar. Das Anhängsel nennt ihn jetzt selbst. */
+  const anhang = netzlage.grob && netzlage.aufgegeben && !netzlage.zurueck
+    ? 'zoomen lädt neu' : grob;
   /* Drei Felder, damit schmal in fester Rangfolge gekürzt wird: erst das
      Anhängsel, dann der Anlass, der Vorrat zuletzt (`.sl-netz-*` in app.css).
      Die Trenner sind Haarspatien: mit gefüllter Gitterangabe fehlten bei
@@ -832,7 +866,7 @@ function netzstandZeigen(aus) {
     };
     slNetz.replaceChildren(feld('sl-netz-was', was, wasKurz),
       ...(vorrat ? [feld('sl-netz-vorrat', '\u200a·\u200a' + vorrat)] : []),
-      ...(grob ? [feld('sl-netz-grob', '\u200a·\u200a' + grob)] : []));
+      ...(anhang ? [feld('sl-netz-grob', '\u200a·\u200a' + anhang)] : []));
   };
   /* Bis die Zählung da ist, steht die zuletzt gezählte Zahl – so springt die
      Zeile bei jedem neuen Anlass nicht erst auf die kurze Form zurück. */
@@ -1142,7 +1176,15 @@ wzKopf.onclick = () => {
   try { localStorage.setItem('fbp.werkzeuge.v1', zu ? 'zu' : 'auf'); }
   catch { /* ohne Speicher gilt die Wahl bis zum Neuladen */ }
 };
-try { werkzeugeSetzen(localStorage.getItem('fbp.werkzeuge.v1') === 'zu'); } catch { }
+/* Ohne gemerkte Wahl startet die Leiste auf dem Tablet (Breitansicht, Finger)
+   zugeklappt: bei 820 px stand sie offen über der halben Karte, und die Karte
+   war nur 448 px breit. In der Schmalansicht gibt es keinen Griff – dort bleibt
+   sie offen, sonst wären die Werkzeuge nicht mehr zu erreichen. */
+const wzStart = () => !schmalAbfrage.matches && matchMedia('(pointer: coarse)').matches;
+try {
+  const gemerkt = localStorage.getItem('fbp.werkzeuge.v1');
+  werkzeugeSetzen(gemerkt ? gemerkt === 'zu' : wzStart());
+} catch { werkzeugeSetzen(wzStart()); }
 
 const optionsFelder = [
   ['#opt-gitter', 'gitter'],
@@ -1225,16 +1267,22 @@ function rueckgaengig(richtung) {
      Schritt an dem, was `ui.js` beim Einspielen hinterlegt (`store.quittung`),
      und zwar am Stand und nicht an der Tiefe allein: ein neuer Schritt an
      gleicher Tiefe ist nicht derselbe. */
-  const q = store.quittung;
+  /* Mehrere Quittungen liegen im Verlauf (`store.quittungen`): zwei Trupps
+     nacheinander eingespielt, und der zweite Schritt zurück nahm die Meldung
+     des ersten mit der Pille „Zurückgenommen“ – dieser Trupp hielt seine
+     Aufnahme weiter für übernommen. Gesucht wird die, deren Schritt dieser
+     ist. */
+  let q = null;
   let quittungsSchritt = null;
-  if (q) {
-    if (zurueck && store.undoStapel.length === q.tiefe &&
-        store.undoStapel[q.tiefe - 1] === q.vor) {
-      quittungsSchritt = 'zurueck';
-      q.nach = JSON.stringify(store.projekt);
-    } else if (!zurueck && q.nach && store.redoStapel.at(-1) === q.nach) {
-      quittungsSchritt = 'vor';
+  for (const x of store.quittungen) {
+    if (zurueck && store.undoStapel.length === x.tiefe &&
+        store.undoStapel[x.tiefe - 1] === x.vor) {
+      q = x; quittungsSchritt = 'zurueck';
+      x.nach = JSON.stringify(store.projekt);
+    } else if (!zurueck && x.nach && store.redoStapel.at(-1) === x.nach) {
+      q = x; quittungsSchritt = 'vor';
     }
+    if (q) break;
   }
   const ok = zurueck ? store.undo() : store.redo();
   if (!ok) {
@@ -1242,11 +1290,25 @@ function rueckgaengig(richtung) {
     return false;
   }
   if (quittungsSchritt) {
-    hinweis(quittungsSchritt === 'zurueck'
-      ? `Baumeldung ${q.code} zurückgenommen – der Trupp hält sie für übernommen. ` +
-        '↷ stellt sie wieder her.'
-      : `Baumeldung ${q.code} wieder eingespielt – der Rückgabe-Code gilt wieder.`,
-      'warnung');
+    /* Nicht nur die Pille: der Planer muss dem Trupp die Rücknahme durchgeben,
+       und eine Pille ist nach drei Sekunden weg. Der Funkdialog bleibt (wie
+       nach dem Einspielen) und gilt als die letzte Formel dieser Strecken. */
+    const von = q.von ? ` von ${escapeHtml(q.von.split(' · ')[0])}` : '';
+    const mitCode = `Meldung <b class="meldungscode">${escapeHtml(q.code)}</b>${von}`;
+    const satz = quittungsSchritt === 'zurueck'
+      ? `${mitCode} gilt nicht mehr – bitte nochmal melden.`
+      : `${mitCode} gilt wieder.`;
+    const hilfe = quittungsSchritt === 'zurueck'
+      ? 'So über Funk durchgeben: Der Trupp hält sie für übernommen. „↷“ stellt sie wieder her.'
+      : 'So über Funk durchgeben: Der Rückgabe-Code gilt wieder.';
+    funkformelMerken(q.sids, q.code, satz, hilfe, quittungsSchritt === 'zurueck');
+    zeichneStreckenListe();
+    if ($('#dialog').hidden) funkDialog(satz, hilfe, quittungsSchritt === 'zurueck');
+    else {
+      hinweis(`Baumeldung ${q.code}${q.von ? ` von ${q.von.split(' · ')[0]}` : ''} ` +
+        (quittungsSchritt === 'zurueck' ? 'zurückgenommen – der Trupp hält sie für übernommen.'
+          : 'wieder eingespielt.'), 'warnung');
+    }
     return true;
   }
   /* Ebenso „Trupp wechseln“: der Abschnitt liegt im Verlauf, der Trupp am
@@ -1708,6 +1770,13 @@ function gehalteneAdresseZurueck() {
 window.addEventListener('popstate', gehalteneAdresseZurueck);
 
 async function geteiltenLinkPruefen() {
+  /* Ein Zurück auf einen Eintrag mit Fragment (siehe `zurueckFangen`) meldet
+     den Fragmentwechsel gleich nach `popstate`. Das ist kein eingefügter Link:
+     die Adresse wird geräumt, der Dialog nicht noch einmal geöffnet. */
+  if (!gehalteneAdresse && location.hash && performance.now() - letzterPopstate < 100) {
+    teilen.fragmentRaeumen();
+    return;
+  }
   /* Der Fragmentwechsel, den die Zurück-Taste auslöst, ist kein neuer Link:
      der offene Dialog gilt weiter, und die Adresse kommt zurück. */
   if (gehalteneAdresse) { gehalteneAdresseZurueck(); return; }
@@ -2150,9 +2219,13 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
   const trupps = auftragsTrupps(s);
   const ich = v.trupp.trim();
   const fremd = truppNichtAufgetragen(s);
+  /* Hat das Gerät nur eine andere Schreibweise („FmTr 1“ für „1. FmTr“), ist das
+     kein anderer Trupp – der Dialog sagt es, statt „nicht aufgetragen“ allein. */
+  const ahnlich = fremd ? aehnlicherTrupp(s, ich) : null;
   let gewaehlt = '';
   const auf = performance.now();
   const box = document.createElement('div');
+  box.className = 'trupp-wahl';
   /* Im Fremdfall steht der Hauptweg zuerst und mit seiner Folge in einem Satz;
      die Chips sind der Nebenweg („gehört doch zu einem dieser“). Vorher
      standen sie obenan und luden zum Antippen ein – und wer „Weiter“ drückte,
@@ -2163,13 +2236,17 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
     ${fremd ? `<p class="bau-warnung">Dieses Gerät heißt <b>${escapeHtml(ich)}</b> – an ` +
       `dieser Strecke nicht aufgetragen. Aufgetragen sind: ${escapeHtml(trupps.join(', '))}.</p>` +
       `<p class="klein"><b>Eigener Abschnitt „${escapeHtml(ich)}“</b> – ihr baut weiter als ` +
-      `${escapeHtml(ich)}, neben den aufgetragenen Trupps. Am Gerät ändert sich nichts.</p>` : ''}
+      `${escapeHtml(ich)}, neben den aufgetragenen Trupps. Am Gerät ändert sich nichts.</p>` +
+      (ahnlich ? `<p class="klein"><b>${escapeHtml(ahnlich)}</b> gleicht „${escapeHtml(ich)}“ – nur die ` +
+        `Schreibweise weicht ab. Wenn ihr den meint, tippt ihn unten an.</p>` : '') : ''}
     <div class="feld"><span class="feld-titel" id="tf-titel">${fremd
       ? 'Oder dieses Gerät gehört doch zu einem davon:'
-      : 'Welcher Trupp seid ihr? – antippen'}</span>
+      : 'Euer Trupp – antippen'}</span>
       <div class="trupp-chips" role="radiogroup" aria-labelledby="tf-titel">${trupps.map(x =>
         `<button type="button" class="trupp-chip" role="radio" aria-checked="false"
-           data-trupp="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('')}</div></div>
+           data-trupp="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('')}</div>
+      ${fremd ? '' : '<p class="klein tw-wahlhinweis">Erst einen Trupp antippen – dann geht ' +
+        '„Weiter“.</p>'}</div>
     <label class="feld"><span class="feld-titel">Truppführer <span class="klein">(kann
       entfallen)</span></span>
       <input type="text" id="tf-fuehrer" placeholder="Name" autocomplete="off"
@@ -2183,6 +2260,7 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
         c.setAttribute('aria-checked', String(c === chip));
       }
       if (weiter) { weiter.disabled = false; weiter.hidden = false; }
+      box.querySelector('.tw-wahlhinweis')?.remove();
     };
   }
   const uebernehmen = name => {
@@ -2203,6 +2281,11 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
     truppSchrittMerken(store.projekt, vorherStand, vorherVermerk, truppAmGeraet());
     bauabschnittAktivSetzen(a.id);
     zeichneBauListe();
+    /* „Falsch gewählt? Trupp wechseln“ steht kurz an der Marke der Bauleiste
+       (`truppFalschGewaehltFrage`) – danach geht sie von selbst, ohne dass ein
+       Ereignis sie abholt. */
+    truppGewaehltMerken(s);
+    setTimeout(bauzielNachfuehren, TRUPPWAHL_FENSTER_MS + 300);
     bauzielNachfuehren();
     danach();
   };
@@ -2238,8 +2321,12 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
          Anfang bei „Bau beginnen“, ist noch kein Lästigwerden. */
       if (beiAufnahme) truppFrageVertagen(s);
       if (beiAufnahme && truppFrageRuht(s)) {
+        /* Quer steht die Marke oben links unter den Werkzeugen – genau dort, wo
+           die Pille „oben“ liegt, und sie deckte die Marke zu, auf die sie
+           zeigt. Quer liegt die Pille deshalb unten, wie jede andere. */
+        const quer = matchMedia('(orientation: landscape) and (max-height: 500px)').matches;
         hinweis('Ich frage nicht mehr nach jedem Punkt – tippt „Trupp wählen“ an der ' +
-          'Bauleiste (oder im Bau-Reiter), sobald ihr wählen wollt.', 'info oben');
+          'Bauleiste (oder im Bau-Reiter), sobald ihr wählen wollt.', quer ? 'info' : 'info oben');
       }
       bauzielNachfuehren();
       zeichneBauListe();
@@ -2300,9 +2387,10 @@ function truppWahlDialog(s, danach = () => {}, beiAufnahme = false) {
 /* „Trupp wählen“ in der Bauleiste und im Bau-Reiter, nachdem die Frage ruht. */
 document.addEventListener('fbp:truppwahl', e => {
   const s = store.projekt && store.projekt.strecken.find(x => x.id === (e.detail || {}).id);
-  if (baumodus && s && truppWahlOffen(s) && document.getElementById('dialog').hidden) {
-    truppWahlDialog(s, () => {}, false);
-  }
+  if (!baumodus || !s || !document.getElementById('dialog').hidden) return;
+  if (truppWahlOffen(s)) truppWahlDialog(s, () => {}, false);
+  /* Dieselbe Marke nach der Wahl: „Falsch gewählt? Trupp wechseln“. */
+  else if ((e.detail || {}).wechseln) truppWechselnDialog(s);
 });
 let truppFrageWartet = false;
 truppFrageAnmelden(function fragen(sid, versuch = 0) {
@@ -3010,6 +3098,18 @@ function speicherstatusZeigen(zustand = 'ruhe') {
      dabei fehlt nur die Sicherungsdatei – die Planung liegt längst im Gerät. */
   st.dataset.kurz = 'nicht als Datei gesichert';
   st.classList.toggle('mahnung', mahnenNoetig());
+  /* Die Vorwarnung vor vollem Gerätespeicher steht als Block im Bau-Reiter und
+     ist dort bei gerolltem Reiter nicht zu sehen – quer, wo der Reiter nur
+     einen Streifen hoch ist, erst recht nicht. Quer trägt deshalb der Merker in
+     der Kopfzeile die Warnung (er sichert beim Tippen, siehe oben), mit
+     demselben Schwellwert wie der Block. Nur dort geprüft: `speicherBelegung`
+     liest den ganzen Speicher, und hochkant genügt der Block. */
+  if (window.matchMedia('(max-height: 450px)').matches &&
+      speicherBelegung() / SPEICHER_KONTINGENT >= SPEICHER_VORWARNUNG) {
+    st.dataset.kurz = 'Speicher fast voll – Sichern';
+    st.classList.add('mahnung');
+    st.title = 'Gerätespeicher fast voll – Planung als Datei sichern (.json)';
+  }
   bandNachfuehren();
 }
 
@@ -3076,7 +3176,8 @@ function bandNachfuehren() {
      dauerhaft, denn ein stummer Server dauert die ganze Baustelle – um eine
      Zeile nach unten. */
   if (netzListe === 'stumm') {
-    stand.textContent = 'Kartenserver antwortet nicht';
+    /* „Kartenserver antwortet nicht“ lief bei 320 px nach 159 px ab. */
+    stand.textContent = 'Server antwortet nicht';
     stand.title = 'Das Netz ist da, aber der Kartenserver antwortet nicht. Die Planung liegt im Gerät.';
     return;
   }
@@ -3087,7 +3188,7 @@ function bandNachfuehren() {
   }
   stand.textContent = netzVorn + (zeit
     ? 'Im Gerät gespeichert · Datei vom ' + zeitpunktKurz(zeit)
-    : 'Im Gerät gespeichert · keine Datei');
+    : 'Im Gerät gespeichert · noch nicht als Datei gesichert');
   stand.title = zeit ? '' : 'Im Gerät gespeichert, aber noch nie als Datei gesichert';
 }
 netzBandHaken = bandNachfuehren;
@@ -3137,7 +3238,14 @@ store.on((p, grund) => {
     speicherfehlerAktiv = true;
     speicherwarnungFuehren({ n: nurImFenster });
     speicherstatusZeigen('fehler');
-    hinweis('Speichern im Browser fehlgeschlagen – Planung als Datei sichern.', 'fehler');
+    /* Schmal trägt das rote Band, im Baumodus der Block im Bau-Reiter dieselbe
+       Auskunft samt den Knöpfen – die Pille lag neun Sekunden über genau
+       diesen Knöpfen („Zurückmelden“, „Als Datei sichern“) und sagte nichts
+       Neues. Nur breit und in der Planung, wo Kopf und Pille die einzigen
+       Zeugen sind, bleibt sie. */
+    if (!window.matchMedia('(max-width: 759px)').matches && !baumodus) {
+      hinweis('Speichern im Browser fehlgeschlagen – Planung als Datei sichern.', 'fehler');
+    }
     return;
   }
 
@@ -3196,7 +3304,12 @@ store.on((p, grund) => {
         .concat(p.zeichen.map(z => [z.lat, z.lng]))
         .concat((p.flaechen || []).map(f => [f.lat, f.lng]))
         .concat((p.relaisstellen || []).map(r => [r.lat, r.lng]));
-      if (alle.length > 1) karte.fitBounds(L.latLngBounds(alle), { padding: [60, 60] });
+      /* Oben mehr Rand: das Streckenschild steht über der Trasse, und beim
+         Einpassen ragte das der obersten Strecke aus dem Bild (Arbeitskarte,
+         neun Strecken). Der Rand zahlt sich nur aus, solange Schilder stehen. */
+      const oben = p.optionen.gesamtlaenge === false ? 60 : 150;
+      if (alle.length > 1) karte.fitBounds(L.latLngBounds(alle),
+        { paddingTopLeft: [60, oben], paddingBottomRight: [60, 60] });
     }
   }
   zeichneSeite();

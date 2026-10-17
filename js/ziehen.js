@@ -97,6 +97,10 @@ export function ziehbar(karte, marke, { start = () => {}, ziehen = () => {}, end
 
 function anfassen(karte, marke, el, e, { start, ziehen, ende }) {
   if (e.button !== 0 || !e.isPrimary) return;
+  /* Ein abgerückter Einfügegriff (`zu-nah`, js/strecken.js) fängt die
+     Berührung nur ab, damit sie nicht an den Punkt dahinter geht; zu ziehen
+     ist an ihm nichts. Er meldet selbst, dass erst herangezoomt werden muss. */
+  if (el.classList.contains('zu-nah')) return;
   const finger = e.pointerType !== 'mouse';
   const ausgang = marke.getLatLng();
   const ausgangPunkt = karte.latLngToContainerPoint(ausgang);

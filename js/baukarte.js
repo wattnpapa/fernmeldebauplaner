@@ -23,6 +23,7 @@ import {
   istSollZuordnen, offeneSollPunkte, sollVorschlag, andereStreckeNahe, istPunktUmhaengen,
   baustrecke, baustreckeSetzen, aktiverBauabschnitt, bauabschnitte, bauabschnittAktivSetzen,
   quelleText, punktartText, auftragsTrupps, aufgetragenerTrupp, truppAmGeraet, truppWahlOffen,
+  truppFalschGewaehltFrage,
   truppFrageRuht, ABWEICHUNG_SCHWELLE, ABSEITS_SCHWELLE,
   nachtragTag, tagKurz,
   waehlbareAbschnitte, eigenenAbschnittSichern
@@ -350,6 +351,27 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
        „Neu orten“ aus der eingetragenen Kabelreserve wieder den geplanten
        Trassenpunkt. */
     const ersetzt = o.ersetzt && istPunkte(s).some(pt => pt.id === o.ersetzt) ? o.ersetzt : null;
+    /* Ein zweiter Punkt an derselben Stelle, Sekunden nach dem ersten, ist
+       ein Doppeltipp und keine Aufnahme. Die Sperre `ortungLaeuft` hält nur,
+       solange die Ortung läuft; liefert das Gerät sofort (Fix im Zwischen-
+       speicher des Systems), kam der zweite Tipp danach durch – im Review
+       standen zwei deckungsgleiche Punkte, 90 bis 215 ms auseinander, beide
+       mit Bezug auf Punkt 1. Gemessen wird an den gespeicherten Punkten und
+       nicht an einem Merker: ein „↶“ dazwischen nimmt den ersten Punkt aus der
+       Planung, und dann darf der Trupp ihn sofort neu aufnehmen. Der spätere
+       Zwilling im Blatt (`ebenAufgenommen`) bleibt für den Rest: ein Punkt, den
+       die Ortung 5 m daneben ansetzte. */
+    if (!ersetzt) {
+      const jetzt = Date.now();
+      const doppelt = istPunkte(s).find(pt => pt.quelle === 'standort' &&
+        jetzt - Date.parse(pt.zeit) >= 0 && jetzt - Date.parse(pt.zeit) < DOPPELTIPP_MS &&
+        distanz(pt, { lat, lng }) < DOPPELTIPP_M);
+      if (doppelt) {
+        const nr = doppelt.sollPunkt ? s.punkte.findIndex(pt => pt.id === doppelt.sollPunkt) + 1 : 0;
+        return hinweis(`Gerade aufgenommen – ${nr ? `Punkt ${nr}` : 'der Punkt'} steht schon hier.`,
+          'warnung');
+      }
+    }
     let neu = null;
     store.aendern(() => {
       neu = istPunktSetzen(s, lat, lng, {
@@ -417,6 +439,12 @@ export function istPunktAusStandort(sid, sollPunktId, o = {}) {
    statt aufzunehmen. Die Karte warnte schon ab `ABSEITS_SCHWELLE`; die Rückfrage
    liegt bewusst darüber (siehe die Begründung an der Stelle). */
 const ORTUNG_FRAGEN_AB = 1000;
+/* Doppeltipp auf „◉ hier“: derselbe Ort (unter 3 m) binnen 6 s nimmt keinen
+   zweiten Punkt auf. Ein bewusster zweiter Punkt am selben Ort – etwa zwei
+   Muffen an einer Stelle – lässt sich nach der Pause aufnehmen; 6 s sind
+   länger als jeder Doppeltipp und kürzer als jeder Gang zum nächsten Punkt. */
+const DOPPELTIPP_MS = 6000;
+const DOPPELTIPP_M = 3;
 
 let ortungLaeuft = false;
 /* Der Knopf „Punkt hier“ zeigt, dass er arbeitet – und ebenso der Ortungsgriff
@@ -571,7 +599,13 @@ export function bauzielNachfuehren() {
      hier als feste Marke – bis zur Wahl (`truppFrageRuht` in baudoku.js). Die
      Karte steht am Bauort vorn, und der Reiter zeigt sie nur dem, der dort ist. */
   const wahlOffen = !!s && !a && truppWahlOffen(s) && truppFrageRuht(s);
-  const gesamt = wahlOffen ? text + ' · Trupp wählen' : text;
+  /* Kurz nach der Wahl derselbe Griff mit anderem Wort: die Fehlwahl fällt dort
+     auf, wo der Name steht. Das Pfeilzeichen sagt „das ist ein Knopf“ – die
+     Marke sah sonst wie ein Statusschild aus, und nur die Unterstreichung wies
+     auf den Griff. */
+  const falsch = !wahlOffen && !!s && !!a && truppFalschGewaehltFrage(s);
+  const griffText = wahlOffen ? 'Trupp wählen ›' : falsch ? 'Falsch gewählt? Trupp wechseln ›' : '';
+  const gesamt = griffText ? text + ' · ' + griffText : text;
   if (z.textContent !== gesamt || (!!tagKopf !== !!z.querySelector('.bau-ziel-tag'))) {
     if (tagKopf) {
       /* Der Tag ist das, woran sich der Nachtrag von einem gewöhnlichen
@@ -591,15 +625,19 @@ export function bauzielNachfuehren() {
   }
   z.hidden = !gesamt;
   z.classList.toggle('bau-ziel-offen', ohneAbschnitt || wahlOffen || (!!s && !!nachtragTag()));
-  /* Nur mit offener Wahl ist der Merker ein Griff (css/app.css, `bau-ziel-wahl`);
+  const griff = wahlOffen || falsch;
+  /* Nur mit offener Wahl – oder kurz nach ihr – ist der Merker ein Griff
+     (css/app.css, `bau-ziel-wahl`);
      die Strecke dazu trägt er als Merkmal, damit der Tipp sie nicht erst suchen
      muss. */
-  z.classList.toggle('bau-ziel-wahl', wahlOffen);
-  if (wahlOffen) {
+  z.classList.toggle('bau-ziel-wahl', griff);
+  if (griff) {
     z.setAttribute('role', 'button'); z.tabIndex = 0; z.dataset.strecke = s.id;
+    z.dataset.griffart = wahlOffen ? 'wahl' : 'wechseln';
     z.setAttribute('aria-label', gesamt);
   } else {
     z.removeAttribute('role'); z.removeAttribute('tabindex'); delete z.dataset.strecke;
+    delete z.dataset.griffart;
     z.removeAttribute('aria-label');
   }
 }
@@ -613,7 +651,8 @@ export function bauzielNachfuehren() {
   z.dataset.griff = '1';
   const los = () => {
     if (!z.classList.contains('bau-ziel-wahl')) return;
-    document.dispatchEvent(new CustomEvent('fbp:truppwahl', { detail: { id: z.dataset.strecke } }));
+    document.dispatchEvent(new CustomEvent('fbp:truppwahl', { detail: {
+      id: z.dataset.strecke, wechseln: z.dataset.griffart === 'wechseln' } }));
   };
   z.addEventListener('click', los);
   z.addEventListener('keydown', e => {

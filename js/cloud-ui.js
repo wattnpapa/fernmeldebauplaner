@@ -17,7 +17,7 @@ import {
   rueckwegAdresse, rueckseiteVergessen, WURZEL
 } from './cloud.js';
 import {
-  abgleichLage, aufAbgleich, jetztAbgleichen, konfliktEntscheiden, konfliktVertagen,
+  abgleichLage, abgleichPauseBis, aufAbgleich, jetztAbgleichen, konfliktEntscheiden, konfliktVertagen,
   planungenAmSpeicher, vomSpeicherHolen, abgleichVergessen, bindungVon
 } from './abgleich.js';
 
@@ -80,7 +80,13 @@ const STAND_TEXT = {
   /* Mit der Uhrzeit des letzten sicheren Stands: „ausstehend“ allein sagt nicht,
      seit wann nichts mehr hinausgeht, und im Funkloch ist das die Frage. Es
      steht im Text und nicht nur im Tooltip, den am Telefon niemand sieht. */
-  ausstehend: l => 'Cloud: ausstehend' + (l.seit ? ' · zuletzt ' + zeitKurz(l.seit) : ''),
+  ausstehend: l => {
+    /* In der Pause nach einer Anfrage ohne Antwort stand nur „ausstehend“ –
+       dass es von selbst weitergeht, und wann, nur im Tooltip und im Dialog. */
+    const pause = abgleichPauseBis() - Date.now();
+    const wann = pause > 0 ? 'wird in ' + Math.max(1, Math.ceil(pause / 60000)) + '\u00a0min wiederholt' : '';
+    return 'Cloud: ' + (wann || 'ausstehend') + (l.seit ? ' · zuletzt ' + zeitKurz(l.seit) : '');
+  },
   fehler:     l => 'Cloud: Fehler' + (l.seit ? ' · zuletzt ' + zeitKurz(l.seit) : ''),
   anmeldung:  () => 'Cloud: Anmeldung erneuern',
   /* „Später entscheiden“ ist eine Entscheidung, die noch aussteht, und die
@@ -105,13 +111,15 @@ const STAND_TITEL = {
     (l.seit ? `; zuletzt vollständig übertragen: ${zeitKurz(l.seit)}.` : '.'),
   fehler:     l => l.meldung || 'Die Übertragung ist fehlgeschlagen.',
   anmeldung:  l => l.meldung || 'Die Anmeldung an der Cloud muss erneuert werden.',
-  konflikt:   l => l.vertagt
+  konflikt:   l => (l.vertagt
     ? 'Die Planung wurde auf einem zweiten Gerät geändert. Die Entscheidung steht noch aus – antippen, um sie zu treffen.'
-    : 'Dieselbe Planung wurde auf einem zweiten Gerät geändert.'
+    : 'Dieselbe Planung wurde auf einem zweiten Gerät geändert.') +
+    (l.meldungGrund ? ' Zuletzt: ' + l.meldungGrund : '')
 };
 
 let laeuftSeit = 0;
 let langUhr = null;
+let pausenUhr = null;
 
 /** Der Knopf in der Kopfzeile und die Zeile im Band darunter */
 function standZeigen(lage) {
@@ -119,6 +127,12 @@ function standZeigen(lage) {
   const bandEl = $('#sb-cloud');
   if (!knopfEl) return;
 
+  /* Ein offener Konflikt hat Vorrang in der Zeile: ein gescheiterter Versuch,
+     ihn zu entscheiden (kein Netz, Fehler), setzte den Stand auf „Fehler“ oder
+     „ausstehend“, und die Zeile verschwieg, dass die Entscheidung noch aussteht. */
+  if (lage.konflikt && !['konflikt', 'laeuft', 'anmeldung'].includes(lage.stand)) {
+    lage = { ...lage, stand: 'konflikt', vertagt: true, meldungGrund: lage.meldung };
+  }
   const aus = lage.stand === 'aus';
   knopfEl.hidden = aus;
   if (bandEl) bandEl.hidden = aus;
@@ -135,6 +149,11 @@ function standZeigen(lage) {
   } else {
     laeuftSeit = 0;
     clearTimeout(langUhr);
+  }
+  /* Die Zeile zählt die Pause herunter, solange eine steht. */
+  clearTimeout(pausenUhr);
+  if (lage.stand === 'ausstehend' && abgleichPauseBis()) {
+    pausenUhr = setTimeout(() => standZeigen(abgleichLage()), 10000);
   }
   const lang = lage.stand === 'laeuft' && laeuftSeit > 0 && Date.now() - laeuftSeit >= LANG_AB;
   const text = (STAND_TEXT[lage.stand] || STAND_TEXT.bereit)(lage, lang);
@@ -166,6 +185,10 @@ let fernstandGezeigt = 0;
 /** Den Abgleich an die Oberfläche hängen. Läuft einmal beim Start. */
 export function cloudUiStarten() {
   aufAbgleich(lage => {
+    /* Im Baumodus hält der Trupp die Aufnahme in der Hand: ein Dialog, der von
+       selbst aufspringt, steht zwischen ihm und dem Punkt. Dort melden Pille
+       und Zeile „Cloud“ den Konflikt, entschieden wird, wenn er Zeit hat. */
+    const imBau = document.body.classList.contains('baumodus');
     standZeigen(lage);
     /* Ein neuerer Stand vom Speicher hat die offene Planung ersetzt
        (`uebernehmen` in abgleich.js). Das gehört gesagt – samt dem, dass „↶“
@@ -188,7 +211,11 @@ export function cloudUiStarten() {
        einmal je Fall – wer ihn wegklickt, findet ihn über den Knopf wieder. */
     if (lage.konflikt && konfliktGezeigt !== lage.konflikt.pid) {
       konfliktGezeigt = lage.konflikt.pid;
-      konfliktDialog(lage.konflikt);
+      if (imBau) {
+        hinweis('Zwei Stände derselben Planung in der Cloud – in der Zeile „Cloud“ entscheiden.', 'warnung');
+      } else {
+        konfliktDialog(lage.konflikt);
+      }
     }
     if (!lage.konflikt) konfliktGezeigt = null;
   });
@@ -470,9 +497,9 @@ function standSatz(lage) {
     case 'ausstehend': return lage.meldung ||
       'Änderungen warten auf die Übertragung – sie geht von selbst hinaus, sobald Netz da ist.';
     case 'fehler': return 'Die letzte Übertragung ist fehlgeschlagen: ' + lage.meldung;
-    case 'anmeldung': return lage.meldung || 'Die Anmeldung am Speicher muss erneuert werden.';
+    case 'anmeldung': return lage.meldung || 'Die Anmeldung an der Cloud muss erneuert werden.';
     case 'konflikt': return lage.vertagt
-      ? 'Konflikt offen – später entscheiden. Die Übertragung ruht, bis er geklärt ist.'
+      ? 'Konflikt offen – später entscheiden. Bis er geklärt ist, geht nichts an die Cloud.'
       : lage.meldung || 'Es steht ein Konflikt an.';
     default: return 'Noch nichts übertragen.';
   }
@@ -551,7 +578,7 @@ function konfliktDialog(k) {
        ${fassung('Cloud-Stand', k.fremde)}
      </div>
      <ul class="konflikt-folgen klein">
-       <li><b>Später entscheiden:</b> nichts ändert sich, die Übertragung ruht.
+       <li><b>Später entscheiden:</b> nichts ändert sich, es geht nichts an die Cloud.
            Der Konflikt bleibt über die Zeile „Cloud“ oben erreichbar.</li>
        <li><b>Cloud-Stand gilt:</b> der Cloud-Stand ersetzt die Planung auf diesem
            Gerät; der Stand dieses Geräts liegt als zweite Planung daneben.</li>
@@ -625,12 +652,12 @@ const MELDUNG = {
 function fassung(titel, u, art = '') {
   const teile = [
     u.strecken && `${u.strecken} ${u.strecken === 1 ? 'Strecke' : 'Strecken'}`,
-    u.punkte && `${u.punkte} Punkte`,
+    u.punkte && `${u.punkte} ${u.punkte === 1 ? 'Punkt' : 'Punkte'}`,
     u.zeichen && `${u.zeichen} Zeichen`,
     u.flaechen && `${u.flaechen} ${u.flaechen === 1 ? 'Fläche' : 'Flächen'}`,
     u.relaisstellen && `${u.relaisstellen} Relais`,
     u.bilder && `${u.bilder} ${u.bilder === 1 ? 'Bild' : 'Bilder'}`,
-    u.istPunkte && `${u.istPunkte} Ist-Punkte`
+    u.istPunkte && `${u.istPunkte} ${u.istPunkte === 1 ? 'Ist-Punkt' : 'Ist-Punkte'}`
   ].filter(Boolean);
   /* Die Planungsdatei kennt kein Gerät; was sich über den Stand sagen lässt, sind
      die Trupps in den Bauabschnitten. Bei gleichen Zahlen ist das, neben dem

@@ -584,7 +584,13 @@ export function neuerBau() {
        Übergabe selbst gilt nicht mehr und wird in der Prüfung geleert; ohne
        diese Notiz wäre „an wen war übergeben?“ nach dem Einspielen weg. Wie die
        beiden Felder davor ohne Schemaerhöhung. */
-    uebergabeZurueckWar: ''
+    uebergabeZurueckWar: '',
+    /* Die zuletzt eingespielte Meldung, die NICHTS übernommen hat (ihre Prüfung
+       oder Übergabe wurde abgewiesen): `{ code, zeit, von }` oder `null`. Der Code
+       gehört trotzdem an die Strecke, aber so gekennzeichnet – sonst sah die
+       Strecke aus, als sei die Meldung angekommen und verbucht. Ohne
+       Schemaerhöhung wie die Felder davor; der Codec lässt es zu Hause. */
+    letzteMeldungNichtUebernommen: null
   };
 }
 
@@ -898,11 +904,14 @@ class Store {
     this.redoHerkunft = [];
     this._speicherTimer = null;
     this._letzterSchnappschuss = null;
-    /* Der letzte Verlaufsschritt, der etwas quittiert hat, das es nur einmal
-       gibt (eine eingespielte Baumeldung; gesetzt von ui.js, gelesen von
-       `rueckgaengig` in app.js). Er gehört nicht in die Planung: er sagt, was
-       am Funk gesagt wurde, nicht, was geplant ist. */
-    this.quittung = null;
+    /* Alle Verlaufsschritte, die etwas quittiert haben, das es nur einmal gibt
+       (eingespielte Baumeldungen; gesetzt von ui.js, gelesen von
+       `rueckgaengig` in app.js). Eine Liste und nicht der letzte: nach zwei
+       Trupps nannte „↶“ die zweite Meldung, und der zweite Schritt zurück
+       nahm die des ersten ohne ein Wort. Sie gehört nicht in die Planung: sie
+       sagt, was am Funk gesagt wurde, nicht, was geplant ist. */
+    this.quittungen = [];
+    this.wirkungslos = false;
   }
 
   on(fn) { this.horcher.add(fn); return () => this.horcher.delete(fn); }
@@ -931,9 +940,19 @@ class Store {
    * vorher in der Hand hielt (ein offener Dialog), soll nichts Halbes sehen –
    * und der Undo-Schritt entfällt, als wäre nichts geschehen.
    *
+   * `leerOhneSchritt`: ist die Änderung ohne Wirkung (Inhalt gleich oder die
+   * Funktion sagt es), bleibt kein Verlaufsschritt zurück; `wirkungslos` zeigt es an.
+   *
    * @returns {boolean} ob die Änderung gespeichert ist
    */
-  aendernGesichert(fn, grund = 'aenderung') {
+  aendernGesichert(fn, grund = 'aenderung', { leerOhneSchritt = false } = {}) {
+    /* Was vor diesem Aufruf auf seine 400 ms wartete (eine Änderung von eben),
+       steckt im Objekt und wäre mit gespeichert worden. `aendern` setzt den
+       Zeitgeber neu, und das `clearTimeout` unten nimmt auch den alten – bei
+       einem Fehlschlag blieb die Änderung von vorhin dann ungespeichert, ohne
+       dass es jemand erfuhr. Deshalb wird er nach dem Rollback neu gesetzt. */
+    const offenVorher = !!this._speicherOffen;
+    this.wirkungslos = false;
     const vorher = JSON.stringify(this.projekt);
     const tiefe = this.undoStapel.length;
     const letzter = this._letzterSchnappschuss;
@@ -943,22 +962,44 @@ class Store {
     const redo = [...this.redoStapel], redoHerkunft = [...this.redoHerkunft];
     this.aendern(fn, grund);
     clearTimeout(this._speicherTimer);
+    const zurueckNehmen = () => {
+      const alt = JSON.parse(vorher);
+      for (const k of Object.keys(this.projekt)) delete this.projekt[k];
+      Object.assign(this.projekt, alt);
+      while (this.undoStapel.length > tiefe) { this.undoStapel.pop(); this.undoHerkunft.pop(); }
+      this.redoStapel.length = 0; this.redoHerkunft.length = 0;
+      this.redoStapel.push(...redo);
+      this.redoHerkunft.push(...redoHerkunft);
+      this._letzterSchnappschuss = letzter;
+      this._speicherOffen = offenVorher;
+      if (offenVorher) this.speichernVerzoegert();
+      /* Ein eigener Grund und nicht `undo`: die Oberfläche zeichnet wie nach
+         einem Rückgängig, setzt aber die Speicheranzeige auf den Stand VOR dem
+         Versuch zurück, statt „wird gespeichert …“ stehen zu lassen. */
+      this.melden('zurueckgenommen');
+    };
+    /* Eine Einspielung, die nichts übernommen hat, ist kein Schritt: „↶“
+       nähme sonst einen leeren Schritt zurück und nennte dabei die Meldung,
+       die gar nichts bewirkte. Verglichen wird ohne die Änderungszeit – sie
+       rückt bei jedem Aufruf vor. */
+    if (leerOhneSchritt) {
+      const ohneZeit = j => JSON.stringify(JSON.parse(j), (k, v) => (k === 'geaendert' ? undefined : v));
+      /* Entweder ist der Inhalt gleich geblieben, oder der Aufrufer sagt es:
+         die Einspielung vergleicht den Bau-Block der Strecke und weiß, was
+         eine bloße Neuschreibung ist (Zeitmarken), die niemand zurücknehmen
+         müsste. */
+      if (ohneZeit(vorher) === ohneZeit(JSON.stringify(this.projekt)) ||
+          (typeof leerOhneSchritt === 'function' && leerOhneSchritt())) {
+        zurueckNehmen();
+        this.wirkungslos = true;
+        return true;
+      }
+    }
     /* Still: ein Fehlschlag HIER ist kein Verlust, denn die Änderung wird gleich
        zurückgenommen. Die Meldung `speicherfehler` ließ die Oberfläche
        „Aufnahmen nur im Fenster“ rechnen, wo nichts im Fenster stand. */
     if (this.speichern({ still: true })) return true;
-    const alt = JSON.parse(vorher);
-    for (const k of Object.keys(this.projekt)) delete this.projekt[k];
-    Object.assign(this.projekt, alt);
-    while (this.undoStapel.length > tiefe) { this.undoStapel.pop(); this.undoHerkunft.pop(); }
-    this.redoStapel.length = 0; this.redoHerkunft.length = 0;
-    this.redoStapel.push(...redo);
-    this.redoHerkunft.push(...redoHerkunft);
-    this._letzterSchnappschuss = letzter;
-    /* Ein eigener Grund und nicht `undo`: die Oberfläche zeichnet wie nach
-       einem Rückgängig, setzt aber die Speicheranzeige auf den Stand VOR dem
-       Versuch zurück, statt „wird gespeichert …“ stehen zu lassen. */
-    this.melden('zurueckgenommen');
+    zurueckNehmen();
     return false;
   }
 
@@ -1100,7 +1141,9 @@ class Store {
       return true;
     } catch (e) {
       console.error('Speichern fehlgeschlagen', e);
-      if (!still) this.melden('speicherfehler');
+      /* Was nicht geschrieben ist, bleibt offen – sonst hielt `offenesSpeichern`
+         die Planung für gesichert. */
+      if (!still) { this._speicherOffen = true; this.melden('speicherfehler'); }
       return false;
     }
   }
@@ -1113,7 +1156,7 @@ class Store {
     this.projekt = migrieren(p);
     this.undoStapel.length = 0; this.redoStapel.length = 0;
     this.undoHerkunft.length = 0; this.redoHerkunft.length = 0;
-    this.quittung = null;
+    this.quittungen = [];
     localStorage.setItem(KEY_AKTIV, pid);
     this.melden('geladen');
     return true;
@@ -1123,7 +1166,7 @@ class Store {
     this.projekt = neuesProjekt(name);
     this.undoStapel.length = 0; this.redoStapel.length = 0;
     this.undoHerkunft.length = 0; this.redoHerkunft.length = 0;
-    this.quittung = null;
+    this.quittungen = [];
     this.speichern();
     this.melden('geladen');
   }
@@ -1133,7 +1176,7 @@ class Store {
     this.projekt.id = this.projekt.id || id();
     this.undoStapel.length = 0; this.redoStapel.length = 0;
     this.undoHerkunft.length = 0; this.redoHerkunft.length = 0;
-    this.quittung = null;
+    this.quittungen = [];
     this.speichern();
     this.melden('geladen');
   }
@@ -1453,7 +1496,13 @@ export function bauNormalisieren(roh) {
     gemeldetCodes: String(roh.gemeldetCodes || '').slice(0, 420),
     uebergabeZurueckZeit: String(roh.uebergabeZurueckZeit || '').slice(0, 40),
     uebergabeZurueckStaemme: String(roh.uebergabeZurueckStaemme || '').slice(0, 400),
-    uebergabeZurueckWar: String(roh.uebergabeZurueckWar || '').slice(0, 300)
+    uebergabeZurueckWar: String(roh.uebergabeZurueckWar || '').slice(0, 300),
+    letzteMeldungNichtUebernommen: (() => {
+      const n = roh.letzteMeldungNichtUebernommen;
+      if (!n || typeof n !== 'object' || Array.isArray(n) || !n.code) return null;
+      return { code: String(n.code).slice(0, 8), zeit: String(n.zeit || '').slice(0, 40),
+        von: String(n.von || '').slice(0, 120) };
+    })()
   };
 }
 

@@ -20,7 +20,7 @@ import {
   materialZusammenfassen, bauBegonnen, pruefungGehaltvoll, bildAufKarte
 } from './state.js';
 import { distanz, streckenlaenge, peilung, himmelsrichtung, meter, formatLaenge } from './geo.js';
-import { MATERIALKATALOG, PRUEFART_JE_KABEL, bauweiseById } from './vorschrift.js';
+import { MATERIALKATALOG, PRUEFART_JE_KABEL, bauweiseById, materialById } from './vorschrift.js';
 /* Der Abdruck kommt aus dem Codec und wird nicht hier gebildet: er muss über
    genau das laufen, was hinausgeht, und das weiß `teilen.js`. Kein Ring –
    `teilen.js` kennt nur `state.js`. */
@@ -728,9 +728,31 @@ export function truppSchluessel(name) {
      das Leerzeichen („FmTr-1“ = „FmTr 1“), zwischen Ziffern aber ebenso als
      Trenner. Bestehende Zuordnungen bleiben: alles, was vorher gleich war,
      und nichts als diese Nummern, ist weiter gleich. */
+  /* Unsichtbare Zeichen fallen weg: aus einem Messenger kopiert, hängt an
+     „1. FmTr“ gern ein Nullbreitenleerzeichen – es sieht gleich aus, war aber
+     ein anderer Trupp, mit eigenem Abschnitt und eigener Meldung. NFKC läuft
+     vorher, damit auch die Formen, die es erst zu Leerzeichen und Ziffern
+     macht (breite Ziffern, geschützte Leerzeichen), zusammenfallen. */
   return String(name || '').normalize('NFKC').toLowerCase()
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/g, '')
     .replace(/(\d)[.\-–](?=\d)/g, '$1,')
     .replace(/[\s.\u00a0\-–_\u00ad]+/g, '');
+}
+
+/* Die Wörter eines Truppnamens ohne Klammerzusatz, nach Länge und Ordnung
+   gleichgestellt: „FmTr 1“ und „1.FmTr (Meier)“ haben dieselben wie „1. FmTr“.
+   Nur dafür da, einen Verdacht zu äußern – gleichgesetzt wird nichts
+   (`truppSchluessel`): „FmTr 1“ kann ein anderer Trupp sein. */
+const truppWoerter = name => String(name || '').normalize('NFKC').toLowerCase()
+  .replace(/\([^)]*\)/g, ' ').split(/[^\p{L}\p{N}]+/u).filter(Boolean).sort().join('|');
+
+/** Der aufgetragene Trupp, dessen Name nur anders geschrieben ist als
+ *  `eingabe` („FmTr 1“ für „1. FmTr“, „1.FmTr (Meier)“) – oder `null`. Trifft
+ *  nie, wo `aufgetragenerTrupp` trifft: dort ist es derselbe, hier ein Verdacht. */
+export function aehnlicherTrupp(s, eingabe) {
+  const w = truppWoerter(eingabe);
+  if (!w || aufgetragenerTrupp(s, eingabe)) return null;
+  return auftragsTrupps(s).find(x => truppWoerter(x) === w) || null;
 }
 
 /** Hieß dieses Gerät früher so? (Siehe `truppAmGeraetSetzen`.) */
@@ -900,6 +922,26 @@ export function truppNichtAufgetragen(s) {
   return !!ich && trupps.length >= 2 && !aufgetragenerTrupp(s, ich);
 }
 
+/* Nach der Wahl steht kurz „Falsch gewählt? Trupp wechseln“ an der Marke der
+   Bauleiste. Die Fehlwahl fällt dort auf, wo man den Namen liest – der Weg
+   zurück lag in den Bau-Reiter, den am Bauort niemand aufschlägt. Das Fenster
+   ist kurz und endet mit dem Wechsel: eine Marke, die den ganzen Bau über als
+   Knopf an der Bauleiste stünde, finge Tipps über „Punkt hier“ ab. */
+export const TRUPPWAHL_FENSTER_MS = 45000;
+let truppGewaehlt = null;
+
+/** Der Trupp hat gerade gewählt (oder gewechselt) – das Fenster beginnt */
+export function truppGewaehltMerken(strecke) {
+  truppGewaehlt = { id: strecke.id, bis: Date.now() + TRUPPWAHL_FENSTER_MS,
+    trupp: truppAmGeraet().trupp };
+}
+
+/** Steht die Marke noch bei „Falsch gewählt?“ – nur an derselben Strecke, nur
+ *  solange das Gerät noch den eben gewählten Trupp trägt */
+export const truppFalschGewaehltFrage = strecke => !!strecke && !!truppGewaehlt &&
+  truppGewaehlt.id === strecke.id && Date.now() < truppGewaehlt.bis &&
+  truppSchluessel(truppGewaehlt.trupp) === truppSchluessel(truppAmGeraet().trupp);
+
 /* Zweimal „Später“ an derselben Strecke, und die Frage ruht. Sie kam nach
    jedem Punkt wieder – ein Modal nach jeder Aufnahme, bei zwanzig Punkten am
    Tag zwanzigmal, und der Trupp, der „Später“ meint, drückte es zwanzigmal.
@@ -984,6 +1026,80 @@ export function eigenenAbschnittSichern(strecke, trupp, fuehrer = '') {
     a.name = name; a.trupp = name; a.fuehrer = fuehrer;
   } else if (fuehrer && !a.fuehrer) a.fuehrer = fuehrer;
   return a;
+}
+
+/** Was in einem Abschnitt steht: Zahl der Punkte, Materialzeilen, Meldungen */
+export function abschnittZahlen(strecke, aid) {
+  const bau = (strecke && strecke.bau) || {};
+  const zahl = liste => (liste || []).filter(e => e.abschnitt === aid).length;
+  const r = { punkte: zahl(bau.punkte), material: zahl(bau.material), meldungen: zahl(bau.meldungen) };
+  r.summe = r.punkte + r.material + r.meldungen;
+  return r;
+}
+
+/**
+ * Was „Nur Namen korrigieren“ doppelt stehen ließe, wenn die Einträge aus dem
+ * Abschnitt `vonId` in den vorhandenen `nachId` wandern: geplante Punkte, die
+ * beide bestätigt haben (`sollPunkt`), und Katalogzeilen gleichen Artikels.
+ * Die Oberfläche nennt das vorher – nachher stand Punkt 2 zweimal da, und die
+ * Pille sagte nur „3 Einträge übernommen“.
+ */
+export function abschnittUeberschneidung(strecke, vonId, nachId) {
+  const bau = strecke.bau || {};
+  const imZiel = new Map((bau.punkte || [])
+    .filter(p => p.abschnitt === nachId && p.sollPunkt).map(p => [p.sollPunkt, p]));
+  const punkte = (bau.punkte || [])
+    .filter(p => p.abschnitt === vonId && p.sollPunkt && imZiel.has(p.sollPunkt))
+    .map(p => ({ alt: p, ziel: imZiel.get(p.sollPunkt),
+      nr: strecke.punkte.findIndex(q => q.id === p.sollPunkt) + 1 }))
+    .sort((a, b) => a.nr - b.nr);
+  const material = [];
+  for (const m of bau.material || []) {
+    if (m.abschnitt !== vonId) continue;
+    const katalog = materialById(m.artikel);
+    if (katalog && katalog.mehrfach) continue;
+    const z = (bau.material || []).find(q => q.abschnitt === nachId && q.artikel === m.artikel);
+    if (z) material.push({ artikel: m.artikel, name: katalog ? katalog.name : m.artikel,
+      einheit: katalog ? katalog.einheit : '', alt: m.menge, ziel: z.menge });
+  }
+  return { punkte, material };
+}
+
+/**
+ * Die Einträge eines Abschnitts in einen anderen umhängen (nur die Zuordnung,
+ * nichts wird kopiert). Mit `zusammenfuehren` entfällt bei einem Punkt, den
+ * beide bestätigt haben, der ältere Eintrag – „↶“ holt ihn zurück. Gleiche
+ * Katalogzeilen werden danach zusammengezogen (`materialZusammenfassen`), die
+ * Summe nennt die Oberfläche vorher. Nur innerhalb von `store.aendern`.
+ *
+ * @returns {{verschoben:number, doppelt:number[], zusammengefuehrt:number[],
+ *   material:object[]}} Punktnummern der Planung bei doppelt und
+ *   zusammengeführt (0 = der geplante Punkt ist inzwischen gelöscht)
+ */
+export function eintraegeUmhaengen(strecke, vonId, nachId, { zusammenfuehren = false } = {}) {
+  const bau = strecke.bau;
+  const u = abschnittUeberschneidung(strecke, vonId, nachId);
+  const weg = new Set();
+  if (zusammenfuehren) {
+    for (const d of u.punkte) {
+      weg.add((d.alt.zeit || '') > (d.ziel.zeit || '') ? d.ziel.id : d.alt.id);
+    }
+    bau.punkte = (bau.punkte || []).filter(p => !weg.has(p.id));
+  }
+  let verschoben = 0;
+  for (const k of ['punkte', 'material', 'meldungen']) {
+    for (const e of bau[k] || []) {
+      if (e.abschnitt === vonId) { e.abschnitt = nachId; verschoben++; }
+    }
+  }
+  if (u.material.length) bau.material = materialZusammenfassen(bau.material || []);
+  const nummern = pr => pr.map(d => d.nr);
+  return {
+    verschoben,
+    doppelt: zusammenfuehren ? [] : nummern(u.punkte),
+    zusammengefuehrt: zusammenfuehren ? nummern(u.punkte) : [],
+    material: u.material
+  };
 }
 
 /** Die Abschnitte, in die dieses Gerät eintragen darf: die eigenen, und
@@ -1473,8 +1589,18 @@ export function bauzeile(strecke) {
         staemme: String(b.uebergabeZurueckStaemme || '').split('\n').filter(Boolean) } : null;
   /* Die Länge der Lücke auch einzeln: die Lagekarte trägt sie im Schild, und
      dort lässt sich aus dem Fließtext oben nichts herauslesen. */
+  /* Welche Stämme durchgefallen sind: „Prüfung nicht bestanden“ allein schickte
+     den Planer in die Prüfzeilen, den Stamm zu suchen. Die Warnung selbst
+     bleibt ein fester Wortlaut – Summenband, Lagekarte und Tests zählen daran. */
+  const durchStaemme = pruefzeilen(strecke).filter(z => z.bestanden === false)
+    .map(z => String(z.stamm || '').trim()).filter(Boolean);
   return { stand: k.stand, text: teile.join(' · '), warnungen, meldung, zuletzt, trupp: truppText,
-    ausfall, zurueck, luecke: k.lueckeLaenge || 0 };
+    ausfall, zurueck, luecke: k.lueckeLaenge || 0, durchStaemme,
+    /* Die letzte Meldung, die der Planer abgewiesen hat ({ code, zeit, von }):
+       das Feld liefert `baumeldung.js`; wo es fehlt, bleibt es null. Die Liste
+       nennt sie, damit „zuletzt“ nicht nach einer angekommenen Meldung klingt. */
+    nichtUebernommen: (b.letzteMeldungNichtUebernommen && typeof b.letzteMeldungNichtUebernommen === 'object')
+      ? b.letzteMeldungNichtUebernommen : null };
 }
 
 /** Ist das Gerät ausgefallen – am Bau-Block oder an einem Bauabschnitt? Dann

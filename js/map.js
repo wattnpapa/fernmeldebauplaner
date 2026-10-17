@@ -372,8 +372,19 @@ function vorratsEbene(url, optionen) {
            zweite Anlauf für die, die an der Frist gescheitert waren. Entprellt,
            weil ein Ausschnitt seine Kacheln in Schüben bekommt. */
         if (!bild._fbpGrob && !bild._fbpBlobAdresse && this._map) {
+          /* Sofort und für ALLE an der Frist gescheiterten Kacheln (`'runde'`),
+             nicht erst nach zwei Sekunden und nur für die noch nie versuchten:
+             nach der Rückkehr des Servers blieb die Karte so bis zu 35 s
+             unscharf, weil der Lauf erst mit der nächsten Pause kam. Die
+             Entprellung (0,3 s) fasst nur den Schub zusammen, und höchstens
+             alle 10 s ein Lauf – ein Server, der einzelne Kacheln liefert und
+             andere nie, soll mit jeder neuen Kachel nicht belagert werden. */
           clearTimeout(this._nachladeUhr);
-          this._nachladeUhr = setTimeout(() => this.nachladen(false), 2000);
+          this._nachladeUhr = setTimeout(() => {
+            if (Date.now() - (this._netzLauf || 0) < 10000) return;
+            this._netzLauf = Date.now();
+            this.nachladen('runde');
+          }, 300);
           /* Der Server lebt: die Folge der Wiederholungen beginnt von vorn. */
           this._nachSchritt = 0;
         }
@@ -612,6 +623,25 @@ function vorratsEbene(url, optionen) {
   /* Ein neuer Ausschnitt oder eine neue Stufe lädt neue Kacheln: für sie
      beginnt die Folge der Wiederholungen neu. */
   ebene.on('loading', () => { ebene._nachSchritt = 0; });
+  /* Nach Ende der Folge reagierte die Karte auf nichts mehr: der Server
+     antwortete wieder, Verschieben ohne Stufenwechsel holte vier neue Kacheln
+     scharf, die 16 gröberen blieben, und die Leiste meldete weiter „gröber“.
+     Jetzt versucht jedes Ereignis (Ausschnitt geladen, Karte verschoben) die
+     gröberen Kacheln erneut – höchstens alle 60 s, weil jeder Lauf das Gerät
+     am Netz hält, und nur wenn gerade keine Folge läuft und etwas Gröberes im
+     Bild steht. Das Netz-Ereignis (`online`) geht über `kartenNachladen`. */
+  const erneut = () => {
+    if (!ebene._map || ebene._nachUhr) return;
+    if (Date.now() - (ebene._erneutLauf || 0) < 60000) return;
+    if (!ebene.grobSichtbar()) return;
+    ebene._erneutLauf = Date.now();
+    ebene.nachladen(true);
+  };
+  ebene.on('load', erneut);
+  ebene.on('add', () => { ebene._map.on('moveend', erneut); });
+  ebene.on('remove', () => {
+    if (ebene._map) ebene._map.off('moveend', erneut);
+  });
   ebene.on('remove', () => {
     clearTimeout(ebene._nachUhr); ebene._nachUhr = null;
     clearTimeout(ebene._nachladeUhr);

@@ -94,12 +94,14 @@ import {
   tagKurz, abstandZurLinie,
   eigeneAbschnitte, fremderAbschnitt, auftragsTrupps, waehlbareAbschnitte, truppNichtAufgetragen,
   truppSchluessel, aufgetragenerTrupp, truppSchrittMerken, warTruppDieses,
-  truppWahlOffen, truppFrageRuht,
+  truppWahlOffen, truppFrageRuht, abschnittZahlen, abschnittUeberschneidung,
+  eintraegeUmhaengen,
   ohneAbschnitt, ohneAbschnittText, ohneAbschnittZuordnen, eigenenAbschnittSichern
 } from './baudoku.js';
 import {
   vorschlag, truppText, befund, einspielen, berichtText, gleicherTrupp, eigenerVorgabe, codesLesen,
-  nichtUebernommen, durchgabe, papierText, uebergabeWarText, zaehlText
+  nichtUebernommen, funkformel, verwerfFormel, GRUND_SCHON_DA, ablehnungsHinweis,
+  papierText, uebergabeWarText, zaehlText
 } from './baumeldung.js';
 import {
   meldungAlsLink, laengenUrteil, meldungsCodeVon, meldungsCodeAus, meldungTraegt
@@ -159,7 +161,13 @@ export function hinweis(text, art = 'info') {
      die Reiter – gemessen und nicht in CSS gerechnet, weil die Zeile je nach
      Modus (Sicherungsband, Baumodus) an anderer Höhe beginnt. Sie fängt keinen
      Tipp ab und deckt dann nur den Kopf der Liste. */
-  if (art.includes('oben') && matchMedia('(orientation: landscape) and (max-height: 500px)').matches) {
+  /* `ueber-reiter` lässt sie dort stehen: nach einer Bestätigung in der
+     Bau-Liste rollt die nächste offene Zeile an den oberen Listenrand, und die
+     Pille unter den Reitern deckte deren „✓ wie geplant“ (quer, 667×375). Die
+     Reiterzeile braucht in diesem Augenblick niemand – der Bau-Reiter ist ja
+     aufgeschlagen –, die Pille fängt keinen Tipp ab. */
+  if (art.includes('oben') && !art.includes('ueber-reiter') &&
+      matchMedia('(orientation: landscape) and (max-height: 500px)').matches) {
     const reiter = document.querySelector('.reiter');
     const rr = reiter && reiter.getBoundingClientRect();
     const br = box.getBoundingClientRect();
@@ -328,10 +336,13 @@ export function dialog({ titel, inhalt, fuss = [], breit = false, geteilt = fals
   document.getElementById('app').inert = true;
   huelle.hidden = false;
   /* Die Zurück-Taste des Telefons soll den Dialog schließen und nicht die
-     Anwendung verlassen – `app.js` legt dafür einen Verlaufseintrag an. Ein
-     geschützter Dialog bekommt keinen: er geht nicht beiläufig zu, und er steht
-     über einem Link, dessen Adresse sonst im Verlauf landete. */
-  if (!schutz) document.dispatchEvent(new CustomEvent('fbp:ebene'));
+     Anwendung verlassen – `app.js` legt dafür einen Verlaufseintrag an. Auch
+     ein geschützter Dialog bekommt einen: „Zurück“ schließt ihn dann zwar nicht
+     (er blitzt wie bei Esc), verlässt aber auch die Seite nicht – im Review
+     führte es aus dem Funkdialog nach about:blank, die Formel samt „NICHT
+     übernommen“ war weg. Das gilt auch über einem Link: der Eintrag trägt
+     dessen Adresse, und `app.js` räumt sie beim Zurückgehen wieder ab. */
+  document.dispatchEvent(new CustomEvent('fbp:ebene', { detail: { mitFragment: !!schutz } }));
   /* Reine Text-Dialoge haben im Inhalt nichts Fokussierbares – dann übernimmt
      der erste Fußknopf, sonst der Schließen-Knopf, damit die Tastatur im
      Dialog beginnt statt dahinter. */
@@ -393,6 +404,11 @@ export function dialogAbweisen() {
   }
   schliesseDialog();
   return true;
+}
+
+/** Ob gerade ein geschützter Dialog offen steht (für die Zurück-Taste) */
+export function dialogGeschuetzt() {
+  return !!dialogSchutz && !document.getElementById('dialog').hidden;
 }
 
 export function schliesseDialog() {
@@ -849,7 +865,7 @@ function baustandZaehlung(strecken, getrennt = false) {
   const warnungen = [
     ...(durch ? [`⚠ ${durch} Prüfung nicht bestanden`] : []),
     ...(zurueck ? [`⚠ ${zurueck} ${zurueck === 1 ? 'Übergabe' : 'Übergaben'} zurückgenommen`] : []),
-    ...(spaet ? [`⚠ ${spaet} ohne Meldung seit 2\u00a0h`] : []),
+    ...(spaet ? [`⚠ ${spaet} ohne Meldung länger als 2\u00a0h`] : []),
     ...(papier ? [`⚠ ${papier} Papier nachfragen seit ${AUSFALL_NACHFRAGE_MIN / 60}\u00a0h`] : [])
   ];
   return getrennt ? { stand: stand.join(', '), neu, warnungen }
@@ -930,7 +946,8 @@ function streckenListeNachfuehren(liste) {
    aber in die Bauzeile ein – sie gehören deshalb in die Signatur. Ohne sie
    blieb die Karte nach „✓ gesehen“ und „✓ erledigt“ stehen, wie sie war: der
    Tipp war gespeichert und zeigte erst nach dem Neuladen eine Wirkung. */
-const geraeteStand = s => [meldungNeu(s.id), s6Liste()[s.id] || null];
+const geraeteStand = s => [meldungNeu(s.id), s6Liste()[s.id] || null,
+  (funkformelFuer(s.id) || {}).zeit || null];
 const geschlosseneKarteStand = s =>
   signatur([s, streckeSichtbar(store.projekt, s), geraeteStand(s)], [s]);
 const offeneKarteStand = s => signatur(
@@ -1286,16 +1303,23 @@ function alterText(iso) {
   if (h < 24) return `vor ${h} h${min % 60 ? ` ${min % 60} min` : ''}`;
   return `vor ${Math.floor(h / 24)} d`;
 }
+/* Uhrzeit, und an einem anderen Tag als heute mit Datum: „zuletzt 17:16“ ließ
+   bei einem Einsatz über mehrere Tage offen, an welchem. */
+function zeitMitTag(iso) {
+  const d = new Date(iso), jetzt = new Date();
+  if (Number.isNaN(d.getTime()) || d.toDateString() === jetzt.toDateString()) return uhrzeit(iso);
+  return `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}\u00a0${uhrzeit(iso)}`;
+}
 function alterHTML(iso, laeuft) {
   const min = (Date.now() - Date.parse(iso)) / 60000;
   const spaet = laeuft && min >= MELDUNG_UEBERFAELLIG_MIN;
   return `<span class="bz-alter${spaet ? ' spaet' : ''}" data-zeit="${escapeHtml(iso)}"
-    data-laeuft="${laeuft ? 1 : 0}">zuletzt ${escapeHtml(uhrzeit(iso))} · ${escapeHtml(alterText(iso))}</span>`;
+    data-laeuft="${laeuft ? 1 : 0}">zuletzt ${escapeHtml(zeitMitTag(iso))} · ${escapeHtml(alterText(iso))}</span>`;
 }
 setInterval(() => {
   for (const s of document.querySelectorAll('.bz-alter')) {
     const iso = s.dataset.zeit;
-    s.textContent = `zuletzt ${uhrzeit(iso)} · ${alterText(iso)}`;
+    s.textContent = `zuletzt ${zeitMitTag(iso)} · ${alterText(iso)}`;
     s.classList.toggle('spaet', s.dataset.laeuft === '1' &&
       (Date.now() - Date.parse(iso)) / 60000 >= MELDUNG_UEBERFAELLIG_MIN);
   }
@@ -1351,6 +1375,12 @@ function s6Merken(sid, text) {
   const l = s6Liste();
   if (text) l[sid] = text; else delete l[sid];
   try { localStorage.setItem(KEY_S6, JSON.stringify(l)); } catch (e) { /* gilt dann nur jetzt */ }
+}
+/** „Meldung nicht übernommen – nachfragen (1. FmTr, Code 6JA9, 20:53)“ */
+function nichtUebernommenText(n) {
+  const teile = [n.von && String(n.von).split(' · ')[0], n.code && `Code ${n.code}`,
+    n.zeit && zeitMitTag(n.zeit)].filter(Boolean);
+  return 'Meldung nicht übernommen – nachfragen' + (teile.length ? ` (${teile.join(', ')})` : '');
 }
 /** „Übergabe zurückgenommen 20:53 (Pegel)“ – wann und welche Prüfung es war */
 const zurueckText = z => `Übergabe zurückgenommen ${uhrzeit(z.zeit)}` +
@@ -1453,7 +1483,9 @@ function streckenKarte(s) {
             `<b class="meldungscode">${escapeHtml(z.code)}</b>${z.von
               ? ` (${escapeHtml(String(z.von).split(' · ')[0])})` : ''}`).join(', ')}</span>`
         : '') +
-      bz.warnungen.map(w => `<span class="bz-warnung">⚠ ${escapeHtml(w)}</span>`).join('') +
+      bz.warnungen.map(w => `<span class="bz-warnung">⚠ ${escapeHtml(w)}${
+        w === 'Prüfung nicht bestanden' && bz.durchStaemme.length
+          ? ` (${escapeHtml(bz.durchStaemme.join(', '))})` : ''}</span>`).join('') +
       /* Der Ausfall steht an der Strecke und nimmt der Überfälligkeit den
          Platz: wer auf Papier baut, schweigt planmäßig. */
       (bz.ausfall ? `<span class="bz-warnung">⚠ ${escapeHtml(bz.ausfall)}${
@@ -1461,7 +1493,11 @@ function streckenKarte(s) {
       /* Die Rücknahme der Übergabe bleibt stehen, bis die Meldung gesehen ist
          (dieselbe Mechanik wie „neu“): die Pille nannte sie nur kurz, und an
          der Strecke stand danach bloß „gebaut“. */
-      (neu && bz.zurueck ? `<span class="bz-warnung">⚠ ${escapeHtml(zurueckText(bz.zurueck))}</span>` : ''));
+      (neu && bz.zurueck ? `<span class="bz-warnung">⚠ ${escapeHtml(zurueckText(bz.zurueck))}</span>` : '') +
+      /* Eine abgewiesene Meldung ist nicht angekommen: der Trupp hält sie für
+         übernommen, die Strecke zeigt sie nicht. „⚠“ und das Wort, damit der
+         Planer nachfragt, statt dass „zuletzt“ und „neu“ Gegenteiliges sagen. */
+      (bz.nichtUebernommen ? `<span class="bz-warnung">⚠ ${escapeHtml(nichtUebernommenText(bz.nichtUebernommen))}</span>` : ''));
     /* Was neu eingegangen ist, bleibt markiert, bis es jemand gesehen hat. Im
        Audit war die eben eingespielte Strecke nach einem Hinweis von drei
        Sekunden von den anderen nicht mehr zu unterscheiden – bei mehreren
@@ -1475,6 +1511,17 @@ function streckenKarte(s) {
         e.stopPropagation(); meldungGesehen(s.id); zeichneStreckenListe(); ctx.sl.zeichne();
       };
       zeile.appendChild(gesehen);
+    }
+    /* Die Formel zur letzten Meldung an dieser Strecke (`funkformelMerken`). */
+    const letzteFormel = funkformelFuer(s.id);
+    if (letzteFormel) {
+      const ff = el('button', 'mini-knopf bz-gesehen', 'Letzte Funkformel');
+      ff.title = 'Den Funkspruch zur letzten Meldung noch einmal zeigen';
+      ff.onclick = e => {
+        e.stopPropagation();
+        funkDialog(letzteFormel.satz, letzteFormel.hilfe, letzteFormel.laut, { vom: letzteFormel.zeit });
+      };
+      zeile.appendChild(ff);
     }
     karte.appendChild(zeile);
     /* Die Meldung an den S 6 steht im Wortlaut da und nicht als Zahl: sie ist
@@ -5673,7 +5720,7 @@ function sprungstreifen(bloecke, s, vorAbfahrt = false) {
    bleibt, bis ein Schreibvorgang gelingt (`speicherfehlerSetzen`, aus app.js).
    Der Ausweg heißt „Zurückmelden“ und nicht nur „Als Datei sichern“: der Planer
    braucht die Aufnahme, und eine Datei am Telefon bringt sie nicht zu ihm. */
-const SPEICHER_VORWARNUNG = 0.8;
+export const SPEICHER_VORWARNUNG = 0.8;
 let speicherfehlerStand = null;       // { n }: Aufnahmen, die nur im Fenster stehen
 export function speicherfehlerSetzen(stand) {
   const vorher = speicherfehlerStand;
@@ -6530,37 +6577,136 @@ function truppWechselnGriff(s) {
  * Gerät wechselt den Trupp, die Einträge bleiben beim alten, gehen aber nicht
  * mehr mit). Beides gilt für alle Strecken des Geräts, sonst bliebe an der
  * nächsten ein Abschnitt unter dem alten Namen, der von da an „fremd“ wäre.
+ *
+ * Was die Wahl kostet, steht VOR den Feldern und nicht dahinter: auf dem
+ * Telefon quer liegt der Rollbereich bei 251 von 454 px, und die Folge-Sätze
+ * standen unter dem Falz, während die Fußknöpfe schon im Bild waren – gewählt
+ * wurde, bevor jemand sie gelesen hatte.
  */
-function truppWechselnDialog(s) {
+export function truppWechselnDialog(s) {
   const v = truppAmGeraet();
   const alt = v.trupp.trim();
   const trupps = auftragsTrupps(s).filter(x => truppSchluessel(x) !== truppSchluessel(alt));
   const betroffen = (store.projekt.strecken || [])
     .map(x => ({ x, set: eigeneAbschnitte(x) }))
     .filter(e => e.set && e.set.size);
-  const eintraege = (x, a) => ['punkte', 'material', 'meldungen']
-    .reduce((n, k) => n + ((x.bau[k] || []).filter(e => e.abschnitt === a.id).length), 0);
   const belegt = betroffen.flatMap(e => bauabschnitte(e.x)
-    .filter(a => e.set.has(a.id)).map(a => ({ x: e.x, a, n: eintraege(e.x, a) })))
-    .filter(b => b.n);
+    .filter(a => e.set.has(a.id)).map(a => ({ e, x: e.x, a, inhalt: abschnittZahlen(e.x, a.id) })))
+    .filter(b => b.inhalt.summe);
+  const inhaltText = i => [
+    i.punkte && `${i.punkte} ${i.punkte === 1 ? 'Punkt' : 'Punkte'}`,
+    i.material && `${i.material} ${i.material === 1 ? 'Materialzeile' : 'Materialzeilen'}`,
+    i.meldungen && `${i.meldungen} ${i.meldungen === 1 ? 'Meldung' : 'Meldungen'}`
+  ].filter(Boolean).join(', ');
+  /* Der Abschnitt des neuen Trupps, der an dieser Strecke schon steht: dorthin
+     wandern bei „Nur Namen korrigieren“ die Einträge. */
+  const zielIn = (e, name) => bauabschnitte(e.x).find(a => !e.set.has(a.id) &&
+    truppSchluessel(a.trupp ? a.trupp : a.name) === truppSchluessel(name));
+  const punktNr = nr => !nr.length ? 'Ein Punkt' : nr.length === 1 ? `Punkt ${nr[0]}`
+    : `Punkte ${nr.slice(0, -1).join(', ')} und ${nr.at(-1)}`;
+  const gemeldet = belegt.filter(b => b.x.bau.abgesetzt && b.x.bau.abgesetzt.zeit);
 
-  const box = el('div', 'trupp-wechseln');
+  const box = el('div', 'trupp-wechseln' + (belegt.length ? ' trupp-wechseln-wege' : ''));
   box.dataset.fokus = 'tipp';
   /* Das Feld „Truppführer“ steht leer da: mit dem alten Führer vorbelegt, ging
      der bei einem Wechsel auf einen anderen Trupp unbemerkt mit. Nur
      „Umbenennen“ – dort gehörten die Einträge von Anfang an dem neuen Namen –
      behält ihn, wenn das Feld leer bleibt; der Platzhalter sagt es. */
-  box.innerHTML = `<p>Dieses Gerät heißt bisher: <b>${escapeHtml(alt || 'kein Trupp eingetragen')}</b>.</p>` +
+  let kopf = `<p>Dieses Gerät heißt bisher: <b>${escapeHtml(alt || 'kein Trupp eingetragen')}</b>.</p>`;
+  if (belegt.length) {
+    /* Je Strecke eine Zeile mit Zahlen: der Wechsel wirkt an allen Strecken des
+       Geräts, und der Dialog nannte nur eine Summe. */
+    kopf += '<p class="bau-warnung">Es stehen schon Eintragungen darin – was soll mit ihnen ' +
+      'geschehen?</p><ul class="tw-strecken">' + belegt.map(b => `<li><b>${escapeHtml(b.x.name)}</b>` +
+      ` · ${escapeHtml(b.a.trupp || b.a.name)}: ${inhaltText(b.inhalt)}` +
+      (gemeldet.includes(b) ? ` – gemeldet um ${uhrzeit(b.x.bau.abgesetzt.zeit)}` : '') +
+      '</li>').join('') + '</ul>' +
+      (betroffen.length > 1 ? `<p class="klein">Der Wechsel gilt an allen ${betroffen.length} ` +
+        'Strecken, an denen dieses Gerät baut.</p>' : '');
+    /* Je Knopf ein Satz, mit dem Wort des Knopfes und dem Anlass vorn: der
+       Hauptknopf hieß „Umbenennen“ und nahm Einträge mit, die der bisherige
+       Trupp gebaut hatte. Keiner ist hervorgehoben: welcher stimmt, weiß nur
+       der Trupp. Der erste Satz war eine Schachtel aus zwei Strichen und einem
+       Nebensatz; was bei vorhandenem Abschnitt geschieht, steht jetzt unter
+       dem Feld, sobald der Name feststeht. */
+    kopf += '<ul class="folge-liste">' +
+      '<li><b>Nur Namen korrigieren</b> – falsch gewählt: die Einträge gehören dem neuen ' +
+      'Trupp und gehen mit.' + (gemeldet.length ? ' Schon Gemeldetes: erneut melden, der ' +
+        'Planer ersetzt den alten Abschnitt.' : '') + '</li>' +
+      '<li><b>Anderer Trupp übernimmt</b> – der andere Trupp baut weiter: die Einträge ' +
+      'bleiben beim bisherigen Trupp und gehen mit der Meldung dieses Geräts nicht mehr ' +
+      'hinaus.' + (gemeldet.length ? ' Schon Gemeldetes bleibt beim Planer beim bisherigen ' +
+        'Trupp.' : '') + '</li></ul>';
+  }
+  box.innerHTML = kopf +
     (trupps.length ? '<p class="klein">Aufgetragene Trupps – antippen übernimmt den Namen ins Feld:</p>' +
       '<div class="trupp-chips" role="group" aria-label="Trupp">' +
       trupps.map(x => `<button type="button" class="trupp-chip" aria-pressed="false" ` +
         `data-trupp="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('') + '</div>' : '') +
-    '<label class="feld"><span class="feld-titel">Neuer Trupp</span>' +
+    '<label class="feld" id="tw-trupp-feld"><span class="feld-titel">Neuer Trupp</span>' +
     '<input type="text" id="tw-trupp" placeholder="z. B. 1. FmTr" autocomplete="off"></label>' +
+    '<div class="tw-ueberschneidung" aria-live="polite"></div>' +
     '<label class="feld"><span class="feld-titel">Truppführer <span class="klein">(kann ' +
     'entfallen)</span></span><input type="text" id="tw-fuehrer" ' +
-    `placeholder="${escapeHtml(v.fuehrer ? `bisher: ${v.fuehrer}` : 'Name')}" autocomplete="off"></label>`;
+    `placeholder="${escapeHtml(v.fuehrer ? `bisher: ${v.fuehrer}` : 'Name')}" autocomplete="off"></label>` +
+    `<p class="klein">Falsch entschieden? ${NUR_TOUCH ? '„↶“ oben' : '„↶“ oder Strg+Z'} nimmt ` +
+    'den ganzen Wechsel zurück.</p>';
   const feldTrupp = box.querySelector('#tw-trupp');
+  const feldRahmen = box.querySelector('#tw-trupp-feld');
+  /* Keine Pille: sie läge über dem Fußknopf „Abbrechen“. Das Feld selbst trägt
+     Rahmen und Meldung. */
+  const feldFehler = text => {
+    feldRahmen.classList.add('feld-abgewiesen');
+    let m = feldRahmen.querySelector('.feld-meldung');
+    if (!m) { m = el('span', 'feld-meldung'); m.setAttribute('role', 'alert'); feldRahmen.appendChild(m); }
+    m.textContent = '✖ ' + text;
+    feldTrupp.focus();
+  };
+  /* Doppeltes zusammenführen: nur anbieten, wo es um wenige Punkte geht – bei
+     vielen ist „welcher gilt“ keine Frage, die ein Haken beantwortet. */
+  let zusammen = false;
+  const ZUSAMMEN_HOECHSTENS = 5;
+  const ueberschneidung = () => {
+    const feld = box.querySelector('.tw-ueberschneidung');
+    const name = aufgetragenerTrupp(s, feldTrupp.value.trim()) || feldTrupp.value.trim();
+    const zeilen = [];
+    let punkteGesamt = 0, warnt = false;
+    if (name && belegt.length) {
+      for (const b of belegt) {
+        const ziel = zielIn(b.e, name);
+        if (!ziel) continue;
+        const u = abschnittUeberschneidung(b.x, b.a.id, ziel.id);
+        let z = `<b>${escapeHtml(b.x.name)}</b>: „Nur Namen korrigieren“ hängt die Einträge in ` +
+          `den vorhandenen Abschnitt von ${escapeHtml(ziel.trupp || ziel.name)}.`;
+        if (u.punkte.length) {
+          punkteGesamt += u.punkte.length; warnt = true;
+          z += ` ${punktNr(u.punkte.map(d => d.nr).filter(Boolean))} steht in beiden ` +
+            'Abschnitten – er stünde doppelt.';
+        }
+        for (const m of u.material) {
+          warnt = true;
+          const e = m.einheit ? ' ' + escapeHtml(m.einheit) : '';
+          const summe = Number.isFinite(m.alt) && Number.isFinite(m.ziel)
+            ? ` = ${m.alt + m.ziel}${e}` : '';
+          z += ` ${escapeHtml(m.name)} ${m.alt ?? '–'}${e} + ${m.ziel ?? '–'}${e}${summe} ` +
+            'wird addiert.';
+        }
+        zeilen.push(z);
+      }
+    }
+    const haken = punkteGesamt > 0 && punkteGesamt <= ZUSAMMEN_HOECHSTENS;
+    const html = !zeilen.length ? '' :
+      `<div class="${warnt ? 'bau-warnung' : 'klein'}">` +
+      zeilen.map(z => `<p>${z}</p>`).join('') + '</div>' +
+      (haken ? '<label class="tw-haken"><input type="checkbox" id="tw-zusammen">' +
+        '<span>Doppelte Punkte zusammenführen – es gilt der jüngere Eintrag</span></label>' : '');
+    if (feld.dataset.stand === html) return;
+    feld.dataset.stand = html;
+    feld.innerHTML = html;
+    const h = feld.querySelector('#tw-zusammen');
+    if (h) { h.checked = zusammen; h.onchange = () => { zusammen = h.checked; }; }
+    else zusammen = false;
+  };
   /* Ein Chip trägt nur dann den gewählten Zustand, wenn das Feld ihn zeigt:
      vorher sah der einzige Chip gewählt aus, bevor jemand ihn angetippt hatte –
      Fokusring und Füllung ließen sich nicht unterscheiden. */
@@ -6569,34 +6715,29 @@ function truppWechselnDialog(s) {
       c.setAttribute('aria-pressed',
         String(truppSchluessel(feldTrupp.value) === truppSchluessel(c.dataset.trupp)));
     }
+    feldRahmen.classList.remove('feld-abgewiesen');
+    feldRahmen.querySelector('.feld-meldung')?.remove();
+    ueberschneidung();
   };
   for (const chip of box.querySelectorAll('.trupp-chip')) {
     chip.onclick = () => { feldTrupp.value = chip.dataset.trupp; chipsNachziehen(); };
   }
   feldTrupp.addEventListener('input', chipsNachziehen);
-  if (belegt.length) {
-    const was = belegt.map(b => `${b.a.trupp || b.a.name} (${b.n})`).join(', ');
-    /* Je Knopf ein Satz, mit dem Wort des Knopfes – der Hauptknopf hieß
-       „Umbenennen“ und nahm Einträge mit, die der bisherige Trupp gebaut
-       hatte; „Trupp wechseln“ las sich dazu wie „das Gerät geht an einen
-       anderen Trupp“, und das ist der andere Knopf. Keiner ist hervorgehoben:
-       welcher stimmt, weiß nur der Trupp. */
-    box.appendChild(el('p', 'bau-warnung',
-      `In ${escapeHtml(was)} stehen schon Eintragungen. Was soll mit ihnen geschehen?`));
-    box.appendChild(el('ul', 'folge-liste',
-      '<li><b>Nur Namen korrigieren</b> – die Einträge gehörten von Anfang an dem neuen ' +
-      'Trupp; sie gehen mit – steht dessen Abschnitt an der Strecke schon da, wandern sie ' +
-      'dorthin.</li>' +
-      '<li><b>Anderer Trupp übernimmt</b> – die Einträge bleiben beim bisherigen Namen ' +
-      'stehen und gehen mit der Meldung dieses Geräts nicht mehr hinaus.</li>'));
-  }
 
   const wechseln = umbenennen => {
     /* Die Schreibweise des Planers gewinnt: „1. fmtr“ legte sonst einen
        eigenen Abschnitt neben dem aufgetragenen an. */
     const eingabe = feldTrupp.value.trim();
     const neu = aufgetragenerTrupp(s, eingabe) || eingabe;
-    if (!neu) { hinweis('Erst den neuen Trupp eintragen.', 'warnung'); return false; }
+    if (!neu) { feldFehler('Erst den neuen Trupp eintragen.'); return false; }
+    /* Die Chips schließen den bisherigen Trupp aus, das Feld nicht: „Anderer
+       Trupp übernimmt“ unter dem eigenen Namen wäre ohne Sinn, und „Nur Namen
+       korrigieren“ hätte nichts zu korrigieren. */
+    if (alt && truppSchluessel(neu) === truppSchluessel(alt)) {
+      feldFehler(neu === alt ? 'Das ist schon euer Trupp.'
+        : 'Das ist schon euer Trupp – nur die Schreibweise weicht ab.');
+      return false;
+    }
     /* Leer lassen heißt bei „Namen korrigieren“: der Führer bleibt. */
     const fuehrer = box.querySelector('#tw-fuehrer').value.trim() ||
       (umbenennen && belegt.length ? v.fuehrer : '');
@@ -6608,28 +6749,29 @@ function truppWechselnDialog(s) {
     truppAmGeraetSetzen({ trupp: neu, fuehrer });
     let eigener = null;
     let zusammengefuehrt = 0;
+    const doppelt = [], vereint = [], summen = [];
     store.aendern(() => {
       for (const e of betroffen) {
         /* Gibt es an dieser Strecke schon einen Abschnitt des neuen Trupps,
            wird nicht noch einer umbenannt: zwei gleichen Namens hießen beim
            Planer, sie seien einer. */
-        const ziel = bauabschnitte(e.x).find(a => !e.set.has(a.id) &&
-          truppSchluessel(a.trupp ? a.trupp : a.name) === truppSchluessel(neu));
+        const ziel = zielIn(e, neu);
         for (const a of bauabschnitte(e.x).filter(b => e.set.has(b.id))) {
-          const n = eintraege(e.x, a);
+          const n = abschnittZahlen(e.x, a.id).summe;
           if (ziel) {
             /* „Nur Namen korrigieren“ heißt: die Einträge gehörten von Anfang
                an dem neuen Trupp. Dessen Abschnitt steht schon da – also gehen
                sie dorthin. Vorher blieben sie im alten stehen, der nun als
                fremd galt, und die Meldung trug 0 Strecken, obwohl der Dialog
                „sie gehen mit“ versprach. Umgehängt wird die Zuordnung, nichts
-               wird kopiert; ein Doppel kann so nicht entstehen. */
+               wird kopiert. Was dabei doppelt stünde, hat der Dialog vorher
+               genannt; die Pille sagt es noch einmal. */
             if (n && umbenennen) {
-              for (const k of ['punkte', 'material', 'meldungen']) {
-                for (const eintrag of e.x.bau[k] || []) {
-                  if (eintrag.abschnitt === a.id) { eintrag.abschnitt = ziel.id; zusammengefuehrt++; }
-                }
-              }
+              const r = eintraegeUmhaengen(e.x, a.id, ziel.id, { zusammenfuehren: zusammen });
+              zusammengefuehrt += r.verschoben;
+              doppelt.push(...r.doppelt.map(nr => ({ strecke: e.x.name, nr })));
+              vereint.push(...r.zusammengefuehrt.map(nr => ({ strecke: e.x.name, nr })));
+              summen.push(...r.material);
             }
             continue;
           }
@@ -6648,16 +6790,34 @@ function truppWechselnDialog(s) {
     truppSchrittMerken(store.projekt, vorherStand, vorherVermerk, truppAmGeraet());
     bauabschnittAktivSetzen(eigener ? eigener.id : null);
     zeichneBauListe();
-    hinweis(zusammengefuehrt
+    /* Eine Überschneidung steht in der Pille, nicht nur im Dialog davor: wer
+       „Nur Namen korrigieren“ tippt, hat den Satz dort womöglich nicht
+       gelesen. Dann hat die Pille Warnfarbe. */
+    const mehrere = (store.projekt.strecken || []).length > 1;
+    const nrText = liste => liste.map(d =>
+      `${mehrere ? d.strecke + ' ' : ''}Pkt. ${d.nr || '?'}`).join(', ');
+    const zusatz = [
+      doppelt.length ? `${nrText(doppelt)} steht jetzt doppelt` : '',
+      vereint.length ? `${nrText(vereint)} zusammengeführt` : '',
+      summen.length ? 'Material addiert' : ''
+    ].filter(Boolean).join(' · ');
+    hinweis((zusammengefuehrt
       ? `${zusammengefuehrt} ${zusammengefuehrt === 1 ? 'Eintrag' : 'Einträge'} in den ` +
         `vorhandenen Abschnitt von ${neu} übernommen – neue Punkte gehen an ${neu}`
-      : `Neue Punkte gehen an ${neu}`);
+      : `Neue Punkte gehen an ${neu}`) + (zusatz ? ` – ${zusatz}` : ''),
+    doppelt.length ? 'warnung' : 'info');
   };
-  const fuss = [{ text: 'Abbrechen' }];
+  /* „Abbrechen“ steht zuletzt und abgesetzt (css/app.css): erst zwei Wege, die
+     Einträge umhängen oder stehen lassen, dann Abstand. Es stand links neben
+     dem ersten Weg, 8 px davon, und mit dem Handschuh traf man quer einen Weg
+     statt abzubrechen. */
+  const fuss = [];
   if (belegt.length) {
     fuss.push({ text: 'Anderer Trupp übernimmt', tun: () => wechseln(false) });
     fuss.push({ text: 'Nur Namen korrigieren', tun: () => wechseln(true) });
+    fuss.push({ text: 'Abbrechen' });
   } else {
+    fuss.push({ text: 'Abbrechen' });
     fuss.push({ text: 'Wechseln', primaer: true, tun: () => wechseln(true) });
   }
   dialog({ titel: 'Trupp wechseln', inhalt: box, fuss });
@@ -6665,11 +6825,12 @@ function truppWechselnDialog(s) {
      nimmt sonst den ersten Knopf im Inhalt): dessen Ring las sich wie eine
      Wahl. Ein Fokus im Feld holt am Telefon die Tastatur – deshalb auf den
      Rahmen und nicht ins Feld. */
-  const rahmen = box.querySelector('.trupp-chips');
-  if (rahmen) {
-    rahmen.tabIndex = -1;
-    setTimeout(() => { if (rahmen.isConnected) rahmen.focus({ preventScroll: true }); }, 60);
-  }
+  /* Ohne Chips auf den Rahmen des Dialogs: der Fokus läge sonst auf dem ersten
+     Fußknopf, und der ist seit der Umstellung „Anderer Trupp übernimmt“ – mit
+     der Eingabetaste ein Weg, der Einträge anfasst. */
+  const rahmen = box.querySelector('.trupp-chips') || box;
+  rahmen.tabIndex = -1;
+  setTimeout(() => { if (rahmen.isConnected) rahmen.focus({ preventScroll: true }); }, 60);
 }
 
 /**
@@ -7307,6 +7468,7 @@ function bauPunktZeile(s, pt, i) {
   const bauweise = pt.art === 'querung' ? pt.bauweise : null;
   tasten.appendChild(knopf('✓ wie geplant', e => {
     if (aufnahmeTaub(e)) return;
+    if (folgetippAmSelbenOrt(e, i + 1)) return;
     const a = aktiverBauabschnitt(s);
     /* Der nächste offene Punkt HINTER diesem: wer Punkt 3 vor Punkt 1
        bestätigt, soll nicht zu Punkt 1 zurückgerollt werden. */
@@ -7333,6 +7495,8 @@ function bauPunktZeile(s, pt, i) {
     const jetzt = performance.now();
     bestaetigtEben = bestaetigtEben.filter(x => jetzt - x.zeit < 3200 && x.nr !== i + 1);
     bestaetigtEben.push({ nr: i + 1, zeit: jetzt });
+    bestaetigtOrt = e && e.isTrusted && Number.isFinite(e.clientX)
+      ? { x: e.clientX, y: e.clientY, zeit: jetzt, nr: i + 1 } : null;
     const nrn = bestaetigtEben.map(x => x.nr).sort((x, y) => x - y);
     const welche = nrn.length > 1
       ? `Punkte ${nrn.slice(0, -1).join(', ')} und ${nrn.at(-1)}` : `Punkt ${nrn[0]}`;
@@ -7352,7 +7516,7 @@ function bauPunktZeile(s, pt, i) {
     /* Oben und nicht unten: unten deckte die Pille die Zeile, die als
        Nächstes angetippt wird. */
     hinweis(`${welche} bestätigt – ${NUR_TOUCH ? '„↶“ oben' : '„↶“ oder Strg+Z'} nimmt es zurück`,
-      'info oben');
+      'info oben ueber-reiter');
     naechsteOffeneZeigen(folgender ? folgender.id : null);
   }, 'bau-taste primaer'));
   tasten.appendChild(knopf('◉ hier', e => {
@@ -7410,7 +7574,7 @@ function schonBestaetigtWink(e, zeile, nr) {
   const letzte = bestaetigtEben.length ? bestaetigtEben.at(-1).zeit : -Infinity;
   if (!e || !e.isTrusted || performance.now() - letzte > FOLGETIPP_MS) return false;
   tippWink(zeile);
-  hinweis(`Punkt ${nr} ist schon bestätigt`, 'info oben');
+  hinweis(`Punkt ${nr} ist schon bestätigt`, 'info oben ueber-reiter');
   return true;
 }
 /* Die Zeile, an der der nächste Neuaufbau der Bau-Liste den Rollstand festhält
@@ -7418,6 +7582,26 @@ function schonBestaetigtWink(e, zeile, nr) {
    geleert beim Neuaufbau. */
 let ankerWunsch = null;
 let bestaetigtEben = [];   // { nr, zeit } – die Bestätigungen der letzten Sekunden
+/* Wo der Finger bei der letzten Bestätigung lag. Hochkant gilt die kurze
+   Tippsperre (400 ms, siehe oben); ein zweiter Tipp nach 450 bis 850 ms kam
+   durch und bestätigte blind den Punkt, den die Liste inzwischen unter die
+   Fingerstelle gerollt hatte (Stresstest: Punkte 5, 7, 9 bei Abständen von
+   350 und 750 ms). Die Sperre zu verlängern bremste das rhythmische
+   Weitertippen, das hochkant gewollt ist. Stattdessen zählt der Ort: derselbe
+   Fleck binnen 1,2 s ist der Nachhall eines Doppeltipps, ein Tipp woanders
+   oder später ist Absicht. */
+let bestaetigtOrt = null;
+const FOLGEORT_MS = 1200;
+const FOLGEORT_PX = 24;
+function folgetippAmSelbenOrt(e, nr) {
+  const o = bestaetigtOrt;
+  if (!o || !e || !e.isTrusted || !Number.isFinite(e.clientX) || o.nr === nr) return false;
+  if (performance.now() - o.zeit >= FOLGEORT_MS) return false;
+  if (Math.hypot(e.clientX - o.x, e.clientY - o.y) > FOLGEORT_PX) return false;
+  tippWink(e.target);
+  hinweis(`Punkt ${o.nr} ist schon bestätigt – für Punkt ${nr} noch einmal tippen`, 'info oben ueber-reiter');
+  return true;
+}
 function aufnahmeTaub(e) {
   const letzte = bestaetigtEben.length ? bestaetigtEben.at(-1).zeit : -Infinity;
   const taub = !!e && e.isTrusted && performance.now() - letzte < aufnahmeSperreMs();
@@ -7445,7 +7629,20 @@ function naechsteOffeneZeigen(pid) {
      geplant“ des nächsten Punktes genau unter die Fingerstelle, die eben
      getippt hatte. Gerollt wird nur, wenn der Kopf der Zeile nicht im Bild ist,
      und dann so wenig wie möglich. */
-  if (k && r.top >= k.top && r.top < k.bottom - 24) return;
+  if (k && r.top >= k.top && r.top < k.bottom - 24) {
+    /* … solange die Griffe der Zeile ganz im Bild stehen. Erschien das rote
+       Band des Speicherfehlers, schrumpfte die Liste um 130 px, und der Kopf
+       der nächsten Zeile stand noch im Bild, ihre Griffe aber halb unter der
+       Liste-Karte-Leiste (Stresstest, 390×844): der Trupp musste erst rollen.
+       Dann rollt die Liste gerade so weit, dass die Griffe mit etwas Luft über
+       der Leiste stehen – nicht zentriert, das wäre wieder der Sprung unter
+       die Fingerstelle. */
+    const griffe = offen.querySelector('.bau-tasten');
+    const g = griffe && griffe.getBoundingClientRect();
+    if (!g || g.bottom <= k.bottom - 12) return;
+    kasten.scrollBy({ top: Math.ceil(g.bottom - (k.bottom - 12)), behavior: 'smooth' });
+    return;
+  }
   offen.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -8638,7 +8835,20 @@ function bauRueckwegBlock(s) {
 function truppEintragenDialog(strecken, vermerken) {
   const v = truppAmGeraet();
   const box = el('div', 'trupp-wechseln');
+  /* Wie bei „Trupp wechseln“: die Trupps, die der Planer aufgetragen hat,
+     stehen als Chips da, und die Schreibweise des Planers gewinnt. Getippt
+     ging „1.fmtr“ hinaus, und beim Planer wurde daraus ein fremder Absender. */
+  const trupps = [];
+  for (const x of strecken) {
+    for (const t of auftragsTrupps(x)) {
+      if (!trupps.some(y => truppSchluessel(y) === truppSchluessel(t))) trupps.push(t);
+    }
+  }
   box.innerHTML = '<p>Wer meldet? Der Planer liest es über der Meldung.</p>' +
+    (trupps.length ? '<p class="klein">Aufgetragene Trupps – antippen übernimmt den Namen ins Feld:</p>' +
+      '<div class="trupp-chips" role="group" aria-label="Trupp">' +
+      trupps.map(x => `<button type="button" class="trupp-chip" aria-pressed="false" ` +
+        `data-trupp="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('') + '</div>' : '') +
     '<label class="feld"><span class="feld-titel">Trupp</span>' +
     '<input type="text" id="te-trupp" placeholder="z. B. 1. FmTr" autocomplete="off" ' +
     `value="${escapeHtml(v.trupp || '')}"></label>` +
@@ -8651,7 +8861,8 @@ function truppEintragenDialog(strecken, vermerken) {
       { text: 'Abbrechen', tun: () => { setTimeout(() => meldungAlsLinkZeigen(strecken,
         absenderText(strecken), vermerken), 0); } },
       { text: 'Eintragen', primaer: true, tun: () => {
-        const trupp = box.querySelector('#te-trupp').value.trim();
+        const eingabe = box.querySelector('#te-trupp').value.trim();
+        const trupp = trupps.map(x => aufgetragenerTrupp({ trupp: x }, eingabe)).find(Boolean) || eingabe;
         if (!trupp) { hinweis('Erst den Trupp eintragen – oder „Abbrechen“.', 'warnung'); return false; }
         truppAmGeraetSetzen({ ...truppAmGeraet(), trupp,
           fuehrer: box.querySelector('#te-fuehrer').value.trim() });
@@ -8659,6 +8870,18 @@ function truppEintragenDialog(strecken, vermerken) {
       } }
     ]
   });
+  const feldTrupp = box.querySelector('#te-trupp');
+  const chipsNachziehen = () => {
+    for (const c of box.querySelectorAll('.trupp-chip')) {
+      c.setAttribute('aria-pressed',
+        String(truppSchluessel(feldTrupp.value) === truppSchluessel(c.dataset.trupp)));
+    }
+  };
+  for (const chip of box.querySelectorAll('.trupp-chip')) {
+    chip.onclick = () => { feldTrupp.value = chip.dataset.trupp; chipsNachziehen(); };
+  }
+  feldTrupp.addEventListener('input', chipsNachziehen);
+  chipsNachziehen();
 }
 
 /* Der Link steht in einem Feld und wird nicht stillschweigend in die
@@ -8904,7 +9127,12 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
   const andere = kandidaten[0] || null;
 
   const box = el('div', 'meldung-vorschau');
-  const trupp = truppText(meldung);
+  /* Bei vielen Abschnitten nannte der Kopf jeden Truppnamen (im Review zwölf in
+     einer Zeile, bei 36 Strecken) – der Kopf soll sagen, wer meldet, nicht
+     das Verzeichnis ersetzen. Die Namen stehen in den Zeilen. */
+  const truppNamen = truppText(meldung);
+  const truppListe = truppNamen ? truppNamen.split(', ') : [];
+  const trupp = truppListe.length > 3 ? `${truppListe.length} Trupps` : truppNamen;
   const zeit = meldung.gemeldet ? zeitpunkt(meldung.gemeldet) : '';
   const kopf = el('div', '');
   kopf.innerHTML =
@@ -8996,12 +9224,27 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
      übernommen, der Dialog bleibt offen, und das Sichern als Datei ist der
      Ausweg. */
   let speicherVoll = false;
+  /* Die Aufnahme eines ANDEREN Absenders (oder ein Verlust) an einem Abschnitt,
+     den die Meldung ersetzt: die gelbe Warnung in der Zeile. Sie zählte weder
+     in die Summe noch in „riskant“ – im Review stand über acht gelben Zeilen
+     „keine mit Warnung“, und „Einspielen“ blieb der Hauptknopf. Dieselbe
+     Bedingung wie beim Zeichnen der Zeile (`gewohnt`): meldet derselbe Trupp
+     nach, ohne dass etwas verloren geht, ist es der Fortgang und keine
+     Warnung. */
+  const kollisionWarnt = b => {
+    if (!b.kollision.length) return false;
+    const absender = String(meldung.von || '');
+    const gewohnt = !!b.bisherVon && !!absender && gleicherTrupp(b.bisherVon, absender) &&
+      !(b.verloren.punkte || b.verloren.meldungen || b.verloren.material);
+    return !gewohnt;
+  };
+  const befundRiskant = b => !!b.ziel && !b.schonDa && (b.aelter ||
+    b.verloren.punkte || b.verloren.meldungen || b.verloren.material ||
+    (b.daneben && b.daneben.alle) || b.verdopplung.verdacht || kollisionWarnt(b));
   const knoepfeStand = befunde => {
     if (!knoepfe.einspielen) return;
     const nichtsNeues = befunde.every(b => b.ziel && (b.schonDa || b.nichtsGeaendert));
-    const riskant = speicherVoll || befunde.some(b => b.ziel && !b.schonDa && (b.aelter ||
-      b.verloren.punkte || b.verloren.meldungen || b.verloren.material ||
-      (b.daneben && b.daneben.alle) || b.verdopplung.verdacht));
+    const riskant = speicherVoll || befunde.some(befundRiskant);
     /* Nach einem Speicherfehler ist „Verwerfen“ nie der Hauptknopf: die Meldung
        ist nicht übernommen, aber auch nicht schlecht – vorn steht der Ausweg
        (das Sichern als Datei), und „Verwerfen“ räumte die Adresse. */
@@ -9033,20 +9276,29 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
        tausende Pixel hoch sind – ob eine davon riskant ist, sah man nur, wenn
        man alles durchrollte. Eine Summe oben sagt es vorweg. */
     if (befunde.length > 5) {
-      const mitWarnung = befunde.filter(b => b.ziel && !b.schonDa && (b.aelter ||
-        b.verloren.punkte || b.verloren.meldungen || b.verloren.material ||
-        (b.daneben && b.daneben.alle) || b.verdopplung.verdacht)).length;
+      const mitWarnung = befunde.filter(befundRiskant).length;
       const ohneZiel = befunde.filter(b => !b.ziel).length;
       const schon = befunde.filter(b => b.ziel && b.schonDa).length;
-      liste.appendChild(el('p', 'mv-summe' + (mitWarnung || ohneZiel ? ' bau-warnung' : ' klein'),
+      const summe = el('p', 'mv-summe' + (mitWarnung || ohneZiel ? ' bau-warnung' : ' klein'),
         `<b>${befunde.length} Strecken:</b> ` + (mitWarnung
           ? `<b>${mitWarnung} mit Warnung</b>`
           : 'keine mit Warnung') +
         (ohneZiel ? `, <b>${ohneZiel} ohne Zuordnung</b>` : '') +
-        (schon ? `, ${schon} schon eingespielt` : '') + '.'));
+        (schon ? `, ${schon} schon eingespielt` : '') + '.');
+      /* Bei 36 Strecken lag die erste Warnung tausende Pixel unter der Summe,
+         und die Summe sagte nur, DASS es sie gibt. Der Sprung steht an der
+         Summe und nur, wo es etwas anzuspringen gibt. */
+      if (mitWarnung) {
+        summe.append(' ', knopf('Zur ersten Warnung', () => {
+          const z = liste.querySelector('[data-warnung]');
+          if (z) z.scrollIntoView({ block: 'center' });
+        }, 'klein mv-sprung'));
+      }
+      liste.appendChild(summe);
     }
     befunde.forEach((b, i) => {
       const zeile = el('div', 'mv-zeile' + (b.kollision.length ? ' kollision' : ''));
+      if (befundRiskant(b)) zeile.dataset.warnung = '1';
       /* Was vom Papier kommt, steht dabei: der Planer liest „3 Punkte“ und hält
          sie für Aufnahmen vom Bauort – eine Abschrift ohne Uhrzeit sagt über
          die Reihenfolge nichts. */
@@ -9202,7 +9454,10 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
         zeile.appendChild(ul);
       }
       if (b.uebergabeFraglich) {
-        zeile.appendChild(el('p', 'bau-warnung',
+        /* Mit durchgefallener Prüfung ist es dieselbe Tatsache wie die
+           aufgehobene Übergabe darunter – gleich gezeichnet (rot, „✖“). */
+        zeile.appendChild(el('p', 'bau-warnung' +
+          (/durchgefallen/.test(b.uebergabeFraglich) ? ' fehler' : ''),
           `Als <b>übergeben</b> gemeldet, aber ${escapeHtml(b.uebergabeFraglich)}. ` +
           'Nach 3.5 gehört die Messung oder Sprechprobe vor die Übergabe.'));
       }
@@ -9261,6 +9516,12 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
               'eine Leitung mit bestandener Prüfung – der Stand geht auf „gebaut“ zurück' +
               (h.war ? `; die eingetragene Übergabe (${escapeHtml(uebergabeWarText(h.war))}) ` +
                 'gilt nicht mehr und wird als Vermerk an der Strecke festgehalten' : '') + '.'));
+          } else if (h.uebergabeVeraltet) {
+            zeile.appendChild(el('p', 'bau-warnung fehler',
+              '<b>Übergabe nicht übernommen:</b> die hier aufgehobene Übergabe' +
+              (h.war ? ` (${escapeHtml(uebergabeWarText(h.war))})` : '') +
+              ' kehrt nicht durch eine ältere Meldung zurück – sie gilt nur durch eine neuere ' +
+              'Übergabe.'));
           } else if (h.uebergabeNichtUebernommen) {
             zeile.appendChild(el('p', 'bau-warnung fehler',
               `<b>Übergabe nicht übernommen:</b> ${escapeHtml(h.staemme.join(', '))} ` +
@@ -9359,10 +9620,12 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
       } else {
         if (b.schonDa) {
           /* Gesagt wird das nur noch, wenn es stimmt: ausprobiert an einer
-             Abschrift (`befund()` in `baumeldung.js`). */
-          zeile.appendChild(el('p', 'bau-warnung',
-            'Genau dieser Stand ist hier schon eingespielt. Einspielen ändert nichts – ' +
-            'verwerfen genügt.'));
+             Abschrift (`befund()` in `baumeldung.js`). Steht hier ein jüngerer
+             Stand, ist es nicht „genau dieser“. */
+          zeile.appendChild(el('p', 'bau-warnung', b.ueberholt
+            ? 'Älter als der Stand hier. Einspielen ändert nichts – verwerfen genügt.'
+            : 'Genau dieser Stand ist hier schon eingespielt. Einspielen ändert nichts – ' +
+              'verwerfen genügt.'));
         } else if (b.aelter) {
           /* Der Abstand steht als Spanne da: zwei Zeitpunkte in derselben
              Minute lasen sich im Audit als „07:10 ist älter als 07:10“. */
@@ -9446,9 +9709,7 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
              Warnung: im Audit stand jede Folgemeldung gelb da, und gelb, das
              immer kommt, liest niemand mehr. Gelb bleibt es bei einem anderen
              Absender oder einem Verlust – dann steht darüber schon, was weicht. */
-          const absender = String(meldung.von || '');
-          const gewohnt = !!b.bisherVon && !!absender && gleicherTrupp(b.bisherVon, absender) &&
-            !(v.punkte || v.meldungen || v.material);
+          const gewohnt = !kollisionWarnt(b);
           const namen = escapeHtml(b.kollision.map(a => a.name).join(', '));
           zeile.appendChild(gewohnt
             ? el('p', 'klein mv-folge',
@@ -9513,21 +9774,30 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
     const b = befund(p, meldung, zuordnung);
     /* Vorn, vor allen Befunden der Meldung: sie war in Ordnung, der Speicher
        war es nicht – und der Trupp soll nicht ändern, was er schickt. */
+    /* Der Merker gilt nur, solange der Speicher es tut: wer inzwischen Platz
+       geschaffen hat, sollte nicht hören „Speicher voll“. Probiert wird mit
+       dem Speichern selbst – das schreibt den Stand, der ohnehin gilt. */
+    if (speicherVoll && store.speichern({ still: true })) {
+      speicherVoll = false;
+      box.querySelector('.mv-speicherfehler')?.remove();
+    }
     if (speicherVoll) {
       return 'Speicher beim Planer voll – die Meldung war in Ordnung, der Planer meldet sich, ' +
         'sobald er Platz geschaffen hat';
     }
     if (nirgends) return 'Planung liegt hier nicht vor';
-    /* Gespeichert ist nichts: nicht „vom Planer verworfen“, sondern ein Fehler
-       an diesem Gerät, und der Trupp soll später noch einmal melden. */
-    if (speicherVoll) return 'Speicher am Planer-Gerät voll, nichts gespeichert – bitte später noch einmal melden';
-    if (b.every(x => x.ziel && x.schonDa)) return 'bereits übernommen';
+    /* Nur wenn es genau der Stand ist; steht hier inzwischen ein jüngerer
+       (die neuere Meldung C war zuerst da), heißt es „älter als der Stand hier“. */
+    if (b.every(x => x.ziel && x.schonDa)) {
+      return b.some(x => x.ueberholt) ? 'älter als der Stand hier – ändert nichts' : GRUND_SCHON_DA;
+    }
     /* Ändert nichts, weil die Prüfung oder Übergabe nicht übernommen wird: das
        ist NICHT „bereits übernommen“, und der Trupp muss neu messen. */
     const abgelehnt = b.find(x => x.ziel && x.nichtsGeaendert);
     if (abgelehnt && b.every(x => x.ziel && (x.schonDa || x.nichtsGeaendert))) {
       const wasNicht = nichtUebernommen({ pruefhinweise: b.flatMap(x => x.pruefAbgelehnt) });
-      return `ändert nichts – ${wasNicht.join(', ')} nicht übernommen. Bitte neu messen und melden`;
+      return `ändert nichts – ${wasNicht.join(', ')} nicht übernommen; ` +
+        ablehnungsHinweis(b.flatMap(x => x.pruefAbgelehnt));
     }
     /* Die Gründe nach Gewicht, schwerster zuerst, und alle, die zutreffen: der
        Trupp soll hören, dass seine Aufnahme eine andere ersetzt hätte, nicht nur,
@@ -9567,21 +9837,19 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
            das so nicht – sie liegt auf dem Gerät und lässt sich neu laden. */
         const wieder = herkunft === 'Datei'
           ? 'dieselbe Datei lässt sich noch einmal laden.' : 'derselbe Link öffnet sie wieder.';
-        hinweis(grund === 'bereits übernommen'
+        hinweis(grund === GRUND_SCHON_DA
           ? 'Baumeldung verworfen – dieser Stand war schon eingespielt'
           : `Baumeldung verworfen – ${wieder}` + (gewechselt
             ? ` Geöffnet bleibt „${p.name || '(ohne Namen)'}“, nicht „${gewechselt}“.` : ''), 'warnung');
         /* Die Funkformel steht in einem eigenen Dialog und nicht in der Pille:
            sie wird abgelesen, während der Funkspruch läuft, und drei Sekunden
            reichen dafür nicht. Erst nach dem Schließen dieses Dialogs. */
-        const schon = grund === 'bereits übernommen';
-        setTimeout(() => funkDialog(
-          `Meldung <b class="meldungscode">${escapeHtml(code)}</b>
-              ${schon ? '' : 'nicht '}übernommen – ${schon ? 'dieser Stand war schon da' : 'Grund'}${
-              schon ? '' : ': ' + escapeHtml(grund)}.`,
-          `So über Funk durchgeben.${schon ? '' : ' ' + (herkunft === 'Datei'
-            ? 'Dieselbe Datei lässt sich noch einmal laden,' : 'Derselbe Link öffnet die Meldung wieder,') +
-            ' falls doch eingespielt werden soll.'}`), 0);
+        const f = verwerfFormel(grund, code, herkunft);
+        funkformelMerken(zuordnung.filter(Boolean), code, f.satz, f.hilfe, false);
+        zeichneStreckenListe();
+        /* Rot mit ✖ nur, wenn wirklich etwas NICHT übernommen wurde; „schon
+           eingespielt“ ist keine Warnung. */
+        setTimeout(() => funkDialog(f.satz, f.hilfe, grund !== GRUND_SCHON_DA), 0);
       } },
       /* Die andere Planung öffnen und denselben Dialog dort wieder vorlegen.
          Die Adresse bleibt dabei stehen – entschieden ist noch nichts. */
@@ -9617,7 +9885,9 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
            Fehlschlag ist nichts übernommen, die Adresse bleibt, und der
            Dialog bleibt offen – mit dem Sichern als Datei als Ausweg. */
         const gespeichert = store.aendernGesichert(
-          pr => { bericht = einspielen(pr, meldung, zuordnung); }, 'meldung');
+          pr => { bericht = einspielen(pr, meldung, zuordnung); }, 'meldung',
+          { leerOhneSchritt: () => !!bericht && (!bericht.strecken || bericht.geaendert === false ||
+            bericht.unveraendert === bericht.strecken) });
         if (!gespeichert) {
           /* Auch die Marke „neu“ nimmt der Rollback zurück: nichts wurde
              übernommen, und eine Strecke, die „neu eingegangen“ trüge, wäre
@@ -9638,11 +9908,26 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
           if (block) block.scrollIntoView({ block: 'nearest' });
           return false;
         }
+        /* „Neu“ trägt nur, woran die Meldung etwas bewirkt hat: eine abgewiesene
+           oder wirkungslose markierte die Strecke sonst als eingegangen, und das
+           Summenband zählte sie mit – es wirkte wie angekommen und verbucht. */
+        neuListeSetzen(neuVorher);
+        meldungenNeuMerken(bericht.wirksam);
+        speicherVoll = false;
         if (entschieden) entschieden();
         /* Für „↶“ (`rueckgaengig` in app.js): der Schritt oben ist am Funk
-           quittiert, und wer ihn zurücknimmt, soll es erfahren. */
-        store.quittung = { code, tiefe: store.undoStapel.length,
-          vor: store.undoStapel[store.undoStapel.length - 1], nach: null };
+           quittiert, und wer ihn zurücknimmt, soll es erfahren – mit Code und
+           Absender, denn nach zwei Trupps nacheinander nahm der zweite Schritt
+           zurück die Meldung des ersten, und niemand sagte, wessen. Hat die
+           Einspielung nichts geändert, gibt es keinen Schritt (`wirkungslos`),
+           also auch nichts zu merken: „↶“ träfe sonst die Aufnahme davor und
+           nennte diese Meldung dazu. */
+        if (!store.wirkungslos) {
+          store.quittungen.push({ code, von: String(meldung.von || ''),
+            sids: zuordnung.filter(Boolean), tiefe: store.undoStapel.length,
+            vor: store.undoStapel[store.undoStapel.length - 1], nach: null });
+          if (store.quittungen.length > 60) store.quittungen.shift();
+        }
         ctx.sl.zeichne();
         zeichneStreckenListe();
         zeichneBauListe();
@@ -9659,35 +9944,10 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
            gelesen ist. Nach Gewicht: was beim Planer entfällt, dann Prüfung und
            Übergabe, dann abgewählte Strecken, zuletzt die Rückfragen
            (`durchgabe`). */
-        const d = durchgabe(bericht);
-        const nichtsNeu = bericht.strecken && bericht.unveraendert === bericht.strecken;
-        const mitCode = `Meldung <b class="meldungscode">${escapeHtml(code)}</b>`;
-        /* „Nur teilweise übernommen“ stimmt nur, wenn etwas übernommen wurde.
-           Blieb der Stand gleich, ist die Meldung angekommen und hat nichts
-           geändert – die Pille sagte „Nichts geändert“, der Dialog „teilweise“. */
-        const kopfSatz = !bericht.strecken
-          ? `${mitCode} NICHT übernommen – keine Strecke zugeordnet.`
-          : d.nicht.length && nichtsNeu
-          ? `${mitCode} angekommen, aber <b>NICHTS übernommen</b> – der Stand hier ist unverändert.`
-          : d.nicht.length
-          ? `${mitCode} nur teilweise übernommen.`
-          : nichtsNeu
-          ? `${mitCode} angekommen – nichts Neues, dieser Stand war schon eingespielt.`
-          : `${mitCode} übernommen.`;
-        const absatz = (titel, eintraege) => eintraege.length
-          ? ` <b>${titel}</b> ${escapeHtml(eintraege.join('; '))}.` : '';
-        const satz = kopfSatz
-          + absatz('Beim Planer entfallen:', d.verlust)
-          + absatz('NICHT übernommen:', d.nicht)
-          + absatz('Ausgelassen:', d.ausgelassen)
-          + absatz('Rückfrage an den Trupp:', d.rueckfragen);
-        const laut = d.nicht.length || d.verlust.length || !bericht.strecken;
-        const zusatz = d.neuMessen
-          ? ' – sonst hält der Trupp Prüfung oder Übergabe für verbucht. Er muss neu messen und melden.'
-          : d.verlust.length || d.rueckfragen.length
-          ? ' – der Trupp soll es wissen und die Rückfrage beantworten.'
-          : '.';
-        setTimeout(() => funkDialog(satz, `So über Funk durchgeben${zusatz}`, !!laut), 0);
+        const f = funkformel(bericht, code);
+        funkformelMerken(zuordnung.filter(Boolean), code, f.satz, f.hilfe, !!f.laut);
+        zeichneStreckenListe();
+        setTimeout(() => funkDialog(f.satz, f.hilfe, f.laut), 0);
       } }
     ]
   });
@@ -9717,18 +9977,54 @@ export function baumeldungDialog(meldung, herkunft, entschieden = null) {
    sondern erst mit dem Knopf, und der wirkt nicht im ersten Augenblick
    (`DIALOG_SPERRE_MS`). Statt der Pille blitzt der Knopf auf: eine Pille läge
    über genau dem Fuß, den der Finger sucht. */
-function funkDialog(satzHtml, hilfeHtml, warnung = false) {
-  /* Die Pille davor nennt dasselbe und deckte den Fuß. */
+export function funkDialog(satzHtml, hilfeHtml, warnung = false, { vom = '' } = {}) {
+  /* Die Pille davor nennt dasselbe und deckte den Fuß. „Warnung“ heißt hier:
+     etwas wurde NICHT übernommen – dieselbe Tatsache steht im Empfangsdialog
+     rot mit „✖“, im amberfarbenen Kasten (2,0:1 gegen den Grund) las sie sich
+     als Hinweis statt als Verlust. */
   hinweisAus();
+  /* Die Erklärung zum Dialog steht kleiner und abgesetzt unter dem Funkspruch:
+     gleichrangig daneben las sie sich im Review wie ein zweiter Satz, der
+     durchzugeben wäre. */
   dialog({
-    titel: 'Dem Trupp durchgeben',
-    inhalt: `<p class="mv-funkformel${warnung ? ' bau-warnung' : ''}">${satzHtml}</p>
-      <p class="klein">${hilfeHtml}</p>
-      <p class="klein">Der Dialog schließt erst mit „Schließen“ – ein Tipp daneben tut nichts.</p>`,
-    schutz: 'Bitte durchgeben und mit „Schließen“ bestätigen.',
-    schutzStill: true,
+    titel: vom ? 'Letzte Funkformel' : 'Dem Trupp durchgeben',
+    inhalt: `<p class="klein">${vom ? 'Die Formel von damals:' : 'Das so durchgeben:'}</p>
+      <p class="mv-funkformel${warnung ? ' bau-warnung fehler' : ''}">${satzHtml}</p>
+      ${hilfeHtml ? `<p class="klein">${hilfeHtml}</p>` : ''}
+      ${vom ? `<p class="klein mv-funk-meta">Gemerkt am Gerät, Stand ${escapeHtml(zeitpunkt(vom))}.
+        Später kann sich daran etwas geändert haben.</p>` : ''}
+      <p class="klein mv-funk-meta">Schließt erst mit „Schließen“ – ein Tipp daneben tut nichts.</p>`,
+    /* Die wieder aufgerufene Formel ist eine Nachschau, kein Funkspruch, der
+       sonst verloren wäre: sie darf sich beiläufig schließen. */
+    schutz: vom ? '' : 'Bitte durchgeben und mit „Schließen“ bestätigen.',
+    schutzStill: !vom,
     fuss: [{ text: 'Schließen', primaer: true }]
   });
+}
+
+/* Die Formel wird nur einmal gezeigt, und nach „Schließen“ blieb der
+   Rückgabe-Code allein: fragte der Trupp noch einmal nach, oder verpasste der
+   Planer den Satz im Lärm, war die Auskunft weg. Die letzte Formel je Strecke
+   liegt deshalb im Gerät (`fbp.funkformel.v1`, in datenschutz.html genannt) und
+   lässt sich an der Strecke wieder aufrufen. Nichts davon geht hinaus. Sie
+   ersetzt die vorige: gebraucht wird die letzte Aussage, kein Protokoll. */
+const KEY_FUNK = 'fbp.funkformel.v1';
+function funkformeln() {
+  try { return JSON.parse(localStorage.getItem(KEY_FUNK) || '{}') || {}; } catch (e) { return {}; }
+}
+function funkformelFuer(sid) {
+  return funkformeln()[`${store.projekt.id}:${sid}`] || null;
+}
+export function funkformelMerken(sids, code, satz, hilfe, laut) {
+  if (!sids.length) return;
+  const alle = funkformeln();
+  const zeit = new Date().toISOString();
+  for (const sid of sids) alle[`${store.projekt.id}:${sid}`] = { code, satz, hilfe, laut: !!laut, zeit };
+  /* Begrenzt: ältere Einträge weichen, damit die Liste nicht mit den Planungen
+     wächst. */
+  const schluessel = Object.keys(alle).sort((a, b) => alle[b].zeit.localeCompare(alle[a].zeit));
+  for (const k of schluessel.slice(40)) delete alle[k];
+  try { localStorage.setItem(KEY_FUNK, JSON.stringify(alle)); } catch (e) { /* gilt dann nur jetzt */ }
 }
 
 /* Mehrere Planungen kennen die Strecken der Meldung. Je Eintrag steht, woran

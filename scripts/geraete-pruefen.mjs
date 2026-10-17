@@ -1085,7 +1085,12 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   }
   const randZiele = [];
   for (const g of rand.filter(x => x.zuNah && x.im)) {
-    for (const weg of [24, 28, 33]) {
+    for (const weg of [24, 28, 33, 40, 46]) {
+      /* Die eigene Fläche des abgerückten Griffs (14 px, mit Luft 10 px um
+         seine Mitte) gehört ihm seit Runde 9 – dort fängt er die Berührung
+         ab; der Fall darunter misst das. Der Randstreifen darum bleibt dem
+         Punkt und der Karte. */
+      if (Math.abs(weg - g.d) <= 10) continue;
       const dx = (g.x - g.mx) / g.d, dy = (g.y - g.my) / g.d;
       await seite.auswerten('window._griffZiele.length = 0; return 1');
       await seite.tippe(Math.round(g.mx + dx * weg), Math.round(g.my + dy * weg));
@@ -1093,11 +1098,45 @@ const seitenGriffe = await zuKleineGriffe('.seite',
       await seite.auswerten(`window.fbp.sl.waehle(window.fbp.store.projekt.strecken[0].id); return 1`);
     }
   }
-  b.pruefe(randZiele.length >= 3 && randZiele.every(z => z !== 'griff'),
+  b.pruefe(randZiele.length >= 2 && randZiele.every(z => z !== 'griff'),
     `Im Randstreifen 24 bis 33 px neben dem Punkt nimmt ein abgerückter Griff keine Berührung an `
     + `(${randZiele.length} Berührungen: ${[...new Set(randZiele)].join(', ') || 'keine'}; `
     + `Griffe ${rand.length}, abgerückt ${rand.filter(x => x.zuNah).length}, im Bild ${rand.filter(x => x.im).length})`);
   await seite.ruhe();
+  /* Runde 9: Halten mit Wisch genau auf einem abgerückten Griff griff den 17 px
+     entfernten Punkt und verschob ihn um 147 m – der Griff sah greifbar aus und
+     nahm nichts an. Jetzt ist er gedämpft (ungefüllt, gepunktet), fängt die
+     Berührung auf seiner eigenen Fläche ab und sagt „heranzoomen“; der Punkt
+     bleibt, wo er war. Getastet mit echten Berührungen, gelesen wird das Ziel
+     des `pointerdown`. */
+  const abgerueckt = rand.filter(x => x.zuNah && x.im);
+  b.pruefe(abgerueckt.length >= 1, `Zum Messen steht ein abgerückter Griff im Bild (${abgerueckt.length})`);
+  if (abgerueckt.length) {
+    const g = abgerueckt[0];
+    const lagen = () => seite.auswerten(
+      'return JSON.stringify(window.fbp.store.projekt.strecken[0].punkte.map(p => [p.lat, p.lng]))');
+    const vorher = await lagen();
+    const gestalt = await seite.auswerten(`
+      const i = document.querySelector('.fbp-einfuegen.zu-nah i');
+      const c = getComputedStyle(i);
+      return { fuell: c.backgroundColor, rand: c.borderTopStyle };`);
+    b.pruefe(gestalt.rand === 'dotted' && /rgba\(0, 0, 0, 0\)|transparent/.test(gestalt.fuell),
+      `Der abgerückte Griff ist gepunktet und ungefüllt, nicht wie ein greifbarer (${gestalt.rand}, ${gestalt.fuell})`);
+    await seite.auswerten('window._griffZiele.length = 0; return 1');
+    await seite.tippe(Math.round(g.x), Math.round(g.y));
+    const ziel1 = await seite.auswerten('return window._griffZiele.slice()');
+    const pille1 = await seite.text('#hinweisbox') || '';
+    b.pruefe(ziel1.length === 1 && ziel1[0] === 'griff',
+      `Der Finger mitten auf dem abgerückten Griff trifft den Griff und nicht den Punkt dahinter (${ziel1.join(', ') || 'nichts'})`);
+    b.pruefe(/^Zum Einfügen heranzoomen/.test(pille1), `Die Pille sagt, was zu tun ist („${pille1}“)`);
+    await seite.auswerten('window._griffZiele.length = 0; return 1');
+    await seite.wische(Math.round(g.x), Math.round(g.y), Math.round(g.x) + 40, Math.round(g.y) - 40,
+      { halten: 700, schritte: 6 });
+    const ziel2 = await seite.auswerten('return window._griffZiele.slice()');
+    b.pruefe(ziel2[0] === 'griff', `Auch Halten mit Wisch beginnt am Griff (${ziel2.join(', ') || 'nichts'})`);
+    b.pruefe(await lagen() === vorher, 'Und kein Punkt der Strecke hat sich bewegt');
+    await seite.auswerten(`window.fbp.sl.waehle(window.fbp.store.projekt.strecken[0].id); return 1`);
+  }
 
   b.abschnitt('Aus der Übersicht wird in Stufen herangeholt, Suche und Standort stehen bereit');
   /* Aus Zoom 6 sprang der erste Tipp gleich auf 15, dorthin, wo der Finger
@@ -1642,14 +1681,27 @@ const seitenGriffe = await zuKleineGriffe('.seite',
             if (!v || !h || v === h) return false;
             const a = v.getBoundingClientRect(), c = h.getBoundingClientRect();
             return Math.abs((a.left + a.right) / 2 - (c.left + c.right) / 2) < 100;`);
-          const gut = d.kopfImBild && d.fussImBild && schlecht.length === 0 && !nah;
+          /* Runde 9: „Verwerfen“ war quer das größte Ziel (306 gegen 233 px beim
+             Einspielen), hochkant standen beide mit 8 px Abstand. Im Empfangsdialog
+             sind beide gleich breit und halten 16 px. */
+          const paar = await seite.auswerten(`
+            const v = document.querySelector('#dialog-fuss .fuss-verwerfen');
+            const e = document.querySelector('#dialog-fuss .fuss-einspielen');
+            if (!v || !e) return null;
+            const a = v.getBoundingClientRect(), c = e.getBoundingClientRect();
+            return { dv: Math.round(a.width), de: Math.round(c.width),
+                     luecke: Math.round(c.left - a.right), eineZeile: Math.abs(a.top - c.top) < 3 };`);
+          const paarGut = !paar || (Math.abs(paar.dv - paar.de) <= 1 && paar.eineZeile && paar.luecke >= 16);
+          const gut = d.kopfImBild && d.fussImBild && schlecht.length === 0 && !nah && paarGut;
           await schliesse();
           await seite.warteAuf('document.getElementById("dialog").hidden', 5000);
           await hinweisWeg();
           return { gut, kurz: gut ? d.inhaltHoch + ' px' : !d.kopfImBild ? 'Kopf weg'
-                     : !d.fussImBild ? 'Fuß weg' : nah ? 'Haupt unter Verwerfen' : 'Knopf zu',
+                     : !d.fussImBild ? 'Fuß weg' : nah ? 'Haupt unter Verwerfen'
+                     : !paarGut ? 'Knöpfe ungleich' : 'Knopf zu',
                    text: `Kopf ${d.kopfHoch} px, Fuß ${d.fussHoch} px, ` +
                          `Inhalt ${d.inhaltHoch} px im ${d.schirm} hohen Fenster` +
+                         (paar ? `; Verwerfen ${paar.dv} px, Einspielen ${paar.de} px, Lücke ${paar.luecke} px` : '') +
                          (schlecht.length
                            ? '; nicht treffbar: ' +
                              schlecht.map(k => griffText(`„${k.text}“`, k)).join(', ')
@@ -1758,6 +1810,29 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                  text: `„✓ wie geplant“ ${m.planAbstand ?? '–'} px, Chips ${m.chipAbstand} px` +
                        (m.raus.length ? `; ragt hinaus: ${m.raus.join(', ')}` : ', nichts ragt hinaus') };
       });
+    /* Runde 9: bei 390 px maß das Feld „Zeitpunkt“ der Übergabe 118 px – die
+       Uhrzeit des `datetime-local` lag außerhalb, der Platzhalter von „Übergeben
+       an“ war abgeschnitten. Schmal steht je Feld eine Zeile. Gemessen an einer
+       Probe mit der Klasse der Zeile, die der Reiter nur im aufgeklappten
+       Abschnitt „Prüfung und Übergabe“ trägt. */
+    if (breite <= 520) {
+      await fall(fenster, 'Übergabefelder je eine Zeile',
+        'Schmal stehen „Übergeben an“, „Zeitpunkt“ und „Übergeben durch“ je in einer Zeile',
+        async () => {
+          const m = await seite.auswerten(`
+            const liste = window._g.muss('#bau-liste');
+            const p = document.createElement('div');
+            p.className = 'bu-felder';
+            p.innerHTML = '<div class="feld"><input></div><div class="feld"><input></div><div class="feld"><input></div>';
+            liste.appendChild(p);
+            const w = [...p.children].map(k => k.getBoundingClientRect().width);
+            const ganz = p.getBoundingClientRect().width;
+            p.remove();
+            return { w: w.map(Math.round), ganz: Math.round(ganz) };`);
+          const gut = m.w.every(x => x >= m.ganz - 2);
+          return { gut, kurz: gut ? '' : 'zwei Spalten', text: `Felder ${m.w.join('/')} px in ${m.ganz} px` };
+        });
+    }
     /* Die Meldung nach „Bau beginnen“ lag im Audit unten über „Trupp“,
        „Truppführer“ und „Baubeginn“ – den Feldern, die als Nächstes dran
        sind. Gemessen wird am Kopf des Reiters, wo der Trupp danach steht, mit
@@ -1791,11 +1866,61 @@ const seitenGriffe = await zuKleineGriffe('.seite',
                        (m.gedeckt.length ? '; deckt ' + m.gedeckt.join(', ') : ', deckt nichts') };
       });
     await hinweisWeg();
+    /* Runde 9: quer rollt die Liste nach „✓ wie geplant“ die nächste offene Zeile
+       an den oberen Rand, und die Pille unter den Reitern deckte deren
+       „✓ wie geplant“ (667×375). Sie steht jetzt über der Reiterzeile. Gemessen
+       mit der echten Meldung: eine Zeile wird bestätigt, danach darf die Pille
+       keinen Griff der Liste decken. */
+    if (hoehe <= 450) {
+      await fall(fenster, 'Bau-Liste quer: Pille nach der Bestätigung deckt keinen Griff',
+        'Die Pille „Punkt n bestätigt“ liegt quer über keinem Griff der Bau-Liste',
+        async () => {
+          const m = await seite.auswerten(`
+            const s = window.fbp.store.projekt.strecken[0];
+            const gemerkt = JSON.stringify(s.bau.punkte);
+            window.fbp.store.aendern(() => { s.bau.punkte = []; }, 'bau', { undo: false });
+            await new Promise(f => requestAnimationFrame(f));
+            const liste = window._g.muss('#bau-liste');
+            const plan = () => [...liste.querySelectorAll('.bp-zeile:not(.bestaetigt) .knopf.primaer')]
+              .find(k => /wie geplant/.test(k.textContent));
+            plan().click();
+            await new Promise(f => setTimeout(f, 250));
+            const box = window._g.muss('#hinweisbox');
+            const r = box.getBoundingClientRect();
+            const gedeckt = [...liste.querySelectorAll('button')]
+              .filter(e => {
+                const q = e.getBoundingClientRect();
+                return q.width && q.height && q.bottom > r.top && q.top < r.bottom &&
+                  q.right > r.left && q.left < r.right && q.top >= 0 && q.bottom <= innerHeight;
+              })
+              .map(e => e.textContent.trim().slice(0, 20));
+            const text = box.textContent;
+            window.fbp.store.aendern(() => { s.bau.punkte = JSON.parse(gemerkt); }, 'bau', { undo: false });
+            return { gedeckt, text, oben: Math.round(r.top), unten: Math.round(r.bottom) };`);
+          return { gut: /bestätigt/.test(m.text) && m.gedeckt.length === 0,
+                   kurz: m.gedeckt.length ? m.gedeckt.length + ' gedeckt' : '',
+                   text: `Pille ${m.oben}–${m.unten} px` +
+                         (m.gedeckt.length ? '; deckt ' + m.gedeckt.join(', ') : ', deckt nichts') };
+        });
+      await hinweisWeg();
+    }
 
     b.abschnitt(`Fenster ${fenster}: Baumodus mit Bauleiste`);
     await karteVorn();
     await kartenoptionenZu(true);
     await hinweisWeg();
+    /* Runde 9: zugeklappt maß „Kartenoptionen ►“ 60 px mit leerer Fläche über und
+       unter einer Zeile. Der Kopf trägt seine 44 px selbst. */
+    await fall(fenster, 'Kartenoptionen zugeklappt ohne leere Fläche',
+      'Die zugeklappte Tafel „Kartenoptionen“ ist kaum höher als ihr Kopf (höchstens 48 px)',
+      async () => {
+        const m = await seite.auswerten(`
+          const t = window._g.muss('.kartenoptionen').getBoundingClientRect();
+          const k = window._g.muss('.kartenoptionen .ko-kopf').getBoundingClientRect();
+          return { tafel: Math.round(t.height), kopf: Math.round(k.height) };`);
+        return { gut: m.tafel <= 48 && m.kopf >= 44, kurz: m.tafel + ' px',
+                 text: `Tafel ${m.tafel} px, Kopf ${m.kopf} px` };
+      });
     await fall(fenster, 'Karte frei – Baumodus mit Bauleiste',
       `Freie Kartenfläche ≥ ${prozent(FREI_BAU)}`,
       async () => {
@@ -2190,6 +2315,11 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   await seite.klick('#wz-punkt-hier');
   await seite.warteAuf('!document.getElementById("punktkarte").hidden', 8000);
   await new Promise(r => setTimeout(r, 450));
+  /* Vier Meter daneben, innerhalb der Genauigkeit: an derselben Stelle (unter
+     3 m) nimmt „Punkt hier“ binnen sechs Sekunden keinen zweiten Punkt mehr
+     auf (Runde 9), der Zwilling im Blatt bleibt für die Ortung, die ein wenig
+     daneben ansetzt. */
+  await seite.standort(51.802 + 0.000036, 10.618, 7);
   await seite.klick('#wz-punkt-hier');
   await seite.warteAuf('!!document.querySelector("#punktkarte .pk-zwilling")', 8000);
   await new Promise(r => setTimeout(r, 450));
@@ -2237,6 +2367,32 @@ const seitenGriffe = await zuKleineGriffe('.seite',
   await seite.ruhe();
 
   // ------------------------------------------------------------ Querformat
+
+  b.abschnitt('Telefon quer: der Merker in der Kopfzeile nennt den Ausweg bei Speicherfehler und Vorwarnung');
+  /* Runde 9: quer stand beim Speicherfehler nur die Pille „nicht im Gerät
+     gespeichert“; der Block mit „Als Datei sichern“ liegt im Bau-Reiter, der
+     quer einen Streifen hoch und gerollt ist, und die Vorwarnung bei 80 % Belegung
+     stand nur dort. Der Merker (er sichert beim Tippen) trägt jetzt das Wort. */
+  await stelleEin(844, 390);
+  const merker = () => seite.auswerten(`
+    const e = document.getElementById('speicherstatus'); const r = e.getBoundingClientRect();
+    return { txt: getComputedStyle(e, '::before').content, breit: Math.round(r.width), hoch: Math.round(r.height),
+             im: r.width > 0 && r.left >= 0 && r.right <= innerWidth };`);
+  await seite.auswerten(`window.fbp.store.melden('speicherfehler'); return 1`);
+  await seite.ruhe();
+  const fehlerMerker = await merker();
+  b.pruefe(/Sichern/.test(fehlerMerker.txt) && fehlerMerker.im && fehlerMerker.hoch >= 44,
+    `Bei Speicherfehler nennt der Merker „Sichern“ und steht im Bild (${fehlerMerker.txt}, ${fehlerMerker.breit}×${fehlerMerker.hoch} px)`);
+  await seite.auswerten(`window.fbp.store.melden('gespeichert'); return 1`);
+  await seite.auswerten(`window.fbp.store.aendern(p => { p.fuellung = 'x'.repeat(2300000); }, 'formular');
+    window.fbp.store.speichern(); return 1`);
+  await new Promise(r => setTimeout(r, 900));
+  const warnMerker = await merker();
+  b.pruefe(/Speicher fast voll/.test(warnMerker.txt) && warnMerker.im && warnMerker.hoch >= 44,
+    `Ab 80 % Belegung nennt der Merker die Vorwarnung samt „Sichern“ (${warnMerker.txt}, ${warnMerker.breit}×${warnMerker.hoch} px)`);
+  await seite.auswerten(`window.fbp.store.aendern(p => { delete p.fuellung; }, 'formular');
+    window.fbp.store.speichern(); return 1`);
+  await new Promise(r => setTimeout(r, 900));
 
   b.abschnitt('Querformat: das Dateimenü war eine Sackgasse');
   await stelleEin(844, 390);
@@ -2336,27 +2492,35 @@ const seitenGriffe = await zuKleineGriffe('.seite',
      ineinander (gemessen 125 von 89 px). Der Dialog wird mit dem Rahmen und den
      drei Beschriftungen des echten aufgebaut – das Maß hängt an der Klasse
      `trupp-wechseln` im Inhalt und an den Fußknöpfen. */
-  b.abschnitt('Trupp wechseln: die drei Fußknöpfe laufen schmal nicht ineinander');
-  for (const [w, h] of [[320, 568], [360, 740], [390, 844], [844, 390]]) {
+  b.abschnitt('Trupp wechseln: die drei Fußknöpfe laufen nicht ineinander, „Abbrechen“ steht abgesetzt');
+  /* Neunte Runde: ab 601 px stand „Abbrechen“ links, 8 px neben „Anderer Trupp
+     übernimmt“ – quer und auf dem Tablet traf der Handschuh einen Weg, der
+     Einträge umhängt. Es steht jetzt in jeder Breite zuletzt, mit Abstand. */
+  for (const [w, h] of [[320, 568], [360, 740], [390, 844], [667, 375], [844, 390], [820, 1180]]) {
     await stelleEin(w, h);
     await seite.auswerten(`
       const ui = await import('./js/ui.js');
-      ui.dialog({ titel: 'Trupp wechseln', inhalt: '<div class="trupp-wechseln"><p>Probe</p></div>',
-        fuss: [{ text: 'Abbrechen' }, { text: 'Anderer Trupp übernimmt', tun: () => {} },
-          { text: 'Nur Namen korrigieren', tun: () => {} }] });
+      ui.dialog({ titel: 'Trupp wechseln',
+        inhalt: '<div class="trupp-wechseln trupp-wechseln-wege"><p>Probe</p></div>',
+        fuss: [{ text: 'Anderer Trupp übernimmt', tun: () => {} },
+          { text: 'Nur Namen korrigieren', tun: () => {} }, { text: 'Abbrechen' }] });
       await new Promise(r => setTimeout(r, 450)); return true;`);
     const knoepfe = await seite.auswerten(`return [...document.querySelectorAll('#dialog-fuss .knopf')]
       .map(k => { const r = k.getBoundingClientRect();
         return { t: k.textContent, ueber: k.scrollWidth > k.clientWidth, h: Math.round(r.height),
-          y: Math.round(r.top), x: Math.round(r.left), b: Math.round(r.width) }; })`);
+          y: Math.round(r.top), x: Math.round(r.left), b: Math.round(r.width),
+          unten: Math.round(r.bottom), rechts: Math.round(r.right) }; })`);
     b.pruefe(knoepfe.length === 3 && knoepfe.every(k => !k.ueber),
       `${w}×${h}: kein Fußknopf läuft über (${knoepfe.map(k => k.b).join('/')} px breit)`);
     b.pruefe(knoepfe.every(k => k.h >= 44), `${w}×${h}: jeder Fußknopf trägt Handschuhmaß`);
+    const [eins, zwei, ab] = knoepfe;
+    const untereinander = ab.y > zwei.y + zwei.h - 4;
     if (w < 600 && h > 500) {
-      b.pruefe(knoepfe.every((k, i) => i === 0 || knoepfe[i - 1].y !== k.y || knoepfe[i - 1].t === 'Abbrechen'),
-        `${w}×${h}: die Wege stehen untereinander`);
-      b.pruefe(knoepfe[0].y > knoepfe[2].y, `${w}×${h}: „Abbrechen“ steht zuletzt`);
+      b.pruefe(knoepfe.every((k, i) => i === 0 || k.y > knoepfe[i - 1].y), `${w}×${h}: die Wege stehen untereinander`);
     }
+    b.pruefe(ab.t === 'Abbrechen' && (untereinander ? ab.y - zwei.unten >= 12 : ab.x - zwei.rechts >= 24),
+      `${w}×${h}: „Abbrechen“ steht zuletzt, ${untereinander ? ab.y - zwei.unten : ab.x - zwei.rechts} px ` +
+      `vom Nachbarn ${untereinander ? 'darüber' : 'daneben'} (mindestens ${untereinander ? 12 : 24})`);
     await seite.taste('Escape');
     await seite.ruhe();
   }
