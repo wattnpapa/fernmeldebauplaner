@@ -141,8 +141,8 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Grundrisse maßstäblich auf der Karte: FüKomKW und Anhänger FüLa jeweils aufgebaut,
   Zelt SG 300, der Aufbauplatz der Führungsstelle (ca. 25 × 15 m) und freie Flächen
   mit eigenen Maßen – die Maße nach dem Erkundungsblatt „Aufbauplatz THW-FüSt“
-- Dazu Container mit 10, 20 und 40 Fuß (ISO 668), Toilettenkabinen und ein
-  umlaufender Bauzaun, dessen Füße im Abstand der 3,50-m-Felder stehen
+- Dazu Container mit 10, 20 und 40 Fuß (ISO 668), Toilettenkabinen und Bauzaun,
+  umlaufend oder als gerade Reihe, die Füße im Abstand der 3,50-m-Felder
 - Die beiden Aufstellungen des Blatts (Fahrzeug, ein oder zwei Anhänger, Zelt) mit
   einem Klick Kante an Kante; sie bleiben beim Verschieben und Drehen zusammen
 - Stilisierte Draufsicht je Art, Drehen am Griff auf der Karte, Maße und Farbe je Fläche

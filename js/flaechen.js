@@ -130,8 +130,26 @@ const FIGUREN = {
     return `<rect x="0" y="0" width="${b}" height="${l}" class="fl-zaunlinie"/>` +
       stoesse(b, x => laengs(x, 0) + laengs(x, l)) +
       stoesse(l, y => quer(0, y) + quer(b, y));
+  },
+  /* Die Reihe als Linie mit einem Querstrich je Fuß. `hoehe` ist die
+     gezeichnete Höhe in Metern, die über die wirkliche Tiefe hinausgehen
+     kann – die Füße reichen in diesen Rand hinein, sonst wären sie bei 0,7 m
+     Tiefe nur ein Bildpunkt. */
+  bauzaun_reihe: (b, l, hoehe = l) => {
+    const mitte = l / 2, fuss = Math.max(l, hoehe * 0.7);
+    const n = Math.max(1, Math.round(b / ZAUNFELD));
+    let fuesse = '';
+    for (let i = 0; i <= n; i++) {
+      const x = b * i / n;
+      fuesse += `<line x1="${x}" y1="${mitte - fuss / 2}" x2="${x}" y2="${mitte + fuss / 2}" class="fl-linie"/>`;
+    }
+    return `<line x1="0" y1="${mitte}" x2="${b}" y2="${mitte}" class="fl-zaunlinie"/>` + fuesse;
   }
 };
+
+/* Mindesthöhe einer Bauzaunreihe in Bildpunkten: so viel braucht ein Finger,
+   um sie zu treffen, und das Auge, um sie von einer Straßenkante zu trennen. */
+export const REIHE_MIN_PX = 16;
 
 /* Container aller drei Längen: Wellblech als Querrippen etwa alle zwei Meter,
    an der unteren Stirnseite die Flügeltür mit Mittelstoß. Die Rippen hängen
@@ -160,10 +178,14 @@ export function flaechenSVG(f, px, o = {}) {
   const art = flaechenartById(f.art);
   const b = Math.max(0.1, Number(f.breite) || art.breite);
   const l = Math.max(0.1, Number(f.laenge) || art.laenge);
-  const figur = FIGUREN[art.id] ? FIGUREN[art.id](b, l) : '';
+  /* Eine Reihe wird höher gezeichnet, als sie ist (REIHE_MIN_PX); die Figur
+     steht dann in der Mitte dieses Streifens. */
+  const h = art.reihe ? Math.max(l, (o.mindestPx || REIHE_MIN_PX) / px) : l;
+  const oben = (h - l) / 2;
+  const figur = FIGUREN[art.id] ? FIGUREN[art.id](b, l, h) : '';
   const farbe = o.sw ? '#000' : (f.farbe || '#003399');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${b} ${l}"
-    width="${b * px}" height="${l * px}" class="fl-svg${art.umriss ? ' fl-umriss' : ''}${art.zaun ? ' fl-zaun' : ''}"
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${-oben} ${b} ${h}"
+    width="${b * px}" height="${h * px}" class="fl-svg${art.umriss ? ' fl-umriss' : ''}${art.zaun ? ' fl-zaun' : ''}"
     style="--farbe:${farbe};--strich:${o.strich || 1}" role="img"
     aria-label="${escapeHtml(flaechenTitel(f))}"
     ><rect x="0" y="0" width="${b}" height="${l}" class="fl-feld"/>${figur}</svg>`;
@@ -173,7 +195,8 @@ export function flaechenSVG(f, px, o = {}) {
 export function flaechenVorschau(artId, kante = 28) {
   const art = flaechenartById(artId);
   const px = kante / Math.max(art.breite, art.laenge);
-  return flaechenSVG({ art: art.id, breite: art.breite, laenge: art.laenge, farbe: '#003399' }, px);
+  return flaechenSVG({ art: art.id, breite: art.breite, laenge: art.laenge, farbe: '#003399' }, px,
+    { mindestPx: Math.max(6, kante / 4) });
 }
 
 // ---------------------------------------------------------------- Kartenebene
@@ -305,8 +328,11 @@ export class FlaechenLayer {
 
   _icon(f, px) {
     const gewaehlt = f.id === this.auswahl;
-    const bPx = f.breite * px, lPx = f.laenge * px;
-    if (Math.max(bPx, lPx) < MARKE_AB) {
+    const bPx = f.breite * px;
+    /* Die Marke richtet sich nach der wirklichen Größe – mit der
+       Mindesthöhe der Reihe gerechnet, bliebe ein Zaun bis in die
+       Übersichtskarte hinein ein Strich. */
+    if (Math.max(bPx, f.laenge * px) < MARKE_AB) {
       return L.divIcon({
         className: 'fbp-flaeche-icon',
         html: `<span class="fl-marke${gewaehlt ? ' gewaehlt' : ''}" style="--farbe:${this.sw ? '#000' : (f.farbe || '#003399')}"></span>`,
@@ -316,6 +342,7 @@ export class FlaechenLayer {
     /* Das Feld des Markers ist das umschriebene Rechteck der gedrehten Figur –
        Leaflet setzt den Anker auf seine Mitte, die Figur dreht sich darin um
        dieselbe Mitte. */
+    const lPx = flaechenartById(f.art).reihe ? Math.max(f.laenge * px, REIHE_MIN_PX) : f.laenge * px;
     const g = winkel(f) * Math.PI / 180;
     const feldB = Math.ceil(Math.abs(bPx * Math.cos(g)) + Math.abs(lPx * Math.sin(g)));
     const feldL = Math.ceil(Math.abs(bPx * Math.sin(g)) + Math.abs(lPx * Math.cos(g)));

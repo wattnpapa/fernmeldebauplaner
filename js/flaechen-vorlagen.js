@@ -31,7 +31,12 @@ export const FLAECHENARTEN = [
      Reihe hätte nur die Tiefe der Füße und wäre auf der Karte weder zu sehen
      noch zu greifen. Vorgabe sind 7 × 4 Felder zu 3,50 m; wer die Kanten
      ändert, bekommt die Füße im passenden Abstand neu verteilt. */
-  { id: 'bauzaun',      name: 'Bauzaun umlaufend (Feld 3,50 m)',  kurz: 'Bauzaun',          breite: 24.5, laenge: 14,    gruppe: 'lager', zaun: true }
+  { id: 'bauzaun',      name: 'Bauzaun umlaufend (Feld 3,50 m)',  kurz: 'Bauzaun',          breite: 24.5, laenge: 14,    gruppe: 'lager', zaun: true },
+  /* Die gerade Reihe für Absperrungen quer über Weg oder Zufahrt. Ihre Tiefe
+     ist die des Betonfußes; damit sie trotzdem zu sehen und zu greifen ist,
+     zeichnet die Karte sie mindestens fingerbreit (`reihe`, flaechen.js) –
+     die Maße im Eintrag bleiben die wirklichen. Vorgabe sind 10 Felder. */
+  { id: 'bauzaun_reihe', name: 'Bauzaun gerade (Feld 3,50 m)',    kurz: 'Bauzaun',          breite: 35,   laenge: 0.7,   gruppe: 'lager', zaun: true, reihe: true }
 ];
 
 /* Die freie Fläche fängt alles auf, was diese Fassung nicht kennt – mit

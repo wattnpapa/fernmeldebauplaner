@@ -10696,7 +10696,8 @@ export function hilfeDialog() {
            einzeichnen: der <b>FüKomKW</b> und der <b>Anhänger FüLa</b> jeweils
            aufgebaut, das <b>Zelt SG 300</b>, der <b>Aufbauplatz</b> der Führungsstelle
            von etwa 25 × 15 m, <b>Container</b> mit 10, 20 und 40 Fuß,
-           <b>Toilettenkabinen</b>, ein umlaufender <b>Bauzaun</b> mit Feldern zu 3,50 m
+           <b>Toilettenkabinen</b>, <b>Bauzaun</b> umlaufend oder als gerade Reihe mit
+           Feldern zu 3,50 m
            oder eine <b>freie Fläche</b> mit eigenen Maßen. Die
            beiden Aufstellungen des Erkundungsblatts – Fahrzeug, ein oder zwei
            Anhänger und Zelt – kommen mit einem Klick Kante an Kante auf die Karte.</p>
