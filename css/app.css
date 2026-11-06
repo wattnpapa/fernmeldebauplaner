@@ -4476,6 +4476,10 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
    wie das rote Feld auf dem Erkundungsblatt, damit sie nicht wie ein Fahrzeug
    wirken. */
 .fl-svg.fl-umriss .fl-feld { fill-opacity: .06; stroke-width: calc(2px * var(--strich, 1)); stroke-dasharray: 8 5; }
+/* Beim Bauzaun ist der Rand selbst das Bauteil: durchgezogen und kräftiger
+   als ein Umriss, damit er nicht für einen Aufbauplatz gehalten wird. */
+.fl-svg.fl-zaun .fl-feld { fill-opacity: .04; stroke: none; }
+.fl-svg .fl-zaunlinie { fill: none; stroke: var(--farbe); stroke-width: calc(2.2px * var(--strich, 1)); vector-effect: non-scaling-stroke; }
 .fl-svg .fl-teil { stroke: var(--farbe); stroke-width: calc(1.4px * var(--strich, 1)); vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .fl-svg .fl-voll { fill: var(--farbe); fill-opacity: .45; }
 .fl-svg .fl-leicht { fill: var(--farbe); fill-opacity: .18; }

@@ -4435,8 +4435,9 @@ export function zeichneFlaechenListe() {
     liste.appendChild(el('div', 'leer',
       `<p><b>Noch keine Fläche eingezeichnet.</b></p>
        <p>„Fläche einzeichnen“ wählen – FüKomKW, Anhänger FüLa, Zelt SG 300, den
-       Aufbauplatz der Führungsstelle oder eine freie Fläche mit eigenen Maßen –
-       und auf der Karte die Mitte anklicken. Die Fläche steht dann maßstäblich
+       Aufbauplatz der Führungsstelle, Container, Toilettenkabinen, einen
+       Bauzaun oder eine freie Fläche mit eigenen Maßen – und auf der Karte die
+       Mitte anklicken. Die Fläche steht dann maßstäblich
        da; am Griff über der Fläche lässt sie sich drehen, am Eintrag die Maße
        anpassen.</p>
        <p class="klein">Die Maße stammen aus dem Erkundungsblatt „Aufbauplatz
@@ -4603,10 +4604,12 @@ export function flaechenPalette(beiWahl) {
     name: a.name, masse: a.masse, vorlage: a,
     bild: `<span class="fl-bild fl-reihe-bild">${a.teile.map(t => flaechenVorschau(t.art, 40)).join('')}</span>`
   })));
-  gruppe('Einzelne Flächen', FLAECHENARTEN.map(a => ({
+  const einzeln = a => ({
     name: a.name, masse: masseText(a), vorlage: a,
     bild: `<span class="fl-bild">${flaechenVorschau(a.id, 44)}</span>`
-  })));
+  });
+  gruppe('Einzelne Flächen', FLAECHENARTEN.filter(a => !a.gruppe).map(einzeln));
+  gruppe('Container, Toiletten und Bauzaun', FLAECHENARTEN.filter(a => a.gruppe === 'lager').map(einzeln));
   box.appendChild(el('p', 'klein',
     `Die Fläche steht nach dem Klick auf die Karte maßstäblich dort; am Griff
      über der Fläche lässt sie sich drehen, im Eintrag die Maße ändern. Eine
@@ -10692,7 +10695,9 @@ export function hilfeDialog() {
         <p>Im Reiter <b>Flächen</b>${finger ? '' : ' (<kbd>F</kbd>)'} lassen sich Grundrisse maßstäblich
            einzeichnen: der <b>FüKomKW</b> und der <b>Anhänger FüLa</b> jeweils
            aufgebaut, das <b>Zelt SG 300</b>, der <b>Aufbauplatz</b> der Führungsstelle
-           von etwa 25 × 15 m oder eine <b>freie Fläche</b> mit eigenen Maßen. Die
+           von etwa 25 × 15 m, <b>Container</b> mit 10, 20 und 40 Fuß,
+           <b>Toilettenkabinen</b>, ein umlaufender <b>Bauzaun</b> mit Feldern zu 3,50 m
+           oder eine <b>freie Fläche</b> mit eigenen Maßen. Die
            beiden Aufstellungen des Erkundungsblatts – Fahrzeug, ein oder zwei
            Anhänger und Zelt – kommen mit einem Klick Kante an Kante auf die Karte.</p>
         <ul class="tasten-liste">

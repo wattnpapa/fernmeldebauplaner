@@ -3,7 +3,7 @@
 import { store, neueFlaeche, flaecheSichtbar, abschnittGewaehlt, aufEinerLinie } from './state.js';
 import { escapeHtml } from './strecken.js';
 import { signatur } from './signatur.js';
-import { flaechenartById } from './flaechen-vorlagen.js';
+import { flaechenartById, ZAUNFELD } from './flaechen-vorlagen.js';
 
 export { FLAECHENARTEN, AUFSTELLUNGEN, flaechenartById } from './flaechen-vorlagen.js';
 
@@ -104,8 +104,51 @@ const FIGUREN = {
     `<line x1="0" y1="0" x2="${b * 0.08}" y2="${l / 2}" class="fl-linie"/>` +
     `<line x1="0" y1="${l}" x2="${b * 0.08}" y2="${l / 2}" class="fl-linie"/>` +
     `<line x1="${b}" y1="0" x2="${b * 0.92}" y2="${l / 2}" class="fl-linie"/>` +
-    `<line x1="${b}" y1="${l}" x2="${b * 0.92}" y2="${l / 2}" class="fl-linie"/>`
+    `<line x1="${b}" y1="${l}" x2="${b * 0.92}" y2="${l / 2}" class="fl-linie"/>`,
+  container_10: container,
+  container_20: container,
+  container_40: container,
+  /* Kabine mit Dachlüfter oben und Tür unten – sonst wäre sie vom 10-Fuß-
+     Container nur an der Größe zu unterscheiden, und die verschwindet beim
+     Herauszoomen als Erstes. */
+  toilette: (b, l) =>
+    `<rect x="0" y="0" width="${b}" height="${l * 0.86}" class="fl-teil fl-voll"/>` +
+    `<rect x="${b * 0.18}" y="${l * 0.86}" width="${b * 0.64}" height="${l * 0.14}" class="fl-teil fl-leicht"/>` +
+    `<circle cx="${b * 0.5}" cy="${l * 0.3}" r="${Math.min(b, l) * 0.14}" class="fl-linie"/>`,
+  /* Umlaufend gezogener Zaun, ein Fuß an jedem Stoß. Gerechnet wird mit den
+     wirklichen Kanten: eine verlängerte Umzäunung bekommt mehr Felder und
+     nicht breitere – so lässt sich an der Zeichnung abzählen, wie viele
+     Elemente zu bestellen sind. */
+  bauzaun: (b, l) => {
+    const fuss = Math.max(0.6, Math.min(b, l) * 0.08);
+    const stoesse = (kante, nach) => {
+      const n = Math.max(1, Math.round(kante / ZAUNFELD));
+      return Array.from({ length: n + 1 }, (_, i) => nach(kante * i / n)).join('');
+    };
+    const quer = (x, y) => `<line x1="${x - fuss / 2}" y1="${y}" x2="${x + fuss / 2}" y2="${y}" class="fl-linie"/>`;
+    const laengs = (x, y) => `<line x1="${x}" y1="${y - fuss / 2}" x2="${x}" y2="${y + fuss / 2}" class="fl-linie"/>`;
+    return `<rect x="0" y="0" width="${b}" height="${l}" class="fl-zaunlinie"/>` +
+      stoesse(b, x => laengs(x, 0) + laengs(x, l)) +
+      stoesse(l, y => quer(0, y) + quer(b, y));
+  }
 };
+
+/* Container aller drei Längen: Wellblech als Querrippen etwa alle zwei Meter,
+   an der unteren Stirnseite die Flügeltür mit Mittelstoß. Die Rippen hängen
+   an der wirklichen Länge, damit der 40-Fuß-Container nicht wie ein
+   gestreckter 10-Fuß-Container aussieht. */
+function container(b, l) {
+  const tuer = Math.min(0.35, l * 0.1);
+  const rippen = Math.max(1, Math.round((l - tuer) / 2));
+  let linien = '';
+  for (let i = 1; i < rippen; i++) {
+    const y = (l - tuer) * i / rippen;
+    linien += `<line x1="${b * 0.08}" y1="${y}" x2="${b * 0.92}" y2="${y}" class="fl-linie"/>`;
+  }
+  return `<rect x="0" y="0" width="${b}" height="${l}" class="fl-teil fl-voll"/>` + linien +
+    `<rect x="0" y="${l - tuer}" width="${b}" height="${tuer}" class="fl-teil fl-leicht"/>` +
+    `<line x1="${b / 2}" y1="${l - tuer}" x2="${b / 2}" y2="${l}" class="fl-linie"/>`;
+}
 
 /**
  * Vollständiges <svg> einer Fläche. `px` ist die Kantenlänge eines Meters in
@@ -120,7 +163,7 @@ export function flaechenSVG(f, px, o = {}) {
   const figur = FIGUREN[art.id] ? FIGUREN[art.id](b, l) : '';
   const farbe = o.sw ? '#000' : (f.farbe || '#003399');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${b} ${l}"
-    width="${b * px}" height="${l * px}" class="fl-svg${art.umriss ? ' fl-umriss' : ''}"
+    width="${b * px}" height="${l * px}" class="fl-svg${art.umriss ? ' fl-umriss' : ''}${art.zaun ? ' fl-zaun' : ''}"
     style="--farbe:${farbe};--strich:${o.strich || 1}" role="img"
     aria-label="${escapeHtml(flaechenTitel(f))}"
     ><rect x="0" y="0" width="${b}" height="${l}" class="fl-feld"/>${figur}</svg>`;
