@@ -51,6 +51,15 @@ export const FLAECHENARTEN = [
     kapazitaetBeispiel: 'z. B. 22 kW, abgesichert mit 32 A',
     anschluesse: ['Schuko 230 V 16 A', 'CEE 230 V 16 A', 'CEE 400 V 16 A', 'CEE 400 V 32 A',
       'CEE 400 V 63 A', 'CEE 400 V 125 A', 'Festanschluss / Klemmen'] },
+  /* Der Verteiler ist kein Abholpunkt, sondern das Ende der Zuleitung vom
+     Abholpunkt und der Anfang der Abgänge – deshalb steht er bei den
+     Anschlüssen: zwischen beiden wird die Stromleitung als Strecke gezogen.
+     Die Größe richtet sich nach dem Eingang; die Abgänge stehen in der
+     Kapazität. */
+  { id: 'stromverteiler',     name: 'Baustromverteiler',             kurz: 'Verteiler', breite: 1, laenge: 1,
+    gruppe: 'anschluss', punkt: true, farbe: '#f57c00',
+    kapazitaetBeispiel: 'z. B. Abgänge 2× CEE 32 A, 4× CEE 16 A, 6× Schuko',
+    anschluesse: ['Eingang CEE 16 A', 'Eingang CEE 32 A', 'Eingang CEE 63 A', 'Eingang CEE 125 A'] },
   { id: 'anschluss_wasser',   name: 'Wasseranschluss (Abholpunkt)',  kurz: 'Wasser',   breite: 1, laenge: 1,
     gruppe: 'anschluss', punkt: true, farbe: '#1976d2',
     kapazitaetBeispiel: 'z. B. Trinkwasser, 400 l/min bei 4 bar',

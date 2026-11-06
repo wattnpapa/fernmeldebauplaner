@@ -10775,8 +10775,11 @@ export function hilfeDialog() {
            <b>Toilettenkabinen</b>, <b>Bauzaun</b> umlaufend oder als gerade Reihe mit
            Feldern zu 3,50 m
            oder eine <b>freie Fläche</b> mit eigenen Maßen. Dort stehen auch die
-           <b>Anschlüsse</b>: Abholpunkte für Strom und Wasser und Einleitpunkte für
-           Abwasser, jeweils mit Anschlussart und Kapazität. Die</p>
+           <b>Anschlüsse</b>: Abholpunkte für Strom und Wasser, Einleitpunkte für
+           Abwasser und <b>Baustromverteiler</b>, jeweils mit Anschlussart und
+           Kapazität. Wer beim Zeichnen einer Strecke einen Anschluss antippt, setzt
+           den Trassenpunkt genau darauf – so wird die Stromleitung vom Abholpunkt
+           zum Verteiler gezogen, „von“ und „nach“ trägt sie sich selbst ein. Die</p>
         <p>Die
            beiden Aufstellungen des Erkundungsblatts – Fahrzeug, ein oder zwei
            Anhänger und Zelt – kommen mit einem Klick Kante an Kante auf die Karte.</p>

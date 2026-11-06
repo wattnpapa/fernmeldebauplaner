@@ -146,6 +146,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
 - Anschlüsse als Symbol in fester Größe: Abholpunkte für Strom und Wasser,
   Einleitpunkte für Abwasser, jeweils mit Anschlussart (CEE, Hydrant, Kupplung …)
   und frei beschriebener Kapazität; in GeoJSON und KML als Punkt
+- Baustromverteiler als eigener Anschluss; beim Zeichnen einer Strecke rastet der
+  Trassenpunkt auf einem angetippten Anschluss ein und trägt ihn als „von“ und „nach“
+  ein – so entsteht die Stromleitung vom Abholpunkt zum Verteiler
 - Die beiden Aufstellungen des Blatts (Fahrzeug, ein oder zwei Anhänger, Zelt) mit
   einem Klick Kante an Kante; sie bleiben beim Verschieben und Drehen zusammen
 - Stilisierte Draufsicht je Art, Drehen am Griff auf der Karte, Maße und Farbe je Fläche

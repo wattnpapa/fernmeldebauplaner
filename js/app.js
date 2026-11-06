@@ -3,7 +3,7 @@
 import {
   store, neueStrecke, neuerPunkt, neuesZeichen, abschnittById, abschnitteGeordnet, abschnittPfad,
   dateisicherung, istGehaltvoll, ladeAlle, migrieren, planKennung, baustandDerPlanung,
-  SCHEMA, stammtVonNeuerer, speicherBelegung, SPEICHER_KONTINGENT
+  SCHEMA, stammtVonNeuerer, speicherBelegung, SPEICHER_KONTINGENT, kabelById
 } from './state.js';
 import {
   erstelleKarte, setzeBasiskarte, setzeVorrang, kartenNachladen, kartenGrobSichtbar, BASISKARTEN
@@ -12,7 +12,7 @@ import { sichtStarten, sichtSetzen, istEinfach, gemerkteSicht } from './sicht.js
 import { bestand as kachelBestand, ZOOM_BIS } from './kacheln.js';
 import { StreckenLayer, escapeHtml, ZEICHNEN_AB_ZOOM } from './strecken.js';
 import { ZeichenLayer } from './zeichen.js';
-import { FlaechenLayer } from './flaechen.js';
+import { FlaechenLayer, flaechenTitel, flaechenartById } from './flaechen.js';
 import { RelaisLayer } from './relais.js';
 import { BilderLayer, uebernahmeLaeuft } from './bilder.js';
 import { aufraeumen as bilderAufraeumen } from './bildspeicher.js';
@@ -214,7 +214,40 @@ const fl = new FlaechenLayer(karte, {
     modusAnzeigen();
     zeichneSeite();
   },
-  aufAenderung: () => {}
+  aufAenderung: () => {},
+  /* Ein angetippter Anschluss wird beim Zeichnen zum Trassenpunkt auf seiner
+     Mitte. Der erste trägt sich als „von“ ein, jeder weitere als „nach“ –
+     aber nur, solange dort nichts von Hand steht. */
+  fangen: f => {
+    if (!sl.zeichenModus) return false;
+    const name = flaechenTitel(f);
+    const titel = new Set((store.projekt.flaechen || [])
+      .filter(g => flaechenartById(g.art).punkt).map(flaechenTitel));
+    /* Beginnt eine neue Strecke an Abholpunkt oder Verteiler, ist sie eine
+       Stromleitung. Umgestellt wird nur beim ersten Punkt: eine Fernmelde-
+       trasse, die unterwegs an einem Verteiler vorbeiführt, bleibt, was sie ist.
+       Die Vorgaben ziehen mit wie beim Umstellen im Eintrag. */
+    const strom = ['anschluss_strom', 'stromverteiler'].includes(f.art);
+    let umgestellt = false;
+    sl.punktAnfuegen(f.lat, f.lng, s => {
+      if (!s.punkte.length) {
+        if (!s.von) s.von = name;
+        if (strom && s.kabeltyp !== 'strom') {
+          const alt = kabelById(s.kabeltyp), neu = kabelById('strom');
+          s.kabeltyp = 'strom';
+          if (s.trommellaenge === alt.trommel) s.trommellaenge = neu.trommel;
+          if (s.zuschlag === alt.zuschlag) s.zuschlag = neu.zuschlag;
+          if (s.verlegeleistung === alt.leistung) s.verlegeleistung = neu.leistung;
+          umgestellt = true;
+        }
+      } else if (!s.nach || titel.has(s.nach)) s.nach = name;
+    });
+    modusAnzeigen();
+    hinweis(umgestellt
+      ? `Punkt auf „${name}“ gesetzt – die Strecke ist jetzt eine Stromleitung.`
+      : `Punkt auf „${name}“ gesetzt.`);
+    return true;
+  }
 });
 
 /* Die Relaisstellen liegen als eigene Ebene neben Zeichen und Flächen: sie

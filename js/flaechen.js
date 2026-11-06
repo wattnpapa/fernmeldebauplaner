@@ -70,6 +70,8 @@ export function flaechenWert(f) {
 const ANSCHLUSS_ZEICHEN = {
   anschluss_strom:
     '<path d="M13.2 3 6.5 13.4h4.8L10.4 21l7.1-10.6h-4.9z" class="an-zeichen"/>',
+  stromverteiler:
+    '<path d="M12.9 6.2 8.3 13.1h3.2l-.6 4.9 4.8-7h-3.3z" class="an-zeichen"/>',
   anschluss_wasser:
     '<path d="M12 3.6s-5.6 7-5.6 10.8a5.6 5.6 0 0 0 11.2 0C17.6 10.6 12 3.6 12 3.6z" class="an-zeichen"/>',
   anschluss_abwasser:
@@ -79,10 +81,13 @@ const ANSCHLUSS_ZEICHEN = {
 
 /** Das Symbol eines Anschlusses als <svg> mit `kante` Bildpunkten. */
 export function anschlussSVG(artId, farbe, kante = 28) {
-  const eckig = artId === 'anschluss_abwasser';
-  const grund = eckig
+  /* Der Verteiler ist eine Raute: im Schwarz-Weiß-Druck muss er sich vom
+     Abholpunkt unterscheiden, an dem dasselbe Blitzzeichen steht. */
+  const grund = artId === 'anschluss_abwasser'
     ? '<rect x="1.5" y="1.5" width="21" height="21" rx="3" class="an-grund"/>'
-    : '<circle cx="12" cy="12" r="10.5" class="an-grund"/>';
+    : artId === 'stromverteiler'
+      ? '<path d="M12 .8 23.2 12 12 23.2.8 12z" class="an-grund"/>'
+      : '<circle cx="12" cy="12" r="10.5" class="an-grund"/>';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${kante}" height="${kante}"
     class="an-svg" style="--farbe:${farbe}" aria-hidden="true">${grund}${ANSCHLUSS_ZEICHEN[artId] || ''}</svg>`;
 }
@@ -267,6 +272,11 @@ export class FlaechenLayer {
     this.sw = !!opt.sw;
     this.strichFaktor = opt.strichFaktor || 1;
     this.symbolFaktor = opt.symbolFaktor || 1;
+    /* Beim Zeichnen einer Strecke ist ein Anschluss ein Ziel und kein Eintrag
+       zum Bearbeiten: `fangen` bekommt ihn und sagt, ob es ihn als
+       Trassenpunkt genommen hat. Sonst landete der Tipp in der Auswahl, und
+       die Leitung endete einen Fingerbreit neben dem Verteiler. */
+    this.fangen = opt.fangen || (() => false);
     /* Abschnittsregeln wie bei den Zeichen: eingeschränkt zeigt die Ebene die
        Flächen des Abschnitts und die nicht zugeteilten; im Druck entscheidet
        die Auswahl und nicht das Auge des Abschnitts auf der Arbeitskarte. */
@@ -434,7 +444,11 @@ export class FlaechenLayer {
     this._marker.set(f.id, m);
     if (!this.interaktiv) return;
 
-    m.on('click', e => { L.DomEvent.stop(e); this.waehle(f.id); });
+    m.on('click', e => {
+      L.DomEvent.stop(e);
+      if (flaechenartById(f.art).punkt && this.fangen(f)) return;
+      this.waehle(f.id);
+    });
     m.bindTooltip(
       `<b>${escapeHtml(flaechenTitel(f))}</b><br>${escapeHtml(flaechenartById(f.art).name)}` +
       (flaechenWert(f) ? ` · ${escapeHtml(flaechenWert(f))}` : '') +

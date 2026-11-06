@@ -1016,11 +1016,14 @@ export class StreckenLayer {
 
   /* Öffentlich, nicht nur Klickfolge: die Koordinatensuche fügt beim Zeichnen
      exakt durchgegebene Angaben an – der Tastaturweg zum Punktesetzen. */
-  punktAnfuegen(lat, lng) {
+  punktAnfuegen(lat, lng, dazu = null) {
     if (!this.zeichenModus) return false;
     const s = store.strecke(this.zeichenModus);
     if (!s) return false;
     store.aendern(() => {
+      /* `dazu` ändert die Strecke im selben Schritt – ein Rückgängig nimmt
+         dann Punkt und Eintrag zusammen zurück und nicht nur eines. */
+      if (dazu) dazu(s);
       s.punkte.push(neuerPunkt(lat, lng));
       this._artenAktualisieren(s);
     }, 'strecke');
