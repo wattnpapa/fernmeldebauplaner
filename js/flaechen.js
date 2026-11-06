@@ -48,6 +48,51 @@ export function masseText(f) {
 
 export const flaechenTitel = f => f.name || flaechenartById(f.art).kurz;
 
+/** Anschlussart und Kapazität eines Anschlusses in einer Zeile. */
+export const anschlussText = f => [f.anschluss, f.kapazitaet].map(t => (t || '').trim()).filter(Boolean).join(' · ');
+
+/* Was in der Liste neben dem Titel steht: bei Flächen die Maße, bei
+   Anschlüssen die Kapazität, sonst der Anschluss. Gekürzt, weil die Zeile
+   sonst den Namen verdrängt – die vollen Angaben stehen im Eintrag und auf
+   der Karte. */
+export function flaechenWert(f) {
+  if (!flaechenartById(f.art).punkt) return masseText(f);
+  const t = ((f.kapazitaet || '').trim() || (f.anschluss || '').trim());
+  return t.length > 24 ? t.slice(0, 23).trimEnd() + '…' : t;
+}
+
+// ---------------------------------------------------------------- Anschlüsse
+
+/* Ein Anschluss hat keine Ausdehnung, die sich zu zeichnen lohnte – er steht
+   in fester Größe da, wie ein taktisches Zeichen. Abholpunkte sind rund,
+   der Einleitpunkt eckig: im Schwarz-Weiß-Druck fehlt die Farbe, und Wasser
+   holen und Abwasser einleiten dürfen dort nicht verwechselt werden. */
+const ANSCHLUSS_ZEICHEN = {
+  anschluss_strom:
+    '<path d="M13.2 3 6.5 13.4h4.8L10.4 21l7.1-10.6h-4.9z" class="an-zeichen"/>',
+  anschluss_wasser:
+    '<path d="M12 3.6s-5.6 7-5.6 10.8a5.6 5.6 0 0 0 11.2 0C17.6 10.6 12 3.6 12 3.6z" class="an-zeichen"/>',
+  anschluss_abwasser:
+    '<path d="M12 3.2s-3.9 4.8-3.9 7.4a3.9 3.9 0 0 0 7.8 0c0-2.6-3.9-7.4-3.9-7.4z" class="an-zeichen"/>' +
+    '<path d="M12 15.6v3.6m-2-1.8 2 2 2-2M6.5 20.6h11" class="an-strich"/>'
+};
+
+/** Das Symbol eines Anschlusses als <svg> mit `kante` Bildpunkten. */
+export function anschlussSVG(artId, farbe, kante = 28) {
+  const eckig = artId === 'anschluss_abwasser';
+  const grund = eckig
+    ? '<rect x="1.5" y="1.5" width="21" height="21" rx="3" class="an-grund"/>'
+    : '<circle cx="12" cy="12" r="10.5" class="an-grund"/>';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${kante}" height="${kante}"
+    class="an-svg" style="--farbe:${farbe}" aria-hidden="true">${grund}${ANSCHLUSS_ZEICHEN[artId] || ''}</svg>`;
+}
+
+/* Ab dieser Zoomstufe steht die Beschriftung neben dem Symbol. Darunter
+   bleibt nur das Symbol – in der Übersicht würden sich die Angaben mehrerer
+   Anschlüsse eines Aufbauplatzes gegenseitig zudecken. */
+const ANSCHLUSS_TEXT_AB = 16;
+const ANSCHLUSS_KANTE = 28;
+
 // ---------------------------------------------------------------- Zeichnung
 
 /* Jede Art hat eine stilisierte Draufsicht in Metern, damit sie auf der Karte
@@ -194,6 +239,7 @@ export function flaechenSVG(f, px, o = {}) {
 /** Kleine Vorschau einer Art für Liste und Auswahl. */
 export function flaechenVorschau(artId, kante = 28) {
   const art = flaechenartById(artId);
+  if (art.punkt) return anschlussSVG(art.id, art.farbe, Math.round(kante * 0.8));
   const px = kante / Math.max(art.breite, art.laenge);
   return flaechenSVG({ art: art.id, breite: art.breite, laenge: art.laenge, farbe: '#003399' }, px,
     { mindestPx: Math.max(6, kante / 4) });
@@ -220,6 +266,7 @@ export class FlaechenLayer {
     this.aufAenderung = opt.aufAenderung || (() => {});
     this.sw = !!opt.sw;
     this.strichFaktor = opt.strichFaktor || 1;
+    this.symbolFaktor = opt.symbolFaktor || 1;
     /* Abschnittsregeln wie bei den Zeichen: eingeschränkt zeigt die Ebene die
        Flächen des Abschnitts und die nicht zugeteilten; im Druck entscheidet
        die Auswahl und nicht das Auge des Abschnitts auf der Arbeitskarte. */
@@ -322,12 +369,30 @@ export class FlaechenLayer {
     for (const f of this.gezeichnete()) this._flaeche(f, 1 / meterJePixel(f.lat, zoom));
     if (this.interaktiv && this.auswahl) {
       const f = store.projekt.flaechen.find(x => x.id === this.auswahl);
-      if (f && this._marker.has(f.id)) this._drehgriff(f);
+      if (f && this._marker.has(f.id) && !flaechenartById(f.art).punkt) this._drehgriff(f);
     }
+  }
+
+  _anschlussIcon(f, gewaehlt) {
+    const farbe = this.sw ? '#000' : (f.farbe || flaechenartById(f.art).farbe);
+    const text = anschlussText(f);
+    const beschriftet = this.karte.getZoom() >= ANSCHLUSS_TEXT_AB;
+    const kante = Math.round(ANSCHLUSS_KANTE * this.symbolFaktor);
+    const html = `<div class="an-wrap${gewaehlt ? ' gewaehlt' : ''}" style="--an-faktor:${this.symbolFaktor}">` +
+      anschlussSVG(f.art, farbe, kante) +
+      (beschriftet
+        ? `<span class="an-label"><b>${escapeHtml(flaechenTitel(f))}</b>` +
+          (text ? `<small>${escapeHtml(text)}</small>` : '') + '</span>'
+        : '') + '</div>';
+    return L.divIcon({
+      className: 'fbp-flaeche-icon', html,
+      iconSize: [kante, kante], iconAnchor: [kante / 2, kante / 2]
+    });
   }
 
   _icon(f, px) {
     const gewaehlt = f.id === this.auswahl;
+    if (flaechenartById(f.art).punkt) return this._anschlussIcon(f, gewaehlt);
     const bPx = f.breite * px;
     /* Die Marke richtet sich nach der wirklichen Größe – mit der
        Mindesthöhe der Reihe gerechnet, bliebe ein Zaun bis in die
@@ -371,7 +436,8 @@ export class FlaechenLayer {
 
     m.on('click', e => { L.DomEvent.stop(e); this.waehle(f.id); });
     m.bindTooltip(
-      `<b>${escapeHtml(flaechenTitel(f))}</b><br>${escapeHtml(flaechenartById(f.art).name)} · ${masseText(f)}` +
+      `<b>${escapeHtml(flaechenTitel(f))}</b><br>${escapeHtml(flaechenartById(f.art).name)}` +
+      (flaechenWert(f) ? ` · ${escapeHtml(flaechenWert(f))}` : '') +
       (f.bemerkung ? `<br>${escapeHtml(f.bemerkung)}` : ''),
       { direction: 'top', className: 'fbp-tooltip', offset: [0, -8] }
     );

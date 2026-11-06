@@ -15,7 +15,7 @@ import { querungsartById, bauweiseById, querungsMinuten } from './vorschrift.js'
 import { kmlLesen, kmlSchreiben, kmlAusKMZ, istKMZ, alsText } from './kml.js';
 import { istBaumeldung, alsBaumeldung, neuereMeldungsFassung, neuereMeldungFehler } from './teilen.js';
 import { alsDatenUrls, ausDatei as bilderAusDatei } from './bildspeicher.js';
-import { flaechenEcken, flaechenTitel, flaechenartById, masseText } from './flaechen.js';
+import { flaechenEcken, flaechenTitel, flaechenartById, masseText, anschlussText } from './flaechen.js';
 import { relaisTitel, relaisKurz } from './relais.js';
 import { bosBandById, gegenstelleById, strahlermasse, strahlerText } from './bosfunk.js';
 
@@ -512,6 +512,20 @@ export function geoJSON(nurStrecke = null) {
        jedem GIS so aus wie hier; Maße und Drehung stehen dazu in den
        Eigenschaften, damit sich der Grundriss auch nachrechnen lässt. */
     for (const f of p.flaechen || []) {
+      /* Ein Anschluss ist ein Punkt – als Polygon käme er mit seinem
+         Platzhaltermaß von einem Meter an und sähe aus wie ein Grundriss. */
+      if (flaechenartById(f.art).punkt) {
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [f.lng, f.lat] },
+          properties: {
+            name: flaechenTitel(f), art: flaechenartById(f.art).name,
+            anschluss: f.anschluss, kapazitaet: f.kapazitaet,
+            bemerkung: f.bemerkung, mgrs: toMGRS(f.lat, f.lng, 5), 'marker-color': f.farbe
+          }
+        });
+        continue;
+      }
       const ecken = flaechenEcken(f).map(([lat, lng]) => [lng, lat]);
       features.push({
         type: 'Feature',
@@ -637,14 +651,23 @@ function zeichenOrdner(zeichen, farbe) {
 function flaechenOrdner(flaechen) {
   return {
     name: 'Flächen', offen: false,
-    eintraege: flaechen.map(f => ({
-      art: 'flaeche',
-      name: flaechenTitel(f),
-      farbe: f.farbe,
-      sichtbar: f.sichtbar,
-      koordinaten: flaechenEcken(f),
-      beschreibung: [flaechenartById(f.art).name, masseText(f), `MGRS ${toMGRS(f.lat, f.lng, 5)}`, f.bemerkung]
-    }))
+    eintraege: flaechen.map(f => flaechenartById(f.art).punkt
+      ? {
+        art: 'punkt',
+        name: flaechenTitel(f),
+        farbe: f.farbe,
+        sichtbar: f.sichtbar,
+        lat: f.lat, lng: f.lng,
+        beschreibung: [flaechenartById(f.art).name, anschlussText(f), `MGRS ${toMGRS(f.lat, f.lng, 5)}`, f.bemerkung]
+      }
+      : {
+        art: 'flaeche',
+        name: flaechenTitel(f),
+        farbe: f.farbe,
+        sichtbar: f.sichtbar,
+        koordinaten: flaechenEcken(f),
+        beschreibung: [flaechenartById(f.art).name, masseText(f), `MGRS ${toMGRS(f.lat, f.lng, 5)}`, f.bemerkung]
+      })
   };
 }
 

@@ -4493,6 +4493,23 @@ body.nacht .bz-marke.bz-neu { background: var(--thw-text); border-color: var(--t
   font-size: 11px; font-weight: 650; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.25);
   pointer-events: none;
 }
+/* Anschlüsse stehen in fester Größe wie ein taktisches Zeichen; die
+   Beschriftung hängt rechts daneben und fängt keinen Tipp ab, damit ein
+   Anschluss neben einem Container nicht dessen Griff zudeckt. */
+.an-wrap { position: relative; width: calc(28px * var(--an-faktor, 1)); height: calc(28px * var(--an-faktor, 1)); }
+.an-svg { display: block; overflow: visible; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+.an-svg .an-grund { fill: var(--farbe); stroke: var(--flaeche); stroke-width: 1.6; }
+.an-svg .an-zeichen { fill: var(--flaeche); }
+.an-svg .an-strich { fill: none; stroke: var(--flaeche); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.an-wrap.gewaehlt .an-svg { outline: 2px solid var(--thw-text); outline-offset: 2px; border-radius: 50%; }
+.an-label {
+  position: absolute; left: calc(32px * var(--an-faktor, 1)); top: 50%; transform: translateY(-50%);
+  background: rgba(255,255,255,.92); border-radius: 3px; padding: 1px 5px;
+  font-size: calc(11px * var(--an-faktor, 1)); line-height: 1.25; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  pointer-events: none;
+}
+.an-label b { display: block; font-weight: 650; }
+.an-label small { display: block; font-size: calc(10.5px * var(--an-faktor, 1)); color: var(--text); }
 /* Herausgezoomt bleibt eine kleine Marke in der Farbe der Fläche – eckig, wie
    der Grundriss, und nicht rund wie ein Trassenpunkt. */
 .fl-marke {

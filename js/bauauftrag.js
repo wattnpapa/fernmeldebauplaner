@@ -1794,7 +1794,11 @@ function flaechenEbene(karte, mass, sw, nurAbschnitt, opt, nurAbschnitte) {
     interaktiv: false, sw, abschnittSchaltet: false, nurAbschnitt, nurAbschnitte,
     /* Die Ebene bemisst mit diesem Faktor ausschließlich Striche – die
        gewählte Stärke geht deshalb hier gleich mit ein. */
-    strichFaktor: strichFaktor(mass) * strichbreite(opt)
+    strichFaktor: strichFaktor(mass) * strichbreite(opt),
+    /* Anschlüsse stehen in fester Größe wie die taktischen Zeichen und
+       brauchen deshalb denselben Faktor wie die Karte selbst, ohne die
+       gewählte Strichstärke – sonst schrumpften sie auf dem Blatt zum Punkt. */
+    symbolFaktor: strichFaktor(mass)
   });
   ebene.zeichne();
   return ebene;

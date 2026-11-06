@@ -1,4 +1,4 @@
-// flaechen-vorlagen.js – Maße der Flächenvorlagen: Fahrzeuge, Zelt, Container, Aufbauplatz
+// flaechen-vorlagen.js – Flächenvorlagen: Fahrzeuge, Zelt, Container, Aufbauplatz, Anschlüsse
 
 /* Eigene Datei ohne Leaflet und ohne Store: das Datenmodell (state.js) braucht
    die Maße für neue Einträge und die Migration, die Kartenebene (flaechen.js)
@@ -36,7 +36,31 @@ export const FLAECHENARTEN = [
      ist die des Betonfußes; damit sie trotzdem zu sehen und zu greifen ist,
      zeichnet die Karte sie mindestens fingerbreit (`reihe`, flaechen.js) –
      die Maße im Eintrag bleiben die wirklichen. Vorgabe sind 10 Felder. */
-  { id: 'bauzaun_reihe', name: 'Bauzaun gerade (Feld 3,50 m)',    kurz: 'Bauzaun',          breite: 35,   laenge: 0.7,   gruppe: 'lager', zaun: true, reihe: true }
+  { id: 'bauzaun_reihe', name: 'Bauzaun gerade (Feld 3,50 m)',    kurz: 'Bauzaun',          breite: 35,   laenge: 0.7,   gruppe: 'lager', zaun: true, reihe: true },
+
+  /* Anschlüsse sind Punkte und keine Grundrisse: wo Strom und Wasser abgeholt
+     und Abwasser eingeleitet werden darf. Sie laufen trotzdem als Flächenart,
+     weil sie dasselbe brauchen wie eine Fläche – Abschnitt, Farbe, Auge,
+     Druck, Export und Link – und eine zweite Objektart all das ein zweites
+     Mal verlangt hätte. `punkt` schaltet Maße, Drehung und Maßstab ab; die
+     Maße unten sind nur der Platzhalter, mit dem Ecken und Ausschnitt rechnen.
+     Die Liste der Anschlüsse ist eine Auswahl, keine Vorschrift: was am Ort
+     tatsächlich da ist, gehört dann in die Kapazität oder die Bemerkung. */
+  { id: 'anschluss_strom',    name: 'Stromanschluss (Abholpunkt)',   kurz: 'Strom',    breite: 1, laenge: 1,
+    gruppe: 'anschluss', punkt: true, farbe: '#f57c00',
+    kapazitaetBeispiel: 'z. B. 22 kW, abgesichert mit 32 A',
+    anschluesse: ['Schuko 230 V 16 A', 'CEE 230 V 16 A', 'CEE 400 V 16 A', 'CEE 400 V 32 A',
+      'CEE 400 V 63 A', 'CEE 400 V 125 A', 'Festanschluss / Klemmen'] },
+  { id: 'anschluss_wasser',   name: 'Wasseranschluss (Abholpunkt)',  kurz: 'Wasser',   breite: 1, laenge: 1,
+    gruppe: 'anschluss', punkt: true, farbe: '#1976d2',
+    kapazitaetBeispiel: 'z. B. Trinkwasser, 400 l/min bei 4 bar',
+    anschluesse: ['Unterflurhydrant (Standrohr)', 'Überflurhydrant', 'Zapfstelle / Wasserhahn',
+      'GEKA-Kupplung', 'C-Kupplung', 'B-Kupplung', 'Wasserbehälter'] },
+  { id: 'anschluss_abwasser', name: 'Abwasser-Einleitpunkt',         kurz: 'Abwasser', breite: 1, laenge: 1,
+    gruppe: 'anschluss', punkt: true, farbe: '#5d4037',
+    kapazitaetBeispiel: 'z. B. 2 m³/h, nur Grauwasser',
+    anschluesse: ['Schmutzwasserkanal (Schacht)', 'Mischwasserkanal (Schacht)',
+      'Sammelgrube / Behälter', 'Annahmestelle Kläranlage'] }
 ];
 
 /* Die freie Fläche fängt alles auf, was diese Fassung nicht kennt – mit

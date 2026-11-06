@@ -12,7 +12,7 @@ import {
 } from './bosfunk.js';
 import { gueltigerUmkreis } from './ausbreitung.js';
 
-export const SCHEMA = 20;
+export const SCHEMA = 21;
 const KEY_PROJEKTE = 'fbp.projekte.v1';
 const KEY_AKTIV    = 'fbp.aktiv.v1';
 const KEY_VERLAUF  = 'fbp.verlauf.v1';   // Rückgängig-Verlauf, im Sitzungsspeicher
@@ -750,8 +750,12 @@ export function neueFlaeche(lat, lng, art = 'frei') {
   const vorlage = flaechenartById(art);
   return {
     id: id(), art: vorlage.id, name: '', lat, lng, drehung: 0,
-    breite: vorlage.breite, laenge: vorlage.laenge, farbe: '#003399',
-    abschnitt: null, verbund: null, bemerkung: '', sichtbar: true
+    breite: vorlage.breite, laenge: vorlage.laenge, farbe: vorlage.farbe || '#003399',
+    abschnitt: null, verbund: null, bemerkung: '', sichtbar: true,
+    /* Nur bei Anschlüssen belegt (Schema 21): die Art der Kupplung oder
+       Steckdose und, als freier Text, was dort abgeholt oder eingeleitet
+       werden darf. */
+    anschluss: '', kapazitaet: ''
   };
 }
 
@@ -1657,7 +1661,11 @@ export function migrieren(p) {
       art: flaechenartById(f.art).id,
       farbe: farbeOderVorgabe(f.farbe, neueFlaeche(0, 0, f.art).farbe),
       breite: Number(f.breite) > 0 ? Number(f.breite) : neueFlaeche(0, 0, f.art).breite,
-      laenge: Number(f.laenge) > 0 ? Number(f.laenge) : neueFlaeche(0, 0, f.art).laenge
+      laenge: Number(f.laenge) > 0 ? Number(f.laenge) : neueFlaeche(0, 0, f.art).laenge,
+      /* Schema 21 hat die Anschlüsse gebracht. Ältere Stände öffnen mit
+         leeren Feldern; eine fremde Datei darf hier nur Text ablegen. */
+      anschluss: typeof f.anschluss === 'string' ? f.anschluss : '',
+      kapazitaet: typeof f.kapazitaet === 'string' ? f.kapazitaet : ''
     })),
     /* Schema 10 hat die Relaisstellen eingeführt. Ältere Stände bringen das
        Feld nicht mit und öffnen ohne sie. Band, Gegenstelle und Umkreis werden

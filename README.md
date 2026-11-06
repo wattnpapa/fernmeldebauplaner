@@ -143,6 +143,9 @@ den Kartenanbietern abruft, und ein anonymer Zählimpuls beim Start – siehe
   mit eigenen Maßen – die Maße nach dem Erkundungsblatt „Aufbauplatz THW-FüSt“
 - Dazu Container mit 10, 20 und 40 Fuß (ISO 668), Toilettenkabinen und Bauzaun,
   umlaufend oder als gerade Reihe, die Füße im Abstand der 3,50-m-Felder
+- Anschlüsse als Symbol in fester Größe: Abholpunkte für Strom und Wasser,
+  Einleitpunkte für Abwasser, jeweils mit Anschlussart (CEE, Hydrant, Kupplung …)
+  und frei beschriebener Kapazität; in GeoJSON und KML als Punkt
 - Die beiden Aufstellungen des Blatts (Fahrzeug, ein oder zwei Anhänger, Zelt) mit
   einem Klick Kante an Kante; sie bleiben beim Verschieben und Drehen zusammen
 - Stilisierte Draufsicht je Art, Drehen am Griff auf der Karte, Maße und Farbe je Fläche

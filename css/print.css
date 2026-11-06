@@ -1220,6 +1220,9 @@ body.druckansicht { overflow: hidden; }
 /* Schlagschatten der taktischen Zeichen im Bauauftrag abschalten – auch das ist
    ein CSS-Filter und würde die Zeichen aus dem Firefox-PDF verschwinden lassen. */
 #druck .tz-wrap { filter: none; }
+/* Dasselbe für die Anschlüsse; dort trennt der weiße Rand des Symbols es von
+   der Karte, der Schatten ist verzichtbar. */
+#druck .an-svg { filter: none; }
 
 /* Beschriftungen auf der Druckkarte.
 

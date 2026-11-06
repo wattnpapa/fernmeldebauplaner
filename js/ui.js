@@ -32,7 +32,7 @@ import {
 } from './vorschrift.js';
 import { SYMBOLE, KATEGORIEN, symbolSVG, symbolById } from './symbols.js';
 import {
-  FLAECHENARTEN, AUFSTELLUNGEN, flaechenartById, flaechenVorschau, flaechenTitel, masseText
+  FLAECHENARTEN, AUFSTELLUNGEN, flaechenartById, flaechenVorschau, flaechenTitel, flaechenWert
 } from './flaechen.js';
 import {
   FREQUENZBAENDER, MIMO_ARTEN, POLARISATIONEN, MODULATIONEN,
@@ -3892,7 +3892,7 @@ function zuteilungsliste(art, ziel, stand, danach = () => {}) {
       : flaechenliste
       ? `<span class="mini-flaeche">${flaechenVorschau(x.art, 24)}</span>
          <span class="ez-name">${escapeHtml(bezeichnung)}</span>
-         <span class="ez-wert">${masseText(x)}</span>`
+         <span class="ez-wert">${escapeHtml(flaechenWert(x))}</span>`
       : `<span class="farbpunkt" style="${farbStil(x.farbe)}"></span>
          <span class="ez-name">${escapeHtml(bezeichnung)}</span>
          <span class="ez-wert">${formatLaenge(kennzahlen(x).trasse)}</span>`;
@@ -4425,11 +4425,17 @@ export function zeichneFlaechenListe() {
   const flaechen = p.flaechen || [];
   const abschnitte = obersteAbschnitte(p);
 
-  const qm = flaechen.reduce((n, f) => n + f.breite * f.laenge, 0);
-  summe.innerHTML = flaechen.length
-    ? `<span><b>${flaechen.length}</b> ${flaechen.length === 1 ? 'Fläche' : 'Flächen'}</span>
+  /* Anschlüsse stehen in derselben Liste, zählen aber nicht als Grundfläche –
+     ihr Platzhaltermaß von einem Meter verfälschte sonst die Summe. */
+  const grundrisse = flaechen.filter(f => !flaechenartById(f.art).punkt);
+  const anschluesse = flaechen.length - grundrisse.length;
+  const qm = grundrisse.reduce((n, f) => n + f.breite * f.laenge, 0);
+  summe.innerHTML = (grundrisse.length
+    ? `<span><b>${grundrisse.length}</b> ${grundrisse.length === 1 ? 'Fläche' : 'Flächen'}</span>
        <span>zusammen <b>${Math.round(qm).toLocaleString('de-DE')} m²</b></span>`
-    : '';
+    : '') + (anschluesse
+    ? `<span><b>${anschluesse}</b> ${anschluesse === 1 ? 'Anschluss' : 'Anschlüsse'}</span>`
+    : '');
 
   if (!flaechen.length) {
     liste.appendChild(el('div', 'leer',
@@ -4437,7 +4443,9 @@ export function zeichneFlaechenListe() {
        <p>„Fläche einzeichnen“ wählen – FüKomKW, Anhänger FüLa, Zelt SG 300, den
        Aufbauplatz der Führungsstelle, Container, Toilettenkabinen, einen
        Bauzaun oder eine freie Fläche mit eigenen Maßen – und auf der Karte die
-       Mitte anklicken. Die Fläche steht dann maßstäblich
+       Mitte anklicken. Unter derselben Schaltfläche stehen die Anschlüsse:
+       wo Strom und Wasser abgeholt und Abwasser eingeleitet wird, mit
+       Kapazität. Die Fläche steht dann maßstäblich
        da; am Griff über der Fläche lässt sie sich drehen, am Eintrag die Maße
        anpassen.</p>
        <p class="klein">Die Maße stammen aus dem Erkundungsblatt „Aufbauplatz
@@ -4463,7 +4471,7 @@ function flaecheKarte(f) {
   kopf.innerHTML =
     `<span class="mini-flaeche">${flaechenVorschau(f.art, 26)}</span>
      <button type="button" class="eintrag-name" aria-expanded="${gewaehlt}">${escapeHtml(flaechenTitel(f))}</button>
-     <span class="eintrag-wert">${masseText(f)}</span>
+     <span class="eintrag-wert">${escapeHtml(flaechenWert(f))}</span>
      ${augenKnopf(f.sichtbar !== false)}`;
   kopf.onclick = () => ctx.fl.waehle(gewaehlt ? null : f.id);
   kopf.querySelector('[data-akt="sichtbar"]').onclick = e => {
@@ -4477,8 +4485,9 @@ function flaecheKarte(f) {
 }
 
 function flaecheFormular(f) {
-  const koerper = el('div', 'eintrag-koerper');
   const art = flaechenartById(f.art);
+  if (art.punkt) return anschlussFormular(f, art);
+  const koerper = el('div', 'eintrag-koerper');
   const g = el('div', 'feldgruppe');
 
   g.appendChild(feld('Beschriftung auf der Karte', f.name, v => {
@@ -4491,7 +4500,7 @@ function flaecheFormular(f) {
   g.appendChild(feld('Vorlage', f.art, v => {
     const neu = flaechenartById(v);
     store.aendern(() => { f.art = neu.id; f.breite = neu.breite; f.laenge = neu.laenge; }, 'flaeche');
-  }, { typ: 'select', werte: FLAECHENARTEN.map(a => [a.id, a.name]) }));
+  }, { typ: 'select', werte: FLAECHENARTEN.filter(a => !a.punkt).map(a => [a.id, a.name]) }));
 
   const masse = el('div', 'feld-paar');
   masse.append(
@@ -4578,6 +4587,70 @@ function flaecheFormular(f) {
   return koerper;
 }
 
+/* Der Anschluss hat statt Maß und Drehung die Angaben, nach denen am Ort
+   gefragt wird: welche Kupplung oder Steckdose, und was dort abgeholt oder
+   eingeleitet werden darf. Die Kapazität ist freier Text – „22 kW“,
+   „400 l/min bei 4 bar“, „nur Grauwasser“ –, weil sie vom Versorger kommt und
+   selten in eine einzige Einheit passt. */
+function anschlussFormular(f, art) {
+  const koerper = el('div', 'eintrag-koerper');
+  const g = el('div', 'feldgruppe');
+
+  g.appendChild(feld('Beschriftung auf der Karte', f.name, v => {
+    schreib(() => { f.name = v; });
+    ctx.fl.zeichne();
+  }, { platzhalter: art.kurz }));
+
+  g.appendChild(feld('Art', f.art, v => {
+    const neu = flaechenartById(v);
+    store.aendern(() => { f.art = neu.id; f.farbe = neu.farbe; f.anschluss = ''; }, 'flaeche');
+  }, { typ: 'select', werte: FLAECHENARTEN.filter(a => a.punkt).map(a => [a.id, a.name]) }));
+
+  /* Ein Wert, der nicht in der Liste steht – aus einer Datei, die eine andere
+     Fassung geschrieben hat –, bleibt wählbar statt still zu verschwinden. */
+  const werte = [['', '— nicht angegeben —'], ...art.anschluesse.map(a => [a, a])];
+  if (f.anschluss && !art.anschluesse.includes(f.anschluss)) werte.push([f.anschluss, f.anschluss]);
+  g.appendChild(feld('Anschluss', f.anschluss || '', v => {
+    store.aendern(() => { f.anschluss = v; }, 'flaeche');
+  }, { typ: 'select', werte }));
+
+  g.appendChild(feld('Kapazität', f.kapazitaet, v => {
+    schreib(() => { f.kapazitaet = v; });
+    ctx.fl.zeichne();
+  }, { platzhalter: art.kapazitaetBeispiel }));
+
+  if ((store.projekt.einsatzabschnitte || []).length) {
+    g.appendChild(feld('Einsatzabschnitt', f.abschnitt || '', v => {
+      store.aendern(() => { f.abschnitt = v || null; }, 'flaeche');
+    }, {
+      typ: 'select',
+      werte: abschnittWerte(store.projekt, '— keinem zugeteilt (gilt für alle) —')
+    }));
+  }
+
+  g.appendChild(feld('Bemerkung', f.bemerkung, v => schreib(() => { f.bemerkung = v; }),
+    { typ: 'textarea', zeilen: 2 }));
+  koerper.appendChild(g);
+
+  koerper.appendChild(el('p', 'klein mono koord-hinweis',
+    `${toMGRS(f.lat, f.lng, 5)}<br>${toDDM(f.lat, f.lng)}`));
+
+  const tasten = el('div', 'tastenreihe');
+  tasten.append(
+    knopf('Auf Karte zeigen', () => {
+      ctx.karte.setView([f.lat, f.lng], Math.max(ctx.karte.getZoom(), 18));
+      ctx.zurKarte?.();
+    }),
+    knopf('Löschen', () => {
+      store.aendern(p => { p.flaechen = p.flaechen.filter(x => x.id !== f.id); }, 'flaeche');
+      ctx.fl.auswahl = null;
+      hinweis(`Anschluss gelöscht – ${RUECKGAENGIG_TEXT}`);
+    }, 'gefahr')
+  );
+  koerper.appendChild(tasten);
+  return koerper;
+}
+
 /**
  * Auswahl der Vorlage: erst die beiden Aufstellungen des Erkundungsblatts,
  * dann die einzelnen Flächen. `beiWahl` bekommt die gewählte Vorlage –
@@ -4605,16 +4678,19 @@ export function flaechenPalette(beiWahl) {
     bild: `<span class="fl-bild fl-reihe-bild">${a.teile.map(t => flaechenVorschau(t.art, 40)).join('')}</span>`
   })));
   const einzeln = a => ({
-    name: a.name, masse: masseText(a), vorlage: a,
+    name: a.name, masse: a.punkt ? 'Punkt mit Kapazität' : flaechenWert({ ...a, art: a.id }), vorlage: a,
     bild: `<span class="fl-bild">${flaechenVorschau(a.id, 44)}</span>`
   });
   gruppe('Einzelne Flächen', FLAECHENARTEN.filter(a => !a.gruppe).map(einzeln));
   gruppe('Container, Toiletten und Bauzaun', FLAECHENARTEN.filter(a => a.gruppe === 'lager').map(einzeln));
+  gruppe('Anschlüsse für Strom, Wasser und Abwasser',
+    FLAECHENARTEN.filter(a => a.gruppe === 'anschluss').map(einzeln));
   box.appendChild(el('p', 'klein',
     `Die Fläche steht nach dem Klick auf die Karte maßstäblich dort; am Griff
      über der Fläche lässt sie sich drehen, im Eintrag die Maße ändern. Eine
      Aufstellung setzt ihre Teile Kante an Kante und hält sie beim Verschieben
-     und Drehen zusammen.`));
+     und Drehen zusammen. Ein Anschluss steht als Symbol in fester Größe; Anschluss
+     und Kapazität kommen in seinen Eintrag.`));
 
   dialog({ titel: 'Fläche einzeichnen', inhalt: box, breit: true, fuss: [{ text: 'Abbrechen' }] });
 }
@@ -10698,7 +10774,10 @@ export function hilfeDialog() {
            von etwa 25 × 15 m, <b>Container</b> mit 10, 20 und 40 Fuß,
            <b>Toilettenkabinen</b>, <b>Bauzaun</b> umlaufend oder als gerade Reihe mit
            Feldern zu 3,50 m
-           oder eine <b>freie Fläche</b> mit eigenen Maßen. Die
+           oder eine <b>freie Fläche</b> mit eigenen Maßen. Dort stehen auch die
+           <b>Anschlüsse</b>: Abholpunkte für Strom und Wasser und Einleitpunkte für
+           Abwasser, jeweils mit Anschlussart und Kapazität. Die</p>
+        <p>Die
            beiden Aufstellungen des Erkundungsblatts – Fahrzeug, ein oder zwei
            Anhänger und Zelt – kommen mit einem Klick Kante an Kante auf die Karte.</p>
         <ul class="tasten-liste">
