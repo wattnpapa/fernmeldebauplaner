@@ -28,7 +28,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-SAMMLUNG = sys.argv[1] if len(sys.argv) > 1 else "v2.0.0"
+SAMMLUNG = sys.argv[1] if len(sys.argv) > 1 else "v2.0.1"
 
 REPO = "jonas-koeritz/Taktische-Zeichen"
 WURZEL = Path(__file__).resolve().parent.parent
