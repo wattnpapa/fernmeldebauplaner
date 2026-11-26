@@ -535,8 +535,11 @@ export function tagFarbe(farbe) {
 
 /* Alle Stufen für ein `style`-Attribut. Leaflet-Linien tragen keine
    Eigenschaften im Markup; für sie setzt `nachtLinie()` dasselbe am Pfad. */
-export const farbStil = farbe =>
-  `--farbe:${farbe};--farbe-tag:${tagFarbe(farbe)};--farbe-nacht:${nachtFarbe(farbe)}`;
+/* Maskiert, obwohl `migrieren()` jede geladene Farbe schon prüft: der Wert
+   kommt im Betrieb auch unmittelbar aus einem Eingabefeld, und er landet hier
+   in einem Attribut – ein Anführungszeichen darin schlösse es. */
+export const farbStil = farbe => escapeHtml(
+  `--farbe:${farbe};--farbe-tag:${tagFarbe(farbe)};--farbe-nacht:${nachtFarbe(farbe)}`);
 
 /** Dasselbe an einem Element, dessen Farbe sich im Betrieb ändert */
 export function farbStilSetzen(element, farbe) {

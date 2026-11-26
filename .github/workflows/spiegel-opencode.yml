@@ -24,6 +24,11 @@ concurrency:
   group: spiegel-opencode
   cancel-in-progress: false
 
+# Der Lauf liest nur: geschrieben wird auf Open CoDE, und dorthin mit dem
+# eigenen SSH-Schlüssel, nicht mit dem Token dieses Repositorys.
+permissions:
+  contents: read
+
 jobs:
   spiegeln:
     runs-on: ubuntu-latest

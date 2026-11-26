@@ -178,8 +178,15 @@ export function planKennung(strecken) {
 }
 export const istquelleById = id => ISTQUELLEN.find(q => q.id === id) || ISTQUELLEN[2];
 
+/* Aus dem Zufall des Betriebssystems und nicht aus `Math.random()`: an der
+   Kennung hängt, welcher Punkt, welche Strecke und welche Meldung gemeint ist –
+   auch über den Link zwischen zwei Geräten. Zwei Geräte, die dieselbe Folge
+   würfeln, träfen sich sonst im selben Namen. Gestalt und Länge bleiben, an
+   ihnen hängen gespeicherte Planungen. */
 export function id() {
-  return 'x' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+  const zufall = crypto.getRandomValues(new Uint8Array(7));
+  return 'x' + Array.from(zufall, z => (z % 36).toString(36)).join('') +
+    Date.now().toString(36).slice(-4);
 }
 
 const heute = () => new Date().toISOString().slice(0, 10);

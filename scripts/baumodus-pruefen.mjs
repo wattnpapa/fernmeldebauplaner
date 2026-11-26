@@ -1421,7 +1421,7 @@ try {
     return bd.nachtragOffene(window.fbp.store.projekt.strecken[0]).length;`);
   b.pruefe(offenVorher >= 2, `Zeilen ohne Uhrzeit sind da (${offenVorher})`);
   await seite.klick('.reiter button[data-reiter="strecken"]');
-  b.pruefe(new RegExp(`Nachtrag vom ${tagKurzErw.replace(/\./g, '\\.')} beendet – ${offenVorher} Zeilen ohne Uhrzeit`)
+  b.pruefe(new RegExp(`Nachtrag vom ${tagKurzErw.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')} beendet – ${offenVorher} Zeilen ohne Uhrzeit`)
     .test(await seite.text('#hinweisbox') || ''),
     `Der Reiterwechsel beendet den Nachtrag und sagt es (${await seite.text('#hinweisbox')})`);
   await seite.klick('.reiter button[data-reiter="bau"]');
@@ -4982,7 +4982,7 @@ try {
     `Die alte Meldung von Schulz bringt die Übergabe nicht still zurück (${neunte.st5}, „${neunte.an5}“)`);
   b.pruefe(/Schulz \(2\. FmTr\)/.test(neunte.f2) && /Meier \(1\. FmTr\):/.test(neunte.f2) &&
       !/Rückfrage/.test(neunte.f2),
-    `Die Formel nennt, wem die aufgehobene Übergabe gehörte, und ruft beide getrennt (${neunte.f2.replace(/<[^>]+>/g, '')})`);
+    `Die Formel nennt, wem die aufgehobene Übergabe gehörte, und ruft beide getrennt (${neunte.f2.replace(/[<>]/g, ' ')})`);
   b.pruefe(/Neu übergeben|neu übergeben/.test(neunte.f5) && /NICHT übernommen/.test(neunte.f5),
     'Und die abgewiesene alte Übergabe wird in der Formel genannt');
   b.pruefe(neunte.st6 === 'uebergeben' && neunte.an6 === 'FGr N' && neunte.z6 === '' && neunte.war6 === '',
